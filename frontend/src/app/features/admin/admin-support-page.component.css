@@ -1,0 +1,19 @@
+.support-workspace { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(0, 2fr); gap: var(--mn-space-5); }
+.ticket-queue, .ticket-thread, .ticket-context { min-inline-size: 0; }
+.ticket-context { grid-column: 1 / -1; border-block-start: 1px solid var(--mn-rule); padding-block-start: var(--mn-space-5); }
+.queue-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--mn-space-3); }
+.ticket-list, .conversation { list-style: none; margin: 0; padding: 0; }
+.ticket-choice { display: grid; gap: var(--mn-space-2); inline-size: 100%; min-block-size: var(--mn-touch-min); padding: var(--mn-space-4); border: 0; border-block-start: 1px solid var(--mn-rule); background: transparent; text-align: start; color: var(--mn-body); overflow-wrap: anywhere; cursor: pointer; }
+.ticket-choice[aria-pressed=true] { border-inline-start: 3px solid var(--mn-ink); background: var(--mn-soft); }
+.ticket-choice .stamp { white-space: normal; justify-self: start; }
+.message { border-block-start: 1px solid var(--mn-rule); padding: var(--mn-space-4); overflow-wrap: anywhere; }
+.message.internal { background: var(--mn-soft); border-inline-start: 3px solid var(--mn-ink); }
+.message header { margin-block-end: var(--mn-space-2); }
+.message-text { white-space: pre-wrap; margin: 0; line-height: 1.65; }
+.status-actions { display: flex; flex-wrap: wrap; gap: var(--mn-space-2); }
+.back-to-queue { display: none; }
+.identity-filters { flex: 1 1 14rem; }
+.identity-filters summary { cursor: pointer; min-block-size: var(--mn-touch-min); padding-block: var(--mn-space-3); }
+@media (min-width: 90rem) { .support-workspace { grid-template-columns: minmax(12rem, 1fr) minmax(0, 2fr) minmax(10rem, .8fr); } .ticket-context { grid-column: auto; border-block-start: 0; border-inline-start: 1px solid var(--mn-rule); padding-inline-start: var(--mn-space-4); padding-block-start: 0; } }
+@media (max-width: 50rem) { .support-workspace { grid-template-columns: minmax(0, 1fr); } .support-workspace.has-selection .ticket-queue { display: none; } .support-workspace:not(.has-selection) .ticket-thread { display: none; } .back-to-queue { display: block; } }
+@media (forced-colors: active) { .ticket-choice[aria-pressed=true], .message.internal { border-color: Highlight; } }

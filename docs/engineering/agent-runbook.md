@@ -5,7 +5,7 @@ artifact:
   title: "Mnema agent runbook: commands and local-machine setup"
   status: current
   created_at: "2026-10-01"
-  updated_at: "2026-10-08"
+  updated_at: "2026-10-10"
   owners: ["project-owner"]
 ---
 
@@ -115,6 +115,45 @@ the same stack/data. Repeat the flag on subsequent starts while the catalogue is
 a normal `start` returns to the production build, which excludes `/styleguide`.
 For the fixture-only dev-server option, component rules and production exclusion check,
 see [frontend styleguide](../frontend/styleguide.md#как-открыть).
+
+## Owner console browser fixture
+
+After building both boot jars and the production frontend, the console is exercised
+against disposable PostgreSQL and the real bot bridge source with synthetic tickets:
+
+```bash
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
+  --node "$NODE24" --admin --admin-bot-source /absolute/path/to/Mnema-Telegram-Bot-with-admin-bridge
+```
+
+The explicit bot checkout must contain `mnema_bot/admin_server.py`. The fixture
+starts only its own loopback process/SQLite and configures one real disposable
+Identity owner; it never loads bot `.env`, starts a Telegram poller, sends a real
+message or restarts the retained local stack. Reply evidence stops at durable
+outbox queuing; actual delivery is covered by bot fixtures, not claimed as a real
+Telegram smoke. See the [console delivery record](./evidence/admin-console-2026-10/README.md) for the first
+snapshot's results and the [console architecture](../architecture/admin-console.md) for admin-host rollout and
+unavailable financial sources. The fixture signs in through the learner web client, which the console now refuses
+on every route; it needs a second origin for `mnema-admin-web` before it runs green again.
+
+### Open the console on the persistent local stack
+
+The console is off by default and needs the dedicated `mnema-admin-web` client, hence its own browser origin
+`https://admin.localhost:<web port>` (same container, port and certificate as `localhost`; browsers resolve
+`*.localhost` to loopback). In the shell that runs `scripts/mnema-local-full-stack.sh start` for the retained project:
+
+```bash
+# Your account UUID: Identity directory, or SELECT account_id FROM app_identity.account WHERE email = '...'
+export MNEMA_ADMIN_OWNER_ACCOUNT_ID=<owner account uuid>          # lowercase canonical UUID
+export MNEMA_IDENTITY_ADMIN_ORIGIN=https://admin.localhost:3443  # your retained web port
+scripts/mnema-local-full-stack.sh reset-certificates --confirm    # once: the certificate gains DNS:admin.localhost
+scripts/mnema-local-full-stack.sh start                           # recreates Identity and Learning with the owner settings
+```
+
+Open `https://admin.localhost:3443/manage`, sign in as that account. Remember `MNEMA_LOCAL_STATE_DIR` and
+`MNEMA_LOCAL_OAUTH_ENV_FILE` for a worktree restart; unset both variables and restart to turn the console off.
+Support stays "unavailable" locally unless `MNEMA_ADMIN_SUPPORT_ENDPOINT`/`_SECRET` and
+`MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP=true` point at a loopback bridge. Never `reset` the data volumes for this.
 
 ## Persistent local stack
 

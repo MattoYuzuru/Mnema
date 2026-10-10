@@ -1,0 +1,248 @@
+<header>
+  <p class="eyebrow">Кабинет владельца</p><h1 tabindex="-1">Обзор и расходы</h1><p class="hint">Журналы операций, обучение и медиа. Денежные суммы показывают свою точность и источник.</p>
+</header>
+<form class="filters" [formGroup]="form" (ngSubmit)="apply()">
+  <label class="field"><span>С даты, UTC</span><input type="date" formControlName="from" required></label>
+  <label class="field">
+    <span>По дату включительно, UTC</span><input type="date" formControlName="through" required>
+  </label>
+  <button class="button primary" type="submit">Показать период</button><button class="button" type="button" (click)="load()" [disabled]="loading()">Обновить</button>
+</form>
+@if (loading()) {<p role="status">Собираем отчёт…</p>}
+@if (error()) {<p class="notice error" role="alert">{{ error() }}</p>}
+@if (report(); as data) {
+  <p class="hint">
+    {{ data.from }} — {{ through(data.to) }}, UTC · Сформирован {{ date(data.generatedAt) }} (Москва)
+  </p>
+  <section aria-labelledby="finance-title">
+    <h2 id="finance-title">За что платим</h2>
+    <p class="notice warning">
+      Счета провайдеров не подключены. Расходы ИИ — оценка по сохранённым вызовам и тарифам провайдера в USD. Это не сверенный счёт. Незавершённые вызовы и внешние расходы могут отсутствовать.
+    </p>
+    <p class="hint">
+      Журнал хранится {{ data.ai.journalRetentionDays }} дней, граница хранения: {{ date(data.ai.retentionWindowStart) }}. Расходы неуспешных вызовов могут быть неполными.
+    </p>
+    @if (data.ai.rangeIncludesExpiredData) {
+      <p class="notice warning">Часть периода старше срока хранения журнала. Суммы могут быть неполными.</p>
+    }
+    @if (data.ai.routeGroupsTruncated) {
+      <p class="notice warning">
+        Показаны 256 самых затратных маршрутов. Общие суммы включают остальные маршруты.
+      </p>
+    }
+    <dl class="report-facts">
+      <div>
+        <dt>Оценка расходов ИИ</dt>
+        <dd>
+          {{ money(data.ai.estimatedCostMicros) }}<small class="hint">Журнал вызовов провайдера, выбранный период</small>
+        </dd>
+      </div>
+      <div>
+        <dt>Вызовы</dt>
+        <dd>
+          {{ number(data.ai.calls) }}
+          <small class="hint">
+            С ошибкой: {{ number(data.ai.failedCalls) }} · незавершённые: {{ number(data.ai.pendingCalls) }}
+          </small>
+        </dd>
+      </div>
+      <div>
+        <dt>Выручка (подтверждённые заказы)</dt>
+        <dd>
+          {{ rub(data.financial.revenue.paidKopecks) }}
+          <small class="hint">
+            Заказов: {{ number(data.financial.revenue.paidOrders) }}, по дате подтверждения оплаты; включены и заказы, возвращённые позже.
+            Из них возвращено: {{ number(data.financial.revenue.refundedOrders) }} на {{ rub(data.financial.revenue.refundedKopecks) }}
+            (частичный возврат учтён полной суммой заказа), эта сумма не вычтена.
+            Брутто до комиссий банка, не выплата на счёт. Тариф и промодоступ не означают поступление денег.
+          </small>
+        </dd>
+      </div>
+      <div>
+        <dt>Инфраструктура и прочие счета</dt>
+        <dd>
+          Нет источника
+          <small class="hint">
+            Счета VPS, хранилища и внешних сервисов не подключены. Итоговая прибыль недоступна.
+          </small>
+        </dd>
+      </div>
+    </dl>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Расходы по провайдерам и операциям">
+      <table class="data-table">
+        <caption>Сохранённые вызовы по маршруту</caption>
+        <thead>
+          <tr>
+            <th scope="col">Операция / провайдер / модель</th><th scope="col">Вызовы</th><th scope="col">Ошибки</th><th scope="col">Оценка, USD</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of data.ai.byRoute; track row.capability + '/' + row.provider + '/' + row.model) {
+            <tr>
+              <th scope="row">
+                {{ operation(row.capability) }}<small class="hint">{{ row.provider }} / {{ row.model }}</small>
+              </th><td>{{ number(row.calls) }}</td><td>{{ number(row.failedCalls) }}</td><td>{{ money(row.estimatedCostMicros) }}</td>
+            </tr>
+          }
+          @empty {<tr><td colspan="4">Сохранённых вызовов за период нет.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+    <details>
+      <summary>Расход по дням, UTC</summary>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Расход по дням">
+        <table class="data-table">
+          <caption>
+            Дни с сохранёнными вызовами; отсутствие дня не подтверждает нулевой счёт провайдера.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Дата</th><th scope="col">Вызовы</th><th scope="col">Ошибки</th><th scope="col">Оценка, USD</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of data.ai.byDay; track row.date) {
+              <tr>
+                <th scope="row">{{ row.date }}</th><td>{{ number(row.calls) }}</td><td>{{ number(row.failedCalls) }}</td><td>{{ money(row.estimatedCostMicros) }}</td>
+              </tr>
+            }
+            @empty {<tr><td colspan="4">Сохранённых вызовов нет.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    <h3>
+      Задержка вызова
+      <app-toggletip topic="перцентилей задержки">p50 — половина вызовов быстрее этого значения; p95 и p99 — 95 % и 99 %. Расчёт на сервере по сохранённым длительностям, без обещания времени для следующего вызова.</app-toggletip>
+    </h3>
+    <p class="hint">
+      Выборка: {{ number(data.ai.latency.sampleCount) }} вызовов с записанной длительностью (завершённые, включая ошибки; незавершённые и без замера не входят).@if (data.ai.latency.sampleCount === 0) {Перцентили не определены.}
+    </p>
+    <dl class="report-facts">
+      <div><dt>p50</dt><dd>{{ ms(data.ai.latency.p50Ms) }}</dd></div><div><dt>p95</dt><dd>{{ ms(data.ai.latency.p95Ms) }}</dd></div><div><dt>p99</dt><dd>{{ ms(data.ai.latency.p99Ms) }}</dd></div>
+    </dl>
+  </section>
+  <section class="rule-section" aria-labelledby="usage-title">
+    <h2 id="usage-title">Что используют</h2>
+    @if (data.usage.featuresTruncated) {
+      <p class="notice warning">
+        Показаны 64 функции с наибольшим списанием. Общие суммы включают остальные.
+      </p>
+    }
+    <dl class="report-facts">
+      <div>
+        <dt>Пользователи с расходом ИИ</dt>
+        <dd>
+          {{ number(data.usage.activeUsers) }}
+          <small class="hint">
+            Уникальные аккаунты с DEBIT, в том числе с нулевым списанием, в выбранном периоде
+          </small>
+        </dd>
+      </div>
+      <div>
+        <dt>Списано кредитов</dt>
+        <dd>
+          {{ number(data.usage.creditsDebited) }}
+          <small class="hint">
+            Валовые списания без вычета возвратов. Внутренние единицы лимита, не деньги
+          </small>
+        </dd>
+      </div>
+    </dl>
+    <h3>
+      Кредиты на пользователя
+      <app-toggletip topic="выборки расхода">Выборка: только аккаунты со списанием ИИ в этом периоде; не все зарегистрированные пользователи. Значения рассчитываются на сервере, при пустой выборке — «Нет данных».</app-toggletip>
+    </h3>
+    <p class="hint">Размер выборки: {{ number(data.usage.creditsPerUser.sample) }} аккаунтов.</p>
+    <dl class="report-facts">
+      <div><dt>p50</dt><dd>{{ number(data.usage.creditsPerUser.p50) }}</dd></div><div><dt>p95</dt><dd>{{ number(data.usage.creditsPerUser.p95) }}</dd></div><div><dt>p99</dt><dd>{{ number(data.usage.creditsPerUser.p99) }}</dd></div>
+    </dl>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Использование функций">
+      <table class="data-table">
+        <caption>
+          Доля среди {{ number(data.usage.activeUsers) }} аккаунтов с расходом ИИ. Пользователь может входить в несколько строк; доли не суммируются в 100 %. Единицы: STT — секунды, остальные лимиты — количество.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Функция</th><th scope="col">Пользователи</th><th scope="col">Доля</th><th scope="col">Операции</th><th scope="col">Кредиты</th><th scope="col">Единицы</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of data.usage.features; track row.operation) {
+            <tr>
+              <th scope="row">{{ operation(row.operation) }}</th><td>{{ number(row.users) }}</td><td>{{ percent(row.share) }}</td><td>{{ number(row.events) }}</td><td>{{ number(row.creditsDebited) }}</td><td>{{ units(row.operation, row.units) }}</td>
+            </tr>
+          }
+          @empty {<tr><td colspan="6">За этот период нет списаний.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <a class="button" routerLink="/manage/users" [queryParams]="form.getRawValue()">Посмотреть пользователей</a>
+    </p>
+  </section>
+  <section class="rule-section" aria-labelledby="top-users-title">
+    <h2 id="top-users-title">Наибольший расход</h2>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Пользователи с наибольшим расходом">
+      <table class="data-table">
+        <caption>
+          До 20 аккаунтов по валовым списаниям кредитов за выбранный период; это не расходы провайдера на аккаунт.
+        </caption>
+        <thead>
+          <tr><th scope="col">Аккаунт</th><th scope="col">Операции</th><th scope="col">Кредиты</th></tr>
+        </thead>
+        <tbody>
+          @for (user of data.usage.topUsers; track user.accountId) {
+            <tr>
+              <th scope="row">
+                <a [routerLink]="['/manage/users', user.accountId]" [queryParams]="form.getRawValue()">{{ user.accountId }}</a>
+              </th><td>{{ number(user.events) }}</td><td>{{ number(user.creditsDebited) }}</td>
+            </tr>
+          }
+          @empty {<tr><td colspan="3">Нет аккаунтов со списаниями.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="rule-section" aria-labelledby="learning-title">
+    <h2 id="learning-title">Обучение</h2>
+    <dl class="report-facts">
+      <div>
+        <dt>Занимались</dt>
+        <dd>
+          {{ number(data.learning.studyUsers) }}<small class="hint">Аккаунты с попыткой за период</small>
+        </dd>
+      </div><div><dt>Попытки</dt><dd>{{ number(data.learning.attempts) }}</dd></div><div><dt>Завершённые занятия</dt><dd>{{ number(data.learning.completedSessions) }}</dd></div>
+      <div>
+        <dt>Пользователи генерации, сохранившиеся сессии</dt>
+        <dd>
+          {{ number(data.learning.generationUsers) }}<small class="hint">Неполная история: сессии обычно хранятся около 30 дней.</small>
+        </dd>
+      </div>
+      <div>
+        <dt>Опубликованные результаты</dt>
+        <dd>
+          {{ number(data.learning.publishedArtifacts) }}<small class="hint">Материалы и упражнения из мастерских</small>
+        </dd>
+      </div>
+    </dl>
+  </section>
+  <section class="rule-section" aria-labelledby="media-title">
+    <h2 id="media-title">Медиа</h2><p class="hint">Текущая инвентаризация, не расходы за выбранный период и не оплачиваемый трафик.</p>
+    <dl class="report-facts">
+      <div><dt>Объекты медиа без удалённых</dt><dd>{{ number(data.media.assets) }}</dd></div><div><dt>Размер blob-объектов</dt><dd>{{ bytes(data.media.blobBytes) }}</dd></div>
+    </dl>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Состояния медиа">
+      <table class="data-table">
+        <caption>
+          Состояния медиа, включая удалённые записи. Общий счётчик объектов выше исключает удалённые.
+        </caption><thead><tr><th scope="col">Состояние</th><th scope="col">Количество</th></tr></thead>
+        <tbody>
+          @for (row of data.media.byState; track row.state) {
+            <tr><th scope="row">{{ mediaState(row.state) }}</th><td>{{ number(row.count) }}</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+}

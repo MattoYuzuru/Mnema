@@ -258,6 +258,13 @@ class Fixture(BASE.Fixture):
         if self.args.media:
             self.start_media_store()
         super().start()
+        if getattr(self.args, "admin", False):
+            self.sql("UPDATE app_identity.account SET email_verified=true,is_admin=true WHERE account_id='" + self.events_owner_id + "'")
+            # This disposable Identity started before its real owner UUID existed. Restart only this owned process,
+            # retaining keys/database/cookie state, to configure exact owner access in both real services.
+            self.identity_process.terminate()
+            self.identity_process.wait(timeout=20)
+            self.identity_process, _ = self.boot("identity-account", self.identity_port, "identity_fixture")
         if self.stub_instance():
             # A second Learning on the same database with the Stub provider. Every ordinary scenario keeps running against the
             # first one (generation and AI assessment off, as shipped); the Workshop and assessment scenarios flip the proxy
@@ -363,6 +370,8 @@ class Fixture(BASE.Fixture):
                             "MNEMA_IDENTITY_SIGNING_JWK_SET_FILE": str(self.tmp / "signing.json"),
                             "MNEMA_IDENTITY_SIGNING_ACTIVE_KID": "blackbox", "APP_ENV": "local-browser-fixture"})
         arguments = ["java", "-Xms64m", "-Xmx384m", "-jar", str(jar), "--server.address=127.0.0.1"]
+        if getattr(self.args, "admin", False) and hasattr(self, "events_owner_id"):
+            environment["MNEMA_ADMIN_OWNER_ACCOUNT_ID"] = self.events_owner_id
         if module == "identity-account" and self.args.media:
             environment.update({"MNEMA_AVATAR_ENDPOINT": self.media_origin,
                                 "MNEMA_AVATAR_REGION": "us-east-1",
@@ -375,6 +384,25 @@ class Fixture(BASE.Fixture):
                 # Disposable, real Identity account for the editorial browser flow. Existing learner accounts remain outsiders.
                 _, self.events_owner_id = self.account("events_fixture")
             environment["MNEMA_EVENTS_OWNER_ACCOUNT_ID"] = self.events_owner_id
+            if getattr(self.args, "admin", False):
+                environment["MNEMA_ADMIN_OWNER_ACCOUNT_ID"] = self.events_owner_id
+                if not hasattr(self, "admin_bridge_port"):
+                    self.admin_bridge_port = BASE.free_port()
+                    self.admin_bridge_secret = uuid.uuid4().hex + uuid.uuid4().hex
+                    fixture_environment = child_environment()
+                    fixture_environment["MNEMA_BROWSER_SUPPORT_SECRET"] = self.admin_bridge_secret
+                    # The base fixture owns and cleans this subprocess, including partial startup.
+                    bridge_log = (self.tmp / "admin-support.log").open("wb")
+                    bridge = subprocess.Popen([sys.executable, str(Path(__file__).with_name("admin_support_fixture.py")),
+                        "--source", str(self.args.admin_bot_source), "--database", str(self.tmp / "admin-support.sqlite3"),
+                        "--port", str(self.admin_bridge_port), "--account-id", self.events_owner_id],
+                        env=fixture_environment, stdin=subprocess.DEVNULL, stdout=bridge_log, stderr=subprocess.STDOUT)
+                    self.logs.append(bridge_log)
+                    self.processes.append(bridge)
+                environment.update({"MNEMA_ADMIN_SUPPORT_ENDPOINT": f"http://127.0.0.1:{self.admin_bridge_port}/internal/support",
+                                    "MNEMA_ADMIN_SUPPORT_SECRET": self.admin_bridge_secret,
+                                    "MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP": "true",
+                                    "MNEMA_PROMO_HASH_SECRET": uuid.uuid4().hex + uuid.uuid4().hex})
             if self.args.media:
                 environment.update({"LEARNING_MEDIA_UPLOAD_ENDPOINT": self.media_origin,
                                     "LEARNING_MEDIA_UPLOAD_ALLOW_LOOPBACK_HTTP": "true",
@@ -484,7 +512,7 @@ class Fixture(BASE.Fixture):
         config = {"debugPort": port, "frontend": self.frontend_origin, "identity": self.identity_origin,
                   "output": str(self.args.output), "login": "browser_fixture", "email": "browser_fixture@example.invalid",
                   "password": BASE.PASSWORD, "readySelector": self.args.ready_selector,
-                  "eventsLogin": "events_fixture",
+                  "eventsLogin": "events_fixture", "admin": getattr(self.args, "admin", False),
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
@@ -503,7 +531,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs")}}
+                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs", "admin.mjs", "admin_support_fixture.py")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -649,6 +677,8 @@ def main():
                         help="development aid: after the base flow run only the promo codes, A/B assignment and promo popup scenario "
                              "(requires --authoring); boots a second Learning with the popup campaign on, verifies and promotes the scenario's "
                              "second account on the disposable database, skips every other scenario; never a substitute for the full run")
+    parser.add_argument("--admin", action="store_true", help="owner console against real services and a disposable real bot bridge")
+    parser.add_argument("--admin-bot-source", type=Path, help="bot checkout containing mnema_bot.admin_server (required with --admin)")
     parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
                         help="global deadline, 30-900 seconds (default 180, or 600 with --mechanics)")
     parser.add_argument("--keep-on-failure", action="store_true",
@@ -683,12 +713,16 @@ def main():
         parser.error("--only-speech requires --generation and --media")
     if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_plans, args.only_promo, args.only_images, args.only_speech, args.only_voice, args.only_research) if aid) > 1:
         parser.error("--only-ask, --only-edits, --only-plan, --only-plans, --only-promo, --only-images, --only-speech, --only-voice and --only-research are separate development aids: choose one")
+    if args.admin:
+        if args.admin_bot_source is None or not (args.admin_bot_source / "mnema_bot/admin_server.py").is_file():
+            parser.error("--admin requires --admin-bot-source with the implemented private bridge")
+        args.admin_bot_source = args.admin_bot_source.resolve()
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
         if args.generation or args.assessment:
             args.timeout = max(args.timeout, 840)
-        if args.only_promo:
-            args.timeout = max(args.timeout, 420)
+        if args.only_promo or args.admin:
+            args.timeout = max(args.timeout, 600)
     if not 30 <= args.timeout <= 900:
         parser.error("--timeout must be between 30 and 900 seconds")
     args.dist = args.dist.resolve()

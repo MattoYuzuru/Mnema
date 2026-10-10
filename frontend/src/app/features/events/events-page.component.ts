@@ -5,12 +5,12 @@ import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { EventsApiService } from './events-api.service';
-import { EventBodyComponent } from './event-body.component';
+import { EventArticleComponent } from './event-article.component';
 import { EventPage, ProductEvent, formatEventDate } from './events.models';
 
 @Component({
     selector: 'app-events-page',
-    imports: [RouterLink, EventBodyComponent, AutoLoadComponent],
+    imports: [RouterLink, EventArticleComponent, AutoLoadComponent],
     template: `
       <div class="events-page">
         <a routerLink="/" class="back-link">На главную</a>
@@ -23,10 +23,7 @@ import { EventPage, ProductEvent, formatEventDate } from './events.models';
         }
         <ol #eventRows class="timeline" [attr.aria-busy]="loading()">
           @for (event of page()?.items ?? []; track event.eventId) {
-            <li><article [attr.aria-labelledby]="'event-' + event.eventId">
-              <time [attr.datetime]="event.eventDate">{{ date(event.eventDate) }}</time>
-              <div><h2 [id]="'event-' + event.eventId">{{ event.title }}</h2><app-event-body [markdown]="event.bodyMarkdown" /></div>
-            </article></li>
+            <li><app-event-article [eventId]="event.eventId" [title]="event.title" [eventDate]="event.eventDate" [markdown]="event.bodyMarkdown" /></li>
           }
         </ol>
         @if (page()?.items?.length) {
@@ -42,10 +39,6 @@ import { EventPage, ProductEvent, formatEventDate } from './events.models';
       .lede { font-size: 1.1rem; line-height: 1.7; color: var(--mn-muted); }
       .load-status:empty { margin: 0; }
       .timeline { list-style: none; margin: 0; padding: 0; }
-      article { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: var(--mn-space-6); padding-block: var(--mn-space-6); border-top: 1px solid var(--mn-rule); }
-      time { color: var(--mn-muted); font-size: .85rem; padding-top: .5rem; }
-      h2 { font-size: clamp(1.7rem, 3vw, 2.3rem); margin: 0 0 var(--mn-space-4); overflow-wrap: anywhere; }
-      @media (max-width: 640px) { article { grid-template-columns: minmax(0, 1fr); gap: var(--mn-space-2); } }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
 })

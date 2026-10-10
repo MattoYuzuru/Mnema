@@ -41,7 +41,8 @@ artifact:
 пагинированным: ограниченная порция, стабильный курсор, проверка контекста/ревизии. В интерфейсе нет
 обычных кнопок «Показать ещё», номеров страниц или предыдущей/следующей страницы. Пользователь
 читает и прокручивает один непрерывный список. Это правило действует для материалов, библиотеки
-колод, упражнений материала, Capture, прогресса Study, уведомлений, событий и мастерских.
+колод, упражнений материала, Capture, прогресса Study, уведомлений, событий, мастерских и списков кабинета
+владельца (пользователи, промокоды, очередь обращений, журналы, сообщения тикета; общий помощник `features/admin/cursor-list.ts`).
 
 Общий элемент — `shared/auto-load.component.ts` (`app-auto-load`); исполняемый пример со своей
 прокруткой и имитацией сетевой ошибки находится в разделе «Обратная связь» `/styleguide`.
@@ -153,7 +154,7 @@ npx ng build --configuration development && node scripts/verify-no-styleguide.mj
 | Обратная связь | `app-auto-load` (опережающая подгрузка списка и повтор ошибки), `.notice`, тосты `ToastService`, `.empty-state`, `app-support-contact`, `app-mail-contact` | `sg-surfaces`, `shared/` |
 | Юридический документ | `app-legal-operator-block` (реквизиты из `shared/legal-operator.ts`), содержание `.toc`, строки сведений `.facts`, стили `shared/legal-page.css` | `sg-surfaces`, `shared/` |
 | Публичный футер | `app-public-footer`: реквизиты проекта, разделы, правовые документы и контакт; четыре, две или одна колонка | `sg-surfaces`, `shared/` |
-| Карточки и области | таблица сравнения `.data-table`, панель главного действия `.cta-bar`, `.paper-surface` | `sg-surfaces`, `components.css` |
+| Карточки и области | таблица сравнения `.data-table`, сводка показателей `.report-facts` (термин, значение, источник в `dl`), именованная область прокрутки `.table-scroll` для широкой таблицы, панель главного действия `.cta-bar`, `.paper-surface` | `sg-surfaces`, `components.css` |
 | Пример экрана | Страница колоды из элементов каталога | `sg-screen` |
 
 Код страницы — `frontend/src/app/styleguide/`; её собственная раскладка в классах `sg-*`, в примерах они не используются.
@@ -182,7 +183,7 @@ npx ng build --configuration development && node scripts/verify-no-styleguide.mj
 
 `.button` (`.primary`, `.quiet`, `.small`, `.mono`), `.notice` (`.success`, `.warning`, `.error`), `.hint`, `.field`, `.field-error`,
 `.stamp` (`.solid`), `.eyebrow`, `.empty-state`, `.paper-surface` (`.ruled`), `.data-table`, `.check-field` + `.check-row`,
-`.settings-row` (`.is-switch`), `.cta-bar` (`.cta-bar--inline`), `.field-row`. Классы глобальны: инкапсуляция Angular не мешает написать
+`.settings-row` (`.is-switch`), `.cta-bar` (`.cta-bar--inline`), `.field-row`, `.report-facts`, `.table-scroll`. Классы глобальны: инкапсуляция Angular не мешает написать
 `class="button primary"` в любом шаблоне. Заливка волной и фокус заданы в `global_styles.css`; `.generate-cta` — там же.
 
 Осторожно с локальными селекторами элементов (`p { font: … }`): в компоненте со scoped-стилями они по специфичности сильнее глобального

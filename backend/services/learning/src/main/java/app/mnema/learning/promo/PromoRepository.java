@@ -142,8 +142,9 @@ class PromoRepository {
                 .param("id", codeId).query((row, number) -> new CodeWithCount(code(row, number), row.getLong("redemptions"))).optional();
     }
 
+    /** @return true when the state actually changed; a repeated switch to the current state and an unknown code are both false */
     boolean setEnabled(UUID codeId, boolean enabled) {
-        return jdbc.sql("UPDATE app_learning.promo_code SET enabled=:enabled WHERE code_id=:id")
+        return jdbc.sql("UPDATE app_learning.promo_code SET enabled=:enabled WHERE code_id=:id AND enabled<>:enabled")
                 .param("enabled", enabled).param("id", codeId).update() == 1;
     }
 

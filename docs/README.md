@@ -58,6 +58,7 @@ artifact:
 | accepted | [Exercise catalog](./product/exercise-catalog-v2.md) | Механики, attempt/evidence, reducer и retention boundaries. |
 | accepted | [UX refinement 2026-09-29](./product/ux-improvements-2026-09-29.md) | Приёмочные сценарии доработки редактора, упражнений и основных экранов. |
 | accepted | [Final polish 2026-09-29](./product/final-polish-2026-09-29.md) | Удаление, заметки «На потом», пропуски и режимы проверки текста. |
+| accepted | [Owner console](./product/admin-console.md) | Кабинет владельца: пользователи, расходы/usage, промокоды, новости, поддержка; billing отдельно. |
 | accepted | [AI layer contract](./product/ai-layer-2026-10.md) | Принятые решения AI-слоя: слои, сценарии, UX, usage, тарифы, промокоды, legal gates. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Текущий статус РКН/эквайринга и оставшиеся human gates; не юридическая гарантия. |
@@ -66,6 +67,7 @@ artifact:
 
 | Статус | Документ | Назначение |
 |---|---|---|
+| accepted | [Owner console architecture](./architecture/admin-console.md) | Owner boundary, точность отчётности, admin-host и приватный support bridge; [admin contract](../contracts/admin/README.md). |
 | current | [Public events and feedback](./architecture/public-updates-and-feedback.md) | События, редактор владельца, Telegram inbox и исследованная граница подтверждения аккаунта. |
 | current | [System overview](./system-overview.md) | Replacement topology и legacy boundary. |
 | accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; P0 content/Study реализованы, P1/P2 — границы будущей работы. |
@@ -97,6 +99,7 @@ artifact:
 | Статус | Документ | Назначение |
 |---|---|---|
 | current | [Mnema brand and UI contract](./frontend/mnema-brand-and-ui-contract.md) | Правила оформления и проверки изменений в действующем Angular UI. |
+| accepted | [Owner console UX](./frontend/admin-console-ux.md) | Фильтры, карточка пользователя, источник каждого показателя, тикеты/доставка и styleguide reuse. |
 | current | [Frontend styleguide](./frontend/styleguide.md) | Живой каталог `/styleguide` (только dev-сборка): правила «бери из стайлгайда», как открыть, карта разделов. |
 | accepted | [Design and experience](./frontend/design-and-experience-2026-09.md) | Выбранное paper/antiquity/indigo направление и a11y boundaries. |
 | historical | [Frontend brand restoration evidence](./engineering/evidence/frontend-brand-2026-09-28/README.md) | Снимки production Angular и результат реального HTTPS-сценария. |
@@ -145,6 +148,7 @@ Kubernetes-доставка (staging/production workflows, `k8s/`, recovery и p
   Epic #74/#75/#76, storage, browser, security и research evidence. Ключевые записи:
   [закрытие #74](./engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md),
   [закрытие #75](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
+- **historical:** [Owner console delivery record](./engineering/evidence/admin-console-2026-10/README.md) — первый снимок реализации эпика #398, его задачи, локальная проверка и границы.
 - **historical:** [AI layer research 2026-10](./reviews/ai-layer-research-2026-10/README.md) —
   исследования архитектуры, экономики, UX, контекста и платформы; принятые
   решения перенесены в product/architecture docs.

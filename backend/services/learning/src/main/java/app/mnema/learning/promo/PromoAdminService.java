@@ -1,6 +1,10 @@
 package app.mnema.learning.promo;
 
 import app.mnema.learning.platform.api.AccessForbiddenException;
+import app.mnema.learning.admin.AdminAudit;
+import app.mnema.learning.platform.idempotency.CommandIdentity;
+import app.mnema.learning.platform.idempotency.CommandReceiptService;
+import tools.jackson.databind.JsonNode;
 import app.mnema.learning.platform.api.IdentityUnavailableException;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
@@ -21,26 +25,30 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * Creating, listing (200 per page, {@code ?after=} the last code id of the previous page) and switching off promo codes. The caller must be an administrator in Identity (the caller's own bearer, cached for at most a
- * minute; when Identity cannot say, the request is refused). The plain code of a created code is in the response of the creation and nowhere else.
+ * Creating, listing (200 per page, {@code ?after=} the last code id of the previous page) and switching off promo codes.
+ * The caller's own bearer must establish a current administrator role in Identity without a cached grant.
+ * The plain code is returned from creation and exact request replay; durable responses omit it.
  */
 @Service
 public class PromoAdminService {
     private static final Logger log = LoggerFactory.getLogger(PromoAdminService.class);
     private static final Pattern CHANNEL = Pattern.compile("[A-Za-z0-9][A-Za-z0-9 _.:/@#+-]{0,39}");
-    private static final int GENERATION_ATTEMPTS = 5;
     static final int PAGE_SIZE = 200;
 
-    /** A creation request, already shaped; {@code vanity} is a code the admin chose (normalized on use), else one is generated. */
+    /** A creation request, already shaped; {@code vanity} is the code the admin supplies (the browser generates one itself); it is normalized on use and required. */
     public record Create(PromoType type, String plan, Integer days, Integer months, Integer percent, Instant validFrom,
                          Instant validUntil, int maxRedemptions, boolean oncePerAccount, String channel, String vanity) { }
 
+    private final CommandReceiptService receipts;
+    private final AdminAudit audit;
     private final PromoRepository repository;
     private final AccountStandings standings;
     private final UsageClock clock;
     private final PromoSettings settings;
 
-    PromoAdminService(PromoRepository repository, AccountStandings standings, UsageClock clock, PromoSettings settings) {
+    PromoAdminService(PromoRepository repository, AccountStandings standings, UsageClock clock, PromoSettings settings, CommandReceiptService receipts, AdminAudit audit) {
+        this.receipts = receipts;
+        this.audit = audit;
         this.repository = repository;
         this.standings = standings;
         this.clock = clock;
@@ -49,8 +57,25 @@ public class PromoAdminService {
 
     /** @throws AccessForbiddenException the caller is not an administrator; {@link IdentityUnavailableException} Identity did not answer */
     void requireAdmin(Jwt token) {
-        AccountStandings.Standing standing = standings.of(token).orElseThrow(IdentityUnavailableException::new);
+        AccountStandings.Standing standing = standings.fresh(token).orElseThrow(IdentityUnavailableException::new);
         if (!standing.admin()) throw new AccessForbiddenException();
+    }
+
+    /** The request supplies the code; only its keyed fingerprint and a code-free acknowledgement are durable. */
+    @Transactional
+    public ObjectNode createCommand(UUID admin, UUID key, JsonNode payload, Create command) {
+        settings.requireAvailable();
+        String normalized = PromoCodes.normalize(command.vanity()).orElseThrow(() -> InvalidRequestException.because("code"));
+        ObjectNode envelope = (ObjectNode) payload.deepCopy();
+        envelope.remove("code");
+        envelope.put("codeHmac", java.util.HexFormat.of().formatHex(PromoCodes.hash(settings.hashSecret, "admin-create-code:" + command.vanity())));
+        JsonNode saved = receipts.execute(new CommandIdentity(key, admin, "promo.admin", "promo.create"), envelope, () -> {
+            ObjectNode created = create(admin, command);
+            created.remove("code");
+            audit.append(admin, "PROMO_CREATE", UUID.fromString(created.path("codeId").stringValue()), key);
+            return created;
+        });
+        return ((ObjectNode) saved).put("code", PromoCodes.display(normalized));
     }
 
     @Transactional
@@ -60,18 +85,11 @@ public class PromoAdminService {
         validate(command);
         Instant from = command.validFrom() == null ? now : command.validFrom();
         if (command.validUntil() != null && !command.validUntil().isAfter(from)) throw InvalidRequestException.because("period");
-        String normalized = null;
-        PromoRepository.Code row = null;
-        for (int attempt = 0; attempt < (command.vanity() == null ? GENERATION_ATTEMPTS : 1); attempt++) {
-            normalized = command.vanity() == null ? PromoCodes.generate() : PromoCodes.normalize(command.vanity())
-                    .orElseThrow(() -> InvalidRequestException.because("code"));
-            row = new PromoRepository.Code(UUID.randomUUID(), PromoCodes.hint(normalized), command.type(), command.plan(),
-                    command.days(), command.months(), command.percent(), from, command.validUntil(), command.maxRedemptions(),
-                    command.oncePerAccount(), command.channel(), true, now, admin);
-            if (repository.insertCode(row, PromoCodes.hash(settings.hashSecret, normalized))) break;
-            row = null;
-        }
-        if (row == null) throw InvalidRequestException.because("code_taken");
+        String normalized = PromoCodes.normalize(command.vanity()).orElseThrow(() -> InvalidRequestException.because("code"));
+        PromoRepository.Code row = new PromoRepository.Code(UUID.randomUUID(), PromoCodes.hint(normalized), command.type(), command.plan(),
+                command.days(), command.months(), command.percent(), from, command.validUntil(), command.maxRedemptions(),
+                command.oncePerAccount(), command.channel(), true, now, admin);
+        if (!repository.insertCode(row, PromoCodes.hash(settings.hashSecret, normalized))) throw InvalidRequestException.because("code_taken");
         log.info("promo code created code_id={} admin_id={} type={} max_redemptions={}", row.codeId(), admin, row.type(), row.maxRedemptions());
         ObjectNode view = view(row, 0);
         view.put("code", PromoCodes.display(normalized));
@@ -111,9 +129,13 @@ public class PromoAdminService {
     /** Switches a code on or off: the kill switch. Redemptions that already happened keep their entitlement. */
     @Transactional
     public ObjectNode setEnabled(UUID admin, UUID codeId, boolean enabled) {
-        if (!repository.setEnabled(codeId, enabled)) throw new ResourceNotFoundException();
-        log.info("promo code switched code_id={} admin_id={} enabled={}", codeId, admin, enabled);
+        // The conditional update is the atomic test of "did the state change"; an unknown code is found missing below.
+        boolean changed = repository.setEnabled(codeId, enabled);
         var entry = repository.find(codeId).orElseThrow(ResourceNotFoundException::new);
+        if (changed) {
+            log.info("promo code switched code_id={} admin_id={} enabled={}", codeId, admin, enabled);
+            audit.append(admin, enabled ? "PROMO_ENABLE" : "PROMO_DISABLE", codeId, null);
+        }
         return view(entry.code(), entry.redemptions());
     }
 

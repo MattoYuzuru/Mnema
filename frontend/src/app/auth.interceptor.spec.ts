@@ -39,6 +39,13 @@ describe('canonical bearer interceptor', () => {
             '/api/promo-codes/redemptions', '/api/promo-popup', '/api/promo-popup/events', '/api/experiment-events',
             '/api/billing/checkout', '/api/billing/orders/0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d',
             '/api/admin/events', '/api/admin/events/access', '/api/admin/events/123',
+            '/api/admin/console/access', '/api/admin/console/report?from=2026-10-01&to=2026-10-10', '/api/admin/console/audit',
+            '/api/admin/console/users/10000000-0000-4000-8000-000000000001', '/api/admin/promo-codes',
+            '/api/admin/promo-codes/10000000-0000-4000-8000-000000000001', '/api/admin/support/tickets', '/api/admin/support/tickets/123/commands',
+            `${identity}/api/accounts/admin/directory`, `${identity}/api/accounts/admin/audit`,
+            `${identity}/api/accounts/admin/directory/10000000-0000-4000-8000-000000000001`,
+            `${identity}/api/accounts/admin/accounts/10000000-0000-4000-8000-000000000001/ban`,
+            `${identity}/api/accounts/admin/accounts/10000000-0000-4000-8000-000000000001/unban`,
             `${identity}/api/accounts/me`, `${identity}/userinfo`]) {
             http.get(url).subscribe();
             const request = mock.expectOne(url);
@@ -47,12 +54,22 @@ describe('canonical bearer interceptor', () => {
         }
     });
 
+    it('treats the configured Learning base as text, never as a regular expression', () => {
+        const account = '10000000-0000-4000-8000-000000000001';
+        expect(isCredentialTarget(`/a.pi/admin/console/users/${account}`, identity, '/a.pi', window.location.origin)).toBe(true);
+        expect(isCredentialTarget(`/aXpi/admin/console/users/${account}`, identity, '/a.pi', window.location.origin)).toBe(false);
+        expect(isCredentialTarget('/a+/admin/support/tickets/7', identity, '/a+', window.location.origin)).toBe(true);
+        expect(isCredentialTarget('/aaa/admin/support/tickets/7', identity, '/a+', window.location.origin)).toBe(false);
+    });
+
     it('refuses legacy APIs, lookalike hosts/path prefixes and routing encodings', () => {
         for (const url of ['/api/core/decks', '/api/user/me', '/api/media/x', '/api/decks-other', '/api/editing-drafts-other',
             '/api/capture-notes-other', '/api/notifications-other', '/api/notifications%2fread-cursor', '/api/generation-sessions-other', '/api/generation-sessions%2fx', '/api/media-assets-other', '/api/other/../decks',
             '/api/capabilities/x', '/api/capabilities-other', '/api/exercise-previews/x', '/api/exercise-previews-other',
             '/api/usage/x', '/api/usage-other', '/api/usage%2fx', '/api/plans/x', '/api/plans-other', '/api/learning-profile/x', '/api/speech-consent/x', '/api/speech-consent-other', '/api/speech-inputs-other', '/api/speech-inputs%2fx',
-            '/api/promo-codes', '/api/billing/tbank/notifications', '/api/billing', '/api/billing/checkout/x', '/api/promo-codes/redemptions/x', '/api/promo-popup/other', '/api/experiment-events/x', '/api/admin/promo-codes',
+            '/api/promo-codes', '/api/billing/tbank/notifications', '/api/billing', '/api/billing/checkout/x', '/api/promo-codes/redemptions/x', '/api/promo-popup/other', '/api/experiment-events/x', '/api/admin/promo-codes-other', '/api/admin/console/other', '/api/admin/console/report/x',
+            '/api/admin/support/tickets/x', '/api/admin/support/tickets/1/files', '/api/admin/console/users/x', '/api/admin/promo-codes/x',
+            `${identity}/api/accounts/admin/directory/x`, `${identity}/api/accounts/admin/accounts/10000000-0000-4000-8000-000000000001/admin`,
             '/api/events', '/api/admin/events-other', '/api/admin/events%2f123',
             'https://storage.example.test/bucket/source?X-Amz-Signature=abc',
             'https://identity.example.test.evil.test/api/accounts/me', `${identity}/api/accounts/me/other`,

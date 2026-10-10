@@ -15,9 +15,14 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
         const identity = new URL(identityOrigin);
         const learning = new URL(learningBase, origin);
         if (url.username || url.password || url.hash || identity.origin !== identityOrigin) return false;
+        const accountId = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}';
         const identityRoute = url.origin === identity.origin &&
-            ['/userinfo', '/api/accounts/me', '/api/accounts/me/avatar'].includes(url.pathname);
+            (['/userinfo', '/api/accounts/me', '/api/accounts/me/avatar', '/api/accounts/admin/directory', '/api/accounts/admin/audit'].includes(url.pathname)
+            || new RegExp(`^/api/accounts/admin/directory/${accountId}$`, 'iu').test(url.pathname)
+            || new RegExp(`^/api/accounts/admin/accounts/${accountId}/(?:ban|unban)$`, 'iu').test(url.pathname));
         const prefix = learning.pathname.replace(/\/$/u, '');
+        // The configured base is data, not a pattern: escape it before it enters a regular expression.
+        const pattern = prefix.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
         const learningRoots = [`${prefix}/decks`, `${prefix}/editing-drafts`, `${prefix}/capture-notes`,
             `${prefix}/media-assets`, `${prefix}/notifications`, `${prefix}/generation-sessions`, `${prefix}/speech-inputs`,
             `${prefix}/admin/events`, `${prefix}/billing/orders`];
@@ -29,7 +34,11 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
         const learningExact = [`${prefix}/capabilities`, `${prefix}/exercise-previews`, `${prefix}/usage`, `${prefix}/plans`,
             `${prefix}/learning-profile`, `${prefix}/speech-consent`, `${prefix}/promo-codes/redemptions`, `${prefix}/promo-popup`, `${prefix}/promo-popup/events`,
             `${prefix}/experiment-events`, `${prefix}/billing/checkout`];
-        const learningRoute = url.origin === learning.origin && (learningExact.includes(url.pathname)
+        const adminRoute = [`${prefix}/admin/console/access`, `${prefix}/admin/console/report`, `${prefix}/admin/console/audit`, `${prefix}/admin/promo-codes`, `${prefix}/admin/support/tickets`].includes(url.pathname)
+            || new RegExp(`^${pattern}/admin/console/users/${accountId}$`, 'iu').test(url.pathname)
+            || new RegExp(`^${pattern}/admin/promo-codes/${accountId}$`, 'iu').test(url.pathname)
+            || new RegExp(`^${pattern}/admin/support/tickets/[1-9][0-9]*(?:/commands)?$`, 'u').test(url.pathname);
+        const learningRoute = url.origin === learning.origin && (adminRoute || learningExact.includes(url.pathname)
             || learningRoots.some(root => url.pathname === root || url.pathname.startsWith(`${root}/`)));
         return identityRoute || learningRoute;
     } catch { return false; }

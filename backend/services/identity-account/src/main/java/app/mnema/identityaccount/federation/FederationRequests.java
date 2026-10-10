@@ -1,5 +1,8 @@
 package app.mnema.identityaccount.federation;
 
+import app.mnema.identityaccount.contract.BrowserOrigins;
+import app.mnema.identityaccount.contract.AccountFailure;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.oauth2.client.web.AuthorizationRequestRepository;
@@ -14,9 +17,11 @@ import java.time.Clock;
 public final class FederationRequests implements AuthorizationRequestRepository<OAuth2AuthorizationRequest> {
     private final HttpSessionOAuth2AuthorizationRequestRepository delegate = new HttpSessionOAuth2AuthorizationRequestRepository();
     private final Clock clock;
+    private final BrowserOrigins origins;
 
-    public FederationRequests(Clock clock) {
+    public FederationRequests(Clock clock, BrowserOrigins origins) {
         this.clock = clock;
+        this.origins = origins;
     }
 
     @Override
@@ -43,9 +48,17 @@ public final class FederationRequests implements AuthorizationRequestRepository<
                         .attributes(attributes -> attributes.put("identity.intent", intent)).build();
             else {
                 String[] states = request.getParameterValues("mnema_state");
-                if (states != null && states.length == 1 && states[0].matches("[A-Za-z0-9_-]{43}"))
+                if (states != null && states.length == 1 && states[0].matches("[A-Za-z0-9_-]{43}")) {
+                    String[] clients = request.getParameterValues("mnema_client_id");
+                    if (clients != null && clients.length != 1) throw AccountFailure.forbidden();
+                    String browserOrigin = origins.forClient(clients == null ? null : clients[0]);
+                    request.getSession().setAttribute("identity.login-origin", browserOrigin);
                     value = OAuth2AuthorizationRequest.from(value)
-                            .attributes(attributes -> attributes.put("identity.login-state", states[0])).build();
+                            .attributes(attributes -> {
+                                attributes.put("identity.login-state", states[0]);
+                                attributes.put("identity.login-origin", browserOrigin);
+                            }).build();
+                }
             }
         }
         delegate.saveAuthorizationRequest(value, request, response);
@@ -62,6 +75,7 @@ public final class FederationRequests implements AuthorizationRequestRepository<
         if (value != null) {
             request.setAttribute("identity.intent", value.getAttribute("identity.intent"));
             request.setAttribute("identity.login-state", value.getAttribute("identity.login-state"));
+            request.setAttribute("identity.login-origin", value.getAttribute("identity.login-origin"));
         }
         var session = request.getSession(false);
         if (session != null) session.removeAttribute("identity.oauth-expiry");

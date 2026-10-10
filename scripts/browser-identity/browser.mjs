@@ -10,6 +10,7 @@ import { runUsage } from './usage.mjs';
 import { runAiPublic, runPlans } from './plans.mjs';
 import { runPromo } from './promo.mjs';
 import { runEvents } from './events.mjs';
+import { runAdmin } from './admin.mjs';
 import { runWorkshop } from './workshop.mjs';
 import { runAssessment } from './assessment.mjs';
 
@@ -175,8 +176,11 @@ try {
       // The paywall scenario (#301) loads the app about twenty times (every width and the quiet routes of the goal question).
       // The bounded 1317-item infinite-list fixture adds 66 reads + 66 publications + 27 pages, plus its shell/assets.
       const infiniteListBudget = config.mechanics ? 250 : 0;
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0)
-          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0)) asynchronousFailure = true;
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0) + (config.admin ? 1000 : 0)
+          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0)) {
+        asynchronousFailure = true;
+        firstAsynchronousFailure ??= 'bounded browser request budget exceeded';
+      }
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
         run(interception(release(tab.call('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' }))));
@@ -1148,6 +1152,10 @@ try {
   await runAiPublic({ tab: cdp, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; } });
   await runEvents({ tab: cdp, config, record, SafeFailure, until, exists, navigate, fill, submit, clickText,
     saveScreenshot, bearer: secondBearer, setStep: value => { step = value; } });
+  if (config.admin) {
+    await runAdmin({ tab: cdp, config, record, SafeFailure, until, exists, navigate, fill, submit, clickText,
+      saveScreenshot, bearer: secondBearer, setStep: value => { step = value; } });
+  }
   step = 'wrong_live_state';
   const beforeWrongState = exchanges.length;
   tamperNextCallback = true;

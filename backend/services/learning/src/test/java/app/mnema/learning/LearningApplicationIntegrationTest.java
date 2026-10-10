@@ -36,7 +36,9 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
 
     /** Canonical administrative routes: promo grants are checked in Identity; editorial events require the exact configured owner. */
     private static final Set<String> ALLOWED_LEGACY_PREFIX_ROUTES = Set.of("/admin/promo-codes", "/admin/promo-codes/{codeId}",
-            "/admin/events", "/admin/events/access", "/admin/events/{eventId}");
+            "/admin/events", "/admin/events/access", "/admin/events/{eventId}",
+            "/admin/console/access", "/admin/console/report", "/admin/console/users/{id}", "/admin/console/audit",
+            "/admin/support/tickets", "/admin/support/tickets/{ticketId}", "/admin/support/tickets/{ticketId}/commands");
 
     @Autowired
     private ApplicationContext applicationContext;
@@ -88,7 +90,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "32:ai semantic assessment:SUCCESS", "33:generation revise intent:SUCCESS", "34:generation plan:SUCCESS", "35:image search:SUCCESS", "36:speech cache:SUCCESS", "37:speech input:SUCCESS", "38:generation research:SUCCESS",
                         "39:ai operations wake and assessment claim:SUCCESS",
                         "40:worker generation intents:SUCCESS", "41:plans and learning profile:SUCCESS", "42:promo codes and popup:SUCCESS",
-                        "43:product events:SUCCESS", "44:speech personal data slot error:SUCCESS", "45:billing orders:SUCCESS", "46:billing failed recheck:SUCCESS", "47:npd receipts:SUCCESS");
+                        "43:product events:SUCCESS", "44:speech personal data slot error:SUCCESS", "45:billing orders:SUCCESS", "46:billing failed recheck:SUCCESS", "47:npd receipts:SUCCESS", "48:admin console:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -153,7 +155,8 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "mediaProcessingController", "mediaManifestController", "capabilityController",
                         "notificationController", "itemHubController", "deckInsightsController",
                         "usageController", "estimateController", "generationController", "speechInputController", "plansController", "learningProfileController", "promoController", "promoAdminController", "promoPopupController", "experimentController",
-                        "publicEventsController", "adminEventsController", "billingController", "TBankNotificationController");
+                        "publicEventsController", "adminEventsController", "billingController", "TBankNotificationController",
+                        "adminConsoleController", "adminSupportController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {
@@ -169,6 +172,8 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
         // The admin and promo surfaces are private like the rest: no token, no answer (the admin check comes after the token).
         mockMvc.perform(get("/api/admin/promo-codes").contextPath("/api")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/admin/events").contextPath("/api")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/admin/console/report").contextPath("/api")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/admin/support/tickets").contextPath("/api")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/events").contextPath("/api")).andExpect(status().isOk());
         mockMvc.perform(post("/api/promo-codes/redemptions").contextPath("/api").contentType("application/json").content("{\"code\":\"X\"}"))
                 .andExpect(status().isUnauthorized());

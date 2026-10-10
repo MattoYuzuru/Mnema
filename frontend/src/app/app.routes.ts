@@ -1,4 +1,8 @@
 import { CanDeactivateFn, Routes } from '@angular/router';
+import { isAdminHost } from './app.config';
+import type { AdminPromosPageComponent } from './features/admin/admin-promos-page.component';
+import type { AdminUsersPageComponent } from './features/admin/admin-users-page.component';
+import type { AdminSupportPageComponent } from './features/admin/admin-support-page.component';
 import { HomePageComponent } from './home-page.component';
 import { LoginPageComponent } from './login-page.component';
 import { PrivacyPageComponent } from './privacy-page.component';
@@ -12,6 +16,10 @@ import type { ManageEventsPageComponent } from './features/events/manage-events-
 
 const lazyCanLeaveEventEditor: CanDeactivateFn<ManageEventsPageComponent> = (...args) =>
     import('./features/events/manage-events-page.component').then(module => module.canLeaveEventEditor(args[0]));
+
+const lazyCanLeaveAdminPromos: CanDeactivateFn<AdminPromosPageComponent> = component => import('./features/admin/admin-promos-page.component').then(module => module.canLeaveAdminPromos(component));
+const lazyCanLeaveAdminUsers: CanDeactivateFn<AdminUsersPageComponent> = component => import('./features/admin/admin-users-page.component').then(module => module.canLeaveAdminUsers(component));
+const lazyCanLeaveAdminSupport: CanDeactivateFn<AdminSupportPageComponent> = component => import('./features/admin/admin-support-page.component').then(module => module.canLeaveAdminSupport(component));
 
 const lazyCanLeaveItemEditor: CanDeactivateFn<ItemEditorPageComponent> = (...args) =>
     import('./features/authoring/item-editor-page.component').then(module => module.canLeaveItemEditor(args[0]));
@@ -38,11 +46,31 @@ const developmentOnlyRoutes: Routes = typeof ngDevMode === 'undefined' || ngDevM
     }]
     : [];
 
+/**
+ * The owner shell exists only on the admin host. The learner host keeps the event editor as it was before the console (no owner shell,
+ * no admin client, only the events-owner check) and has no other /manage route.
+ */
+export function ownerRoutes(adminHost: boolean): Routes {
+    return adminHost ? [
+        { path: 'manage', canActivate: [authGuard], loadComponent: () => import('./features/admin/admin-shell.component').then(module => module.AdminShellComponent),
+            children: [
+                { path: '', pathMatch: 'full', loadComponent: () => import('./features/admin/admin-report-page.component').then(module => module.AdminReportPageComponent) },
+                { path: 'users', canDeactivate: [lazyCanLeaveAdminUsers], loadComponent: () => import('./features/admin/admin-users-page.component').then(module => module.AdminUsersPageComponent) },
+                { path: 'users/:accountId', canDeactivate: [lazyCanLeaveAdminUsers], loadComponent: () => import('./features/admin/admin-users-page.component').then(module => module.AdminUsersPageComponent) },
+                { path: 'promos', canDeactivate: [lazyCanLeaveAdminPromos], loadComponent: () => import('./features/admin/admin-promos-page.component').then(module => module.AdminPromosPageComponent) },
+                { path: 'events', canDeactivate: [lazyCanLeaveEventEditor], loadComponent: () => import('./features/events/manage-events-page.component').then(module => module.ManageEventsPageComponent) },
+                { path: 'support', canDeactivate: [lazyCanLeaveAdminSupport], loadComponent: () => import('./features/admin/admin-support-page.component').then(module => module.AdminSupportPageComponent) },
+                { path: 'support/:ticketId', canDeactivate: [lazyCanLeaveAdminSupport], loadComponent: () => import('./features/admin/admin-support-page.component').then(module => module.AdminSupportPageComponent) },
+                { path: 'audit', loadComponent: () => import('./features/admin/admin-audit-page.component').then(module => module.AdminAuditPageComponent) }
+            ] }
+    ] : [{ path: 'manage/events', canActivate: [authGuard], canDeactivate: [lazyCanLeaveEventEditor], data: { standalone: true },
+        loadComponent: () => import('./features/events/manage-events-page.component').then(module => module.ManageEventsPageComponent) }];
+}
+
 export const appRoutes: Routes = [
-    { path: '', component: HomePageComponent },
+    isAdminHost ? { path: '', pathMatch: 'full', redirectTo: 'manage' } : { path: '', component: HomePageComponent },
     { path: 'events', loadComponent: () => import('./features/events/events-page.component').then(module => module.EventsPageComponent) },
-    { path: 'manage/events', canActivate: [authGuard], canDeactivate: [lazyCanLeaveEventEditor],
-        loadComponent: () => import('./features/events/manage-events-page.component').then(module => module.ManageEventsPageComponent) },
+    ...ownerRoutes(isAdminHost),
     { path: 'login', component: LoginPageComponent },
     { path: 'register', component: LoginPageComponent },
     { path: 'auth/callback', loadComponent: () => import('./auth-callback.component').then(module => module.AuthCallbackComponent) },

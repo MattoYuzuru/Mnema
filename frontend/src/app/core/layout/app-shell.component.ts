@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
@@ -6,8 +6,10 @@ import { filter, map } from 'rxjs';
 import { DeckConstellationComponent } from '../../shared/deck-constellation.component';
 import { PublicFooterComponent } from '../../shared/public-footer.component';
 
+import { isAdminHost, learnerOrigin } from '../../app.config';
 import { AuthService } from '../../auth.service';
 import { NotificationBellComponent } from '../notifications/notification-bell.component';
+import { NotificationCenter } from '../notifications/notification-center';
 import { ToastRegionComponent } from '../notifications/toast-region.component';
 import { GoalOnboardingComponent } from '../../features/goal/goal-onboarding.component';
 import { PromoPopupHostComponent } from '../../features/promo/promo-popup-host.component';
@@ -29,13 +31,28 @@ export class AppShellComponent {
 
     readonly routeUrl = toSignal(this.router.events.pipe(
         filter(event => event instanceof NavigationEnd), map(event => event.urlAfterRedirects)
-    ), { initialValue: this.router.url });
+    ), { initialValue: this.router.currentNavigation()?.extractedUrl.toString()
+        ?? (this.router.navigated ? this.router.url : window.location.pathname + window.location.search) });
+    /** The standalone event editor of the learner host (`/manage/events`) keeps the learner shell it always had. */
+    readonly adminMode = computed(() => isAdminHost || /^\/manage(?:\/|$)/u.test(this.routeUrl().split('?')[0])
+        && !/^\/manage\/events(?:\/|$)/u.test(this.routeUrl().split('?')[0]));
+    readonly learningHome = isAdminHost ? `${learnerOrigin(window.location.hostname, window.location.origin)}/decks` : '/decks';
+    private readonly notifications = inject(NotificationCenter);
     readonly constellationSeed = computed(() => {
         const path = this.routeUrl().split('?')[0];
         const deck = /^\/decks\/([0-9a-f-]{36})(?:\/|$)/i.exec(path);
         if (deck) return deck[1].toLowerCase();
         return path === '/profile' || path === '/decks/new' ? this.user()?.accountId ?? null : null;
     });
+
+    constructor() {
+        // The root center's first effect is scheduled. Apply the initial host/route boundary before it can poll.
+        this.notifications.setSuspended(this.adminMode());
+        effect(() => {
+            const admin = this.adminMode();
+            untracked(() => this.notifications.setSuspended(admin));
+        });
+    }
 
     async logout(): Promise<void> {
         try {

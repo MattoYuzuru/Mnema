@@ -100,7 +100,8 @@ APP_ENV_NAMES = (
     'GH_CLIENT_ID', 'GH_CLIENT_SECRET',
     'MNEMA_POSTBOX_ACCESS_KEY', 'MNEMA_POSTBOX_SECRET_KEY',
     'MNEMA_PROMO_HASH_SECRET', 'MNEMA_EXPERIMENT_SECRET',
-    'MNEMA_EVENTS_OWNER_ACCOUNT_ID', 'MNEMA_IDENTITY_TURNSTILE_MODE',
+    'MNEMA_EVENTS_OWNER_ACCOUNT_ID', 'MNEMA_ADMIN_OWNER_ACCOUNT_ID', 'MNEMA_IDENTITY_ADMIN_ORIGIN', 'MNEMA_ADMIN_SUPPORT_ENDPOINT', 'MNEMA_ADMIN_SUPPORT_SECRET',
+    'MNEMA_IDENTITY_TURNSTILE_MODE',
     'LEARNING_MEDIA_UPLOAD_ACCESS_KEY', 'LEARNING_MEDIA_UPLOAD_SECRET_KEY',
     'MNEMA_AVATAR_ACCESS_KEY', 'MNEMA_AVATAR_SECRET_KEY',
     'MNEMA_BILLING_CHECKOUT', 'MNEMA_BILLING_TESTER_ACCOUNT_IDS',
@@ -110,6 +111,8 @@ APP_ENV_NAMES = (
 TURNSTILE_MODES = ('blocked', 'required')
 BILLING_CHECKOUT_MODES = ('OFF', 'TESTERS', 'ON')
 NPD_RECEIPT_MODES = ('OFF', 'ON')
+ADMIN_ORIGIN = 'https://admin.mnema.app'
+CANONICAL_UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}')
 TURNSTILE_KEYS = ('TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY')
 MAX_CONFIG_VALUE = 4096
 FORBIDDEN_VALUE_CHARACTERS = frozenset('"\'\\$`')
@@ -323,6 +326,10 @@ def validate_entry(name, value):
         raise Rejected('configuration value for ' + name + ' must be OFF or ON')
     if name == 'MNEMA_NPD_INN' and value and not re.fullmatch(r'[0-9]{12}', value):
         raise Rejected('configuration value for ' + name + ' must be 12 digits')
+    if name == 'MNEMA_IDENTITY_ADMIN_ORIGIN' and value and value != ADMIN_ORIGIN:
+        raise Rejected('configuration value for ' + name + ' must be exactly ' + ADMIN_ORIGIN)
+    if name == 'MNEMA_ADMIN_OWNER_ACCOUNT_ID' and value and not CANONICAL_UUID.fullmatch(value):
+        raise Rejected('configuration value for ' + name + ' must be a canonical lowercase UUID')
     return value
 
 

@@ -19,8 +19,9 @@ editing this checkout does not make new routes live.
 ## Events and editorial access
 
 Learning owns events in its existing PostgreSQL database. Angular provides `/events` and
-the owner editor `/manage/events`. Source Caddy redirects `admin.mnema.app` to that editor
-on `mnema.app`, retaining the existing OAuth callback and Identity CORS boundary.
+the owner editor `/manage/events`. The [owner console](admin-console.md) source configuration
+serves that editor and the other owner tools on `admin.mnema.app` with its own exact public
+OAuth client/callback. Identity CORS allows only the configured browser origins.
 No new service, database pool, CMS or frontend dependency is required.
 
 The [events contract](../../contracts/events/README.md) owns HTTP, validation, keyset

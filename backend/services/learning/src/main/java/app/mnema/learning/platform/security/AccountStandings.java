@@ -17,4 +17,7 @@ public interface AccountStandings {
      *         token or answers for another account; the caller must refuse, never assume
      */
     Optional<Standing> of(Jwt token);
+
+    /** A current role decision for privileged operations; implementations with caches must bypass them. */
+    default Optional<Standing> fresh(Jwt token) { return of(token); }
 }

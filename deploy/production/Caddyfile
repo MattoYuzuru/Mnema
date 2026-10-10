@@ -63,6 +63,34 @@ www.mnema.app {
 	redir https://mnema.app{uri} 308
 }
 
+# Owner console host. Until the console is enabled it keeps its earlier behaviour: a redirect to the events editor on the learner
+# host, so a visitor never reaches a sign-in that Identity would refuse (no `mnema-admin-web` client without
+# MNEMA_IDENTITY_ADMIN_ORIGIN). To enable the console, a reviewed change replaces this block with the commented one below and the
+# administrator installs the file (docs/operations/vps-runtime.md#owner-console).
 admin.mnema.app {
 	redir https://mnema.app/manage/events 308
 }
+
+# Console block (replaces the redirect above when the console is enabled): the SPA plus same-origin Learning /api, as on mnema.app.
+# admin.mnema.app {
+# 	route {
+# 		import private_paths
+# 		@api path /api /api/*
+# 		handle @api {
+# 			header Cache-Control no-store
+# 			reverse_proxy 127.0.0.1:18082 {
+# 				header_up -Cookie
+# 				header_up X-Forwarded-For {remote_host}
+# 				header_down -Set-Cookie
+# 				flush_interval -1
+# 				transport http {
+# 					dial_timeout 2s
+# 					response_header_timeout 30s
+# 				}
+# 			}
+# 		}
+# 		handle {
+# 			reverse_proxy 127.0.0.1:18080
+# 		}
+# 	}
+# }

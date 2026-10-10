@@ -1,7 +1,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { ManageEventsPageComponent } from './manage-events-page.component';
 import { TEST_EVENT } from './events-test-data';
@@ -88,13 +89,16 @@ describe('owner event editor', () => {
         expect(root.textContent).toContain('Событие опубликовано');
     });
 
-    it('requires delete confirmation and carries version plus command on a confirmed deletion', async () => {
+    it('requires the shared hold confirmation and carries version plus command on deletion', async () => {
         await admit(); click('Новый редактор'); click('Удалить событие');
         http.expectNone(request => request.method === 'DELETE');
-        click('Отмена'); expect(root.textContent).not.toContain('Удалить запись «');
-        click('Удалить событие'); click('Удалить запись');
-        const request = http.expectOne(request => request.method === 'DELETE'); expect(request.request.headers.get('If-Match')).toBe('"1"');
-        expect(request.request.params.get('commandId')).toMatch(/^[a-f0-9-]{36}$/u); request.flush(null); await settle();
+        const hold = fixture.debugElement.query(By.directive(HoldToDeleteButtonComponent)).componentInstance as HoldToDeleteButtonComponent;
+        expect(hold.armed()).toBe(true);
+        hold.confirmed.emit(); fixture.detectChanges();
+        const request = http.expectOne(request => request.method === 'DELETE');
+        expect(request.request.headers.get('If-Match')).toBe('"1"');
+        expect(request.request.params.get('commandId')).toMatch(/^[a-f0-9-]{36}$/u);
+        request.flush(null); await settle();
         http.expectOne('/api/admin/events').flush({ items: [], nextCursor: null }); await settle();
         expect(root.textContent).toContain('Событие удалено');
     });

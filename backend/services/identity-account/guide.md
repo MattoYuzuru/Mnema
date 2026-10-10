@@ -378,3 +378,28 @@ Important implementation sources:
 [Yandex PKCE](https://yandex.ru/dev/id/doc/en/codes/code-url),
 [Java 25 AES-GCM parameters](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/javax/crypto/spec/GCMParameterSpec.html),
 and [authenticated-stream caveat](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/javax/crypto/CipherInputStream.html).
+
+## Owner operations directory
+
+The [admin wire contract](../../../contracts/admin/README.md) owns the owner-only directory,
+account snapshot and moderation journal. `identity.admin.owner-id` reads
+`MNEMA_ADMIN_OWNER_ACCOUNT_ID`: an exact immutable account UUID, empty denies access.
+Directory and journal reads require this owner, current account generation **and** a bearer token issued to
+the `mnema-admin-web` client (`client_id` claim, added to every access token by the token customizer;
+`AdminOwnerAccess`); configuration does not grant `is_admin`. That client is registered only while
+`identity.admin-origin` (`MNEMA_IDENTITY_ADMIN_ORIGIN`) is set. Existing moderation HTTP endpoints require
+the same once an owner is configured and are otherwise unchanged, while `Moderation` retains its actual
+administrator/self/subordinate checks. Successful moderation inserts a journal entry in the same
+transaction (outcome `SUCCESS`, plus the ban reason on `BAN`); a refused attempt by a current administrator is
+journaled `DENIED` afterwards. `V4__admin_directory_and_audit.sql` adds the journal and keyset index; it does
+not change credentials or role grants. The journal rejects `UPDATE`, `DELETE` and `TRUNCATE`.
+The journal has no account foreign keys, so it cannot block the existing purge worker. The worker
+does not erase journal actor/resource UUIDs. TODO(#409; owner: account-purge/legal workstream):
+decide retention and include those links in the deletion and backup inventory; journal UUIDs
+are pseudonymous account-linked data, not anonymous data.
+
+`GET /api/accounts/admin/directory` searches literal bounded account fields and emits 50 rows maximum,
+`/directory/{id}` resolves one nonpurged account, and `/audit` emits a separate 50-row UUIDv7 keyset.
+All responses are private/no-store. No account facts are copied into Learning. Source OAuth/CORS
+configuration admits only explicitly configured application/admin origins, as defined by the
+[admin architecture](../../../docs/architecture/admin-console.md); deployment remains separate.

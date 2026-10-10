@@ -15,9 +15,9 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * {@link AccountStandings} over the Identity transport. A standing with a verified email is cached for {@value #TTL_SECONDS} seconds per account,
- * so an administrator who loses the grant is refused after at most that long; an unverified or unknown standing is never cached, so a learner who
- * has just confirmed the email is not told otherwise. The cache is a bounded best-effort optimization of one instance, not state.
+ * {@link AccountStandings} over the Identity transport. Verified standings are cached for {@value #TTL_SECONDS} seconds per account and token
+ * generation. Privileged role decisions use {@link #fresh(Jwt)} and always ask Identity; an unverified or unknown standing is never cached.
+ * The cache is a bounded best-effort optimization of one instance, not state.
  */
 @Component
 final class IdentityAccountStandings implements AccountStandings {
@@ -26,12 +26,13 @@ final class IdentityAccountStandings implements AccountStandings {
     private static final int MAX_BODY_BYTES = 16_384;
 
     private record Cached(Standing standing, Instant expiresAt) { }
+    private record CacheKey(String accountId, long generation) { }
 
     private final IdentityHttp http;
     private final IdentityEndpoints endpoints;
     private final Clock clock;
     private final ContentJsonReader json = new ContentJsonReader(MAX_BODY_BYTES, 16, 2_048);
-    private final Map<String, Cached> cache = new ConcurrentHashMap<>();
+    private final Map<CacheKey, Cached> cache = new ConcurrentHashMap<>();
 
     @Autowired
     IdentityAccountStandings(IdentityHttp http, IdentityEndpoints endpoints) {
@@ -46,27 +47,45 @@ final class IdentityAccountStandings implements AccountStandings {
 
     @Override
     public Optional<Standing> of(Jwt token) {
+        return read(token, true);
+    }
+
+    @Override
+    public Optional<Standing> fresh(Jwt token) {
+        return read(token, false);
+    }
+
+    private Optional<Standing> read(Jwt token, boolean useCache) {
         if (endpoints.base() == null || token == null || token.getSubject() == null) return Optional.empty();
+        CacheKey key;
+        try {
+            if (!(token.getClaim("generation") instanceof String generation)) return Optional.empty();
+            long value = Long.parseLong(generation);
+            if (value < 0) return Optional.empty();
+            key = new CacheKey(token.getSubject(), value);
+        } catch (NumberFormatException failure) { return Optional.empty(); }
         Instant now = clock.instant();
-        Cached cached = cache.get(token.getSubject());
+        Cached cached = useCache ? cache.get(key) : null;
         if (cached != null && now.isBefore(cached.expiresAt())) return Optional.of(cached.standing());
         try {
             var response = http.get(endpoints.endpoint("/api/accounts/me"), token.getTokenValue(), MAX_BODY_BYTES);
-            if (response.statusCode() != 200) return Optional.empty();
+            if (response.statusCode() != 200) { cache.remove(key); return Optional.empty(); }
             JsonNode body = json.read(response.body());
             if (!token.getSubject().equals(body.path("accountId").stringValue(null))
                     || !body.path("emailVerified").isBoolean() || !body.path("admin").isBoolean()) {
+                cache.remove(key);
                 return Optional.empty();
             }
             Standing standing = new Standing(body.path("emailVerified").booleanValue(), body.path("admin").booleanValue());
             if (standing.emailVerified()) {
                 if (cache.size() >= MAX_ENTRIES) cache.clear();
-                cache.put(token.getSubject(), new Cached(standing, now.plus(Duration.ofSeconds(TTL_SECONDS))));
+                cache.put(key, new Cached(standing, now.plus(Duration.ofSeconds(TTL_SECONDS))));
             } else {
-                cache.remove(token.getSubject());
+                cache.remove(key);
             }
             return Optional.of(standing);
         } catch (IOException | RuntimeException failure) {
+            cache.remove(key);
             return Optional.empty();
         }
     }

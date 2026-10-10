@@ -51,8 +51,11 @@ export class ToastService {
     readonly announcement = signal('');
 
     private readonly timers = new Map<string, Timer>();
-    private readonly announcements: string[] = [];
+    private readonly announcements: Toast[] = [];
     private announcing = false;
+    private announcedToast: Toast | null = null;
+    private announcementTimer: ReturnType<typeof setTimeout> | null = null;
+    private announcementGap: ReturnType<typeof setTimeout> | null = null;
     private hovered = false;
     private focused = false;
     private modalRecheck: ReturnType<typeof setTimeout> | null = null;
@@ -70,6 +73,8 @@ export class ToastService {
             this.document.removeEventListener('close', dialogClosed, true);
             this.timers.forEach(timer => { if (timer.handle !== null) clearTimeout(timer.handle); });
             if (this.modalRecheck !== null) clearTimeout(this.modalRecheck);
+            if (this.announcementTimer !== null) clearTimeout(this.announcementTimer);
+            if (this.announcementGap !== null) clearTimeout(this.announcementGap);
         });
         effect(() => {
             this.quiet.active();
@@ -99,9 +104,21 @@ export class ToastService {
         this.pump();
     }
 
-    /** Drops every notification toast (sign-out); echoes of the user's own actions finish normally. */
+    /** Drops notification toasts and their spoken queue (sign-out or owner console); local echoes finish normally. */
     clearNotifications(): void {
         [...this.shown(), ...this.waiting()].filter(toast => !toast.echo).forEach(toast => this.close(toast.id));
+        const echoes = this.announcements.filter(toast => toast.echo);
+        this.announcements.splice(0, this.announcements.length, ...echoes);
+        if (this.announcedToast !== null && !this.announcedToast.echo) {
+            if (this.announcementTimer !== null) clearTimeout(this.announcementTimer);
+            if (this.announcementGap !== null) clearTimeout(this.announcementGap);
+            this.announcementTimer = null;
+            this.announcementGap = null;
+            this.announcedToast = null;
+            this.announcing = false;
+            this.announcement.set('');
+            this.drainAnnouncement();
+        }
     }
 
     setHovered(value: boolean): void { this.hovered = value; this.syncTimers(); }
@@ -140,7 +157,7 @@ export class ToastService {
             if (toast.durationMs !== null) {
                 this.timers.set(toast.id, { remaining: toast.durationMs, startedAt: 0, handle: null });
             }
-            this.announce(toast.text);
+            this.announce(toast);
         });
         this.syncTimers();
     }
@@ -172,19 +189,25 @@ export class ToastService {
     }
 
     /** One message at a time with a gap, so a series is read out in full instead of each replacing the previous one. */
-    private announce(text: string): void {
-        this.announcements.push(text);
+    private announce(toast: Toast): void {
+        this.announcements.push(toast);
         if (!this.announcing) this.drainAnnouncement();
     }
 
     private drainAnnouncement(): void {
-        const text = this.announcements.shift();
-        if (text === undefined) { this.announcing = false; return; }
+        const toast = this.announcements.shift();
+        if (toast === undefined) { this.announcing = false; this.announcedToast = null; return; }
         this.announcing = true;
-        this.announcement.set(text);
-        setTimeout(() => {
+        this.announcedToast = toast;
+        this.announcement.set(toast.text);
+        this.announcementTimer = setTimeout(() => {
+            this.announcementTimer = null;
             this.announcement.set('');
-            setTimeout(() => this.drainAnnouncement(), ANNOUNCE_GAP_MS);
+            this.announcementGap = setTimeout(() => {
+                this.announcementGap = null;
+                this.announcedToast = null;
+                this.drainAnnouncement();
+            }, ANNOUNCE_GAP_MS);
         }, ANNOUNCE_MS);
     }
 }

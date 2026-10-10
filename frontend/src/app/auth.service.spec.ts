@@ -330,6 +330,18 @@ describe('real Identity browser protocol orchestration', () => {
         expect(navigate).not.toHaveBeenCalled();
     });
 
+    it('binds admin federation to its explicit public client without forwarding a return origin', async () => {
+        Object.assign(TestBed.inject(BROWSER_IDENTITY_CONFIG), { clientId: 'mnema-admin-web' });
+        await auth.beginFederatedLogin('github', '/manage');
+        const upstream = new URL(lastCall(navigate)[0]);
+        expect(upstream.searchParams.get('mnema_client_id')).toBe('mnema-admin-web');
+        expect(upstream.searchParams.has('origin')).toBe(false);
+        const pending = JSON.parse(storage.get(PKCE_STORAGE_KEY)!);
+        expect(pending.clientId).toBe('mnema-admin-web');
+        expect(pending.redirectUri).toBe(redirectUri);
+        expect(pending.returnUrl).toBe('/manage');
+    });
+
     it('federates with a one-use browser correlation then performs the existing Mnema S256 exchange', async () => {
         await auth.beginFederatedLogin('github', '/decks?tab=mine');
         const upstream = new URL(lastCall(navigate)[0]);

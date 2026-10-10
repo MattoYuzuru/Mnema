@@ -19,6 +19,10 @@ wire shapes; the current mechanics and fields are in
 [`contracts/study`](../../../contracts/study/README.md#exercise-mechanics-266). Screenshots
 of the former two-column exercise editor are likewise historical.
 
+## Owner console
+
+- [Owner console delivery, 2026-10-09](./admin-console-2026-10/README.md) records the first implementation snapshot of epic #398, its local gate and browser boundary.
+
 ## Public content and feedback
 
 - [Public footer and events acceptance, 2026-10-07](./public-feedback-2026-10-07/README.md)

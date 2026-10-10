@@ -1,0 +1,235 @@
+<header>
+  <p class="eyebrow">Кабинет владельца</p><h1 tabindex="-1">Пользователи</h1>
+  <p class="hint">
+    Сведения аккаунта и фактическое использование. Содержимое материалов, ответы и запросы к ИИ не раскрываются.
+  </p>
+</header>
+<form class="filters" [formGroup]="form" (ngSubmit)="apply()">
+  <label class="field">
+    <span>Почта, имя или ID</span><input type="search" formControlName="query" maxlength="100">
+  </label>
+  <label class="field">
+    <span>Статус аккаунта</span>
+    <select formControlName="status">
+      <option value="">Все</option><option value="ACTIVE">Активные</option><option value="BANNED">Заблокированные</option>
+    </select>
+  </label>
+  <label class="field">
+    <span>Использование с даты, UTC</span><input type="date" formControlName="from">
+  </label>
+  <label class="field">
+    <span>По дату включительно, UTC</span><input type="date" formControlName="through">
+  </label><button class="button primary" type="submit" [disabled]="busy()">Применить</button><button class="button" type="button" (click)="reset()" [disabled]="busy()">Сбросить</button>
+</form>
+@if (selectedId(); as id) {
+  <p>
+    <a class="button quiet" routerLink="/manage/users" [queryParams]="listParams()">← К списку пользователей</a>
+  </p>
+  @if (detailLoading()) {<p role="status">Загружаем карточку…</p>}
+  @if (detailError()) {<p class="notice error" role="alert">{{ detailError() }}</p>}
+  <button class="button" type="button" (click)="loadDetail(id)" [disabled]="busy() || detailLoading()">
+    Обновить карточку
+  </button>
+  @if (notice()) {<p class="notice success" role="status">{{ notice() }}</p>}
+  @if (actionError()) {<p class="notice error" role="alert">{{ actionError() }}</p>}
+  @if (detail(); as user) {
+    <section>
+      <h2>{{ user.displayName || user.profileUsername || user.email }}</h2>
+      <dl class="report-facts">
+        <div>
+          <dt>Аккаунт</dt>
+          <dd>
+            {{ user.email }}
+            <small class="hint">
+              {{ user.emailVerified ? 'Почта подтверждена' : 'Почта не подтверждена' }} · {{ user.accountId }}
+            </small>
+          </dd>
+        </div>
+        <div>
+          <dt>Статус</dt>
+          <dd>
+            {{ accountStatus(user.status) }}
+            <small class="hint">
+              {{ user.admin ? 'Администратор' : 'Обычный аккаунт' }} · Удаление: {{ deletionStatus(user.deletionState) }}
+            </small>
+          </dd>
+        </div><div><dt>Создан</dt><dd>{{ date(user.createdAt) }}</dd></div><div><dt>Последний вход</dt><dd>{{ date(user.lastLoginAt) }}</dd></div>
+      </dl>
+      @if (user.bannedAt) {
+        <p class="notice warning">
+          Блокировка: {{ date(user.bannedAt) }}. Причина: {{ user.banReason || 'Не указана' }}.
+        </p>
+      }
+      @if (canModerate()) {
+        @if (confirmAction(); as action) {
+          <form class="editor" (submit)="$event.preventDefault(); moderate()">
+            <p class="notice warning">
+              {{ action === 'ban' ? 'Заблокировать аккаунт и отозвать доступ?' : 'Разблокировать аккаунт?' }} Действие попадёт в журнал.
+            </p>
+            @if (action === 'ban') {
+              <label class="field">
+                <span>Причина блокировки</span><textarea [formControl]="reason" maxlength="280" rows="3" required></textarea>
+              </label>
+            }
+            <div class="actions">
+              <button class="button primary" type="submit" [disabled]="busy() || actionUnknown()">
+                Подтвердить {{ action === 'ban' ? 'блокировку' : 'разблокировку' }}
+              </button>
+              <button class="button" type="button" (click)="confirmAction.set(null)" [disabled]="busy()">
+                Отмена
+              </button>
+            </div>
+          </form>
+        }
+        @else {
+          <button class="button" type="button" (click)="confirmAction.set(user.status === 'BANNED' ? 'unban' : 'ban')" [disabled]="busy() || actionUnknown()">
+            {{ user.status === 'BANNED' ? 'Разблокировать' : 'Заблокировать' }}
+          </button>
+        }
+      }
+      @else {
+        <p class="hint">
+          Изменение статуса требует прав администратора. Собственный аккаунт из кабинета не блокируется.
+        </p>
+      }
+      <p>
+        <a class="button" routerLink="/manage/support" [queryParams]="{accountId: user.accountId}">Связанные обращения</a>
+      </p>
+    </section>
+  }
+  @if (reportError()) {<p class="notice warning" role="alert">{{ reportError() }}</p>}
+  @if (report(); as data) {
+    <section class="rule-section">
+      <h2>Текущий доступ</h2><p class="hint">На {{ date(data.generatedAt) }}. Не зависит от выбранного исторического периода.</p>
+      <dl class="report-facts">
+        <div><dt>Тариф</dt><dd>{{ data.currentEntitlement.plan }}</dd></div>
+        <div>
+          <dt>Основание</dt>
+          <dd>
+            {{ source(data.currentEntitlement.source) }}<small class="hint">Основание доступа не подтверждает поступление денег.</small>
+          </dd>
+        </div>
+        <div>
+          <dt>Период источника доступа</dt>
+          <dd>
+            {{ data.currentEntitlement.period === 'MONTH' ? 'Месяц' : 'Год' }}
+            <small class="hint">
+              Срок подарка указан отдельно. Лимиты всегда месячные; период источника не подтверждает автопродление.
+            </small>
+          </dd>
+        </div>
+        <div>
+          <dt>
+            {{ data.currentEntitlement.source === 'CONFIG' ? 'Граница текущего периода' : 'Доступ до' }}
+          </dt>
+          <dd>
+            {{ date(data.currentEntitlement.validUntil) }}
+            <small class="hint">
+              {{ data.currentEntitlement.source === 'CONFIG' ? 'Базовый доступ пересчитывается в следующем периоде.' : 'Подтверждено источником доступа.' }}
+            </small>
+          </dd>
+        </div>
+      </dl>
+    </section>
+    <section class="rule-section">
+      <h2>Сохранённые снимки лимита ИИ</h2>
+      <p class="hint">
+        Сохранённые месячные снимки, пересекающие период отчёта; они не подтверждают текущий тариф или следующий unlock. PROMO не означает оплату.
+      </p>
+      @for (allowance of data.allowances; track allowance.periodId + allowance.plan + allowance.source) {
+        <div class="paper-surface">
+          <h3>{{ allowance.plan }} · {{ source(allowance.source) }}</h3>
+          <p class="hint">
+            Период {{ allowance.periodId }} · снимок до {{ date(allowance.validUntil) }} · обновлён {{ date(allowance.updatedAt) }}
+          </p><app-usage-meter [label]="'ИИ · ' + allowance.periodId" [total]="allowance.total" [unlocked]="allowance.unlocked" [used]="allowance.used" [reserved]="allowance.reserved" />
+        </div>
+      }
+      @empty {<p class="empty-state">Сохранённых периодов лимита нет.</p>}
+    </section>
+    <section class="rule-section">
+      <h2>Использование за выбранный период</h2>
+      <dl class="report-facts">
+        <div><dt>Списано кредитов</dt><dd>{{ number(data.usage.creditsDebited) }}</dd></div><div><dt>Попытки обучения</dt><dd>{{ number(data.learning.studyAttempts) }}</dd></div><div><dt>Завершённые занятия</dt><dd>{{ number(data.learning.completedSessions) }}</dd></div>
+        <div>
+          <dt>Опубликованные результаты ИИ</dt><dd>{{ number(data.learning.publishedArtifacts) }}</dd>
+        </div>
+      </dl>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Функции аккаунта">
+        <table class="data-table">
+          <caption>Списания по операциям</caption>
+          <thead>
+            <tr>
+              <th scope="col">Операция</th><th scope="col">События</th><th scope="col">Кредиты</th><th scope="col">Единицы лимита</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of data.usage.operations; track row.operation) {
+              <tr>
+                <th scope="row">{{ operation(row.operation) }}</th><td>{{ number(row.events) }}</td><td>{{ number(row.creditsDebited) }}</td><td>{{ units(row.operation, row.units) }}</td>
+              </tr>
+            }
+            @empty {<tr><td colspan="4">Нет списаний в выбранном периоде.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      @if (data.usage.operationsTruncated) {
+        <p class="notice warning">
+          Показаны 64 операции с наибольшим списанием. Общая сумма включает остальные.
+        </p>
+      }
+    </section>
+    <section class="rule-section">
+      <h2>Текущие данные аккаунта</h2>
+      <dl class="report-facts">
+        <div><dt>Колоды</dt><dd>{{ number(data.learning.decks) }}</dd></div><div><dt>Материалы</dt><dd>{{ number(data.learning.items) }}</dd></div><div><dt>Медиа</dt><dd>{{ number(data.media.assets) }}</dd></div>
+        <div>
+          <dt>Исходные медиа</dt>
+          <dd>
+            {{ bytes(data.media.sourceBytes) }}<small class="hint">Размер исходников, не оплачиваемый трафик</small>
+          </dd>
+        </div>
+      </dl>
+    </section>
+  }
+}
+@else {
+  @if (filterError()) {<p class="notice error" role="alert">{{ filterError() }}</p>}
+  @if (accounts.loading()) {<p role="status">Загружаем пользователей…</p>}
+  @if (accounts.error()) {
+    <div class="notice error" role="alert">
+      <p>{{ accounts.error() }}</p><button class="button" type="button" (click)="accounts.reload()">Повторить</button>
+    </div>
+  }
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Список пользователей">
+    <table #rows class="data-table">
+      <caption>Аккаунты по фильтру, новые сначала; следующие подгружаются при прокрутке</caption>
+      <thead>
+        <tr>
+          <th scope="col">Пользователь</th><th scope="col">Статус</th><th scope="col">Создан</th><th scope="col">Последний вход</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (user of accounts.items(); track user.accountId) {
+          <tr>
+            <th scope="row">
+              <a [routerLink]="['/manage/users', user.accountId]" [queryParams]="listParams()">{{ user.displayName || user.profileUsername || user.email }}</a><small class="hint">{{ user.email }}</small>
+            </th>
+            <td>
+              {{ accountStatus(user.status) }}
+              <small class="hint">
+                {{ user.emailVerified ? 'Почта подтверждена' : 'Почта не подтверждена' }}
+              </small>
+            </td><td>{{ date(user.createdAt) }}</td><td>{{ date(user.lastLoginAt) }}</td>
+          </tr>
+        }
+        @empty {
+          @if (!accounts.loading() && !accounts.error()) {
+            <tr><td colspan="4">По этому фильтру пользователей нет.</td></tr>
+          }
+        }
+      </tbody>
+    </table>
+  </div>
+  <app-auto-load [content]="rows" [context]="accounts.context()" [continuation]="accounts.next()" [loading]="accounts.loadingMore()" [error]="accounts.moreError()"
+    loadingText="Загружаем следующих пользователей…" (loadNext)="accounts.more()" />
+}

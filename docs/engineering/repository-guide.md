@@ -364,3 +364,14 @@ and [Sonnet 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-en
 guides support clear completion and verification boundaries; their chat/API thinking
 advice does not replace repository quality gates. These are design choices, not
 measured token, cost or task-time savings.
+
+## Owner console change route
+
+`frontend/src/app/features/admin` owns the lazy `/manage` shell, owner directory,
+current-access/usage mini report, finance/reporting, promos, support and the two
+visible journals. It reuses the existing events renderer/editor and shared styleguide.
+`backend/services/identity-account/.../admin` owns Identity directory/moderation audit;
+`backend/services/learning/.../admin` owns Learning reports/audit/support proxy.
+[Product](../product/admin-console.md), [architecture](../architecture/admin-console.md),
+[UX](../frontend/admin-console-ux.md) and [HTTP](../../contracts/admin/README.md)
+are canonical. Billing remains #79/#389; source scopes never imply production rollout.

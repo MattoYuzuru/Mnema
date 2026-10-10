@@ -4,6 +4,7 @@ import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } f
 import { firstValueFrom } from 'rxjs';
 
 import { AuthService } from '../../auth.service';
+import { isAdminHost } from '../../app.config';
 import { InboxEntry, entriesOf } from './notification-entries';
 import { AppNotification, compareSeq } from './notification.models';
 import { NotificationsApiService } from './notifications-api.service';
@@ -31,6 +32,9 @@ export class NotificationCenter {
     private readonly auth = inject(AuthService);
     private readonly toasts = inject(ToastService);
     private readonly document = inject(DOCUMENT);
+    private readonly suspension = signal(isAdminHost);
+    /** The owner console suspends the learner inbox even when this root service was already started. */
+    readonly suspended = this.suspension.asReadonly();
 
     /** Newest first, including kinds this client cannot render. */
     readonly items = signal<readonly AppNotification[]>([]);
@@ -74,20 +78,28 @@ export class NotificationCenter {
             this.stop();
         });
         effect(() => {
-            const signedIn = this.auth.status() === 'authenticated';
-            untracked(() => signedIn ? this.start() : this.stop());
+            const enabled = this.auth.status() === 'authenticated' && !this.suspended();
+            untracked(() => enabled ? this.start() : this.stop());
         });
+    }
+
+    /** Stop synchronously so a response arriving before the next effect cannot repopulate the inbox. */
+    setSuspended(value: boolean): void {
+        if (this.suspended() === value) return;
+        this.suspension.set(value);
+        if (value) this.stop();
     }
 
     /** Panel opened: the badge clears for what is on screen, then the list reloads and catches anything newer. */
     open(): void {
+        if (this.suspended()) return;
         this.freshAfter.set(this.readUpto());
         this.panelError.set(null);
         this.panelOpen.set(true);
         // Reload first, so the watermark moves to what is really newest and the two requests never race.
         void this.serial(async epoch => {
             try { await this.load(epoch); } catch { /* offline: the list on screen is what the learner sees */ }
-            await this.markShownRead();
+            if (epoch === this.epoch) await this.markShownRead();
         });
     }
 
@@ -95,6 +107,7 @@ export class NotificationCenter {
 
     /** Older notifications, one page. */
     async loadMore(): Promise<void> {
+        if (this.suspended()) return;
         const cursor = this.olderCursor();
         if (cursor === null || this.loadingMore()) return;
         this.loadingMore.set(true);
@@ -114,6 +127,7 @@ export class NotificationCenter {
 
     /** Removes one notification from the center (not from the toast stack). A 404 means it is already gone. */
     async dismiss(notificationId: string): Promise<void> {
+        if (this.suspended()) return;
         const item = this.items().find(candidate => candidate.notificationId === notificationId);
         if (item === undefined) return;
         const epoch = this.epoch;
@@ -121,9 +135,10 @@ export class NotificationCenter {
         try {
             await firstValueFrom(this.api.dismiss(notificationId));
         } catch (error) {
+            if (epoch !== this.epoch) return;
             if (!(error instanceof HttpErrorResponse && error.status === 404)) {
                 this.dismissed.delete(notificationId);
-                if (epoch === this.epoch) this.panelError.set('Не удалось убрать уведомление. Попробуйте ещё раз.');
+                this.panelError.set('Не удалось убрать уведомление. Попробуйте ещё раз.');
                 return;
             }
         }
@@ -136,7 +151,7 @@ export class NotificationCenter {
     }
 
     private start(): void {
-        if (this.running) return;
+        if (this.running || this.suspended()) return;
         this.running = true;
         this.poll();
     }
@@ -148,6 +163,8 @@ export class NotificationCenter {
         this.loadingMore.set(false);
         this.moreError.set(null);
         this.pollQueued = false;
+        // A suspended request may still be on the wire. The next generation starts independently of it.
+        this.chain = Promise.resolve();
         this.clearTimer();
         this.lastSeq = null;
         this.etag = null;
@@ -157,8 +174,10 @@ export class NotificationCenter {
         this.readUpto.set('0');
         this.activeWork.set(0);
         this.olderCursor.set(null);
+        this.loadingMore.set(false);
         this.panelOpen.set(false);
         this.panelError.set(null);
+        this.freshAfter.set('0');
         this.toasts.clearNotifications();
     }
 
@@ -167,15 +186,16 @@ export class NotificationCenter {
         if (!this.running || this.pollQueued) return;
         this.pollQueued = true;
         this.clearTimer();
+        const generation = this.epoch;
         void this.serial(async epoch => {
             this.pollQueued = false;
             if (this.lastSeq === null) await this.load(epoch); else await this.catchUp(epoch);
-        }).finally(() => this.schedule());
+        }).finally(() => { if (generation === this.epoch) this.schedule(); });
     }
 
     private schedule(): void {
         this.clearTimer();
-        if (!this.running || this.document.hidden) return;
+        if (!this.running || this.suspended() || this.document.hidden) return;
         this.timer = setTimeout(() => { this.timer = null; this.poll(); },
             this.activeWork() > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS);
     }

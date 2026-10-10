@@ -1,0 +1,28 @@
+{
+  "tickets": {
+    "entries": [{
+      "id": "9007199254740993", "version": 2, "category": "bug", "status": "working",
+      "userId": "9007199254740995", "username": "fixture_user", "firstName": "Fixture",
+      "accountId": null, "createdAt": "2026-10-09T10:00:00Z", "submittedAt": "2026-10-09T10:01:00Z",
+      "updatedAt": "2026-10-09T10:02:00Z", "latestDelivery": null
+    }],
+    "nextCursor": null
+  },
+  "conversation": {
+    "ticket": {
+      "id": "9007199254740993", "version": 2, "category": "bug", "status": "working",
+      "userId": "9007199254740995", "username": "fixture_user", "firstName": "Fixture",
+      "accountId": null, "createdAt": "2026-10-09T10:00:00Z", "submittedAt": "2026-10-09T10:01:00Z",
+      "updatedAt": "2026-10-09T10:02:00Z", "latestDelivery": null
+    },
+    "messages": [
+      {"id": "9007199254740997", "direction": "in", "text": "Fixture issue", "createdAt": "2026-10-09T10:01:00Z", "attachment": {"kind": "document", "name": "fixture.txt", "size": 12, "mimeType": "text/plain"}, "delivery": null},
+      {"id": "9007199254740998", "direction": "note", "text": "Private fixture note", "createdAt": "2026-10-09T10:02:00Z", "attachment": null, "delivery": null}
+    ],
+    "nextMessageCursor": null
+  },
+  "acknowledgement": {
+    "commandId": "018f0060-86dc-7e16-9429-7157420da650", "ticketId": "9007199254740993", "version": 4,
+    "messageId": "9007199254740999", "outboxId": "9007199254740996", "delivery": "queued"
+  }
+}

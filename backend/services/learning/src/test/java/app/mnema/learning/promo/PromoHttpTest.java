@@ -17,8 +17,43 @@ class PromoHttpTest extends PromoIntegrationTest {
     private static final String CREATE_PLUS = "{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":15,\"maxRedemptions\":3,\"channel\":\"newsletter\"}";
 
     private org.springframework.mock.web.MockHttpServletResponse create(UUID account, String json) throws Exception {
-        return as(account, adminController).perform(post("/admin/promo-codes").contentType(MediaType.APPLICATION_JSON).content(json))
+        try {
+            JsonNode parsed = JSON.readTree(json);
+            if (parsed instanceof tools.jackson.databind.node.ObjectNode object && !object.has("code")) {
+                object.put("code", PromoTestCodes.generate());
+                json = JSON.writeValueAsString(object);
+            }
+        } catch (tools.jackson.core.JacksonException ignored) { /* malformed bodies must reach the HTTP boundary */ }
+        return as(account, adminController).perform(post("/admin/promo-codes").header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON).content(json))
                 .andReturn().getResponse();
+    }
+
+    @Test
+    void creationRequiresKeyAndExplicitCodeAndExactRetriesExposeNoDurablePlaintext() throws Exception {
+        UUID administrator=account(true,true), key=UUID.randomUUID();
+        String plain=PromoTestCodes.generate();
+        String payload="{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":15,\"maxRedemptions\":3,\"code\":\""+plain+"\"}";
+        var missingKey=as(administrator,adminController).perform(post("/admin/promo-codes").contentType(MediaType.APPLICATION_JSON).content(payload)).andReturn().getResponse();
+        assertThat(missingKey.getStatus()).isEqualTo(400);
+        var missingCode=as(administrator,adminController).perform(post("/admin/promo-codes").header("Idempotency-Key",key.toString()).contentType(MediaType.APPLICATION_JSON).content(CREATE_PLUS)).andReturn().getResponse();
+        assertThat(missingCode.getStatus()).isEqualTo(400);
+        var first=as(administrator,adminController).perform(post("/admin/promo-codes").header("Idempotency-Key",key.toString()).contentType(MediaType.APPLICATION_JSON).content(payload)).andReturn().getResponse();
+        var second=as(administrator,adminController).perform(post("/admin/promo-codes").header("Idempotency-Key",key.toString()).contentType(MediaType.APPLICATION_JSON).content(payload)).andReturn().getResponse();
+        assertThat(first.getStatus()).isEqualTo(201); assertThat(second.getStatus()).isEqualTo(201);
+        assertThat(body(first)).isEqualTo(body(second));
+        assertThat(body(first).path("code").stringValue()).isEqualTo(PromoCodes.display(plain));
+        String saved=jdbc.sql("SELECT result::text FROM app_learning.command_receipt WHERE command_id=:key").param("key",key).query(String.class).single();
+        assertThat(saved).doesNotContain(plain,PromoCodes.display(plain),"\"code\"");
+        UUID codeId=UUID.fromString(body(first).path("codeId").stringValue());
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.admin_audit WHERE resource_id=:id AND action='PROMO_CREATE'").param("id",codeId).query(Long.class).single()).isEqualTo(1);
+        var conflict=as(administrator,adminController).perform(post("/admin/promo-codes").header("Idempotency-Key",key.toString()).contentType(MediaType.APPLICATION_JSON).content(payload.replace("15","16"))).andReturn().getResponse();
+        assertThat(conflict.getStatus()).isEqualTo(409);
+        var actorConflict=as(account(true,true),adminController).perform(post("/admin/promo-codes").header("Idempotency-Key",key.toString()).contentType(MediaType.APPLICATION_JSON).content(payload)).andReturn().getResponse();
+        assertThat(actorConflict.getStatus()).isEqualTo(409);
+        for(String header:new String[]{"bad",key.toString().toUpperCase(java.util.Locale.ROOT),"10000000-0000-1000-8000-000000000001"}) {
+            var invalid=as(administrator,adminController).perform(post("/admin/promo-codes").header("Idempotency-Key",header).contentType(MediaType.APPLICATION_JSON).content(payload)).andReturn().getResponse();
+            assertThat(invalid.getStatus()).isEqualTo(400);
+        }
     }
 
     private org.springframework.mock.web.MockHttpServletResponse redeem(UUID account, String code, String key, String address) throws Exception {
@@ -57,7 +92,7 @@ class PromoHttpTest extends PromoIntegrationTest {
     }
 
     @Test
-    void anAdministratorCreatesAGeneratedCodeSeesItOnceListsItAndSwitchesItOff() throws Exception {
+    void anAdministratorCreatesAnExplicitCodeSeesItOnceListsItAndSwitchesItOff() throws Exception {
         UUID administrator = account(true, true);
 
         var created = create(administrator, CREATE_PLUS);
@@ -87,6 +122,24 @@ class PromoHttpTest extends PromoIntegrationTest {
         assertThat(off.getStatus()).isEqualTo(200);
         assertThat(body(off).path("enabled").booleanValue()).isFalse();
         assertThat(body(off).path("redemptions").longValue()).isEqualTo(1);
+        UUID switched = UUID.fromString(codeId);
+        java.util.function.Function<String, Long> audited = action -> jdbc.sql("SELECT count(*) FROM app_learning.admin_audit WHERE resource_id=:id AND action=:action")
+                .param("id", switched).param("action", action).query(Long.class).single();
+        assertThat(audited.apply("PROMO_DISABLE")).isEqualTo(1);
+        // Repeating the current state changes nothing and is not journaled.
+        var again = as(administrator, adminController).perform(patch("/admin/promo-codes/" + codeId).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":false}")).andReturn().getResponse();
+        assertThat(again.getStatus()).isEqualTo(200);
+        assertThat(body(again).path("enabled").booleanValue()).isFalse();
+        assertThat(audited.apply("PROMO_DISABLE")).isEqualTo(1);
+        var on = as(administrator, adminController).perform(patch("/admin/promo-codes/" + codeId).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":true}")).andReturn().getResponse();
+        assertThat(on.getStatus()).isEqualTo(200);
+        assertThat(audited.apply("PROMO_ENABLE")).isEqualTo(1);
+        as(administrator, adminController).perform(patch("/admin/promo-codes/" + codeId).contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":true}")).andReturn();
+        assertThat(audited.apply("PROMO_ENABLE")).isEqualTo(1);
+        as(administrator, adminController).perform(patch("/admin/promo-codes/" + codeId).contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}")).andReturn();
+        assertThat(audited.apply("PROMO_DISABLE")).isEqualTo(2);
         var after = redeem(account(true, false), code, UUID.randomUUID().toString(), address());
         assertThat(after.getStatus()).isEqualTo(422);
         assertThat(body(after).path("code").stringValue(null)).isEqualTo("PROMO_INVALID");
@@ -95,7 +148,7 @@ class PromoHttpTest extends PromoIntegrationTest {
     @Test
     void theAdminListIsPagedByACursorOfTwoHundred() throws Exception {
         UUID administrator = account(true, true);
-        for (int index = 0; index < PromoAdminService.PAGE_SIZE + 5; index++) admin.create(administrator, tier(PromoType.TIER_DAYS, "PLUS", 1, null, 1));
+        for (int index = 0; index < PromoAdminService.PAGE_SIZE + 5; index++) create(administrator, tier(PromoType.TIER_DAYS, "PLUS", 1, null, 1));
 
         java.util.Set<String> seen = new java.util.HashSet<>();
         String after = null;

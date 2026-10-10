@@ -45,16 +45,9 @@
             <button class="button" type="button" (click)="showPreview()">{{ preview() ? 'Закрыть просмотр' : 'Предпросмотр текста' }}</button>
           </div>
         </form>
-        @if (preview()) { <section class="preview" aria-label="Предпросмотр текста"><app-event-body [markdown]="previewBody()" /></section> }
+        @if (preview()) { <section class="preview" aria-label="Предпросмотр новости"><p class="eyebrow">Так выглядит публичная запись</p><app-event-article eventId="preview" [title]="previewTitle() || 'Без заголовка'" [eventDate]="previewDate()" [markdown]="previewBody()" /></section> }
         @if (selected()) {
-          <div class="delete-area">
-            @if (confirmDelete()) {
-              <p>Удалить запись «{{ selected()?.title }}»?</p><div class="actions">
-                <button class="button danger" type="button" (click)="remove()" [disabled]="busy() || uncertain()">Удалить запись</button>
-                <button class="button" type="button" (click)="confirmDelete.set(false)" [disabled]="busy() || uncertain()">Отмена</button>
-              </div>
-            } @else { <button class="button danger" type="button" (click)="confirmDelete.set(true)" [disabled]="busy() || uncertain()">Удалить событие</button> }
-          </div>
+          <div class="delete-area"><app-hold-to-delete-button label="Удалить событие" consequence="Запись исчезнет из публичной ленты и редактора. Восстановления в кабинете нет." [disabled]="busy() || uncertain()" (confirmed)="remove()" /></div>
         }
       </section>
     </div>

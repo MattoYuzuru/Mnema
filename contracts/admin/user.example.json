@@ -1,0 +1,58 @@
+{
+  "accountId": "10000000-0000-4000-8000-000000000001",
+  "from": "2026-10-01",
+  "to": "2026-10-10",
+  "generatedAt": "2026-10-09T12:00:00Z",
+  "currentEntitlement": {
+    "plan": "PRO",
+    "source": "PROMO",
+    "period": "MONTH",
+    "validUntil": "2026-12-02T09:00:42Z"
+  },
+  "usage": {
+    "activeUsers": 1,
+    "creditsDebited": 0,
+    "creditsPerUser": {
+      "sample": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "p99": 0.0
+    },
+    "operations": [
+      {
+        "operation": "STT",
+        "users": 1,
+        "events": 1,
+        "creditsDebited": 0,
+        "units": 60,
+        "share": 1.0
+      }
+    ],
+    "operationsTruncated": false
+  },
+  "learning": {
+    "decks": 0,
+    "items": 0,
+    "studyAttempts": 0,
+    "completedSessions": 0,
+    "publishedArtifacts": 0
+  },
+  "media": {
+    "assets": 0,
+    "sourceBytes": 0
+  },
+  "allowances": [
+    {
+      "periodId": "2026-10",
+      "plan": "PRO",
+      "source": "PROMO",
+      "total": 100,
+      "unlocked": 100,
+      "used": 0,
+      "reserved": 0,
+      "validUntil": "2026-11-01T00:00:00Z",
+      "updatedAt": "2026-10-09T12:00:00Z"
+    }
+  ],
+  "allowanceCoverage": "STORED_SNAPSHOTS"
+}

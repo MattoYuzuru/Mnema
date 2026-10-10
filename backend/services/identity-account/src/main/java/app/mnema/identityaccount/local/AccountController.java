@@ -1,6 +1,7 @@
 package app.mnema.identityaccount.local;
 
 import app.mnema.identityaccount.contract.AccountFailure;
+import app.mnema.identityaccount.admin.AdminOwnerAccess;
 import app.mnema.identityaccount.deletion.AccountDeletionView;
 import app.mnema.identityaccount.deletion.AccountDeletions;
 import app.mnema.identityaccount.moderation.Moderation;
@@ -67,6 +68,7 @@ public class AccountController {
     public record DeleteAccount(@NotBlank @Size(max = 128) String proof) {
     }
 
+    private final AdminOwnerAccess adminOwner;
     private final LocalAccounts local;
     private final BrowserSessions sessions;
     private final Profiles profiles;
@@ -80,7 +82,8 @@ public class AccountController {
 
     public AccountController(LocalAccounts local, BrowserSessions sessions, Profiles profiles, OwnershipProofs proofs,
                              TransactionTemplate transactions, RateLimits limits, Moderation moderation,
-                             ClientAddresses clientAddresses, AccountDeletions deletions, TurnstileGuard turnstile) {
+                             ClientAddresses clientAddresses, AccountDeletions deletions, TurnstileGuard turnstile, AdminOwnerAccess adminOwner) {
+        this.adminOwner = adminOwner;
         this.local = local;
         this.sessions = sessions;
         this.profiles = profiles;
@@ -179,24 +182,28 @@ public class AccountController {
     @PostMapping("/admin/accounts/{id}/ban")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void ban(Authentication a, @PathVariable UUID id, @Valid @RequestBody Ban r) {
+        adminOwner.requireModeration(a);
         moderation.apply(BrowserSessions.access(a), id, Moderation.Action.BAN, r.reason());
     }
 
     @PostMapping("/admin/accounts/{id}/unban")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void unban(Authentication a, @PathVariable UUID id) {
+        adminOwner.requireModeration(a);
         moderation.apply(BrowserSessions.access(a), id, Moderation.Action.UNBAN, null);
     }
 
     @PostMapping("/admin/accounts/{id}/admin")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void grant(Authentication a, @PathVariable UUID id) {
+        adminOwner.requireModeration(a);
         moderation.apply(BrowserSessions.access(a), id, Moderation.Action.GRANT_ADMIN, null);
     }
 
     @DeleteMapping("/admin/accounts/{id}/admin")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void revoke(Authentication a, @PathVariable UUID id) {
+        adminOwner.requireModeration(a);
         moderation.apply(BrowserSessions.access(a), id, Moderation.Action.REVOKE_ADMIN, null);
     }
 }
