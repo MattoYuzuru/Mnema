@@ -64,10 +64,9 @@ bearer JWT с `client_id = mnema-admin-web`. Токен `mnema-web` того ж�
 проверяют `MNEMA_EVENTS_OWNER_ACCOUNT_ID`; promo/moderation сохраняют фактическую
 Identity authority и ограничения иерархии. Права модулей отражает access response.
 
-Пока кабинет выключен, `admin.mnema.app` в `Caddyfile` сохраняет прежний redirect на
-`https://mnema.app/manage/events`: посетитель не попадает на вход, который Identity отклонил бы (клиента
-`mnema-admin-web` нет). Блок, отдающий SPA и same-origin Learning `/api`, лежит в `Caddyfile` закомментированным и
-заменяет redirect отдельным ревью-изменением при включении кабинета.
+В production `admin.mnema.app` в `Caddyfile` отдаёт SPA и same-origin Learning `/api`, как `mnema.app`. Без
+`MNEMA_IDENTITY_ADMIN_ORIGIN` клиента `mnema-admin-web` нет, поэтому выключение возвращает прежний redirect на
+`https://mnema.app/manage/events` ([порядок](../operations/vps-runtime.md#owner-console)).
 Локально admin-origin — `https://admin.localhost:<порт web>` (тот же порт и сертификат, другой origin).
 Lazy `/manage` shell исключает learner onboarding, promo popup и приватное
 notification polling. Guard управляет представлением; сервер решает доступ.
