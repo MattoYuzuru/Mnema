@@ -164,7 +164,7 @@ public class PublicDeckService {
             int start = start(PublicCursor.decode(cursor, 'e'), published.revisionId(), published.exerciseCount());
             List<Entry> entries = manifests.exercises(read.deck().scopeId(), published.exercisesRootId(), published.exerciseCount(), start, size);
             Map<String, PublishedContentRepository.ExerciseRow> rows = new HashMap<>();
-            sql(() -> content.exercises(read.deck().deckId(), entries.stream().map(Entry::key).toList(),
+            sql(() -> content.exercises(read.deck().scopeId(), entries.stream().map(Entry::key).toList(),
                             entries.stream().map(entry -> entry.target().objectId()).toList()))
                     .forEach(row -> rows.put(pair(row.exerciseId(), row.descriptorRootId()), row));
             ObjectNode result = page(code, published.exerciseCount(), "exercises");
