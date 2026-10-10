@@ -238,6 +238,12 @@ legal removal and audit retention require their own explicit policy; “immutabl
 does not mean “retain every byte forever.” No current history-retention number is
 silently introduced here.
 
+Status (#417): the bounded sweep of unreachable objects and lapsed staging pins runs on a
+timer in Learning processes with role `worker` or `all` (grace, bounds and kill switch in the
+[runtime policy index](../engineering/runtime-policy-index.md)). Durable revision pins are
+never released automatically, so history retention, fork/offline/moderation roots and the
+backup/restore coverage above remain open product and operations decisions.
+
 ## Runtime decision and evidence
 
 At this revision, Identity & Account source is consolidated and the separate
