@@ -147,8 +147,43 @@
       <p class="hint">Галочка не отмечена, пока вы не отметите её сами.</p>
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Переключатель согласия с полями" selector=".settings-row.is-switch.is-live + fieldset.check-group"
+    when="Согласие, которое можно включить и отозвать сразу, с отдельным выбором полей (профиль, «Публичный профиль»). Переключатель и флажки — настоящие input; поля группы под одной legend доступны, только пока переключатель включён, и не отмечены заранее. Каждое изменение сохраняется сразу. Пока идёт сохранение, элементы остаются в фокусе (aria-disabled, а не disabled), повторное нажатие ничего не меняет, а состояние сохраняется строкой role=status. При сбое элемент возвращается назад, и сообщение говорит, почему."
+    [tokens]="['--mn-ink', '--mn-muted', '--mn-touch-min']"
+    usage='<label class="settings-row is-switch is-live"><input type="checkbox" role="switch" aria-describedby="consent-text" /><span>Показывать мой профиль другим</span></label>
+<fieldset class="check-group">
+  <legend>Что ещё показывать</legend>
+  <div class="check-field"><label class="check-row"><input type="checkbox" disabled /><span>Имя</span></label></div>
+</fieldset>
+<p class="hint" role="status"></p>
+<!-- while saving: aria-disabled="true" on the inputs, never disabled -->'>
+    <div class="sg-stack">
+    <p class="sg-note" id="sg-consent-text">Это пример: ничего не сохраняется.</p>
+    <label class="settings-row is-switch is-live">
+      <input type="checkbox" role="switch" aria-describedby="sg-consent-text" [checked]="consentOn()" (change)="setConsent($event)" />
+      <span>Показывать мой профиль другим</span>
+    </label>
+    <fieldset class="check-group">
+      <legend>Что ещё показывать</legend>
+      <div class="check-field"><label class="check-row"><input type="checkbox" [disabled]="!consentOn()" /><span>Имя</span></label></div>
+      <div class="check-field"><label class="check-row"><input type="checkbox" [disabled]="!consentOn()" /><span>Фото</span></label></div>
+      <div class="check-field"><label class="check-row"><input type="checkbox" [disabled]="!consentOn()" /><span>О себе</span></label></div>
+      @if (!consentOn()) { <p class="hint">Станет доступно, когда вы включите профиль.</p> }
+    </fieldset>
+    <p class="hint">Во время сохранения (элементы в фокусе, но заняты):</p>
+    <label class="settings-row is-switch is-live">
+      <input type="checkbox" role="switch" checked aria-disabled="true" aria-describedby="sg-consent-saving" (click)="$event.preventDefault()" />
+      <span>Показывать мой профиль другим</span>
+    </label>
+    <fieldset class="check-group">
+      <legend>Что ещё показывать</legend>
+      <div class="check-field"><label class="check-row"><input type="checkbox" checked aria-disabled="true" (click)="$event.preventDefault()" /><span>Имя</span></label></div>
+    </fieldset>
+    <p class="hint" id="sg-consent-saving" role="status">Сохраняем…</p>
+    </div>
+  </app-sg-specimen>
   <app-sg-specimen title="Недоступная настройка" selector=".settings-row, .settings-row.is-switch"
-    when="Место для того, что появится позже (автопродление, способ оплаты): подпись и недоступный элемент в одной строке, общая подпись под группой говорит, когда он станет доступен. Без выдуманных значений."
+    when="Место для того, что появится позже (автопродление, способ оплаты): подпись и недоступный элемент в одной строке, общая подпись под группой говорит, когда он станет доступен. Без выдуманных значений. Рабочий переключатель согласия — отдельный пример выше (.is-live)."
     [tokens]="['--mn-muted', '--mn-rule', '--mn-touch-min']"
     usage='<label class="settings-row is-switch"><input type="checkbox" role="switch" disabled aria-describedby="later" /><span>Автопродление</span></label>
 <div class="settings-row"><span>Способ оплаты</span><button type="button" class="button small" disabled aria-describedby="later">Добавить</button></div>

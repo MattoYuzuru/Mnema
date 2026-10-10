@@ -46,7 +46,7 @@ describe('canonical bearer interceptor', () => {
             `${identity}/api/accounts/admin/directory/10000000-0000-4000-8000-000000000001`,
             `${identity}/api/accounts/admin/accounts/10000000-0000-4000-8000-000000000001/ban`,
             `${identity}/api/accounts/admin/accounts/10000000-0000-4000-8000-000000000001/unban`,
-            `${identity}/api/accounts/me`, `${identity}/userinfo`]) {
+            `${identity}/api/accounts/me`, `${identity}/api/accounts/me/avatar`, `${identity}/api/accounts/me/public-profile`, `${identity}/userinfo`]) {
             http.get(url).subscribe();
             const request = mock.expectOne(url);
             expect(request.request.headers.get('Authorization')).toBe('Bearer current-token');
@@ -72,7 +72,10 @@ describe('canonical bearer interceptor', () => {
             `${identity}/api/accounts/admin/directory/x`, `${identity}/api/accounts/admin/accounts/10000000-0000-4000-8000-000000000001/admin`,
             '/api/events', '/api/admin/events-other', '/api/admin/events%2f123',
             'https://storage.example.test/bucket/source?X-Amz-Signature=abc',
-            'https://identity.example.test.evil.test/api/accounts/me', `${identity}/api/accounts/me/other`,
+            'https://identity.example.test.evil.test/api/accounts/me', `${identity}/api/accounts/me/other`, `${identity}/api/accounts/me/public-profile/other`,
+            // public author cards are anonymous reads: no bearer ever reaches them
+            `${identity}/api/accounts/profiles?ids=10000000-0000-4000-8000-000000000001`, `${identity}/api/accounts/profiles/10000000-0000-4000-8000-000000000001`,
+            `${identity}/api/accounts/profiles/10000000-0000-4000-8000-000000000001/avatar`, `${identity}/api/accounts/profiles/by-username/anna.k`,
             `${identity}/api/accounts/login`, `${identity}/oauth2/token`, '/api/%64ecks', '/api/decks%2f123',
             'https://evil.test/api/decks', '//evil.test/api/decks', 'https://user@identity.example.test/userinfo']) {
             expect(isCredentialTarget(url, identity, '/api', window.location.origin), url).toBe(false);

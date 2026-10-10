@@ -5,6 +5,8 @@ import { AccountProfileApi } from './account-profile.api';
 import { AUTH_BROWSER, BROWSER_IDENTITY_CONFIG, BrowserIdentityConfig } from './auth-browser';
 import { AuthService } from './auth.service';
 import { authInterceptor } from './auth.interceptor';
+import fixture from '../../../contracts/identity/public-profile.json';
+import { PUBLIC_PROFILE_TEXT_VERSION } from './public-profile';
 
 const identity: BrowserIdentityConfig = {
     authServerUrl: 'https://identity.mnema.test', identityRedirectUri: 'https://mnema.test/auth/callback',
@@ -71,6 +73,43 @@ describe('AccountProfileApi', () => {
         const failed = vi.fn();
         api.load().subscribe({ error: failed });
         http.expectOne('https://identity.mnema.test/api/accounts/me').flush({ ...response, ...fields });
+        expect(failed).toHaveBeenCalledOnce();
+    });
+
+    it('reads the owner photo as a blob from the bearer-protected owner endpoint', () => {
+        let received: Blob | null = null;
+        api.loadAvatar().subscribe(blob => { received = blob; });
+        const read = http.expectOne('https://identity.mnema.test/api/accounts/me/avatar');
+        expect(read.request.method).toBe('GET');
+        expect(read.request.responseType).toBe('blob');
+        expect(read.request.withCredentials).toBe(false);
+        expect(read.request.headers.get('Authorization')).toBe('Bearer owner-token');
+        read.flush(new Blob(['image'], { type: 'image/png' }));
+        expect(received).toBeInstanceOf(Blob);
+    });
+
+    it('reads and saves the public-profile consent with bearer, no cookies and the complete state', () => {
+        api.loadPublicProfile().subscribe(consent => expect(consent).toEqual(fixture.consentDefault));
+        const read = http.expectOne('https://identity.mnema.test/api/accounts/me/public-profile');
+        expect(read.request.method).toBe('GET');
+        expect(read.request.withCredentials).toBe(false);
+        expect(read.request.headers.get('Authorization')).toBe('Bearer owner-token');
+        read.flush(fixture.consentDefault);
+
+        api.savePublicProfile(fixture.consentUpdate).subscribe(consent => expect(consent).toEqual(fixture.consentGranted));
+        const write = http.expectOne('https://identity.mnema.test/api/accounts/me/public-profile');
+        expect(write.request.method).toBe('PUT');
+        expect(write.request.withCredentials).toBe(false);
+        expect(write.request.headers.get('Authorization')).toBe('Bearer owner-token');
+        expect(write.request.body).toEqual(fixture.consentUpdate);
+        expect(fixture.consentUpdate.textVersion).toBe(PUBLIC_PROFILE_TEXT_VERSION);
+        write.flush(fixture.consentGranted);
+    });
+
+    it('rejects a consent answer that is not the contract shape', () => {
+        const failed = vi.fn();
+        api.loadPublicProfile().subscribe({ error: failed });
+        http.expectOne('https://identity.mnema.test/api/accounts/me/public-profile').flush({ ...fixture.consentDefault, extra: 1 });
         expect(failed).toHaveBeenCalledOnce();
     });
 });

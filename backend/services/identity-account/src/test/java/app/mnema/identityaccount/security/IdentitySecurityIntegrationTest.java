@@ -186,6 +186,11 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         var cookie = login(a);
         mvc.perform(put("/api/accounts/me").secure(true).cookie(cookie).with(csrf()).contentType("application/json")
                 .content("{\"admin\":true}")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/accounts/profiles/" + a.accountId())).andExpect(status().isNotFound());
+        mvc.perform(put("/api/accounts/me/public-profile").secure(true).cookie(cookie).with(csrf())
+                        .contentType("application/json").content(json.writeValueAsString(Map.of("enabled", true,
+                                "showDisplayName", true, "showAvatar", false, "showBio", true,
+                                "textVersion", "2026-10-10")))).andExpect(status().isOk());
         mvc.perform(get("/api/accounts/profiles/" + a.accountId())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").doesNotExist()).andExpect(jsonPath("$.admin").doesNotExist());
     }

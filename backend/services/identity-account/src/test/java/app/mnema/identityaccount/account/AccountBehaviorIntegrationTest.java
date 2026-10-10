@@ -6,6 +6,7 @@ import app.mnema.identityaccount.federation.*;
 import app.mnema.identityaccount.security.*;
 import app.mnema.identityaccount.recovery.PasswordRecovery;
 import app.mnema.identityaccount.profile.Profiles;
+import app.mnema.identityaccount.profile.PublicProfiles;
 import app.mnema.identityaccount.moderation.Moderation;
 import app.mnema.identityaccount.avatar.*;
 import app.mnema.identityaccount.support.PostgresIntegrationTest;
@@ -225,6 +226,8 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
     @Autowired
     Profiles profiles;
     @Autowired
+    PublicProfiles publicProfiles;
+    @Autowired
     Moderation moderation;
     @Autowired
     Avatars avatars;
@@ -411,6 +414,15 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNoContent());
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
                         "/api/accounts/profiles/" + account.accountId() + "/avatar"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/accounts/me/avatar")
+                        .secure(true).cookie(cookie))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().bytes(bytes));
+        profiles.update(account, "av-" + UUID.randomUUID().toString().substring(0, 8), "", "");
+        publicProfiles.update(account, new PublicProfiles.Update(true, false, true, false, PublicProfiles.TEXT_VERSION));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                        "/api/accounts/profiles/" + account.accountId() + "/avatar"))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().bytes(bytes));
         mvc.perform(
@@ -437,6 +449,8 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
                         .with(request -> { request.setMethod("PUT"); return request; })
                         .secure(true).header("Authorization", "Bearer " + bearer(access)))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNoContent());
+        profiles.update(access, "av-" + UUID.randomUUID().toString().substring(0, 8), "", "");
+        publicProfiles.update(access, new PublicProfiles.Update(true, false, true, false, PublicProfiles.TEXT_VERSION));
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .get("/api/accounts/profiles/" + access.accountId() + "/avatar"))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
@@ -512,6 +526,22 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
                 java.time.Clock.fixed(instant.plusSeconds(601), java.time.ZoneOffset.UTC));
         cleanup.removeExpired();
         assertThatThrownBy(() -> proofs.identify(proof.token())).isInstanceOf(AccountFailure.class);
+    }
+
+    @Test
+    void cleanupDrainsAnExpiredRateLimitBacklogLargerThanOneBatch() {
+        int rows = 2 * 1000 + 345;
+        jdbc.sql("""
+                        INSERT INTO app_identity.rate_limit(bucket,window_start,attempts)
+                        SELECT 'cleanup-backlog-' || n, now() - interval '2 days', 1 FROM generate_series(1,:rows) n
+                        """).param("rows", rows).update();
+        jdbc.sql("INSERT INTO app_identity.rate_limit(bucket,window_start,attempts) VALUES('cleanup-fresh',now(),1)")
+                .update();
+        new app.mnema.identityaccount.security.ExpiredStateCleanup(jdbc, java.time.Clock.systemUTC()).removeExpired();
+        assertThat(jdbc.sql("SELECT count(*) FROM app_identity.rate_limit WHERE bucket LIKE 'cleanup-backlog-%'")
+                .query(Long.class).single()).as("one run keeps pace with a multi-batch backlog").isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM app_identity.rate_limit WHERE bucket='cleanup-fresh'")
+                .query(Long.class).single()).isOne();
     }
 
     @Test

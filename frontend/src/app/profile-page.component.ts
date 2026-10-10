@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -11,6 +11,7 @@ import { appConfig } from './app.config';
 import { validProfileBioEdit } from './profile-bio';
 import { DuringStudyMode, NotificationPreferences } from './core/notifications/notification-preferences';
 import { ProfilePlanComponent } from './features/plans/profile-plan.component';
+import { PublicProfileSettingsComponent } from './features/public-profile/public-profile-settings.component';
 import { SpeechConsentSettingsComponent } from './features/speech/speech-consent-settings.component';
 import { UsageBudgetComponent } from './features/usage/usage-budget.component';
 import { SegmentedChoiceComponent, SegmentedOption } from './shared/segmented-choice.component';
@@ -21,7 +22,8 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
 
 @Component({
     selector: 'app-profile-page',
-    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent],
+    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent,
+        PublicProfileSettingsComponent],
     template: `
       <section class="profile-page" aria-labelledby="profile-title">
         <a routerLink="/decks" class="back-link">← Мои колоды</a>
@@ -80,6 +82,10 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 @if (saveSuccess()) { <p class="success" role="status">Изменения сохранены.</p> }
                 <button type="submit" class="button primary" [disabled]="form.invalid || saving()">{{ saving() ? 'Сохраняем…' : 'Сохранить профиль' }}</button>
               </form>
+            </section>
+            <section id="public-profile-settings" class="sheet" aria-labelledby="public-profile-heading">
+              <h2 id="public-profile-heading">Публичный профиль</h2>
+              <app-public-profile-settings [profile]="account" [avatarUrl]="avatarUrl()" />
             </section>
             <section id="ai-budget" class="sheet" aria-labelledby="ai-budget-heading">
               <h2 id="ai-budget-heading" tabindex="-1">ИИ-бюджет</h2>
@@ -181,6 +187,8 @@ export class ProfilePageComponent implements OnInit {
     private readonly injector = inject(Injector);
     private readonly route = inject(ActivatedRoute);
     private readonly document = inject(DOCUMENT);
+    private ownAvatar: string | null = null;
+    private avatarRequest = 0;
     protected readonly preferences = inject(NotificationPreferences);
     protected readonly duringStudyOptions: readonly SegmentedOption<DuringStudyMode>[] = [
         { value: 'AT_PAUSES', label: 'В паузах', hint: 'Сообщение появится после ответа или в конце занятия.' },
@@ -211,6 +219,7 @@ export class ProfilePageComponent implements OnInit {
     });
 
     constructor() {
+        inject(DestroyRef).onDestroy(() => { this.avatarRequest++; this.releaseAvatar(); });
         // A link to `/profile#ai-budget` while this page is already open changes only the fragment. Before the first load
         // finishes the block does not exist yet; `load()` then reveals it itself.
         this.route.fragment.pipe(takeUntilDestroyed()).subscribe(fragment => {
@@ -232,13 +241,41 @@ export class ProfilePageComponent implements OnInit {
             this.profile.set(profile);
             this.form.setValue({ profileUsername: profile.profileUsername ?? '', displayName: profile.displayName ?? '',
                 bio: profile.bio ?? '' });
-            this.avatarUrl.set(profile.avatarPresent ? this.api.avatarUrl(profile.accountId, Date.now()) : null);
+            void this.showOwnAvatar(profile.avatarPresent);
         } catch {
             this.loadError.set('Проверьте соединение и попробуйте снова.');
         } finally {
             this.loading.set(false);
             this.revealFragment(this.route.snapshot.fragment);
         }
+    }
+
+    /**
+     * The owner's photo comes from the bearer-protected `/me/avatar` as a local object address: it stays visible without a
+     * public-profile consent and never travels through the public endpoint. The previous address is released on replace
+     * and on destroy; an older response that arrives late is dropped.
+     */
+    private async showOwnAvatar(present: boolean): Promise<void> {
+        const request = ++this.avatarRequest;
+        let next: string | null = null;
+        if (present) {
+            try {
+                const blob = await firstValueFrom(this.api.loadAvatar());
+                if (request === this.avatarRequest && ['image/png', 'image/jpeg', 'image/webp'].includes(blob.type)) next = URL.createObjectURL(blob);
+            } catch { /* the letter placeholder stays */ }
+        }
+        if (request !== this.avatarRequest) {
+            if (next !== null) URL.revokeObjectURL(next);
+            return;
+        }
+        this.releaseAvatar();
+        this.ownAvatar = next;
+        this.avatarUrl.set(next);
+    }
+
+    private releaseAvatar(): void {
+        if (this.ownAvatar !== null) URL.revokeObjectURL(this.ownAvatar);
+        this.ownAvatar = null;
     }
 
     /**
@@ -290,7 +327,7 @@ export class ProfilePageComponent implements OnInit {
             const current = this.profile();
             if (current) {
                 this.profile.set({ ...current, avatarPresent: true });
-                this.avatarUrl.set(this.api.avatarUrl(current.accountId, Date.now()));
+                void this.showOwnAvatar(true);
             }
         } catch { this.avatarError.set('Не удалось сохранить аватар. Проверьте формат и размеры изображения.'); }
         finally { this.avatarBusy.set(false); }
