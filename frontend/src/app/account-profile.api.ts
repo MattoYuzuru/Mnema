@@ -1,9 +1,10 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, map } from 'rxjs';
-import { AUTH_BROWSER, BROWSER_IDENTITY_CONFIG, validateIdentityConfig } from './auth-browser';
+import { AUTH_BROWSER, BROWSER_IDENTITY_CONFIG, accountsApiBase } from './auth-browser';
 import { IdentityProfile, AuthFailure, objectValue, parseProfile } from './auth-protocol';
 import { isProfileBio, normalizeProfileBio } from './profile-bio';
+import { PublicProfileConsent, PublicProfileConsentUpdate, parsePublicProfileConsent } from './public-profile';
 
 export interface AccountProfile extends IdentityProfile {
     bio: string | null;
@@ -31,10 +32,7 @@ export class AccountProfileApi {
     private readonly config = inject(BROWSER_IDENTITY_CONFIG);
     private readonly browser = inject(AUTH_BROWSER);
 
-    private base(): string {
-        validateIdentityConfig(this.config, this.browser.origin);
-        return `${this.config.authServerUrl}/api/accounts`;
-    }
+    private base(): string { return accountsApiBase(this.config, this.browser.origin); }
 
     load(): Observable<AccountProfile> {
         return this.http.get<unknown>(`${this.base()}/me`, { withCredentials: false }).pipe(map(parseAccountProfile));
@@ -51,9 +49,18 @@ export class AccountProfileApi {
         return this.http.put<void>(`${this.base()}/me/avatar`, body, { withCredentials: false });
     }
 
-    avatarUrl(accountId: string, version: number): string {
-        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(accountId))
-            throw new AuthFailure('protocol');
-        return `${this.base()}/profiles/${accountId}/avatar?v=${version}`;
+    /** The owner's own photo, with the bearer: it stays visible to the owner without a public-profile consent. */
+    loadAvatar(): Observable<Blob> {
+        return this.http.get(`${this.base()}/me/avatar`, { responseType: 'blob', withCredentials: false });
+    }
+
+    loadPublicProfile(): Observable<PublicProfileConsent> {
+        return this.http.get<unknown>(`${this.base()}/me/public-profile`, { withCredentials: false })
+            .pipe(map(parsePublicProfileConsent));
+    }
+
+    savePublicProfile(update: PublicProfileConsentUpdate): Observable<PublicProfileConsent> {
+        return this.http.put<unknown>(`${this.base()}/me/public-profile`, update, { withCredentials: false })
+            .pipe(map(parsePublicProfileConsent));
     }
 }

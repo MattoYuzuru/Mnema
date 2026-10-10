@@ -10,6 +10,7 @@ import { BatchPagerComponent } from '../features/generation/batch-pager.componen
 import { ArtifactSummary } from '../features/generation/generation.models';
 import { PromoPopupComponent } from '../features/promo/promo-popup.component';
 import { PromoCampaign } from '../features/promo/promo.models';
+import { AuthorChipComponent } from '../shared/author-chip.component';
 import { NewBadgeComponent } from '../shared/new-badge.component';
 import { PublicFooterComponent } from '../shared/public-footer.component';
 import { MailContactComponent } from '../shared/mail-contact.component';
@@ -32,11 +33,11 @@ function artifact(index: number): ArtifactSummary {
 
 const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
 
-/** «Меню и окна», «Вкладки и пейджер», «Статусы и ход», «Обратная связь», «Карточки и области». */
+/** «Меню и окна», «Вкладки и пейджер», «Статусы и ход» (в том числе чип автора), «Обратная связь», «Карточки и области». */
 @Component({
     selector: 'app-sg-surfaces',
     encapsulation: ViewEncapsulation.None,
-    imports: [SgSpecimenComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
+    imports: [SgSpecimenComponent, AuthorChipComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
         NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent, AutoLoadComponent],
     templateUrl: './sg-surfaces.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush

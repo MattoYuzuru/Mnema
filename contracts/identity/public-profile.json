@@ -1,0 +1,32 @@
+{
+  "textVersion": "2026-10-10",
+  "consentDefault": {
+    "enabled": false, "showDisplayName": false, "showAvatar": false, "showBio": false,
+    "textVersion": "2026-10-10", "publishReady": false, "updatedAt": null
+  },
+  "consentUpdate": {
+    "enabled": true, "showDisplayName": true, "showAvatar": false, "showBio": true, "textVersion": "2026-10-10"
+  },
+  "consentGranted": {
+    "enabled": true, "showDisplayName": true, "showAvatar": false, "showBio": true,
+    "textVersion": "2026-10-10", "publishReady": true, "updatedAt": "2026-10-10T12:00:00Z"
+  },
+  "card": {
+    "accountId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd",
+    "profileUsername": "anna.k",
+    "displayName": "Анна",
+    "bio": null,
+    "avatarPresent": false
+  },
+  "batch": {
+    "request": ["0192f3a4-5b6c-7d8e-9f01-23456789abcd", "0192f3a4-5b6c-7d8e-9f01-000000000000"],
+    "response": {
+      "profiles": [
+        {"accountId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd", "profileUsername": "anna.k",
+         "displayName": "Анна", "bio": null, "avatarPresent": false}
+      ]
+    }
+  },
+  "notFound": {"status": 404, "code": "profile_not_found"},
+  "batchMaxIds": 50
+}

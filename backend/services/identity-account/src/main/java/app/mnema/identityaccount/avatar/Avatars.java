@@ -3,6 +3,7 @@ package app.mnema.identityaccount.avatar;
 import app.mnema.identityaccount.account.AccountStore;
 import app.mnema.identityaccount.contract.AccountAccess;
 import app.mnema.identityaccount.contract.AccountFailure;
+import app.mnema.identityaccount.profile.PublicProfiles;
 import app.mnema.identityaccount.security.Secrets;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -28,7 +29,8 @@ public class Avatars {
     private final AvatarStorage storage;
     private final TransactionTemplate transactions;
 
-    public Avatars(JdbcClient jdbcClient, AccountStore accounts, AvatarStorage storage, TransactionTemplate transactions) {
+    public Avatars(JdbcClient jdbcClient, AccountStore accounts, AvatarStorage storage,
+                   TransactionTemplate transactions) {
         this.jdbcClient = jdbcClient;
         this.accounts = accounts;
         this.storage = storage;
@@ -85,11 +87,42 @@ public class Avatars {
         retryCleanup();
     }
 
+    /**
+     * The stored photo of a public author, in the same statement that checks the author card and the photo flag, so
+     * a withdrawal cannot fall between the check and the read. Every non-public state is the same 404 as unknown.
+     */
+    public Owned requirePublic(UUID id) {
+        return jdbcClient.sql("""
+                        SELECT v.account_id,v.asset_id,v.storage_key,v.content_type,v.byte_size,v.content_sha256,
+                               v.storage_version
+                        FROM app_identity.public_profile_consent c
+                        JOIN app_identity.account a ON a.account_id=c.account_id
+                        JOIN app_identity.account_avatar v ON v.account_id=c.account_id
+                        WHERE c.account_id=:id AND c.show_avatar AND\s""" + PublicProfiles.CARD_GATE)
+                .param("id", id).query(Owned.class).optional()
+                .orElseThrow(() -> new AccountFailure(404, "avatar_not_found"));
+    }
+
+    /** Strong validator derived from the stored SHA-256 of the exact bytes. */
+    public static String etag(Owned avatar) {
+        return "\"" + java.util.HexFormat.of().formatHex(avatar.contentSha256()) + "\"";
+    }
+
+    /** The owner's own photo, independent of the public profile consent. */
+    public Content readOwn(AccountAccess access) {
+        accounts.require(access, false);
+        return read(access.accountId());
+    }
+
     public Content read(UUID id) {
         if (accounts.find(id, false).filter(account -> account.status().equals("ACTIVE") &&
                 account.deletionState().equals("ACTIVE")).isEmpty())
             throw new AccountFailure(404, "avatar_not_found");
-        var avatar = owned(id).orElseThrow(() -> new AccountFailure(404, "avatar_not_found"));
+        return load(owned(id).orElseThrow(() -> new AccountFailure(404, "avatar_not_found")));
+    }
+
+    /** Reads and verifies the bytes of an owned avatar. */
+    public Content load(Owned avatar) {
         byte[] bytes = storage.get(avatar.storageKey());
         if (bytes.length != avatar.byteSize() || !MessageDigest.isEqual(Secrets.digest(bytes), avatar.contentSha256()))
             throw new AccountFailure(503, "avatar_storage_invalid");

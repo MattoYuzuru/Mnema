@@ -4,7 +4,7 @@ artifact:
   type: evidence-index
   title: "Engineering evidence index"
   status: current
-  updated_at: "2026-10-07"
+  updated_at: "2026-10-10"
   owners: ["project-owner"]
 ---
 
@@ -18,6 +18,10 @@ Records written before #266 use the removed exercise names (`TYPED`, `LISTEN_TYP
 wire shapes; the current mechanics and fields are in
 [`contracts/study`](../../../contracts/study/README.md#exercise-mechanics-266). Screenshots
 of the former two-column exercise editor are likewise historical.
+
+## Community decks
+
+- [Эпик 1: фундамент, доступ и копии](./community-decks/epic-1/README.md) — evidence задач эпика #419, начиная с прототипа линии хранения (Share/3).
 
 ## Owner console
 

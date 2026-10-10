@@ -44,11 +44,38 @@ describe('StyleguidePageComponent', () => {
     it('renders the real app components and classes', () => {
         for (const selector of [
             'app-hold-to-delete-button', 'app-segmented-choice', 'app-toggletip', 'app-usage-meter', 'app-mnema-select', 'app-choice-list',
-            'app-batch-pager', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-mail-glyph', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'button.generate-cta', 'button.button.primary',
-            '.check-field > .check-row', '.settings-row.is-switch', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
+            'app-batch-pager', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-mail-glyph', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'button.generate-cta', 'button.button.primary',
+            '.check-field > .check-row', '.settings-row.is-switch', '.settings-row.is-switch.is-live', 'fieldset.check-group > legend', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
         ]) {
             expect(root.querySelector(selector), selector).not.toBeNull();
         }
+    });
+
+    it('shows the live consent switch: fields follow it, and the pending state keeps controls focusable', () => {
+        const stage = [...root.querySelectorAll<HTMLElement>('.sg-stage')].find(item => item.querySelector('.is-live'))!;
+        const live = stage.querySelector<HTMLInputElement>('input[role=switch]')!;
+        const fields = [...stage.querySelectorAll<HTMLInputElement>('fieldset.check-group input')].slice(0, 3);
+        expect(live.checked).toBe(false);
+        expect(fields.every(field => field.disabled && !field.checked)).toBe(true);
+        live.checked = true;
+        live.dispatchEvent(new Event('change'));
+        fixture.detectChanges();
+        expect(fields.every(field => !field.disabled)).toBe(true);
+        const pending = [...stage.querySelectorAll<HTMLInputElement>('input[aria-disabled=true]')];
+        expect(pending.length).toBeGreaterThanOrEqual(2);
+        expect(pending.every(field => !field.disabled)).toBe(true);
+        expect(stage.querySelector('[role=status]')?.textContent).toBe('Сохраняем…');
+    });
+
+    it('shows the author chip with a photo, with the placeholder, truncated, and hidden', () => {
+        const chips = [...root.querySelectorAll<HTMLElement>('#status app-author-chip')];
+        expect(chips).toHaveLength(4);
+        expect(chips[0].querySelector('img')?.getAttribute('width')).toBe('20');
+        expect(chips[0].querySelector('.login')?.textContent).toBe('@anna.k');
+        expect(chips[1].querySelector('img')).toBeNull();
+        expect(chips[1].querySelector('.placeholder')?.textContent).toBe('A');
+        expect(chips[2].querySelector('.login')?.textContent?.length).toBeGreaterThan(40);
+        expect(chips[3].querySelector('.chip')).toBeNull();
     });
 
     it('reads the palette from the live tokens and grades the contrast pairs', async () => {

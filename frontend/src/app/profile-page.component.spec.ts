@@ -12,10 +12,14 @@ import { UsageApiService } from './features/usage/usage-api.service';
 import type { UsageSnapshot } from './features/usage/usage.models';
 import { plusUsage } from './features/usage/usage-test-data';
 import { spyObj, type SpyObj } from '../testing/mocks';
+import fixture from '../../../contracts/identity/public-profile.json';
+import type { PublicProfileConsent } from './public-profile';
 
 const profile: AccountProfile = { accountId: 'd2815e20-ea25-4dce-977a-66ee086f294d',
     email: 'reader@example.test', emailVerified: true, profileUsername: 'reader', displayName: 'Reader',
     bio: '', avatarPresent: false, hasPassword: true };
+
+const consentDefault = fixture.consentDefault as PublicProfileConsent;
 
 describe('ProfilePageComponent', () => {
     let component: ProfilePageComponent;
@@ -30,12 +34,16 @@ describe('ProfilePageComponent', () => {
             load: vi.fn().mockName("AccountProfileApi.load"),
             update: vi.fn().mockName("AccountProfileApi.update"),
             uploadAvatar: vi.fn().mockName("AccountProfileApi.uploadAvatar"),
-            avatarUrl: vi.fn().mockName("AccountProfileApi.avatarUrl")
+            loadAvatar: vi.fn().mockName("AccountProfileApi.loadAvatar"),
+            loadPublicProfile: vi.fn().mockName("AccountProfileApi.loadPublicProfile"),
+            savePublicProfile: vi.fn().mockName("AccountProfileApi.savePublicProfile")
         });
         usage = spyObj<UsageApiService>({ load: vi.fn().mockName("UsageApiService.load") });
         usage.load.mockReturnValue(of(plusUsage() as unknown as UsageSnapshot));
         api.load.mockReturnValue(of(profile));
         api.update.mockReturnValue(of({ ...profile, displayName: 'Updated' }));
+        api.loadPublicProfile.mockReturnValue(of(consentDefault));
+        api.loadAvatar.mockReturnValue(of(new Blob(['png'], { type: 'image/png' })));
         TestBed.configureTestingModule({ providers: [
                 provideRouter([]),
                 { provide: AccountProfileApi, useValue: api },
@@ -262,5 +270,109 @@ describe('ProfilePageComponent', () => {
         await fixture.whenStable();
         fixture.detectChanges();
         expect(scroll).not.toHaveBeenCalled();
+    });
+
+    describe('own avatar', () => {
+        const withAvatar = { ...profile, avatarPresent: true };
+        let created: string[];
+        let revoked: string[];
+
+        const original = { create: Object.getOwnPropertyDescriptor(URL, 'createObjectURL'), revoke: Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL') };
+        const restore = (name: 'createObjectURL' | 'revokeObjectURL', descriptor: PropertyDescriptor | undefined): void => {
+            if (descriptor === undefined) Reflect.deleteProperty(URL, name); else Object.defineProperty(URL, name, descriptor);
+        };
+        afterEach(() => { restore('createObjectURL', original.create); restore('revokeObjectURL', original.revoke); });
+
+        beforeEach(() => {
+            created = [];
+            revoked = [];
+            api.load.mockReturnValue(of(withAvatar));
+            Object.defineProperty(URL, 'createObjectURL', { configurable: true, writable: true, value: vi.fn(() => `blob:own-${created.push('x')}`) });
+            Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, writable: true, value: vi.fn((url: string) => { revoked.push(url); }) });
+        });
+
+        async function open() {
+            const fixture = TestBed.createComponent(ProfilePageComponent);
+            fixture.detectChanges();
+            await fixture.whenStable();
+            fixture.detectChanges();
+            await fixture.whenStable();
+            fixture.detectChanges();
+            return { fixture, root: fixture.nativeElement as HTMLElement };
+        }
+
+        it('shows the photo from the owner endpoint as a local address, never the public avatar URL', async () => {
+            const { root } = await open();
+            expect(api.loadAvatar).toHaveBeenCalledOnce();
+            expect(root.querySelector('.avatar-preview img')?.getAttribute('src')).toBe('blob:own-1');
+        });
+
+        it('keeps the letter when the owner endpoint fails or answers with something that is not an image', async () => {
+            api.loadAvatar.mockReturnValue(throwError(() => new Error('offline')));
+            let view = await open();
+            expect(view.root.querySelector('.avatar-preview img')).toBeNull();
+            expect(view.root.querySelector('.avatar-preview span')?.textContent).toBe('R');
+            view.fixture.destroy();
+
+            api.loadAvatar.mockReturnValue(of(new Blob(['<svg/>'], { type: 'image/svg+xml' })));
+            view = await open();
+            expect(view.root.querySelector('.avatar-preview img')).toBeNull();
+            expect(URL.createObjectURL).not.toHaveBeenCalled();
+        });
+
+        it('does not ask for a photo the profile does not have', async () => {
+            api.load.mockReturnValue(of(profile));
+            const { root } = await open();
+            expect(api.loadAvatar).not.toHaveBeenCalled();
+            expect(root.querySelector('.avatar-preview img')).toBeNull();
+        });
+
+        it('releases the previous address when a new photo replaces it and the last one on destroy', async () => {
+            const { fixture } = await open();
+            api.uploadAvatar.mockReturnValue(of(undefined));
+            const input = document.createElement('input');
+            Object.defineProperty(input, 'files', { value: [new File(['x'], 'me.png', { type: 'image/png' })] });
+            await fixture.componentInstance.uploadAvatar({ target: input } as unknown as Event);
+            await fixture.whenStable();
+            expect(fixture.componentInstance.avatarUrl()).toBe('blob:own-2');
+            expect(revoked).toEqual(['blob:own-1']);
+            fixture.destroy();
+            expect(revoked).toEqual(['blob:own-1', 'blob:own-2']);
+        });
+
+        it('drops an older photo response that arrives after a newer one', async () => {
+            const slow = new Subject<Blob>();
+            api.loadAvatar.mockReturnValueOnce(slow).mockReturnValueOnce(of(new Blob(['png'], { type: 'image/webp' })));
+            const fixture = TestBed.createComponent(ProfilePageComponent);
+            fixture.detectChanges();
+            await fixture.whenStable();
+            api.uploadAvatar.mockReturnValue(of(undefined));
+            const input = document.createElement('input');
+            Object.defineProperty(input, 'files', { value: [new File(['x'], 'me.png', { type: 'image/png' })] });
+            await fixture.componentInstance.uploadAvatar({ target: input } as unknown as Event);
+            await fixture.whenStable();
+            expect(fixture.componentInstance.avatarUrl()).toBe('blob:own-1');
+            slow.next(new Blob(['old'], { type: 'image/png' }));
+            slow.complete();
+            await fixture.whenStable();
+            expect(fixture.componentInstance.avatarUrl()).toBe('blob:own-1');
+            expect(created).toHaveLength(1);
+        });
+    });
+
+    it('hosts the «Публичный профиль» section between the profile details and the AI budget', async () => {
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        const section = root.querySelector('section#public-profile-settings')!;
+        expect(section.getAttribute('aria-labelledby')).toBe('public-profile-heading');
+        expect(root.querySelector('#public-profile-heading')?.textContent).toBe('Публичный профиль');
+        expect(section.querySelector('app-public-profile-settings input[role=switch]')).not.toBeNull();
+        const ids = [...root.querySelectorAll('.profile-layout > section')].map(item => item.id || 'details');
+        expect(ids.slice(0, 3)).toEqual(['details', 'public-profile-settings', 'ai-budget']);
     });
 });
