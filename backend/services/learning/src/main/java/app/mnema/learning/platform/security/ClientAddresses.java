@@ -41,6 +41,20 @@ public final class ClientAddresses {
         return client(request).map(ClientAddresses::network);
     }
 
+    /**
+     * The coarse network for flood limits: an IPv6 address reduced to its /48 (a site or a rented block: rotating /64s inside it must not mint fresh
+     * budgets), written {@code 2001:db8:0::/48}.
+     *
+     * @return the /48, or empty for an IPv4 address (its address is already the finest and only network) and for a request without a usable peer
+     */
+    public Optional<String> resolveCoarseNetwork(HttpServletRequest request) {
+        return client(request).filter(address -> address.getAddress().length == 16).map(address -> {
+            byte[] bytes = address.getAddress();
+            return String.format("%x:%x:%x::/48", ((bytes[0] & 0xff) << 8) | (bytes[1] & 0xff), ((bytes[2] & 0xff) << 8) | (bytes[3] & 0xff),
+                    ((bytes[4] & 0xff) << 8) | (bytes[5] & 0xff));
+        });
+    }
+
     private static String network(InetAddress address) {
         byte[] bytes = address.getAddress();
         if (bytes.length != 16) return address.getHostAddress();

@@ -8,6 +8,8 @@ import app.mnema.learning.generation.EditInProgressException;
 import app.mnema.learning.generation.GenerationStateConflictException;
 import app.mnema.learning.generation.SourceUnavailableException;
 import app.mnema.learning.generation.StaleArtifactsException;
+import app.mnema.learning.library.DeckInviteOnlyException;
+import app.mnema.learning.library.PublicReadBusyException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.media.MediaStorageUnavailableException;
 import app.mnema.learning.media.MediaUploadConflictException;
@@ -99,6 +101,18 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(AccessForbiddenException.class)
     ResponseEntity<Object> handleAccessForbidden(AccessForbiddenException exception, HttpServletRequest request) {
         return response(ApiErrorCode.ACCESS_DENIED, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(DeckInviteOnlyException.class)
+    ResponseEntity<Object> handleDeckInviteOnly(DeckInviteOnlyException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.DECK_INVITE_ONLY, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(PublicReadBusyException.class)
+    ResponseEntity<Object> handlePublicReadBusy(PublicReadBusyException exception, HttpServletRequest request) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
+        return response(ApiErrorCode.PUBLIC_READ_BUSY, ApiErrorCode.PUBLIC_READ_BUSY.status(), request.getRequestURI(), headers, exception.extension());
     }
 
     @ExceptionHandler(IdentityUnavailableException.class)
@@ -244,9 +258,24 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         log.error(
                 "Unhandled API exception exception_type={} request_path={}",
                 exception.getClass().getName(),
-                request.getRequestURI()
+                loggablePath(request)
         );
         return response(ApiErrorCode.INTERNAL_ERROR, request.getRequestURI(), new HttpHeaders());
+    }
+
+    private static final java.util.regex.Pattern PUBLIC_DECK_PATH = java.util.regex.Pattern.compile("^(.*/public/decks/)[^/]+");
+
+    /**
+     * The request path for a log line. The public code of a deck is a credential of its link ({@code LINK} and {@code INVITE} decks are reachable by
+     * it alone), so it never reaches a log: the route template the request was mapped to is logged (for example {@code /public/decks/{code}/items}),
+     * and when no mapping was made, the segment after {@code /public/decks/} is redacted.
+     */
+    static String loggablePath(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        if (uri == null || !uri.contains("/public/decks/")) return uri;
+        Object template = request.getAttribute(org.springframework.web.servlet.HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        if (template instanceof String pattern && !pattern.isBlank()) return request.getContextPath() + pattern;
+        return PUBLIC_DECK_PATH.matcher(uri).replaceFirst("$1{code}");
     }
 
     @Override

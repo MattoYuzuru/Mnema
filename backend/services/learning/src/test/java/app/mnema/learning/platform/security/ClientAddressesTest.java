@@ -50,6 +50,17 @@ class ClientAddressesTest {
     }
 
     @Test
+    void theCoarseNetworkOfAnIpv6ClientIsItsSlash48AndIpv4HasNone() {
+        assertThat(addresses.resolveCoarseNetwork(request("2001:db8:1:2:aaaa:bbbb:cccc:dddd", null))).contains("2001:db8:1::/48");
+        assertThat(addresses.resolveCoarseNetwork(request("2001:db8:1:ffff::1", null))).contains("2001:db8:1::/48");
+        assertThat(addresses.resolveCoarseNetwork(request("2001:db8:2::1", null))).contains("2001:db8:2::/48");
+        assertThat(addresses.resolveCoarseNetwork(request("127.0.0.1", "2001:db8:ffff:1:2:3:4:5"))).contains("2001:db8:ffff::/48");
+        assertThat(addresses.resolveCoarseNetwork(request("198.51.100.7", null))).isEmpty();
+        assertThat(addresses.resolveCoarseNetwork(request("::ffff:198.51.100.9", null))).isEmpty();
+        assertThat(addresses.resolveCoarseNetwork(request("host.example", null))).isEmpty();
+    }
+
+    @Test
     void anUnusablePeerIsEmpty() {
         assertThat(addresses.resolve(request("", null))).isEmpty();
         assertThat(addresses.resolve(request("host.example", null))).isEmpty();

@@ -34,13 +34,18 @@ public class ItemPreviews {
                         + "WHERE reuse_scope_id=:scope AND member_key=:member AND revision_id=:revision")
                 .param("scope", scope).param("member", member).param("revision", revision).query(UUID.class).optional()
                 .orElseThrow(ResourceNotFoundException::new);
-        var decoder = new NativeSnapshotDecoder(new ObjectRef(scope, root));
-        while (!decoder.isComplete()) batches.readNext(decoder);
-        String title = NativeDocumentPreview.title(decoder.snapshot().document());
+        String title = derive(scope, root);
         jdbc.sql("""
                 INSERT INTO app_learning.item_preview(reuse_scope_id,member_key,revision_id,title)
                 VALUES (:scope,:member,:revision,:title) ON CONFLICT DO NOTHING
                 """).param("scope", scope).param("member", member).param("revision", revision).param("title", title).update();
         return title;
+    }
+
+    /** The title of the document stored under a content root, read-only: nothing is cached (the batch reader of the public routes stores its misses itself). */
+    public String derive(UUID scope, UUID contentRoot) {
+        var decoder = new NativeSnapshotDecoder(new ObjectRef(scope, contentRoot));
+        while (!decoder.isComplete()) batches.readNext(decoder);
+        return NativeDocumentPreview.title(decoder.snapshot().document());
     }
 }

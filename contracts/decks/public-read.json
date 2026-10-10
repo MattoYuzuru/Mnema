@@ -1,0 +1,307 @@
+{
+  "contract": "public-read-v1",
+  "description": "Shared frontend/backend fixtures for the read-only view of someone else's deck (Share/7, #429): the published revision of a deck behind its public code, for guests and any account. GET and HEAD only; the Bearer token is optional (no token is a guest, a valid token identifies the account, a present but invalid Bearer token is 401 and is never treated as a guest). Responses are no-store and vary with the bearer. Problem shapes follow RFC 9457 as everywhere. `invariants` are executable: the integration tests compare the real answers with the property sets of these examples. Media is not served here (Share/9) and the exercise list never carries answers or authoring titles.",
+  "constants": {
+    "basePath": "/api/public/decks/{code}",
+    "codeLength": 10,
+    "codeAlphabet": "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz",
+    "visibilities": [
+      "PRIVATE",
+      "INVITE",
+      "LINK",
+      "PUBLIC"
+    ],
+    "accessLevels": [
+      "OWNER",
+      "GRANTEE",
+      "PUBLIC",
+      "LINK"
+    ],
+    "pageDefault": 20,
+    "pageMax": 100,
+    "slugMaxLength": 80,
+    "promptMaxCodePoints": 200,
+    "killSwitch": "learning.community.public-routes.enabled (default false: every route answers 404)",
+    "rateLimit": {
+      "guestPerMinute": 120,
+      "coarsePerMinute": 600,
+      "overflowPerMinute": 600,
+      "accountPerMinute": 600,
+      "scope": "per instance: a guest per client network (IPv4 address, IPv6 /64) and, for IPv6, all guests of one /48 together; guests that find the guest table full share one overflow bucket; a signed-in viewer per account (a separate table, never starved by guests)",
+      "status": 429
+    },
+    "bulkhead": {
+      "maxConcurrent": 4,
+      "status": 503,
+      "retryAfterSeconds": 1,
+      "note": "reads served at once per instance; the next one is refused immediately instead of waiting for a connection"
+    }
+  },
+  "invariants": [
+    "an unknown code, a code rotated away, a private deck, a deleted deck and a deck without a published revision answer the same 404 (only `instance` differs)",
+    "an invitation-only deck answers 403 DECK_INVITE_ONLY to a viewer without a grant, with no title, description, owner or member data",
+    "a non-owner reads the PUBLISHED revision only; the owner on these routes reads it too (his own routes keep reading the head)",
+    "slug is present only when visibility is PUBLIC",
+    "items.page.items are in manifest order, ordinal continues across pages, nextCursor is null on the last page, cursors are opaque and bound to the published revision (a republication makes an old cursor 412)",
+    "an item that is not in the published manifest is 404 even if the deck's head has it",
+    "exercises carry exerciseId, exerciseRevisionId, ordinal, type, enabled and a plain-text prompt summary only (no authoring title): never answer keys, options, references, transcripts, bindings or evaluator policies",
+    "no response carries a deck id, a deck revision or version, draft ids, journal data or origin deck ids",
+    "every answer is Cache-Control: no-store with Vary: Authorization",
+    "pageDefault <= pageMax; limit outside 1..pageMax, repeated parameters and malformed cursors are 400",
+    "ownerId is returned on purpose: the UI needs it to ask Identity for the author's card; the card (name, avatar) is consent-gated in Identity (Share/1), Learning exposes only the opaque account id",
+    "a link changes (the old code answers 404) whenever the level moves to a more restrictive one: PUBLIC > LINK > INVITE > PRIVATE, every step down included; raising the level keeps the code",
+    "a read refused by the bulkhead is 503 PUBLIC_READ_BUSY with Retry-After before any lookup, so it says nothing about the code"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/public/decks/{code}",
+      "answers": "summary"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/decks/{code}/items?limit=&cursor=",
+      "answers": "items.page"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/decks/{code}/items/{memberKey}",
+      "answers": "items.document"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/decks/{code}/exercises?limit=&cursor=",
+      "answers": "exercises.page"
+    }
+  ],
+  "summary": {
+    "request": "GET /api/public/decks/Kq7xT3mNpR",
+    "public": {
+      "code": "Kq7xT3mNpR",
+      "visibility": "PUBLIC",
+      "access": "PUBLIC",
+      "title": "Испанский язык: базовые глаголы",
+      "description": "Сорок глаголов на каждый день",
+      "memberCount": 2,
+      "exerciseCount": 1,
+      "publishedAt": "2026-10-11T09:30:00Z",
+      "ownerId": "0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35",
+      "slug": "ispanskiy-yazyk-bazovye-glagoly"
+    },
+    "link": {
+      "code": "Zp4WcA8vQe",
+      "visibility": "LINK",
+      "access": "LINK",
+      "title": "Черновик для друзей",
+      "description": "",
+      "memberCount": 2,
+      "exerciseCount": 0,
+      "publishedAt": "2026-10-11T09:30:00Z",
+      "ownerId": "0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35"
+    },
+    "invitedGrantee": {
+      "code": "Hs9Bd2kLfM",
+      "visibility": "INVITE",
+      "access": "GRANTEE",
+      "title": "Для группы",
+      "description": "Только для своих",
+      "memberCount": 2,
+      "exerciseCount": 0,
+      "publishedAt": "2026-10-11T09:30:00Z",
+      "ownerId": "0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35"
+    }
+  },
+  "items": {
+    "page": {
+      "request": "GET /api/public/decks/Kq7xT3mNpR/items?limit=1",
+      "response": {
+        "code": "Kq7xT3mNpR",
+        "total": 2,
+        "items": [
+          {
+            "memberKey": "7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+            "itemRevisionId": "9b3e4f50-6c7d-4e8f-a091-1c2d3e4f5061",
+            "ordinal": 0,
+            "title": "ser — быть (постоянное свойство)"
+          }
+        ],
+        "nextCursor": "aS8wMTk4YTZjMC0xZDNlLTdhNTItOWIwYy0yZjZkOGU0YTFjMzUvMQ"
+      },
+      "lastPage": {
+        "code": "Kq7xT3mNpR",
+        "total": 2,
+        "items": [
+          {
+            "memberKey": "8a2d3e4f-5b6c-4d7e-9f80-0b1c2d3e4f50",
+            "itemRevisionId": "ac4f5061-7d8e-4f90-b1a2-2d3e4f506172",
+            "ordinal": 1,
+            "title": "estar — быть (состояние)"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    "document": {
+      "request": "GET /api/public/decks/Kq7xT3mNpR/items/7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "response": {
+        "code": "Kq7xT3mNpR",
+        "memberKey": "7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+        "itemRevisionId": "9b3e4f50-6c7d-4e8f-a091-1c2d3e4f5061",
+        "ordinal": 0,
+        "formatVersion": 1,
+        "document": {
+          "formatVersion": 1,
+          "root": {
+            "id": "d0000000-0000-4000-8000-000000000001",
+            "type": "doc",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "d0000000-0000-4000-8000-000000000010",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "d0000000-0000-4000-8000-00000000001f",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "ser — быть (постоянное свойство)"
+                    },
+                    "content": []
+                  }
+                ]
+              },
+              {
+                "id": "d0000000-0000-4000-8000-000000000020",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "d0000000-0000-4000-8000-00000000002f",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "estar — быть (состояние)"
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "exercises": {
+    "page": {
+      "request": "GET /api/public/decks/Kq7xT3mNpR/exercises",
+      "response": {
+        "code": "Kq7xT3mNpR",
+        "total": 1,
+        "exercises": [
+          {
+            "exerciseId": "bd506172-8e9f-4aa1-82b3-3e4f50617283",
+            "exerciseRevisionId": "ce617283-9fa0-4bb2-93c4-4f5061728394",
+            "ordinal": 0,
+            "type": "FREE_RESPONSE",
+            "enabled": true,
+            "prompt": "Как сказать «я дома»?"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    "promptRules": "the TEXT blocks of the prompt slot joined by a space, whitespace collapsed; a cloze without prompt text shows its passage with each blank as an ellipsis; at most promptMaxCodePoints code points, then an ellipsis; null when the question has no plain text"
+  },
+  "problems": {
+    "notFound": {
+      "status": 404,
+      "body": {
+        "type": "urn:mnema:problem:resource-not-found",
+        "title": "Resource not found",
+        "status": 404,
+        "detail": "The requested resource does not exist.",
+        "instance": "/api/public/decks/Kq7xT3mNpR",
+        "code": "RESOURCE_NOT_FOUND"
+      }
+    },
+    "inviteOnly": {
+      "status": 403,
+      "body": {
+        "type": "urn:mnema:problem:deck-invite-only",
+        "title": "Deck is invite only",
+        "status": 403,
+        "detail": "The deck is shared by invitation.",
+        "instance": "/api/public/decks/Hs9Bd2kLfM",
+        "code": "DECK_INVITE_ONLY"
+      }
+    },
+    "rateLimited": {
+      "status": 429,
+      "headers": {
+        "Retry-After": "37"
+      },
+      "body": {
+        "type": "urn:mnema:problem:rate-limited",
+        "title": "Rate limited",
+        "status": 429,
+        "detail": "Too many requests; retry after the time in Retry-After.",
+        "instance": "/api/public/decks/Kq7xT3mNpR",
+        "code": "RATE_LIMITED",
+        "retryAfter": 37
+      }
+    },
+    "staleCursor": {
+      "status": 412,
+      "body": {
+        "type": "urn:mnema:problem:version-conflict",
+        "title": "Version conflict",
+        "status": 412,
+        "detail": "The resource changed after the supplied version was read.",
+        "instance": "/api/public/decks/Kq7xT3mNpR/items",
+        "code": "VERSION_CONFLICT"
+      }
+    },
+    "invalidRequest": {
+      "status": 400,
+      "body": {
+        "type": "urn:mnema:problem:invalid-request",
+        "title": "Invalid request",
+        "status": 400,
+        "detail": "The request is invalid or cannot be read.",
+        "instance": "/api/public/decks/Kq7xT3mNpR/items",
+        "code": "INVALID_REQUEST"
+      }
+    },
+    "invalidToken": {
+      "status": 401,
+      "note": "a present but invalid, expired or revoked Bearer token; an absent token is a guest and never 401",
+      "code": "AUTHENTICATION_REQUIRED"
+    },
+    "missingScope": {
+      "status": 403,
+      "note": "a valid bearer without learning.read",
+      "code": "ACCESS_DENIED"
+    },
+    "busy": {
+      "status": 503,
+      "headers": {
+        "Retry-After": "1"
+      },
+      "body": {
+        "type": "urn:mnema:problem:public-read-busy",
+        "title": "Public reads busy",
+        "status": 503,
+        "detail": "Public reads are busy; retry after the time in Retry-After.",
+        "instance": "/api/public/decks/Kq7xT3mNpR",
+        "code": "PUBLIC_READ_BUSY",
+        "retryAfter": 1
+      }
+    }
+  }
+}
