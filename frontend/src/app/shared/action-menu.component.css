@@ -1,0 +1,31 @@
+:host { display: inline-flex; min-inline-size: 0; }
+
+.trigger { display: inline-grid; place-content: center; min-inline-size: var(--mn-touch-min, 2.75rem); min-block-size: var(--mn-touch-min, 2.75rem); margin: 0; border: 0; padding: 0; background: transparent; color: var(--mn-ink); cursor: pointer; touch-action: manipulation; }
+.trigger:hover { color: var(--mn-body); }
+.trigger:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+.trigger[aria-expanded=true] { background: var(--mn-soft); }
+
+/* The menu is a sheet in the top layer; it has no animation, so reduced motion changes nothing here. */
+.menu { box-sizing: border-box; inline-size: max-content; min-inline-size: min(12rem, calc(100vw - 2rem)); max-inline-size: calc(100vw - 2rem); margin: auto; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .25rem; background: var(--mn-sheet); color: var(--mn-body); font: .95rem/1.4 var(--mn-font-body, system-ui, sans-serif); box-shadow: 0 .25rem 1rem rgb(40 19 120 / 18%); }
+.menu:popover-open { display: grid; }
+
+.item { display: flex; align-items: center; gap: .6rem; inline-size: 100%; min-block-size: var(--mn-touch-min, 2.75rem); margin: 0; border: 0; padding: .4rem .75rem; background: transparent; color: var(--mn-ink); font: inherit; text-align: start; cursor: pointer; touch-action: manipulation; }
+.item .spacer { flex: none; inline-size: var(--mn-glyph-size, 1.25rem); }
+.item span:not(.spacer) { min-inline-size: 0; overflow-wrap: anywhere; }
+.item:hover:not(:disabled), .item:focus-visible { background: var(--mn-soft); }
+.item:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+.item.danger { color: var(--mn-danger); }
+.item:disabled { color: var(--mn-muted); cursor: not-allowed; }
+
+/* Under the button, its end edge on the button's end edge, flipping when there is no room; elsewhere the browser centres the menu. */
+@supports (position-area: block-end) {
+  .menu { inset: auto; margin: .25rem 0 0; position-area: block-end span-inline-start; position-try-fallbacks: flip-block, flip-inline; }
+}
+
+@media (forced-colors: active) {
+  .menu { border-color: CanvasText; box-shadow: none; }
+  .trigger, .item { color: ButtonText; }
+  .item:disabled { color: GrayText; }
+  .item:focus-visible { outline-color: Highlight; background: transparent; }
+  .trigger[aria-expanded=true] { outline: 1px solid CanvasText; }
+}
