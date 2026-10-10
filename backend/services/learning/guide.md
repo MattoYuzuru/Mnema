@@ -1262,6 +1262,42 @@ capacity evidence.
   Deck size; 2.1 s cold at 10 000 materials, now ~0.1 s). Limit problems carry the typed
   `ProblemExtension` member `limit`. Measured numbers are in the #285 PR evidence.
 
+### Material revisions and the storage lineage (Share/4, #426, migration `V51__lineage_items.sql`)
+
+Material identity and revisions are keyed by the **lineage**, the deck's immutable `reuse_scope_id`
+([community decks architecture §4](../../../docs/architecture/community-decks.md#4-линия-неизменяемые-строки-cd-1)).
+Today every scope has exactly one deck; a copy (Share/10) will add a second deck to a scope, and these rules make that safe.
+
+- **Lineage rows** `learning_item`, `item_revision`, `item_preview`, `content_media_ref` are keyed `(reuse_scope_id,
+  member_key[, revision_id])`. Their `deck_id`, `deck_revision_id`, `deck_sequence`, `owner_id` are the **origin** of the
+  revision (the deck whose command wrote it), never "belongs to deck D". `item_revision` keeps `UNIQUE (deck_id,
+  member_key, item_sequence)` (origin numbers stay linear until Updates/2, #441) and a temporary
+  `item_revision_origin_key` for the exercise bindings until Share/5.
+- **Per-deck rows** `deck_head_item`, `deck_item_change`, `deck_item_exemplar`, `editing_draft`, `capture_note` carry
+  `reuse_scope_id` (FK `(deck_id, reuse_scope_id) -> deck`) and reach lineage rows through it. Every `INSERT` of such a
+  row writes the deck's scope.
+- **Reading rule.** "What is in deck D" starts at D's head (or D's pinned member root) and joins lineage rows by
+  `(reuse_scope_id, member_key, revision_id)`. A lineage table is never filtered by `deck_id` to mean "of D". Responses take
+  `deckId`, `deckRevisionId`, `deckVersion` and timestamps from the reading deck's head/journal rows.
+- **Revision visibility** (one rule, `ItemRevisionVisibility`): revision R of member M is visible to deck D iff R is D's
+  head for M or D's `deck_item_change` has a row that published R (`revision_id`). It is one SQL fragment, not a database
+  function, so every caller's plan stays a plain index probe and the rule changes in one place (Share/5 adds revisions
+  pinned by D's exercise bindings). Used by `ItemRepository.revision`, `AuthoringRepository.ownsBase`,
+  `GenerationRepository.itemRevisionExists`, `StudySessionRepository.material`; `ExerciseRepository.itemRevision` is its
+  head branch (bindings only target a current head). A copy therefore never reads the source's later revisions or the
+  source's history before the copy, and the source never reads a copy's revision.
+- **Media.** `content_media_ref.asset_owner_id` is the owner of the asset (FK to `media_asset`); the revision writer may be
+  another account. Media of deck D are the references of D's heads. The application-level rule "an attached asset is the
+  actor's own" stays until Share/9 (#431); no copy exists before then.
+- **Previews.** `item_preview` is a cache per lineage revision, read and written as `ItemPreviews.title(scope, member,
+  revision)`; the content root is read from `item_revision`, never supplied by the caller.
+- **GC.** A removal that fails with a foreign-key violation (a domain row holds the root) is "still referenced": the
+  candidate is dropped and counted as deferred, inside a savepoint, instead of failing the pass forever.
+- Tests: `LineageItemsMigrationIntegrationTest` (V49 data, guards, exact constraint inventory),
+  `LineageSharedScopeIntegrationTest` and the `Lineage*IntegrationTest` classes of `catalog.authoring`,
+  `catalog.exercise`, `generation`, `study.session` (two decks in one scope through the real services),
+  `StorageGcIntegrationTest.anObjectHeldOnlyByADomainForeignKeyIsDeferredInsteadOfRetriedForever`.
+
 ## Notification center
 
 `app.mnema.learning.notification` implements [`contracts/notifications`](../../../contracts/notifications/README.md)

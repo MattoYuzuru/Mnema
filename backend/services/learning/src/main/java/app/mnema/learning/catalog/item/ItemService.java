@@ -167,8 +167,7 @@ public class ItemService {
     }
 
     private ObjectNode listed(ItemRecord row, int ordinal, UUID deckId, Integer exerciseCount, Set<UUID> exemplars) {
-        ObjectNode item = row.summary(ordinal).put("title", previews.title(deckId, row.memberKey(), row.revisionId(),
-                row.scopeId(), row.contentRootId()));
+        ObjectNode item = row.summary(ordinal).put("title", previews.title(row.scopeId(), row.memberKey(), row.revisionId()));
         if (exerciseCount != null) item.put("exerciseCount", exerciseCount);
         return item.put("exemplar", exemplars.contains(row.memberKey()));
     }
@@ -180,7 +179,10 @@ public class ItemService {
                 : repository.revision(actor, deckId, memberKey, revisionId)).orElseThrow(ResourceNotFoundException::new);
         UUID selectedDeckRevision = revisionId == null ? deck.revisionId() : item.publishedDeckRevisionId();
         long selectedDeckVersion = revisionId == null ? deck.version() : item.publishedDeckVersion();
-        Integer ordinal = revisionId == null ? repository.currentOrdinal(deck, item).orElseThrow(VersionConflictException::new)
+        // A revision this deck inherited (a copy's starting head) has no journal row, so no recorded ordinal: it is the
+        // current head, and its position is read from the member root like a head read.
+        Integer ordinal = revisionId == null || item.ordinal() == null
+                ? repository.currentOrdinal(deck, item).orElseThrow(VersionConflictException::new)
                 : item.ordinal();
         ObjectNode result = item.detail(selectedDeckRevision, selectedDeckVersion,
                 decode(item.scopeId(), item.contentRootId()).document());
@@ -351,7 +353,7 @@ public class ItemService {
                             null, prepared.deckRevision(), deckSequence, command.commandId(), create.contentRoot(),
                             create.descriptorRoot(), time);
                     mediaCatalog.attachRevision(actor, deckId, create.member(), create.revision(), create.mediaReferences());
-                    repository.insertHead(deckId, create.member(), create.revision(), 0, time);
+                    repository.insertHead(deckId, before.scopeId(), create.member(), create.revision(), 0, time);
                     pendingChanges.add(new PendingChange("create", create.member(), null, create.revision(),
                             create.revision(), 0, null));
                 }
@@ -392,7 +394,7 @@ public class ItemService {
         for (int index = 0; index < pendingChanges.size(); index++) {
             PendingChange change = pendingChanges.get(index);
             Integer finalOrdinal = prepared.finalOrdinals().get(change.member());
-            repository.change(deckId, prepared.deckRevision(), deckSequence, index, change.member(), change.operation(),
+            repository.change(deckId, before.scopeId(), prepared.deckRevision(), deckSequence, index, change.member(), change.operation(),
                     change.previousRevision(), change.publishedRevision(), change.fromOrdinal(), finalOrdinal);
             results.add(result(change.operation(), change.member(), change.resultRevision(),
                     change.itemVersion(), finalOrdinal));

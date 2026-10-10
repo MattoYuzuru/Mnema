@@ -50,38 +50,63 @@ class ItemRepository {
                 """).param("actor", actor).param("deck", deck).query(DECK).optional();
     }
 
+    /**
+     * The current revision of one material of the owner's deck. Reads start at the deck's own head row and reach the
+     * lineage rows through the deck's scope; the deck revision and version reported are the reading deck's current ones.
+     */
     Optional<ItemRecord> headItem(UUID actor, UUID deck, UUID member) {
         return jdbc.sql("""
                 SELECT p.deck_id,p.member_key,p.revision_id,p.item_sequence,NULL::INTEGER AS ordinal,
-                       r.deck_revision_id,r.deck_sequence,
-                       r.reuse_scope_id,
+                       d.head_revision_id AS deck_revision_id,d.row_version AS deck_sequence,
+                       p.reuse_scope_id,
                        r.content_root_id,r.descriptor_root_id,i.created_at AS item_created_at,p.updated_at
                   FROM app_learning.deck d JOIN app_learning.deck_head_item p ON p.deck_id=d.deck_id
-                  JOIN app_learning.item_revision r ON r.deck_id=p.deck_id AND r.member_key=p.member_key
+                  JOIN app_learning.item_revision r ON r.reuse_scope_id=p.reuse_scope_id AND r.member_key=p.member_key
                     AND r.revision_id=p.revision_id
-                  JOIN app_learning.learning_item i ON i.deck_id=p.deck_id AND i.member_key=p.member_key
+                  JOIN app_learning.learning_item i ON i.reuse_scope_id=p.reuse_scope_id AND i.member_key=p.member_key
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND p.deck_id=:deck AND p.member_key=:member
                 """).param("actor", actor).param("deck", deck).param("member", member).query(ITEM).optional();
     }
 
+    /** Whether the lineage already has a material with this key (the key is unique per scope, not per deck). */
     boolean itemExists(UUID actor, UUID deck, UUID member) {
         return jdbc.sql("""
-                SELECT EXISTS(SELECT 1 FROM app_learning.learning_item i JOIN app_learning.deck d ON d.deck_id=i.deck_id
-                    WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND i.deck_id=:deck AND i.member_key=:member)
+                SELECT EXISTS(SELECT 1 FROM app_learning.deck d JOIN app_learning.learning_item i
+                    ON i.reuse_scope_id=d.reuse_scope_id AND i.member_key=:member
+                    WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND d.deck_id=:deck)
                 """).param("actor", actor).param("deck", deck).param("member", member).query(Boolean.class).single();
     }
 
+    /**
+     * One revision by id, only when it is visible to the deck ({@link ItemRevisionVisibility}). Deck identity, the
+     * deck revision and version and the timestamp come from the reading deck's journal row (or, for a revision the deck
+     * inherited without a journal row, from its head row and its first revision), never from the origin columns. The
+     * ordinal of an inherited revision the deck has since replaced is the position the deck's replacing change recorded.
+     */
     Optional<ItemRecord> revision(UUID actor, UUID deck, UUID member, UUID revision) {
         return jdbc.sql("""
-                SELECT r.deck_id,r.member_key,r.revision_id,r.item_sequence,r.deck_revision_id,r.deck_sequence,
-                       c.to_ordinal AS ordinal,r.reuse_scope_id,r.content_root_id,r.descriptor_root_id,
-                       i.created_at AS item_created_at,r.created_at AS updated_at
-                  FROM app_learning.deck d JOIN app_learning.item_revision r ON r.deck_id=d.deck_id
-                  JOIN app_learning.learning_item i ON i.deck_id=r.deck_id AND i.member_key=r.member_key
-                  JOIN app_learning.deck_item_change c ON c.deck_id=r.deck_id AND c.member_key=r.member_key
+                SELECT d.deck_id,r.member_key,r.revision_id,r.item_sequence,
+                       COALESCE(c.deck_revision_id,g.revision_id) AS deck_revision_id,
+                       COALESCE(c.deck_sequence,g.sequence) AS deck_sequence,
+                       COALESCE(c.to_ordinal,pc.from_ordinal) AS ordinal,r.reuse_scope_id,r.content_root_id,r.descriptor_root_id,
+                       i.created_at AS item_created_at,COALESCE(cr.created_at,h.updated_at,g.created_at) AS updated_at
+                  FROM app_learning.deck d
+                  JOIN app_learning.item_revision r ON r.reuse_scope_id=d.reuse_scope_id AND r.member_key=:member
+                    AND r.revision_id=:revision
+                  JOIN app_learning.learning_item i ON i.reuse_scope_id=r.reuse_scope_id AND i.member_key=r.member_key
+                  JOIN app_learning.deck_revision g ON g.deck_id=d.deck_id AND g.sequence=0
+                  LEFT JOIN app_learning.deck_item_change c ON c.deck_id=d.deck_id AND c.member_key=r.member_key
                     AND c.revision_id=r.revision_id
-                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND r.deck_id=:deck AND r.member_key=:member AND r.revision_id=:revision
-                """).param("actor", actor).param("deck", deck).param("member", member).param("revision", revision)
+                  LEFT JOIN app_learning.deck_revision cr ON cr.deck_id=c.deck_id AND cr.revision_id=c.deck_revision_id
+                  LEFT JOIN app_learning.deck_head_item h ON h.deck_id=d.deck_id AND h.member_key=r.member_key
+                    AND h.revision_id=r.revision_id
+                  LEFT JOIN LATERAL (SELECT replaced.from_ordinal FROM app_learning.deck_item_change replaced
+                     WHERE replaced.deck_id=d.deck_id AND replaced.member_key=r.member_key
+                       AND replaced.previous_revision_id=r.revision_id
+                     ORDER BY replaced.deck_sequence,replaced.change_ordinal LIMIT 1) pc ON TRUE
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND d.deck_id=:deck
+                """ + " AND " + ItemRevisionVisibility.visibleTo(":deck", "r"))
+                .param("actor", actor).param("deck", deck).param("member", member).param("revision", revision)
                 .query(ITEM).optional();
     }
 
@@ -240,14 +265,17 @@ class ItemRepository {
                 """).param("actor", actor).param("deck", deck).param("revision", revision).query(DECK).optional();
     }
 
-    /** Item revision published with each given descriptor root, keyed by descriptor. */
-    Map<UUID, UUID> revisionsByDescriptor(UUID deck, Collection<UUID> descriptors) {
+    /**
+     * Item revision published with each given descriptor root, keyed by descriptor. The descriptors come from a member
+     * root of the reading deck; they are looked up in the lineage by (scope, member), the primary key prefix.
+     */
+    Map<UUID, UUID> revisionsByDescriptor(UUID scope, Collection<UUID> members, Collection<UUID> descriptors) {
         Map<UUID, UUID> result = new HashMap<>();
         if (descriptors.isEmpty()) return result;
         jdbc.sql("""
                 SELECT descriptor_root_id,revision_id FROM app_learning.item_revision
-                 WHERE deck_id=:deck AND descriptor_root_id IN (:descriptors)
-                """).param("deck", deck).param("descriptors", descriptors)
+                 WHERE reuse_scope_id=:scope AND member_key IN (:members) AND descriptor_root_id IN (:descriptors)
+                """).param("scope", scope).param("members", members).param("descriptors", descriptors)
                 .query((row, ignored) -> result.put(row.getObject("descriptor_root_id", UUID.class),
                         row.getObject("revision_id", UUID.class))).list();
         return result;
@@ -271,8 +299,8 @@ class ItemRepository {
     /** Marks a current material; a no-op when it is already marked or no longer a head item. */
     int insertExemplar(UUID deck, UUID member, Instant time) {
         return jdbc.sql("""
-                INSERT INTO app_learning.deck_item_exemplar(deck_id,member_key,marked_at)
-                SELECT item.deck_id,item.member_key,:time FROM app_learning.deck_head_item item
+                INSERT INTO app_learning.deck_item_exemplar(deck_id,member_key,reuse_scope_id,marked_at)
+                SELECT item.deck_id,item.member_key,item.reuse_scope_id,:time FROM app_learning.deck_head_item item
                  WHERE item.deck_id=:deck AND item.member_key=:member
                 ON CONFLICT (deck_id,member_key) DO NOTHING
                 """).param("deck", deck).param("member", member).param("time", Timestamp.from(time)).update();
@@ -287,13 +315,13 @@ class ItemRepository {
         if (members.isEmpty()) return List.of();
         return jdbc.sql("""
                 SELECT p.deck_id,p.member_key,p.revision_id,p.item_sequence,NULL::INTEGER AS ordinal,
-                       r.deck_revision_id,r.deck_sequence,
-                       r.reuse_scope_id,
+                       d.head_revision_id AS deck_revision_id,d.row_version AS deck_sequence,
+                       p.reuse_scope_id,
                        r.content_root_id,r.descriptor_root_id,i.created_at AS item_created_at,p.updated_at
                   FROM app_learning.deck d JOIN app_learning.deck_head_item p ON p.deck_id=d.deck_id
-                  JOIN app_learning.item_revision r ON r.deck_id=p.deck_id AND r.member_key=p.member_key
+                  JOIN app_learning.item_revision r ON r.reuse_scope_id=p.reuse_scope_id AND r.member_key=p.member_key
                     AND r.revision_id=p.revision_id
-                  JOIN app_learning.learning_item i ON i.deck_id=p.deck_id AND i.member_key=p.member_key
+                  JOIN app_learning.learning_item i ON i.reuse_scope_id=p.reuse_scope_id AND i.member_key=p.member_key
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND p.deck_id=:deck AND p.member_key IN (:members)
                 """).param("actor", actor).param("deck", deck).param("members", members)
                 .query(ITEM).list();
@@ -348,11 +376,11 @@ class ItemRepository {
                 .param("content", contentRoot).param("descriptor", descriptorRoot).param("time", Timestamp.from(time)).update();
     }
 
-    void insertHead(UUID deck, UUID member, UUID revision, long sequence, Instant time) {
+    void insertHead(UUID deck, UUID scope, UUID member, UUID revision, long sequence, Instant time) {
         jdbc.sql("""
-                INSERT INTO app_learning.deck_head_item(deck_id,member_key,revision_id,item_sequence,updated_at)
-                VALUES (:deck,:member,:revision,:sequence,:time)
-                """).param("deck", deck).param("member", member).param("revision", revision).param("sequence", sequence)
+                INSERT INTO app_learning.deck_head_item(deck_id,reuse_scope_id,member_key,revision_id,item_sequence,updated_at)
+                VALUES (:deck,:scope,:member,:revision,:sequence,:time)
+                """).param("deck", deck).param("scope", scope).param("member", member).param("revision", revision).param("sequence", sequence)
                 .param("time", Timestamp.from(time)).update();
     }
 
@@ -370,13 +398,13 @@ class ItemRepository {
         deleteExemplar(deck, member);
     }
 
-    void change(UUID deck, UUID deckRevision, long deckSequence, int index, UUID member, String kind,
+    void change(UUID deck, UUID scope, UUID deckRevision, long deckSequence, int index, UUID member, String kind,
                 UUID previousRevision, UUID revision, Integer from, Integer to) {
         jdbc.sql("""
-                INSERT INTO app_learning.deck_item_change(deck_id,deck_revision_id,deck_sequence,change_ordinal,
-                    member_key,change_kind,previous_revision_id,revision_id,from_ordinal,to_ordinal)
-                VALUES (:deck,:deckRevision,:deckSequence,:index,:member,:kind,:previous,:revision,:from,:to)
-                """).param("deck", deck).param("deckRevision", deckRevision).param("deckSequence", deckSequence)
+                INSERT INTO app_learning.deck_item_change(deck_id,reuse_scope_id,deck_revision_id,deck_sequence,
+                    change_ordinal,member_key,change_kind,previous_revision_id,revision_id,from_ordinal,to_ordinal)
+                VALUES (:deck,:scope,:deckRevision,:deckSequence,:index,:member,:kind,:previous,:revision,:from,:to)
+                """).param("deck", deck).param("scope", scope).param("deckRevision", deckRevision).param("deckSequence", deckSequence)
                 .param("index", index).param("member", member).param("kind", kind)
                 .param("previous", previousRevision, java.sql.Types.OTHER).param("revision", revision, java.sql.Types.OTHER)
                 .param("from", from, java.sql.Types.INTEGER).param("to", to, java.sql.Types.INTEGER).update();

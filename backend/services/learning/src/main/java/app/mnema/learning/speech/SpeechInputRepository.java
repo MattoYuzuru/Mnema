@@ -178,8 +178,8 @@ class SpeechInputRepository {
     List<Head> deckHeads(UUID owner, UUID deck, int limit) {
         return jdbc.sql("SELECT h.member_key,h.revision_id,r.reuse_scope_id,r.content_root_id,p.title FROM app_learning.deck d "
                         + "JOIN app_learning.deck_head_item h ON h.deck_id=d.deck_id "
-                        + "JOIN app_learning.item_revision r ON r.deck_id=h.deck_id AND r.member_key=h.member_key AND r.revision_id=h.revision_id "
-                        + "LEFT JOIN app_learning.item_preview p ON p.deck_id=h.deck_id AND p.member_key=h.member_key AND p.revision_id=h.revision_id "
+                        + "JOIN app_learning.item_revision r ON r.reuse_scope_id=h.reuse_scope_id AND r.member_key=h.member_key AND r.revision_id=h.revision_id "
+                        + "LEFT JOIN app_learning.item_preview p ON p.reuse_scope_id=h.reuse_scope_id AND p.member_key=h.member_key AND p.revision_id=h.revision_id "
                         + "WHERE d.deck_id=:deck AND d.owner_id=:owner AND d.deleted_at IS NULL ORDER BY h.member_key LIMIT :limit")
                 .param("deck", deck).param("owner", owner).param("limit", limit)
                 .query((row, ignored) -> new Head(row.getObject("member_key", UUID.class), row.getObject("revision_id", UUID.class),

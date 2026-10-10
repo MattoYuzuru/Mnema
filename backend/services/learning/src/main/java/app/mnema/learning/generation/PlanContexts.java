@@ -117,7 +117,7 @@ class PlanContexts {
         for (Source target : basis.targets()) {
             Head head = heads.get(target.memberKey());
             String title = head == null ? "" : head.title() != null ? head.title()
-                    : previews.title(deck, head.memberKey(), head.revisionId(), head.scopeId(), head.contentRootId());
+                    : previews.title(head.scopeId(), head.memberKey(), head.revisionId());
             title = clip(title == null ? "" : title);
             int count = counts.getOrDefault(target.memberKey(), 0);
             StringBuilder line = new StringBuilder("m").append(handle++).append(" · ").append(title.isBlank() ? "без названия" : title)
@@ -169,7 +169,7 @@ class PlanContexts {
         List<String> titles = new ArrayList<>();
         for (Head head : context.latest(deck, OUTLINE_TITLES)) {
             String title = head.title() != null ? head.title()
-                    : previews.title(deck, head.memberKey(), head.revisionId(), head.scopeId(), head.contentRootId());
+                    : previews.title(head.scopeId(), head.memberKey(), head.revisionId());
             if (title != null && !title.isBlank()) titles.add(clip(title));
         }
         return PromptBlocks.lines(titles);

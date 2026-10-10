@@ -1,5 +1,6 @@
 package app.mnema.learning.catalog.authoring;
 
+import app.mnema.learning.catalog.item.ItemRevisionVisibility;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -36,13 +37,14 @@ class AuthoringRepository {
                 .param("actor", actor).param("deck", deck).query(Boolean.class).single();
     }
 
+    /** Whether the owner's live deck can see the revision (its head or one of its journal entries), the base of a draft. */
     boolean ownsBase(UUID actor, UUID deck, UUID member, UUID revision) {
         return jdbc.sql("""
-                SELECT EXISTS(SELECT 1 FROM app_learning.item_revision r
-                    JOIN app_learning.deck d ON d.deck_id=r.deck_id
-                    WHERE r.owner_id=:actor AND r.deck_id=:deck AND r.member_key=:member AND r.revision_id=:revision
-                      AND d.deleted_at IS NULL)
-                """).param("actor", actor).param("deck", deck).param("member", member).param("revision", revision)
+                SELECT EXISTS(SELECT 1 FROM app_learning.deck d
+                    JOIN app_learning.item_revision r ON r.reuse_scope_id=d.reuse_scope_id
+                     AND r.member_key=:member AND r.revision_id=:revision
+                    WHERE d.owner_id=:actor AND d.deck_id=:deck AND d.deleted_at IS NULL
+                """ + " AND " + ItemRevisionVisibility.visibleTo(":deck", "r") + ")").param("actor", actor).param("deck", deck).param("member", member).param("revision", revision)
                 .query(Boolean.class).single();
     }
 
@@ -88,10 +90,10 @@ class AuthoringRepository {
 
     void insertDraft(UUID id, UUID actor, AuthoringCommands.DraftCreate command, Instant time) {
         jdbc.sql("""
-                INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,member_key,base_revision_id,
+                INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,reuse_scope_id,member_key,base_revision_id,
                     row_version,document,created_at,acknowledged_at,expires_at)
-                VALUES (:id,:actor,:deck,:member,:base,0,CAST(:document AS jsonb),:time,:time,
-                    :expires)
+                VALUES (:id,:actor,:deck,(SELECT d.reuse_scope_id FROM app_learning.deck d WHERE d.deck_id=:deck),
+                    :member,:base,0,CAST(:document AS jsonb),:time,:time,:expires)
                 """).param("id", id).param("actor", actor).param("deck", command.deckId())
                 .param("member", command.memberKey(), java.sql.Types.OTHER)
                 .param("base", command.baseRevisionId(), java.sql.Types.OTHER)
@@ -172,8 +174,10 @@ class AuthoringRepository {
 
     void insertCapture(UUID id, UUID actor, AuthoringCommands.CaptureCreate command, Instant time) {
         jdbc.sql("""
-                INSERT INTO app_learning.capture_note(note_id,owner_id,deck_id,row_version,source,note_text,
-                    archived,created_at,updated_at) VALUES (:id,:actor,:deck,0,:source,:text,false,:time,:time)
+                INSERT INTO app_learning.capture_note(note_id,owner_id,deck_id,reuse_scope_id,row_version,source,note_text,
+                    archived,created_at,updated_at)
+                VALUES (:id,:actor,:deck,(SELECT d.reuse_scope_id FROM app_learning.deck d WHERE d.deck_id=:deck),
+                    0,:source,:text,false,:time,:time)
                 """).param("id", id).param("actor", actor).param("deck", command.deckId())
                 .param("source", command.source()).param("text", command.text())
                 .param("time", Timestamp.from(time)).update();

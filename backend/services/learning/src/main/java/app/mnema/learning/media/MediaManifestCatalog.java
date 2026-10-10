@@ -50,10 +50,10 @@ public class MediaManifestCatalog {
                 .param("deck", deck).param("owner", owner).query(UUID.class).optional()
                 .orElseThrow(ResourceNotFoundException::new);
         List<Pin> pins = jdbc.sql("SELECT r.asset_id,'item' AS kind,r.member_key AS subject_id, "
-                        + "r.revision_id,r.node_id FROM app_learning.content_media_ref r "
-                        + "JOIN app_learning.deck_head_item h ON h.deck_id=r.deck_id "
-                        + "AND h.member_key=r.member_key AND h.revision_id=r.revision_id "
-                        + "WHERE r.deck_id=:deck AND r.owner_id=:owner UNION ALL "
+                        + "r.revision_id,r.node_id FROM app_learning.deck_head_item h "
+                        + "JOIN app_learning.content_media_ref r ON r.reuse_scope_id=h.reuse_scope_id "
+                        + "AND r.member_key=h.member_key AND r.revision_id=h.revision_id "
+                        + "WHERE h.deck_id=:deck AND r.asset_owner_id=:owner UNION ALL "
                         + "SELECT r.asset_id,'exercise' AS kind,r.exercise_id AS subject_id, "
                         + "r.exercise_revision_id AS revision_id,NULL::uuid AS node_id "
                         + "FROM app_learning.exercise_media_ref r "

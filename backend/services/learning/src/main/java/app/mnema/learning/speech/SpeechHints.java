@@ -51,7 +51,7 @@ class SpeechHints {
             if (title == null && reads < MAX_READS) {
                 reads++;
                 try {
-                    title = previews.title(deck, head.member(), head.revision(), head.scope(), head.root());
+                    title = previews.title(head.scope(), head.member(), head.revision());
                 } catch (RuntimeException unreadable) {
                     // a hint is a nicety: a material that cannot be read now is simply not one
                     title = null;

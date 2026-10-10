@@ -32,7 +32,7 @@ class StudyProgressRepository {
                        COALESCE(progress.all_on_track,FALSE) AS all_on_track,
                        progress.last_assessed_at,progress.next_due
                   FROM app_learning.deck_head_item item
-                  JOIN app_learning.item_revision revision ON revision.deck_id=item.deck_id
+                  JOIN app_learning.item_revision revision ON revision.reuse_scope_id=item.reuse_scope_id
                    AND revision.member_key=item.member_key AND revision.revision_id=item.revision_id
                   LEFT JOIN LATERAL (
                        SELECT count(*)::integer AS enabled,

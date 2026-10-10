@@ -48,8 +48,7 @@ public class StudyProgressService {
             ObjectNode item = items.addObject().put("memberKey", material.memberKey().toString())
                     .put("itemRevisionId", material.itemRevisionId().toString())
                     .put("state", state(material))
-                    .put("title", previews.title(deck, material.memberKey(), material.itemRevisionId(),
-                            material.scopeId(), material.contentRootId()));
+                    .put("title", previews.title(material.scopeId(), material.memberKey(), material.itemRevisionId()));
             item.putObject("objectiveCoverage").put("enabled", material.enabled())
                     .put("introduced", material.introduced()).put("assessed", material.assessed());
             nullable(item, "lastAssessedAt", material.lastAssessedAt());

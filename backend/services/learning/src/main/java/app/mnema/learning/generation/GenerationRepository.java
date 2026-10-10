@@ -1,5 +1,6 @@
 package app.mnema.learning.generation;
 
+import app.mnema.learning.catalog.item.ItemRevisionVisibility;
 import app.mnema.learning.generation.Rows.Artifact;
 import app.mnema.learning.generation.Rows.Event;
 import app.mnema.learning.generation.Rows.EventDraft;
@@ -900,11 +901,12 @@ class GenerationRepository {
                 .query(String.class).optional();
     }
 
-    /** Whether the material revision exists in the owner's deck (a head or a historical revision). */
+    /** Whether the material revision is visible to the owner's live deck (its head or one of its own journal entries). */
     boolean itemRevisionExists(UUID owner, UUID deck, UUID member, UUID revision) {
-        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.item_revision r JOIN app_learning.deck d ON d.deck_id=r.deck_id "
-                        + "WHERE d.owner_id=:owner AND d.deleted_at IS NULL AND r.deck_id=:deck AND r.member_key=:member "
-                        + "AND r.revision_id=:revision)").param("owner", owner).param("deck", deck).param("member", member)
+        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck d JOIN app_learning.item_revision r "
+                        + "ON r.reuse_scope_id=d.reuse_scope_id AND r.member_key=:member AND r.revision_id=:revision "
+                        + "WHERE d.owner_id=:owner AND d.deleted_at IS NULL AND d.deck_id=:deck AND "
+                        + ItemRevisionVisibility.visibleTo(":deck", "r") + ")").param("owner", owner).param("deck", deck).param("member", member)
                 .param("revision", revision).query(Boolean.class).single();
     }
 

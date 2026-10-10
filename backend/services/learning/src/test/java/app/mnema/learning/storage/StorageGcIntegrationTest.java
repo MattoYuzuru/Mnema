@@ -226,6 +226,54 @@ class StorageGcIntegrationTest extends PostgresIntegrationTest {
         }
     }
 
+    @Test
+    void anObjectHeldOnlyByADomainForeignKeyIsDeferredInsteadOfRetriedForever() {
+        // Share/3 review, item 11: referenced() sees edges and pins, not the item/exercise/deck revision rows that hold a
+        // root through a foreign key. The removal then fails with SQLSTATE 23503; that must mean "still referenced".
+        String probe = "gc_fk_probe_" + UUID.randomUUID().toString().replace("-", "");
+        UUID scope = UUID.randomUUID();
+        NewObject held = leaf(scope);
+        NewObject free = leaf(scope);
+        StagedRoot heldRoot = stage(scope, List.of(held), held.objectId(), Duration.ofMinutes(1));
+        StagedRoot freeRoot = stage(scope, List.of(free), free.objectId(), Duration.ofMinutes(1));
+        tx.executeWithoutResult(status -> {
+            storage.release(scope, heldRoot.stagingPinId());
+            storage.release(scope, freeRoot.stagingPinId());
+        });
+        jdbc.sql("CREATE TABLE app_learning." + probe + "(reuse_scope_id UUID NOT NULL, object_id UUID NOT NULL, "
+                + "CONSTRAINT " + probe + "_holder FOREIGN KEY (reuse_scope_id, object_id) "
+                + "REFERENCES app_learning.storage_object(reuse_scope_id, object_id))").update();
+        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ImmutableStorage.class);
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            jdbc.sql("INSERT INTO app_learning." + probe + " VALUES (:scope,:object)").param("scope", scope)
+                    .param("object", held.objectId()).update();
+            readyCandidates();
+
+            List<StorageGc.Pass> passes = drain(gc(8, 16));
+
+            assertThat(passes.stream().mapToInt(StorageGc.Pass::errors).sum()).isZero();
+            assertThat(passes.stream().mapToInt(StorageGc.Pass::deferred).sum()).isGreaterThanOrEqualTo(1);
+            // the unheld sibling in the same batch was still collected, the held object and its row survive,
+            // and the candidate is gone: nothing retries it
+            assertThat(exists(scope, free.objectId())).isFalse();
+            assertThat(exists(scope, held.objectId())).isTrue();
+            assertThat(count("storage_gc_candidate", scope)).isZero();
+            // one WARN names the holding constraint, and nothing else about the object
+            var warnings = logs.list.stream().filter(event -> event.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList();
+            assertThat(warnings).containsExactly("storage_gc_object_held_by_foreign_key constraint=" + probe + "_holder");
+            assertThat(warnings.getFirst()).doesNotContain(held.objectId().toString()).doesNotContain(scope.toString());
+            readyCandidates();
+            assertThat(drain(gc(8, 16)).stream().mapToInt(StorageGc.Pass::errors).sum()).isZero();
+        } finally {
+            logger.detachAppender(logs);
+            jdbc.sql("DROP TABLE app_learning." + probe).update();
+        }
+    }
+
     private StorageGc gc(int scopes, int batches) {
         return new StorageGc(storage, repository, new StorageGcSettings(true, Duration.ZERO, scopes, batches, Duration.ofSeconds(30)),
                 new SimpleMeterRegistry());

@@ -115,8 +115,8 @@ abstract class GenerationIntegrationTest extends PostgresIntegrationTest {
     /** A capture note of the deck; returns its id (its row version is 0). */
     protected UUID note(UUID owner, UUID deck, String text) {
         UUID id = UUID.randomUUID();
-        jdbc.sql("INSERT INTO app_learning.capture_note(note_id,owner_id,deck_id,row_version,source,note_text,created_at,updated_at) "
-                        + "VALUES (:id,:owner,:deck,0,'test',:text,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+        jdbc.sql("INSERT INTO app_learning.capture_note(note_id,owner_id,deck_id,reuse_scope_id,row_version,source,note_text,created_at,updated_at) "
+                        + "VALUES (:id,:owner,:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),0,'test',:text,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
                 .param("id", id).param("owner", owner).param("deck", deck).param("text", text).update();
         return id;
     }
