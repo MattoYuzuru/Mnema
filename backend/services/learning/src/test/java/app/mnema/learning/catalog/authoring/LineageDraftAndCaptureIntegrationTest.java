@@ -39,6 +39,9 @@ class LineageDraftAndCaptureIntegrationTest extends PostgresIntegrationTest {
     @Autowired private ImmutableStorage storage;
     @Autowired private JdbcClient jdbc;
     @Autowired private PlatformTransactionManager transactions;
+    @Autowired private app.mnema.learning.catalog.exercise.ExerciseService exercises;
+    @Autowired private app.mnema.learning.media.MediaCatalog media;
+    @Autowired private app.mnema.learning.study.session.StudySessionService studies;
     private SharedScopeFixture fixture;
 
     @BeforeEach
@@ -75,6 +78,18 @@ class LineageDraftAndCaptureIntegrationTest extends PostgresIntegrationTest {
         assertThatThrownBy(() -> drafts.create(s.author(), draft(s.copyDeck(), member, copyRevision)))
                 .isInstanceOf(ResourceNotFoundException.class);
         assertThat(drafts.create(s.copyOwner(), draft(s.copyDeck(), member, copyRevision)).acknowledgement()).isNotNull();
+    }
+
+    @Test
+    void aRevisionOnlyPinnedByAnExerciseIsNotADraftBase() {
+        var studyFixtures = new app.mnema.learning.support.StudyFixtures(decks, items, exercises, studies, media, jdbc);
+        var s = app.mnema.learning.support.PinnedRevisionScenario.build(fixture, studyFixtures);
+        // readable by Study through the copy's head exercise, but a draft base keeps head/journal/replaced semantics
+        assertThat(repository.ownsBase(s.copy().owner(), s.copy().deckId(), s.member(), s.pinned())).isFalse();
+        assertThat(repository.ownsBase(s.copy().owner(), s.copy().deckId(), s.member(), s.head())).isTrue();
+        assertThatThrownBy(() -> drafts.create(s.copy().owner(), draft(s.copy().deckId(), s.member(), s.pinned())))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(repository.ownsBase(s.author(), s.source(), s.member(), s.pinned())).isTrue();   // the author's own replaced revision
     }
 
     @Test

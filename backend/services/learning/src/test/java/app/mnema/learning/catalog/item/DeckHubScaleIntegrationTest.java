@@ -235,15 +235,16 @@ class DeckHubScaleIntegrationTest extends PostgresIntegrationTest {
                   FROM hub_seed CROSS JOIN app_learning.deck deck WHERE deck.deck_id=:deck
                 """).param("deck", deck).update();
         jdbc.sql("""
-                INSERT INTO app_learning.objective_revision(deck_id,objective_id,revision_id,objective_sequence,deck_revision_id,
-                    deck_sequence,command_id,descriptor,created_at)
-                SELECT :deck,seed.objective_id,seed.objective_revision_id,0,deck.head_revision_id,deck.row_version,gen_random_uuid(),
+                INSERT INTO app_learning.objective_revision(deck_id,reuse_scope_id,objective_id,revision_id,objective_sequence,
+                    deck_revision_id,deck_sequence,command_id,descriptor,created_at)
+                SELECT :deck,deck.reuse_scope_id,seed.objective_id,seed.objective_revision_id,0,deck.head_revision_id,deck.row_version,gen_random_uuid(),
                        '{"schemaVersion":"1","title":"Objective"}'::jsonb,statement_timestamp()
                   FROM hub_seed seed CROSS JOIN app_learning.deck deck WHERE deck.deck_id=:deck
                 """).param("deck", deck).update();
         jdbc.sql("""
-                INSERT INTO app_learning.objective_head(deck_id,objective_id,revision_id,objective_sequence,updated_at)
-                SELECT :deck,objective_id,objective_revision_id,0,statement_timestamp() FROM hub_seed
+                INSERT INTO app_learning.objective_head(deck_id,reuse_scope_id,objective_id,revision_id,objective_sequence,updated_at)
+                SELECT :deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),objective_id,objective_revision_id,0,
+                       statement_timestamp() FROM hub_seed
                 """).param("deck", deck).update();
         jdbc.sql("""
                 INSERT INTO app_learning.exercise_definition(deck_id,exercise_id,owner_id,reuse_scope_id,created_at)
@@ -262,19 +263,24 @@ class DeckHubScaleIntegrationTest extends PostgresIntegrationTest {
                  CROSS JOIN (SELECT * FROM app_learning.exercise_revision WHERE deck_id=:deck LIMIT 1) template
                 """).param("deck", deck).update();
         jdbc.sql("""
-                INSERT INTO app_learning.exercise_content_binding(deck_id,exercise_id,exercise_revision_id,binding_id,binding_ordinal,
-                    role,member_key,item_revision_id,objective_id,objective_revision_id,node_ids)
-                SELECT :deck,exercise_id,exercise_revision_id,gen_random_uuid(),0,'ASSESSED',member_key,item_revision_id,objective_id,
+                INSERT INTO app_learning.exercise_content_binding(deck_id,reuse_scope_id,exercise_id,exercise_revision_id,binding_id,
+                    binding_ordinal,role,member_key,item_revision_id,objective_id,objective_revision_id,node_ids)
+                SELECT :deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),exercise_id,exercise_revision_id,
+                       gen_random_uuid(),0,'ASSESSED',member_key,item_revision_id,objective_id,
                        objective_revision_id,ARRAY[]::uuid[]
                   FROM hub_exercise
                 """).param("deck", deck).update();
         jdbc.sql("""
-                INSERT INTO app_learning.deck_head_exercise(deck_id,exercise_id,revision_id,exercise_sequence,ordinal,updated_at)
-                SELECT :deck,exercise_id,exercise_revision_id,0,ordinal,statement_timestamp() FROM hub_exercise
+                INSERT INTO app_learning.deck_head_exercise(deck_id,reuse_scope_id,exercise_id,revision_id,exercise_sequence,ordinal,
+                    updated_at)
+                SELECT :deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),exercise_id,exercise_revision_id,0,
+                       ordinal,statement_timestamp() FROM hub_exercise
                 """).param("deck", deck).update();
         jdbc.sql("""
-                INSERT INTO app_learning.study_policy_assignment(account_id,deck_id,objective_id,reducer_config_id,assigned_at)
-                SELECT :actor,:deck,objective_id,(SELECT config_id FROM app_learning.scheduler_config LIMIT 1),statement_timestamp()
+                INSERT INTO app_learning.study_policy_assignment(account_id,deck_id,reuse_scope_id,objective_id,reducer_config_id,
+                    assigned_at)
+                SELECT :actor,:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),objective_id,
+                       (SELECT config_id FROM app_learning.scheduler_config LIMIT 1),statement_timestamp()
                   FROM hub_seed WHERE rn%5<>0
                 """).param("actor", actor).param("deck", deck).update();
         jdbc.sql("""

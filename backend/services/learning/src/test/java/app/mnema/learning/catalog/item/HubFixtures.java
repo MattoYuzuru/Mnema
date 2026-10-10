@@ -113,12 +113,15 @@ final class HubFixtures {
      * (or never assessed, only introduced, when {@code assessed} is false).
      */
     void state(UUID actor, UUID deck, UUID member, int level, boolean assessed, Instant nextDue) {
-        for (UUID objective : jdbc.sql("SELECT DISTINCT objective_id FROM app_learning.exercise_content_binding "
-                        + "WHERE deck_id=:deck AND member_key=:member AND role='ASSESSED'")
+        for (UUID objective : jdbc.sql("SELECT DISTINCT b.objective_id FROM app_learning.deck d "
+                        + "JOIN app_learning.exercise_content_binding b ON b.reuse_scope_id=d.reuse_scope_id "
+                        + "WHERE d.deck_id=:deck AND b.member_key=:member AND b.role='ASSESSED'")
                 .param("deck", deck).param("member", member).query(UUID.class).list()) {
             jdbc.sql("""
-                    INSERT INTO app_learning.study_policy_assignment(account_id,deck_id,objective_id,reducer_config_id,assigned_at)
-                    SELECT :actor,:deck,:objective,config_id,statement_timestamp() FROM app_learning.scheduler_config LIMIT 1
+                    INSERT INTO app_learning.study_policy_assignment(account_id,deck_id,reuse_scope_id,objective_id,reducer_config_id,
+                        assigned_at)
+                    SELECT :actor,:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),:objective,config_id,
+                           statement_timestamp() FROM app_learning.scheduler_config LIMIT 1
                     """).param("actor", actor).param("deck", deck).param("objective", objective).update();
             jdbc.sql("""
                     INSERT INTO app_learning.study_state(account_id,deck_id,objective_id,learning_epoch,level,correct_streak,

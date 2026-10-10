@@ -22,7 +22,10 @@ class StudyProgressRepository {
     }
 
     List<Material> page(UUID actor, UUID deck, UUID after, int limit, Instant asOf) {
-        String cursor = after == null ? "" : " AND item.member_key > :after";
+        String cursor = after == null ? "" : " AND i.member_key > :after";
+        // The page of heads is cut FIRST (index order of deck_head_item, LIMIT), and only those rows get their progress: the
+        // cost is O(page), not O(materials after the cursor). Inside, the exercises of a material are found from the lineage
+        // bindings of the deck's scope by (scope, member) and filtered to the deck's head exercises.
         var query = jdbc.sql("""
                 SELECT item.member_key,item.revision_id,revision.reuse_scope_id,revision.content_root_id,
                        COALESCE(progress.enabled,0) AS enabled,
@@ -31,7 +34,9 @@ class StudyProgressRepository {
                        COALESCE(progress.due,FALSE) AS due,
                        COALESCE(progress.all_on_track,FALSE) AS all_on_track,
                        progress.last_assessed_at,progress.next_due
-                  FROM app_learning.deck_head_item item
+                  FROM (SELECT i.deck_id,i.reuse_scope_id,i.member_key,i.revision_id FROM app_learning.deck_head_item i
+                         WHERE i.deck_id=:deck""" + cursor + """
+                         ORDER BY i.member_key LIMIT :limit) item
                   JOIN app_learning.item_revision revision ON revision.reuse_scope_id=item.reuse_scope_id
                    AND revision.member_key=item.member_key AND revision.revision_id=item.revision_id
                   LEFT JOIN LATERAL (
@@ -45,21 +50,22 @@ class StudyProgressRepository {
                               min(state.next_due) AS next_due
                          FROM (
                               SELECT DISTINCT binding.objective_id
-                                FROM app_learning.deck_head_exercise head
+                                FROM app_learning.exercise_content_binding binding
+                                JOIN app_learning.deck_head_exercise head
+                                  ON head.deck_id=item.deck_id AND head.exercise_id=binding.exercise_id
+                                 AND head.revision_id=binding.exercise_revision_id AND head.reuse_scope_id=binding.reuse_scope_id
                                 JOIN app_learning.exercise_revision revision
-                                  ON revision.deck_id=head.deck_id AND revision.exercise_id=head.exercise_id
-                                 AND revision.revision_id=head.revision_id AND revision.enabled
-                                JOIN app_learning.exercise_content_binding binding
-                                  ON binding.deck_id=head.deck_id AND binding.exercise_id=head.exercise_id
-                                 AND binding.exercise_revision_id=head.revision_id AND binding.role='ASSESSED'
-                               WHERE head.deck_id=item.deck_id AND binding.member_key=item.member_key
+                                  ON revision.reuse_scope_id=binding.reuse_scope_id AND revision.exercise_id=binding.exercise_id
+                                 AND revision.revision_id=binding.exercise_revision_id AND revision.enabled
+                               WHERE binding.reuse_scope_id=item.reuse_scope_id AND binding.member_key=item.member_key
+                                 AND binding.role='ASSESSED'
                          ) objective
                          LEFT JOIN app_learning.study_state state
                            ON state.account_id=:actor AND state.deck_id=item.deck_id
                           AND state.objective_id=objective.objective_id
                   ) progress ON TRUE
-                 WHERE item.deck_id=:deck
-                """ + cursor + " ORDER BY item.member_key LIMIT :limit")
+                 ORDER BY item.member_key
+                """)
                 .param("actor", actor).param("deck", deck).param("asOf", java.sql.Timestamp.from(asOf))
                 .param("limit", limit);
         if (after != null) query.param("after", after);

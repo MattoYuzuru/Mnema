@@ -52,9 +52,9 @@ class DeckInsightsRepository {
                 WITH exercise AS MATERIALIZED (
                     SELECT binding.member_key,binding.objective_id
                       FROM app_learning.deck_head_exercise head
-                      JOIN app_learning.exercise_revision revision ON revision.deck_id=head.deck_id
+                      JOIN app_learning.exercise_revision revision ON revision.reuse_scope_id=head.reuse_scope_id
                        AND revision.exercise_id=head.exercise_id AND revision.revision_id=head.revision_id AND revision.enabled
-                      JOIN app_learning.exercise_content_binding binding ON binding.deck_id=head.deck_id
+                      JOIN app_learning.exercise_content_binding binding ON binding.reuse_scope_id=head.reuse_scope_id
                        AND binding.exercise_id=head.exercise_id AND binding.exercise_revision_id=head.revision_id
                        AND binding.role='ASSESSED'
                      WHERE head.deck_id=:deck
@@ -102,12 +102,12 @@ class DeckInsightsRepository {
         return jdbc.sql("""
                 SELECT revision.exercise_type,count(*)::integer AS exercises
                   FROM app_learning.deck_head_exercise head
-                  JOIN app_learning.exercise_revision revision ON revision.deck_id=head.deck_id
+                  JOIN app_learning.exercise_revision revision ON revision.reuse_scope_id=head.reuse_scope_id
                    AND revision.exercise_id=head.exercise_id AND revision.revision_id=head.revision_id AND revision.enabled
-                  JOIN app_learning.exercise_content_binding binding ON binding.deck_id=head.deck_id
+                  JOIN app_learning.exercise_content_binding binding ON binding.reuse_scope_id=head.reuse_scope_id
                    AND binding.exercise_id=head.exercise_id AND binding.exercise_revision_id=head.revision_id
                    AND binding.role='ASSESSED'
-                  JOIN app_learning.deck_head_item item ON item.deck_id=binding.deck_id AND item.member_key=binding.member_key
+                  JOIN app_learning.deck_head_item item ON item.deck_id=head.deck_id AND item.member_key=binding.member_key
                  WHERE head.deck_id=:deck GROUP BY revision.exercise_type
                 """).param("deck", deck)
                 .query((row, ignored) -> new Mechanic(row.getString("exercise_type"), row.getInt("exercises"))).list();

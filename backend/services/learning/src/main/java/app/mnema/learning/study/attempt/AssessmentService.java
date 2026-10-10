@@ -146,7 +146,7 @@ public class AssessmentService {
         SemanticStrictness strictness = SemanticStrictness.select(
                 current && state.orElseThrow().transitionSequence() > 0,
                 current ? state.orElseThrow().level() : 0, current ? state.orElseThrow().correctStreak() : 0,
-                !assessments.attemptedExercise(actor, presentation.exerciseId(), presentation.learningEpoch()));
+                !assessments.attemptedExercise(actor, presentation.deckId(), presentation.exerciseId(), presentation.learningEpoch()));
         String unavailable = !capabilities.aiAssessment().available() ? "CAPABILITY_UNAVAILABLE"
                 : !ledger.fairUseFits(actor, Bucket.ASSESSMENT, 1) ? "USAGE_LIMIT"
                 : assessments.inFlight(actor) >= settings.maxInFlight() ? "BUSY" : null;
