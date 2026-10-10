@@ -4,6 +4,7 @@ import app.mnema.learning.ai.SpeechSettings;
 import app.mnema.learning.ai.SpeechSynthesis;
 import app.mnema.learning.media.GeneratedMediaStager;
 import app.mnema.learning.usage.AdmissionPricing;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -31,6 +32,7 @@ class GenerationSpeechIntegrationTest extends GenerationEditsSupport {
     @Autowired private GenerationRepository generationRepository;
     @Autowired private SpeechSettings settings;
     @Autowired private SpeechSynthesis port;
+    @Autowired private MeterRegistry meters;
 
     // ------------------------------------------------------------------ helpers
 
@@ -82,6 +84,11 @@ class GenerationSpeechIntegrationTest extends GenerationEditsSupport {
             }
         });
         return log;
+    }
+
+    /** Claims of the speech cache that found another step's synthesis in flight ({@code SpeechClips#stage}). */
+    private double busyPolls() {
+        return meters.counter("mnema_tts_cache_total", "outcome", "busy").count();
     }
 
     private int heldClips(UUID artifact) {
@@ -178,11 +185,15 @@ class GenerationSpeechIntegrationTest extends GenerationEditsSupport {
 
         Proposal winner = proposal(owner, deck, audioSpec("[[fake:audio-hold]] с аудио"));
         assertThat(speech.entered.await(10, TimeUnit.SECONDS)).isTrue();
+        double busyBefore = busyPolls();
         Proposal loser = proposal(other, otherDeck, audioSpec("[[fake:audio-hold]] с аудио"));
-        await("the loser to wait on the winner's lease", Duration.ofSeconds(10), () -> jdbc.sql("SELECT state FROM app_learning.generation_step WHERE artifact_id=:id AND kind='TTS'")
-                .param("id", loser.artifact()).query(String.class).single().equals("RUNNING"));
+        // the step is RUNNING once claimed and its slot GENERATING one transaction later; a busy poll proves it reached the winner's entry
+        await("the loser to wait on the winner's lease", Duration.ofSeconds(10), () -> busyPolls() > busyBefore && slotState(loser.artifact()).equals("GENERATING"));
+        // the winner's call is held: until it is released these states cannot move
+        assertThat(jdbc.sql("SELECT state FROM app_learning.generation_step WHERE artifact_id=:id AND kind='TTS'").param("id", loser.artifact()).query(String.class).single())
+                .isEqualTo("RUNNING");
         assertThat(cacheRows("PENDING")).isEqualTo(1);
-        assertThat(slotState(loser.artifact())).isEqualTo("GENERATING");
+        assertThat(speech.calls).as("only the winner's held call").hasSize(1);
 
         speech.release.countDown();
         awaitSlot(winner.artifact(), "READY");
