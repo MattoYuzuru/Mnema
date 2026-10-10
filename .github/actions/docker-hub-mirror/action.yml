@@ -1,0 +1,29 @@
+name: Docker Hub pull-through mirror
+description: >-
+  Route the runner daemon's Docker Hub pulls (docker run/build, Testcontainers) through mirror.gcr.io.
+  Image references and digests stay unchanged; the daemon falls back to Docker Hub on a cache miss.
+
+runs:
+  using: composite
+  steps:
+    - name: Configure the Docker daemon registry mirror
+      shell: bash
+      run: |
+        # Shared hosted-runner IPs exhaust Docker Hub's anonymous pull limit (toomanyrequests). Google's cache does not
+        # count against it and is content-addressed, so a pinned @sha256 resolves to the same bytes.
+        set -euo pipefail
+        config=/etc/docker/daemon.json
+        current='{}'
+        if sudo test -s "$config"; then current=$(sudo cat "$config"); fi
+        printf '%s' "$current" | jq '."registry-mirrors" = ["https://mirror.gcr.io"]' | sudo tee "$config" >/dev/null
+        # registry-mirrors is reloadable (SIGHUP), so running containers and the daemon stay up.
+        sudo systemctl reload docker
+        for _ in $(seq 1 30); do
+          if docker info --format '{{json .RegistryConfig.Mirrors}}' | grep -Fq 'https://mirror.gcr.io/'; then
+            echo 'docker_hub_mirror=mirror.gcr.io'
+            exit 0
+          fi
+          sleep 1
+        done
+        echo '::error::The Docker daemon did not apply the mirror.gcr.io registry mirror'
+        exit 1
