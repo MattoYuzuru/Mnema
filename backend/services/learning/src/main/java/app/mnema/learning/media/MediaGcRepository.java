@@ -222,9 +222,10 @@ class MediaGcRepository {
     }
 
     private boolean blobHeld(UUID blob) {
-        return jdbc.sql("SELECT 1 FROM app_learning.media_asset a WHERE "
-                        + "(a.source_blob_id=:blob OR EXISTS (SELECT 1 FROM app_learning.media_variant v "
-                        + "WHERE v.asset_id=a.asset_id AND v.blob_id=:blob)) AND "
+        // Both branches of the asset set are index lookups (media_asset_source_blob, media_variant_blob); an OR would scan.
+        return jdbc.sql("SELECT 1 FROM app_learning.media_asset a WHERE a.asset_id IN "
+                        + "(SELECT s.asset_id FROM app_learning.media_asset s WHERE s.source_blob_id=:blob "
+                        + "UNION ALL SELECT v.asset_id FROM app_learning.media_variant v WHERE v.blob_id=:blob) AND "
                         + "(a.state<>'DELETED' OR a.owner_hold_until>CURRENT_TIMESTAMP "
                         + "OR EXISTS (SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) "
                         + "OR EXISTS (SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) "
