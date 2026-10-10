@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-10-09"
+  updated_at: "2026-10-10"
   owners: ["project-owner"]
 ---
 
@@ -62,6 +62,7 @@ artifact:
 | accepted | [AI layer contract](./product/ai-layer-2026-10.md) | Принятые решения AI-слоя: слои, сценарии, UX, usage, тарифы, промокоды, legal gates. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Текущий статус РКН/эквайринга и оставшиеся human gates; не юридическая гарантия. |
+| accepted | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. |
 
 ## Architecture и backend
 
@@ -73,6 +74,7 @@ artifact:
 | accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; P0 content/Study реализованы, P1/P2 — границы будущей работы. |
 | accepted | [Native content format](./architecture/learning-content-format-v2.md) | Persisted native document contract. |
 | accepted | [AI generation platform](./architecture/ai-generation-platform.md) | Принятая архитектура AI-слоя: модули в Learning, Мастерская, MBM, провайдеры, usage, уведомления, безопасность. |
+| accepted | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. |
 | current | [Revision storage and runtime boundaries](./architecture/revision-storage-and-runtime-boundaries.md) | Выбранное и реализованное storage-направление. |
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Counted-page/structural invariants. |
 | current | [Identity & Account guide](../backend/services/identity-account/guide.md) | Identity runtime. |
@@ -117,6 +119,7 @@ artifact:
 | accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения и реализованные delivery slices. |
 | accepted | [Epic #77 refinement](./engineering/epic-77-refinement.md) | AI-слой: delivery slices, пять прогонов и acceptance эпика. |
 | current | [Epic #77 prompts](./engineering/prompts/epic-77-ai-layer.md) | Промпты последовательных прогонов агента для реактивированного AI-эпика. |
+| accepted | [Community decks refinement](./engineering/community-decks-refinement.md) | Четыре эпика (#419–#422), задачи, зависимости и правила исполнения. |
 | historical | [Epic #74 refinement](./engineering/epic-74-refinement.md), [dependency decisions](./engineering/epic-74-dependency-decisions.md), [hardware handoff](./engineering/epic-74-hardware-handoff.md) | Выполненный план, принятые зависимости и session handoff #74. |
 | historical | [GitHub execution model](./engineering/github-execution-model.md) | Исходная настройка Project #4; текущие статусы читаются из GitHub. |
 | proposed | [Greenfield delivery plan](./engineering/v2-delivery-plan-2026-08.md) | Sequencing proposal; GitHub state и этот navigator приоритетнее. |
@@ -148,6 +151,8 @@ Kubernetes-доставка (staging/production workflows, `k8s/`, recovery и p
   Epic #74/#75/#76, storage, browser, security и research evidence. Ключевые записи:
   [закрытие #74](./engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md),
   [закрытие #75](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
+- **historical:** [Community decks research and RFC](./reviews/community-decks-2026-10/README.md) — факты кода,
+  варианты, исследования конкурентов/права/поиска, аудит индексов и ответы владельца 2026-10-10.
 - **historical:** [Owner console delivery record](./engineering/evidence/admin-console-2026-10/README.md) — первый снимок реализации эпика #398, его задачи, локальная проверка и границы.
 - **historical:** [AI layer research 2026-10](./reviews/ai-layer-research-2026-10/README.md) —
   исследования архитектуры, экономики, UX, контекста и платформы; принятые

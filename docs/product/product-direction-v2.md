@@ -5,7 +5,7 @@ artifact:
   title: "Mnema greenfield product direction"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-09-06"
+  updated_at: "2026-10-10"
   owners: ["project-owner"]
   assumptions:
     - "Approximately ten production accounts must survive; content, media, review and AI data may be reset."
@@ -67,8 +67,8 @@ Job: совместно поддерживать колоду, выпускат�
 | D-03 | `pursue` | Study is always deck-scoped; no global cross-deck Today queue. Browse remains separate. |
 | D-04 | `pursue` (reactivated 2026-10-02) | The manual loop stays AI-independent. Managed AI, provider routing and usage economics are accepted in [AI layer contract](./ai-layer-2026-10.md) and delivered through Epic #77. |
 | D-05 | `pursue` | Immutable revisions reuse unchanged blocks/media/manifests; future editable forks have independent deck-local identity and progress. |
-| D-06 | `defer UX; reserve model` | Private decks launch first. Public/restricted sharing, coauthors and publication review follow validated learning. |
-| D-07 | `defer` | Selective upstream updates and later contributions/advanced merges are part of the future model. Manual pull is recommended; automatic tracking is not yet selected. |
+| D-06 | `pursue` (2026-10-10) | Four visibility levels, explicit publication and cheap forks are accepted in [community decks](./community-decks.md); coauthors and publication review remain later. |
+| D-07 | `pursue` (2026-10-10) | Selective updates: manual by default with «Принять всё безопасное», optional per-copy auto-accept of safe changes; contributions/advanced merges remain later. |
 | D-08 | `hypothesis` | Russia-first B2C. 2026-10-02: AI tiers Plus 449 / Pro 990 / Max 1 900 ₽ accepted as planning inputs; a deck-count limit is not introduced at the AI monetization launch. |
 | D-09 | `defer` | Existing self-host is unsupported during v2 rewrite; a sanitized downstream repository may appear later. |
 | D-10 | `defer` | Anki import follows native launch; no APKG round-trip promise. |
@@ -127,6 +127,8 @@ matching не пытается поместить весь конспект в �
 6. Later users may combine supported parts of conflicting material and propose selected improvements upstream. This supersedes the earlier permanent “no upstream” restriction; neither contribution UI nor real-time collaboration blocks personal launch.
 
 ### Discover and share — later community release
+
+> 2026-10-10: принятое поведение — в [community decks](./community-decks.md); список ниже — исходная гипотеза.
 
 - `PUBLIC`: appears in catalog/profile.
 - `REQUEST_RESTRICTED`: accessed by link/class and join approval.
