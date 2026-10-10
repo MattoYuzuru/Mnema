@@ -1328,8 +1328,9 @@ the running application and fails when a new one has no row).
   is not revealed). A malformed code is `NOT_FOUND` without a lookup; a real lookup is one unique-index probe plus the deck key (and one grant probe for
   `INVITE`), identical for unknown and private codes. `INVITE_ONLY` is `403 DECK_INVITE_ONLY` (`ApiErrorCode`, house schema) with no deck data.
 - **Routes** (`PublicDeckController`, `GET`/`HEAD` only, `/api/public/decks/{code}`, `/items?limit&cursor`, `/items/{memberKey}`, `/exercises?limit&cursor`).
-  `PublicDeckService` checks the kill switch, takes a place in the limiter, tries the **bulkhead** (a `Semaphore`, `max-concurrent`, default 4,
-  `tryAcquire` before any transaction or connection; the excess read is refused at once with `503 PUBLIC_READ_BUSY` and `Retry-After: 1`), resolves access
+  `PublicDeckService` checks the kill switch, takes a place in the limiter, tries the **bulkhead** (two `Semaphore`s: `max-concurrent` places, default 3, of which guests may hold at most one less so a place is always free for a signed-in
+  viewer; `tryAcquire` before any transaction or connection; the excess read is refused at once with `503 PUBLIC_READ_BUSY` and `Retry-After: 1`; the title-cache
+  write is the last step inside the permit), resolves access
   in one short read-only transaction and reads **only the immutable roots of the published revision**. Every SQL lookup is a read-only transaction with a
   10-second bound of its own; storage reads (which take `FOR KEY SHARE` row locks, forbidden in a read-only transaction) run in their own short
   transactions, so no connection is held across the whole read: the members/exercises manifests through `CountedPages` (`ManifestPages`, O(log N + P) per page), the item
@@ -1350,9 +1351,13 @@ the running application and fails when a new one has no row).
 - **Limits and switch.** `PublicReadLimiter`: fixed one-minute windows on the monotonic clock (`System.nanoTime`) in memory of the instance. Three tables: guests per
   client network (`ClientAddresses.resolveNetwork`: IPv4 as is, IPv6 as its /64, `X-Forwarded-For` only from `learning.trusted-proxy-cidrs`), IPv6 guests per /48
   (`resolveCoarseNetwork`; a request must pass both, so rotating /64s inside a site is bounded) and accounts (a table of its own: guests never starve a signed-in
-  viewer). Defaults 120 / 600 (/48) / 600 / 600 a minute. Every request counts, found or not; a refused request charges nothing; `Retry-After` is the real remaining
+  viewer; an account is admitted by `PublicAccountLimitFilter` in the public chain BEFORE `CurrentIdentityFilter` asks Identity, so one token cannot drive unlimited
+  `/userinfo` round trips; the service counts only guests). Defaults 120 / 600 (/48) / 600 / 600 a minute. Every request counts, found or not; a refused request charges nothing; `Retry-After` is the real remaining
   time of the refusing window. Each table is bounded (`max-tracked`): when the guest table is full, new guest keys are folded into one shared overflow bucket with its
-  own cap (`overflow-per-minute`) instead of being refused one by one; only a new ACCOUNT finds a full account table refused (429). It is not database-backed like `PromoAttempts` on purpose: promo attempts are
+  own cap (`overflow-per-minute`) instead of being refused one by one; only a new ACCOUNT finds a full account table refused (429). Limiter events are counted on `mnema_public_deck_requests_total{route="limiter"}` as `guest_table_full`, `overflow_bucket` and `account_table_full`.
+  **Connection budget.** The bulkhead bounds the pool use of public reads but the pool is shared with the private API and the job executor, so `PublicRouteConnectionBudget`
+  fails the start (public routes enabled) when `max-concurrent` + `learning.jobs.max-concurrency` (worker/all roles, jobs enabled) leave fewer than 3 connections of the
+  effective Hikari pool. It is not database-backed like `PromoAttempts` on purpose: promo attempts are
   rare writes that must be exact across instances, while this sits before every public read (~25 rps at peak in scenario H) and a database write per read would turn
   the cheapest request into the most expensive one and give a flood a write amplifier; the price is a limit per instance. Kill switch
   `learning.community.public-routes.enabled=false` (default): 404 as if absent. **Logs:** the public code is a credential, so `ApiExceptionHandler` logs the route

@@ -263,8 +263,8 @@ the opaque 404 for any other account, whatever the deck's level.
 - **Limits.** `429 RATE_LIMITED` with `Retry-After` (the real remaining time of the window that refused): a guest is counted per
   client network (IPv4 address, IPv6 /64) and, for IPv6, all guests of one /48 together; guests that find the guest table full share
   one overflow bucket; a signed-in viewer is counted per account in a table of its own, so a flood of guests never starves an
-  account (defaults 120 / 600 / 600 / 600 a minute per instance). Every request counts, found or not.
-- **Bulkhead.** At most 4 public reads run at once per instance; the next one is refused before any lookup with **503
+  account, and an account is admitted before Identity is asked about its token (one token cannot drive unlimited Identity round trips) (defaults 120 / 600 / 600 / 600 a minute per instance). Every request counts, found or not.
+- **Bulkhead.** At most 3 public reads run at once per instance (guests at most 2 of them, so one place stays free for a signed-in viewer); the next one is refused before any lookup with **503
   `PUBLIC_READ_BUSY`** and `Retry-After: 1` (house schema, member `retryAfter`). Clients retry after the delay.
 - **Kill switch.** `learning.community.public-routes.enabled` is **false** by default: every route answers 404 as if it did
   not exist. (A bearer that is present and invalid is still 401, because authentication runs first.)

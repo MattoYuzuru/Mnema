@@ -1,6 +1,7 @@
 package app.mnema.learning.library;
 
 import app.mnema.learning.platform.api.RateLimitedException;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -13,13 +14,13 @@ import java.util.function.LongSupplier;
  * The abuse limit of the public read routes: fixed one-minute windows measured on the monotonic clock ({@link System#nanoTime}, so a wall-clock step
  * can neither reopen nor freeze a window). Every request counts, found or not.
  * <ul>
- *   <li><b>Accounts</b> have a table of their own, so a flood of guests can never starve a signed-in viewer.</li>
+ *   <li><b>Accounts</b> have a table of their own, so a flood of guests can never take an account's limiter slot, and an account is admitted by {@link PublicAccountLimitFilter} before Identity is asked.</li>
  *   <li><b>Guests</b> are counted per client network (IPv4 address, IPv6 /64) and, for IPv6, also per /48 in a second table: a request must pass both,
  *       so rotating /64s inside one site is bounded by the /48 budget.</li>
  *   <li>When a guest table is full, a new key is not refused: it is folded into one shared <b>overflow</b> bucket with its own cap, so an address
  *       flood degrades new guests together instead of locking every one of them out, and the memory stays bounded.</li>
  * </ul>
- * {@code Retry-After} is the real remaining time of the window that refused the request.
+ * Table-full and overflow-bucket events are counted separately (see {@link #event}). {@code Retry-After} is the real remaining time of the window that refused the request.
  *
  * <p>The windows live in memory of the instance, like {@code ExperimentEvents}, and not in the database like {@code PromoAttempts}: promo attempts are
  * rare writes that must be exact across instances, while this limiter sits in front of every read of a route meant for ~25 rps at peak, where a
@@ -27,7 +28,7 @@ import java.util.function.LongSupplier;
  * limit holds per instance (N instances allow N times the limit), which is acceptable for a guard against scraping and flooding, not an accounting figure.
  */
 @Component
-final class PublicReadLimiter {
+public final class PublicReadLimiter {
     private static final long WINDOW_NANOS = 60_000_000_000L;
     private static final long SWEEP_NANOS = 5_000_000_000L;
 
@@ -39,6 +40,7 @@ final class PublicReadLimiter {
     }
 
     private final PublicRouteSettings settings;
+    private final MeterRegistry meters;
     private final LongSupplier nanos;
     private final Map<String, Window> guests = new HashMap<>();
     private final Map<String, Window> networks = new HashMap<>();
@@ -47,10 +49,11 @@ final class PublicReadLimiter {
     private long sweptAt;
 
     @Autowired
-    PublicReadLimiter(PublicRouteSettings settings) { this(settings, System::nanoTime); }
+    PublicReadLimiter(PublicRouteSettings settings, MeterRegistry meters) { this(settings, System::nanoTime, meters); }
 
-    PublicReadLimiter(PublicRouteSettings settings, LongSupplier nanos) {
+    PublicReadLimiter(PublicRouteSettings settings, LongSupplier nanos, MeterRegistry meters) {
         this.settings = settings;
+        this.meters = meters;
         this.nanos = nanos;
         this.sweptAt = nanos.getAsLong();
         this.overflow = new Window(sweptAt);
@@ -69,12 +72,17 @@ final class PublicReadLimiter {
     }
 
     /** A place of a table: the window (new when the key had none), where it goes and its limit. */
-    private record Slot(Map<String, Window> table, String key, Window window, boolean added, int limit) { }
+    private record Slot(Map<String, Window> table, String key, Window window, boolean keep, int limit) { }
 
-    /** @throws RateLimitedException the viewer's window (or the shared overflow window) is full, or the account table has no room for a new key */
-    void admit(Viewer viewer) {
+    /**
+     * @throws RateLimitedException the viewer's window (or the shared overflow window) is full, or the account table has no room for a new key
+     */
+    public void admit(Viewer viewer) {
         long now = nanos.getAsLong();
         synchronized (this) {
+            // Sweep BEFORE any slot is taken, so a sweep can never detach a window this request is about to charge.
+            int bound = settings.maxTracked;
+            if (guests.size() >= bound || networks.size() >= bound || accounts.size() >= bound) sweep(now);
             if (viewer.accountId() != null) {
                 charge(slots(slot(accounts, "a:" + viewer.accountId(), settings.accountPerMinute, now, false)), now);
                 return;
@@ -85,17 +93,20 @@ final class PublicReadLimiter {
         }
     }
 
-    /** Looks the key up (an expired window is a fresh one); a new key finds room, the overflow bucket (guests) or a refusal (accounts). */
+    /** Looks the key up; a new key finds room, the overflow bucket (guests) or a refusal (accounts). */
     private Slot slot(Map<String, Window> table, String key, int limit, long now, boolean foldIntoOverflow) {
         Window window = table.get(key);
-        if (window != null) return new Slot(table, key, window, false, limit);
-        if (table.size() >= settings.maxTracked) sweep(now);
+        if (window != null) return new Slot(table, key, window, true, limit);
         if (table.size() < settings.maxTracked) return new Slot(table, key, new Window(now), true, limit);
-        if (foldIntoOverflow) return new Slot(table, key, overflow, false, settings.overflowPerMinute);
+        if (foldIntoOverflow) {
+            event("guest_table_full");
+            return new Slot(table, key, overflow, false, settings.overflowPerMinute);
+        }
+        event("account_table_full");
         throw new RateLimitedException(SWEEP_NANOS / 1_000_000_000L);
     }
 
-    /** Checks every window first, so a refused request charges nothing, then counts and stores the new ones. */
+    /** Checks every window first, so a refused request charges nothing, then counts and (re)stores the windows that belong in a table. */
     private void charge(List<Slot> slots, long now) {
         for (Slot slot : slots) {
             Window window = slot.window();
@@ -109,8 +120,14 @@ final class PublicReadLimiter {
         }
         for (Slot slot : slots) {
             slot.window().count++;
-            if (slot.added()) slot.table().put(slot.key(), slot.window());
+            if (slot.keep()) slot.table().put(slot.key(), slot.window());
+            else event("overflow_bucket");
         }
+    }
+
+    /** Limiter events are counted on {@code mnema_public_deck_requests_total} with {@code route="limiter"}; the labels are fixed names, never a key. */
+    private void event(String outcome) {
+        meters.counter("mnema_public_deck_requests_total", "route", "limiter", "outcome", outcome).increment();
     }
 
     private void sweep(long now) {

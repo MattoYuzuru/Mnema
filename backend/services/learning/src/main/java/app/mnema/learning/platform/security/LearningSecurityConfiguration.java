@@ -1,5 +1,7 @@
 package app.mnema.learning.platform.security;
 
+import app.mnema.learning.library.PublicAccountLimitFilter;
+import app.mnema.learning.library.PublicReadLimiter;
 import app.mnema.learning.platform.api.ApiSecurityErrors;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -134,15 +136,16 @@ public class LearningSecurityConfiguration {
      * The public read of a deck by its code (Share/7): an OPTIONAL bearer, GET and HEAD only. Without a token the request is a guest; with one it must
      * validate exactly like the private API (the same decoder and the same live Identity check): the resource server rejects a present but invalid
      * token with 401 before authorization, so it is never silently treated as a guest ({@code permitAll} does not override that). A valid token without
-     * {@code learning.read} is 403, as on the private API. Every other method is refused; no session, cookie or form login exists here.
+     * {@code learning.read} is 403, as on the private API. An account is admitted by the limiter BEFORE Identity is asked ({@link PublicAccountLimitFilter}). Every other method is refused; no session, cookie or form login exists here.
      */
     @Bean
     @Order(4)
     SecurityFilterChain publicDecks(HttpSecurity http, JwtDecoder decoder, IdentityHttp identity, IdentityEndpoints endpoints,
-                                    ApiSecurityErrors errors) throws Exception {
+                                    ApiSecurityErrors errors, PublicReadLimiter limiter) throws Exception {
         AuthorizationManager<RequestAuthorizationContext> guestOrReader = AuthorizationManagers.anyOf(
                 AuthenticatedAuthorizationManager.<RequestAuthorizationContext>anonymous(),
                 AuthorityAuthorizationManager.<RequestAuthorizationContext>hasAuthority("SCOPE_learning.read"));
+        PublicAccountLimitFilter accountLimit = new PublicAccountLimitFilter(limiter, errors);
         http.securityMatcher("/public/decks/**")
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // Only GET and HEAD reach a controller and the bearer header is the only credential: there is no cookie for a forged request to ride on.
@@ -156,8 +159,10 @@ public class LearningSecurityConfiguration {
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.decoder(decoder))
                         .authenticationEntryPoint((r, s, e) -> errors.unauthorized(r, s))
                         .accessDeniedHandler((r, s, e) -> errors.forbidden(r, s)))
+                // The account is admitted (limit per account) before Identity is asked: one token cannot drive unlimited /userinfo round trips.
+                .addFilterAfter(accountLimit, AuthorizationFilter.class)
                 .addFilterAfter(new CurrentIdentityFilter(identity,
-                        endpoints.base() == null ? null : endpoints.endpoint("/userinfo"), errors), AuthorizationFilter.class);
+                        endpoints.base() == null ? null : endpoints.endpoint("/userinfo"), errors), PublicAccountLimitFilter.class);
         return http.build();
     }
 
