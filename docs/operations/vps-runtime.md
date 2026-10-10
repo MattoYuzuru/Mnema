@@ -223,8 +223,8 @@ firewall, log/privacy and backup evidence proportionate to the changes.
 
 ## Owner console
 
-The owner console (epic #398, [architecture](../architecture/admin-console.md)) ships **disabled**: a merge to `main`
-releases the code, but nothing opens until the owner sets these `prod` Environment secrets
+The owner console (epic #398, [architecture](../architecture/admin-console.md)) is served at `https://admin.mnema.app`.
+It opens only while these `prod` Environment secrets are set
 (`PROD_<NAME>`, allowlist `deploy/production/app-config.keys`, delivered into `app.env`). Unset means off, never an error.
 
 | Name | What it does | Unset |
@@ -240,14 +240,12 @@ repository. `compose.yaml` and `mnema-deploy` changed (admin keys, the empty-by-
 the `Caddyfile` only gained comments. The deploy job's drift check (`scripts/deploy-vps.sh`, step 1) fails the release and
 names every file that still differs, so approving first would only waste the approval.
 
-Enabling the console afterwards, in order: (1) a reviewed change replaces the `admin.mnema.app` redirect in the `Caddyfile` with the
-commented console block (the console must not be served while Identity has no client), and the administrator installs it; (2) DNS
-and a certificate for `admin.mnema.app` exist; (3) the owner sets `PROD_MNEMA_ADMIN_OWNER_ACCOUNT_ID` and
-`PROD_MNEMA_IDENTITY_ADMIN_ORIGIN` and releases; (4) the owner signs in at `https://admin.mnema.app`.
+Order of enabling (done 2026-10-10): the owner secrets are set and released first, so Identity registers the client before the
+`Caddyfile` serves the console host; then the `Caddyfile` with the console block is installed. Disabling is the reverse: restore the
+`admin.mnema.app` redirect to `https://mnema.app/manage/events`, install it, then clear the two secrets and release.
 **Support** additionally needs a transport that does not exist yet: Learning accepts only an HTTPS bridge, while the bot
 listens on plain HTTP at the host's `127.0.0.1` and Learning runs in a container. Until a private TLS path between them is
-built (a separate task), leave the two support secrets empty. While the console is off, `admin.mnema.app` keeps redirecting
-to the events editor at `https://mnema.app/manage/events`; enabling the console replaces that redirect. The audit tables
+built (a separate task), leave the two support secrets empty. The audit tables
 (`app_identity.admin_audit`, `app_learning.admin_audit`) reject `UPDATE`, `DELETE` and `TRUNCATE`; retention and erasure
 belong to the account-purge workstream (#409).
 
