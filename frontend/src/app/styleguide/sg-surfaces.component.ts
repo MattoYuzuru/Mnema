@@ -10,6 +10,12 @@ import { BatchPagerComponent } from '../features/generation/batch-pager.componen
 import { ArtifactSummary } from '../features/generation/generation.models';
 import { PromoPopupComponent } from '../features/promo/promo-popup.component';
 import { PromoCampaign } from '../features/promo/promo.models';
+import { ActionMenuComponent, ActionMenuItem } from '../shared/action-menu.component';
+import { PublicDeckCardComponent } from '../shared/public-deck-card.component';
+import { PublicDeckCard } from '../shared/public-deck-card';
+import { ShareButtonComponent } from '../shared/share-button.component';
+import { ShareLinkFieldComponent } from '../shared/share-link-field.component';
+import { SHARE_MENU_ITEM, ShareLinkService } from '../shared/share-link.service';
 import { AuthorChipComponent } from '../shared/author-chip.component';
 import { NewBadgeComponent } from '../shared/new-badge.component';
 import { PublicFooterComponent } from '../shared/public-footer.component';
@@ -31,19 +37,37 @@ function artifact(index: number): ArtifactSummary {
     };
 }
 
+const REPORT_ITEM: ActionMenuItem = { id: 'report', label: 'Пожаловаться' };
+
+/** Выдуманные колоды для образцов карточки: полная, без автора и медиа, с малой аудиторией. */
+const CARD_SAMPLES: readonly PublicDeckCard[] = [
+    {
+        id: 'sg-card-full', title: 'Испанские глаголы: 300 самых частых',
+        description: 'Спряжение в настоящем и прошедшем времени, короткие примеры из жизни и проверка на слух. Подходит для уровня A2 и выше, занимает около месяца.',
+        topic: 'Языки', language: 'Испанский', author: { username: 'anna.k', avatarSrc: null }, materialCount: 312, exerciseCount: 640,
+        media: ['audio', 'image'], addedCount: 1234, learningNowCount: 87, updatedAt: '2026-10-03T09:00:00Z', shareUrl: 'https://mnema.app/d/AbCdEfGh12/ispanskie-glagoly'
+    },
+    {
+        id: 'sg-card-bare', title: 'Столицы Европы', description: 'Страна и столица, без картинок.', topic: 'География', language: 'Русский',
+        author: { username: null, avatarSrc: null }, materialCount: 44, exerciseCount: 44, media: [], addedCount: 9, learningNowCount: 3,
+        updatedAt: '2025-12-20T09:00:00Z', shareUrl: 'https://mnema.app/d/ZyXwVuTs98/stolitsy-evropy'
+    }
+];
+
 const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
 
 /** «Меню и окна», «Вкладки и пейджер», «Статусы и ход» (в том числе чип автора), «Обратная связь», «Карточки и области». */
 @Component({
     selector: 'app-sg-surfaces',
     encapsulation: ViewEncapsulation.None,
-    imports: [SgSpecimenComponent, AuthorChipComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
+    imports: [SgSpecimenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
         NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent, AutoLoadComponent],
     templateUrl: './sg-surfaces.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class SgSurfacesComponent {
     private readonly toasts = inject(ToastService);
+    private readonly shareLinks = inject(ShareLinkService);
     private nextToast = 0;
 
     protected readonly scrollCount = signal(20);
@@ -67,6 +91,22 @@ export class SgSurfacesComponent {
             } else this.scrollCount.update(count => Math.min(60, count + 20));
             this.scrollLoading.set(false);
         }, 300);
+    }
+
+    protected readonly menuItems: readonly ActionMenuItem[] = [SHARE_MENU_ITEM, REPORT_ITEM];
+    protected readonly menuStates: readonly ActionMenuItem[] = [SHARE_MENU_ITEM, { id: 'soon', label: 'Недоступное действие', disabled: true }, { id: 'danger', label: 'Опасное действие', danger: true }];
+    protected readonly cardSamples = CARD_SAMPLES;
+    protected readonly menuStatus = signal('Выберите пункт меню: здесь будет сказано, что произошло.');
+    protected readonly menuFallback = signal<string | null>(null);
+
+    protected async menuChosen(id: string): Promise<void> {
+        this.menuFallback.set(null);
+        if (id === SHARE_MENU_ITEM.id) {
+            const url = 'https://mnema.app/styleguide';
+            const outcome = await this.shareLinks.share(url, 'Каталог Mnema (образец)');
+            this.menuStatus.set({ shared: 'Системное меню приняло ссылку.', copied: 'Ссылка скопирована.', cancelled: 'Меню «Поделиться» закрыто без выбора.', failed: 'Скопировать не удалось.' }[outcome]);
+            if (outcome === 'failed') this.menuFallback.set(url);
+        } else this.menuStatus.set(`Выбран пункт «${id}».`);
     }
 
     protected readonly popupOpen = signal(false);
