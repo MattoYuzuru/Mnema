@@ -20,7 +20,8 @@ export const PRIVACY_SECTIONS = [
     { id: 'security', title: '12. Как мы защищаем данные' },
     { id: 'minors', title: '13. Дети' },
     { id: 'changes', title: '14. Изменения Политики' },
-    { id: 'sources', title: '15. Нормативная база' }
+    { id: 'public-profile', title: '15. Публичный профиль и колоды сообщества' },
+    { id: 'sources', title: '16. Нормативная база' }
 ] as const;
 
 @Component({
