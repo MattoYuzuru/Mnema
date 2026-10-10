@@ -53,6 +53,19 @@
     usage='<span class="stamp">Пример</span> <span class="stamp solid">Новое</span> <app-new-badge />'>
     <div class="actions"><span class="stamp">Пример</span><span class="stamp solid">Ваше задание</span><span>Материал <app-new-badge /></span></div>
   </app-sg-specimen>
+  <app-sg-specimen title="Чип автора" selector="<app-author-chip>"
+    when="Подпись автора публичной колоды: фото 20 px и @логин в одну строку, рядом с названием или в карточке. Фото показывается, только если автор разрешил; иначе (или если оно не загрузилось) стоит нейтральный кружок с буквой. Если автор скрыл профиль или логина нет, чип не рисует ничего. Логин — настоящий текст, фото декоративное; длинный логин обрезается многоточием."
+    [tokens]="['--mn-ink', '--mn-soft', '--mn-field-border']"
+    usage='<app-author-chip [username]="card.profileUsername" [avatarSrc]="avatarUrl" />
+<app-author-chip [username]="card.profileUsername" />
+<app-author-chip [username]="null" />  <!-- hidden: renders nothing -->'>
+    <div class="sg-stack">
+      <app-author-chip username="anna.k" avatarSrc="/assets/demo/wave-dense.svg" />
+      <app-author-chip username="anna.k" />
+      <app-author-chip username="a.very.long.login.that.keeps.going.and.going.and.going" />
+      <p class="hint">Профиль скрыт, и чип не рисует ничего: <app-author-chip [username]="null" /></p>
+    </div>
+  </app-sg-specimen>
   <app-sg-specimen title="Шкала расхода" selector="<app-usage-meter>"
     when="Расход лимита ИИ: текст под шкалой — источник истины, сама полоса скрыта от скринридера. Использовано, резерв, ещё не открытое и засечки разблокировок."
     [tokens]="['--mn-ink', '--mn-field-border', '--mn-sheet']"
