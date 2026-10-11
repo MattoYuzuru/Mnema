@@ -50,6 +50,12 @@
       </p>
     }
     @case ('heading') {
+      @if (headingOffset() > 0) {
+        <div [class]="'native-heading native-heading--' + node.level" [appTopBlock]="top ? node.id : null" role="heading"
+          [attr.aria-level]="node.level + 1 + headingOffset()" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+          <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
+        </div>
+      } @else {
       @switch (node.level) {
         @case (1) {
           <h2 class="native-heading native-heading--1" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
@@ -88,6 +94,7 @@
             <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
           </div>
         }
+      }
       }
     }
     @case ('blockquote') {
@@ -146,7 +153,7 @@
             [download]="source.downloadUrl ?? source.url" [alt]="node.alt"
             [animated]="source.mimeType === 'image/gif'" (sourceFailed)="assetFailed.emit(node.assetId)" />
         } @else {
-          <p class="native-media-pending" role="status">{{ assetStatuses()[node.assetId.toLowerCase()] ?? 'Изображение пока недоступно' }}: {{ node.alt }}</p>
+          <p class="native-media-pending" role="status">{{ pendingText(node.assetId, 'Изображение пока недоступно', node.alt) }}</p>
         }
         @if (node.caption) { <figcaption>{{ node.caption }}</figcaption> }
         @if (node.description) { <p class="native-media-description">{{ node.description }}</p> }
@@ -232,7 +239,7 @@
       <a
         class="native-link"
         [attr.href]="node.href"
-        rel="noopener noreferrer"
+        rel="ugc nofollow noopener noreferrer"
         [attr.target]="node.href.startsWith('https:') ? '_blank' : null"
         [attr.lang]="node.lang ?? null"
         [attr.dir]="node.dir ?? null"

@@ -46,6 +46,9 @@ describe('canonical bearer interceptor', () => {
             `${identity}/api/accounts/admin/directory/10000000-0000-4000-8000-000000000001`,
             `${identity}/api/accounts/admin/accounts/10000000-0000-4000-8000-000000000001/ban`,
             `${identity}/api/accounts/admin/accounts/10000000-0000-4000-8000-000000000001/unban`,
+            '/api/public/decks/Kq7xT3mNpR', '/api/public/decks/Kq7xT3mNpR/items?limit=20&cursor=abc', '/api/public/decks/Kq7xT3mNpR/exercises',
+            '/api/public/decks/Kq7xT3mNpR/items/7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
+            '/api/public/decks/Kq7xT3mNpR/media/7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
             `${identity}/api/accounts/me`, `${identity}/api/accounts/me/avatar`, `${identity}/api/accounts/me/public-profile`, `${identity}/userinfo`]) {
             http.get(url).subscribe();
             const request = mock.expectOne(url);
@@ -77,6 +80,12 @@ describe('canonical bearer interceptor', () => {
             `${identity}/api/accounts/profiles?ids=10000000-0000-4000-8000-000000000001`, `${identity}/api/accounts/profiles/10000000-0000-4000-8000-000000000001`,
             `${identity}/api/accounts/profiles/10000000-0000-4000-8000-000000000001/avatar`, `${identity}/api/accounts/profiles/by-username/anna.k`,
             `${identity}/api/accounts/login`, `${identity}/oauth2/token`, '/api/%64ecks', '/api/decks%2f123',
+            // public deck reads: exactly a ten-character base58 code and the four read routes (plus media), nothing else
+            '/api/public/decks', '/api/public/decks/', '/api/public/decks/short', '/api/public/decks/Kq7xT3mNpRx', '/api/public/decks/Kq7xT3mNp0',
+            '/api/public/decks/Kq7xT3mNpR/other', '/api/public/decks/Kq7xT3mNpR/items/x', '/api/public/decks/Kq7xT3mNpR/items/a/b',
+            '/api/public/decks/Kq7xT3mNpR/exercises/x', '/api/public/decks/Kq7xT3mNpR%2fitems', '/api/public/decks/Kq7xT3mNpR/media',
+            '/api/public/decks/Kq7xT3mNpR/media/x', '/api/public/decks-other/Kq7xT3mNpR', '/api/x/public/decks/Kq7xT3mNpR',
+            'https://evil.test/api/public/decks/Kq7xT3mNpR',
             'https://evil.test/api/decks', '//evil.test/api/decks', 'https://user@identity.example.test/userinfo']) {
             expect(isCredentialTarget(url, identity, '/api', window.location.origin), url).toBe(false);
             http.get(url).subscribe();
@@ -84,6 +93,22 @@ describe('canonical bearer interceptor', () => {
             expect(request.request.headers.has('Authorization'), url).toBe(false);
             request.flush({});
         }
+    });
+
+    it('sends no credential on public deck reads of a guest and the bearer of a signed-in viewer', () => {
+        const url = '/api/public/decks/Kq7xT3mNpR/items?limit=20';
+        auth.accessToken.mockReturnValue(null);
+        http.get(url).subscribe();
+        const guest = mock.expectOne(url);
+        expect(guest.request.headers.has('Authorization')).toBe(false);
+        guest.flush({});
+        auth.accessToken.mockReturnValue('current-token');
+        http.get(url).subscribe();
+        const signedIn = mock.expectOne(url);
+        expect(signedIn.request.headers.get('Authorization')).toBe('Bearer current-token');
+        signedIn.flush({});
+        expect(isCredentialTarget('/api/public/decks/Kq7xT3mNpR', identity, '/api', window.location.origin)).toBe(true);
+        expect(isCredentialTarget('/api/public/decks/Kq7xT3mNpR/../decks', identity, '/api', window.location.origin)).toBe(false);
     });
 
     it('binds401 expiration to the exact request token', () => {

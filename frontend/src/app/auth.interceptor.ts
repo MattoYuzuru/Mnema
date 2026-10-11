@@ -38,7 +38,13 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
             || new RegExp(`^${pattern}/admin/console/users/${accountId}$`, 'iu').test(url.pathname)
             || new RegExp(`^${pattern}/admin/promo-codes/${accountId}$`, 'iu').test(url.pathname)
             || new RegExp(`^${pattern}/admin/support/tickets/[1-9][0-9]*(?:/commands)?$`, 'u').test(url.pathname);
-        const learningRoute = url.origin === learning.origin && (adminRoute || learningExact.includes(url.pathname)
+        // Public deck reads (`/public/decks/{code}`, its `items`, one `items/{memberKey}`, `exercises` and `media/{assetId}`): the
+        // bearer is optional there. A guest has no token and sends none; a signed-in viewer sends it so the server can resolve OWNER or
+        // GRANTEE. The code is exactly ten base58 characters, never a prefix match.
+        const entityId = '[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}';
+        const publicRead = new RegExp(`^${pattern}/public/decks/[1-9A-HJ-NP-Za-km-z]{10}(?:/items(?:/${entityId})?|/exercises|/media/${entityId})?$`, 'u')
+            .test(url.pathname);
+        const learningRoute = url.origin === learning.origin && (adminRoute || publicRead || learningExact.includes(url.pathname)
             || learningRoots.some(root => url.pathname === root || url.pathname.startsWith(`${root}/`)));
         return identityRoute || learningRoute;
     } catch { return false; }
