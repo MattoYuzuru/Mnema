@@ -1468,8 +1468,8 @@ deck's head and nothing else**: no deck revision, `deck.row_version` untouched (
   holds an editor save open and expects 412).
 - **Checklist (target PUBLIC, any effective write).** Non-empty description of the revision readers will get (the head when publishing, else the published one), topic,
   content language, `mnema_public_profile` (below) and no NC media. The public profile and the NC media gate only the **exposure** (becoming PUBLIC, or `publish` while PUBLIC): a benign edit
-  of a deck that is already public (tags, request switch, topic, language) is not blocked by a withdrawn consent. Withdrawal hides the author at once (Identity card = unknown account); demoting
-  the deck itself is an **open owner decision**. **Outbox:** one `deck_publication_event` for every effective write while the resulting level is PUBLIC (metadata included, so the catalog projector
+  of a deck that is already public (tags, request switch, topic, language) is not blocked by a withdrawn consent. Withdrawal hides the author at once (Identity card = unknown account); the deck
+  stays public without a byline (owner decision 2026-10-11, product contract «Правила и ПДн»). **Outbox:** one `deck_publication_event` for every effective write while the resulting level is PUBLIC (metadata included, so the catalog projector
   never misses an edit) and for every level or revision change; a no-op appends none. The catalog threshold (10 materials, 1 exercise) is only displayed. **NC media** (`blockedMedia`):
   assets whose stock provenance (`generation_provenance.media[].license`, V35) names a non-commercial term (a CC "NC" token or "non-commercial", **case-insensitive**: `cc-by-nc-4.0`, `NON-COMMERCIAL`; the same
   regex in the `~*` filter and in the `flag "i"` predicate of the partial index) (since Share/9 the lookup is keyed by the **asset**: a provenance row counts for a reference whose `asset_owner_id` is the row's account, whoever publishes, so a copy re-publishing an inherited NC image is caught), referenced by
