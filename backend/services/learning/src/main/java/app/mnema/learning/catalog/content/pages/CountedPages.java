@@ -1,10 +1,11 @@
 package app.mnema.learning.catalog.content.pages;
 
+import app.mnema.learning.catalog.content.pages.CountedPageCodec.Link;
+import app.mnema.learning.catalog.content.pages.CountedPageCodec.Node;
 import app.mnema.learning.storage.StorageTypes.NewEdge;
 import app.mnema.learning.storage.StorageTypes.NewObject;
 import app.mnema.learning.storage.StorageTypes.ObjectKind;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 
 import java.util.ArrayList;
@@ -17,13 +18,14 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
+import static app.mnema.learning.catalog.content.pages.CountedPageCodec.check;
 import static app.mnema.learning.catalog.content.pages.CountedPageTypes.*;
 import static app.mnema.learning.catalog.content.pages.CountedPageFailure.Code.*;
 
 /** Pure immutable page edits. Domain adapters own entry uniqueness, descriptor semantics and root pins. */
 public final class CountedPages {
-    private static final int MIN = 16;
-    private static final int MAX = 32;
+    private static final int MIN = CountedPageCodec.MIN;
+    private static final int MAX = CountedPageCodec.MAX;
     private static final int LOCAL_READ_BUDGET = 256;
     private final Profile profile;
     private final ObjectSource source;
@@ -33,8 +35,12 @@ public final class CountedPages {
         this.source = Objects.requireNonNull(source);
     }
 
-    /** Bounded O(N) bulk preparation; request-serving callers must use the local operations below. */
+    /**
+     * Bounded O(N) bulk preparation: it issues a fresh id for every page, so it is refused for profiles that are not {@link Profile#bulkBuild()}.
+     * The manifests of published revisions are never rebuilt, only path-copied by the local operations below (community decks §7).
+     */
     public PageEdit build(UUID scope, List<Entry> entries) {
+        check(profile.bulkBuild(), BULK_BUILD_FORBIDDEN);
         check(entries.size() <= profile.maxEntries(), BUDGET_EXCEEDED);
         check(profile.emptyRoot() || !entries.isEmpty(), INVALID_RANGE);
         Session session = new Session(scope, Math.max(LOCAL_READ_BUDGET, entries.size()));
@@ -136,40 +142,17 @@ public final class CountedPages {
 
         Node root(TreeRoot root) {
             Node page = page(root.ref(), true);
-            check(page.height() == root.height() && page.count() == root.count(), INVALID_PAGE);
+            CountedPageCodec.requireRoot(root, page);
             return page;
         }
 
         Node page(ObjectRef ref, boolean root) {
-            NewObject object = object(ref);
-            JsonNode data = object.payload();
-            check(object.kind() == ObjectKind.PAGE && object.encodingVersion() == 1 && data.size() == 4
-                    && data.has("codec") && data.has("role") && data.has("treeHeight") && data.has("counts")
-                    && number(data.path("codec"), 1, 1) == 1 && data.path("role").isString()
-                    && data.path("role").stringValue(null).equals(profile.role()), INVALID_PAGE);
-            int height = number(data.path("treeHeight"), 0, 32 - profile.leafRank());
-            check(object.dagRank() == profile.leafRank() + height && data.path("counts").isArray()
-                    && data.path("counts").size() == object.edges().size(), INVALID_PAGE);
-            int size = object.edges().size();
-            check(size <= MAX && (root ? height == 0 ? size > 0 || profile.emptyRoot() : size >= 2 : size >= MIN), INVALID_PAGE);
-            List<Link> links = new ArrayList<>();
-            long count = 0;
-            for (int i = 0; i < size; i++) {
-                var edge = object.edges().get(i);
-                int amount = number(data.path("counts").get(i), 1, profile.maxEntries());
-                check(scope.equals(edge.child().reuseScopeId()) && edge.ordinal() == i
-                        && (height == 0 ? amount == 1 && (profile.keyed() == (edge.logicalKey() != null)) : edge.logicalKey() == null), INVALID_PAGE);
-                links.add(new Link(edge.logicalKey(), edge.child(), amount));
-                count += amount;
-            }
-            check(count <= profile.maxEntries(), INVALID_PAGE);
-            return new Node(ref, height, List.copyOf(links), (int) count);
+            return CountedPageCodec.parse(profile, scope, ref, object(ref), root);
         }
 
         Node child(Node parent, int index) {
-            Link edge = parent.links().get(index);
-            Node child = page(edge.target(), false);
-            check(child.height() == parent.height() - 1 && child.count() == edge.count(), INVALID_PAGE);
+            Node child = page(parent.links().get(index).target(), false);
+            CountedPageCodec.requireChildOf(parent, index, child);
             return child;
         }
 
@@ -318,16 +301,5 @@ public final class CountedPages {
         }
     }
 
-    private static int number(JsonNode value, int minimum, int maximum) {
-        check(value.isIntegralNumber() && value.canConvertToInt(), INVALID_PAGE);
-        int number = value.intValue();
-        check(number >= minimum && number <= maximum, INVALID_PAGE);
-        return number;
-    }
-    private static void check(boolean condition, CountedPageFailure.Code code) {
-        if (!condition) throw new CountedPageFailure(code);
-    }
-    private record Link(UUID key, ObjectRef target, int count) { }
-    private record Node(ObjectRef ref, int height, List<Link> links, int count) { }
     private record Position(int index, int offset) { }
 }

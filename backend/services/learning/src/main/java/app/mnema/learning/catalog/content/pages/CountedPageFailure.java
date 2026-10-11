@@ -4,7 +4,7 @@ package app.mnema.learning.catalog.content.pages;
 public final class CountedPageFailure extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
-    public enum Code { INVALID_PAGE, INVALID_RANGE, KEY_MISMATCH, BUDGET_EXCEEDED }
+    public enum Code { INVALID_PAGE, INVALID_RANGE, KEY_MISMATCH, BUDGET_EXCEEDED, BULK_BUILD_FORBIDDEN }
     private final Code code;
 
     public CountedPageFailure(Code code) {
