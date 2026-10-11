@@ -5,6 +5,7 @@
     "createPath": "/api/decks/forks",
     "retryPath": "/api/decks/{deckId}/fork:retry",
     "detachPath": "/api/decks/{deckId}/fork:detach",
+    "autoUpdatePath": "/api/decks/{deckId}/fork:auto-update",
     "queue": "deck.copy.materialize",
     "killSwitch": "learning.community.forks.enabled (default false) AND learning.community.public-routes.enabled (default false): POST /api/decks/forks answers 404 as if the route did not exist unless BOTH are on (a copy is made from a deck found by its public code, and the public-routes switch is the parent of every route that takes one); forks on with public routes off is the same 404; copies that already exist keep materializing, retrying and detaching",
     "sourceCodePattern": "^[1-9A-HJ-NP-Za-km-z]{10}$",
@@ -22,7 +23,8 @@
       "preparing": "preparing=true, failed=false: the job is queued or running; poll the deck (GET /api/decks/{deckId}) at a bounded backoff",
       "failed": "preparing=true, failed=true: the job ended FAILED or CANCELLED, or its record was purged; show «Повторить» (POST fork:retry) or delete the copy",
       "ready": "preparing=false: the heads are complete, every route works",
-      "detached": "detached=true, independent of the three above: the owner detached the copy; the content stays, updates (a later epic) never arrive"
+      "detached": "detached=true, independent of the three above: the owner detached the copy; the content stays, updates never arrive",
+      "updateAvailable": "updateAvailable=true: the copy is ready, attached, its source opens by the stored code, and the author's published revision is not the one the copy stands on or a unit the learner left for later is still on offer; false in every other state (preparing, failed, detached, source unavailable, up to date)"
     },
     "pollingNote": "stop polling when preparing=false; there is no push and no progress figure, only these flags",
     "preparingRoutes": "while preparing=true every mutation of the copy and Study answer 409 DECK_PREPARING; reads of the hub answer normally and the material list is empty (its total still names the count being prepared)"
@@ -40,7 +42,10 @@
     "DELETE /api/decks/{deckId} stays allowed on a preparing or failed copy so that a stuck copy can be discarded; the running job notices the deleted deck and ends without writing more. Deleting a copy frees the (owner, source) slot at once",
     "POST fork:retry is owner-only and has no body: a FAILED or CANCELLED job is requeued under the same id (its cursor is kept, so it resumes), a job whose record was purged is enqueued again, a queued, running or finished copy is left alone; every case answers 200 with the current flags. A deck that is not a copy is 404",
     "POST fork:detach is owner-only, has no body and is idempotent: it sets detached_at once and answers 200 {deckId, detached: true}; it never touches the content and is allowed while the copy is preparing. A deck that is not a copy is 404",
-    "the owner's deck JSON (GET /api/decks/{deckId} and every item of GET /api/decks) carries `fork`: null for an ordinary deck, otherwise {upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached}; the create and metadata acknowledgements carry it too, so an acknowledgement equals the next read. sourceAvailable is computed at read for the copier through DeckAccess with the code he copied by, for a whole page at once (so it turns false when the source is deleted, made private or its link is rotated away, and stays false after a rotation until a later epic re-links the copy) and nothing is written on read; upstreamCode and upstreamTitle are null exactly when sourceAvailable is false",
+    "the owner's deck JSON (GET /api/decks/{deckId} and every item of GET /api/decks) carries `fork`: null for an ordinary deck, otherwise {upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached, updateAvailable, autoUpdate}; the create and metadata acknowledgements carry it too, so an acknowledgement equals the next read. sourceAvailable is computed at read for the copier through DeckAccess with the code he copied by, for a whole page at once (so it turns false when the source is deleted, made private, hidden by moderation or its link is rotated away, and stays false after a rotation until the copier re-links the copy, see the re-linking invariant) and nothing is written on read; upstreamCode and upstreamTitle are null exactly when sourceAvailable is false",
+    "updateAvailable (the badge «Есть обновление») is computed at read, writes nothing and costs no statement of its own for a page: it is true exactly when the copy is ready (preparing=false), not detached, sourceAvailable is true, and (the copy's base revision is not the source's published revision, OR the copy has a PENDING decision in fork_unit_decision, a unit left for later); after an apply that accepted or declined everything (base = published revision, nothing pending) it is false until the author publishes again. autoUpdate is the stored setting of the owner (false by default), reported as stored whatever the state of the copy and of the kill switch learning.updates.auto.enabled (read by the job that applies updates, not by the badge nor by the setting)",
+    "PUT /api/decks/{deckId}/fork:auto-update needs learning.write, is owner-only and takes the strict body {autoUpdate: boolean} (any other shape, a non-boolean, a duplicate or unknown member and a body over 256 bytes is 400 INVALID_REQUEST; there is no commandId: the setting is a state). It answers 200 {deckId, autoUpdate} with the stored value and is idempotent: the stored value again is answered without a write. A deck that is not the caller's live copy (a stranger's, an ordinary deck, a deleted copy, an unknown id) is the opaque 404 RESOURCE_NOT_FOUND; a copy that is still preparing is 409 DECK_PREPARING (like every mutation of a preparing copy, decided before the body is read); a detached copy is 409 CAPABILITY_UNAVAILABLE with capability `forkAutoUpdate` and reason `DETACHED`: a detached copy never gets updates and keeps the value it had",
+    "re-linking: the same command POST /api/decks/forks, sent with the NEW public code of a source the caller already holds a live copy of, answers the existing copy exactly as before (200, existing=true, nothing created, counted nowhere) and, if the copy stored a different code, replaces the stored code with the one that now opens the source (a write inside the command, under the account's advisory lock and the freeze of the source's publication; never on a read). This is how a copy that went dark because the author lowered the level and rotated the code gets its updates back. The code must resolve through DeckAccess for the caller to the copy's own source deck: the code of another deck (a different copy, a deck never copied), a private, deleted or unknown code, a guest, and the account of somebody else (who gets a copy of his own) never re-link it; a detached copy keeps its stored code; the database accepts a new stored code only if it is the source's current public code, so no statement can point a copy at another deck. An exact retry of the command (same commandId) is replayed without a second write",
     "the public summary GET /api/public/decks/{code} carries `myCopy` for a signed-in viewer: null, or {deckId, preparing} for his live copy of exactly this deck; a guest's summary has no such member, and the owner of the deck has null",
     "a copy edited later never reaches the source and the source's later edits never reach the copy (immutable lineage rows plus per-deck heads); a copy keeps working after the source is deleted or made private",
     "a copy reads media through the COPY grant (the heads of the copy decide), so an asset that only an unpublished revision of the author uses is 404 for the copier on playback, variant download and the offline manifest",
@@ -50,7 +55,8 @@
   "routes": [
     {"method": "POST", "path": "/api/decks/forks", "scope": "learning.write", "answers": "created | existing"},
     {"method": "POST", "path": "/api/decks/{deckId}/fork:retry", "scope": "learning.write", "answers": "state"},
-    {"method": "POST", "path": "/api/decks/{deckId}/fork:detach", "scope": "learning.write", "answers": "detached"}
+    {"method": "POST", "path": "/api/decks/{deckId}/fork:detach", "scope": "learning.write", "answers": "detached"},
+    {"method": "PUT", "path": "/api/decks/{deckId}/fork:auto-update", "scope": "learning.write", "answers": "autoUpdate"}
   ],
   "create": {
     "request": {
@@ -90,12 +96,24 @@
     "status": 200,
     "body": {"deckId": "33333333-3333-4333-8333-333333333333", "detached": true}
   },
+  "autoUpdate": {
+    "request": "PUT /api/decks/33333333-3333-4333-8333-333333333333/fork:auto-update",
+    "requestBody": {"autoUpdate": true},
+    "status": 200,
+    "headers": {"Cache-Control": "private, no-store"},
+    "body": {"deckId": "33333333-3333-4333-8333-333333333333", "autoUpdate": true},
+    "refusedWhileDetached": {
+      "status": 409,
+      "body": {"type": "urn:mnema:problem:capability-unavailable", "title": "Capability unavailable", "status": 409, "detail": "The requested learning capability is not available.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/fork:auto-update", "code": "CAPABILITY_UNAVAILABLE", "capability": "forkAutoUpdate", "reason": "DETACHED"}
+    }
+  },
   "fork": {
-    "preparing": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": true, "failed": false, "detached": false},
-    "failed": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": true, "failed": true, "detached": false},
-    "ready": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": false, "failed": false, "detached": false},
-    "sourceClosed": {"upstreamCode": null, "upstreamTitle": null, "sourceAvailable": false, "preparing": false, "failed": false, "detached": false},
-    "detached": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": false, "failed": false, "detached": true},
+    "preparing": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": true, "failed": false, "detached": false, "updateAvailable": false, "autoUpdate": false},
+    "failed": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": true, "failed": true, "detached": false, "updateAvailable": false, "autoUpdate": false},
+    "ready": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": false, "failed": false, "detached": false, "updateAvailable": false, "autoUpdate": false},
+    "updateAvailable": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": false, "failed": false, "detached": false, "updateAvailable": true, "autoUpdate": true},
+    "sourceClosed": {"upstreamCode": null, "upstreamTitle": null, "sourceAvailable": false, "preparing": false, "failed": false, "detached": false, "updateAvailable": false, "autoUpdate": false},
+    "detached": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": false, "failed": false, "detached": true, "updateAvailable": false, "autoUpdate": false},
     "ordinaryDeck": null
   },
   "deckDetail": {
@@ -112,7 +130,7 @@
       "updatedAt": "2026-10-11T10:00:00.123456Z",
       "memberCount": 40,
       "exerciseCount": 12,
-      "fork": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": true, "failed": false, "detached": false}
+      "fork": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": true, "failed": false, "detached": false, "updateAvailable": false, "autoUpdate": false}
     }
   },
   "myCopy": {
