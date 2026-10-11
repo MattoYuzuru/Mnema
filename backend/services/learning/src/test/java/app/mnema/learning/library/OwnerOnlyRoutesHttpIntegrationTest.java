@@ -70,7 +70,7 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         registry.add("learning.community.public-routes.enabled", () -> true);
         registry.add("learning.community.public-routes.guest-per-minute", () -> 100_000);
         registry.add("learning.community.public-routes.account-per-minute", () -> 100_000);
-        registry.add("learning.community.grants.instance-lookups-per-minute", () -> 1_000);
+        registry.add("learning.community.profile-lookups.instance-per-window", () -> 1_000);
     }
 
     /** The owner's fixture world: every id a row may need. */

@@ -17,8 +17,10 @@ into the head of `index.html`; there is no server-side rendering and no change t
 | any failure of the call (Learning down, slow, disabled, limited) | the unchanged `index.html`, `200`, exactly as before this change (its own validators and cache policy) |
 | everything else (`/`, `/login`, assets, `/api`, `/app-config.js`) | untouched |
 
-`/u/{username}`: Learning answers (`/api/public/meta/profiles/{username}`), but the web server does not wire it yet, because the application has no
-`/u/` route (the product «Профиль автора» is a later task). To add it, copy the deck location with a second pair of maps and the `/profiles/` URLs.
+`/u/{username}`: Learning answers `/api/public/meta/profiles/{username}` with the generic card for every login and does not ask Identity (the
+integrated review of epic 1 closed an anonymous drain of Identity's by-username budget this way). The web server does not wire it either, because the
+application has no `/u/` route (the product «Профиль автора» is epic 3). Epic 3 brings the real profile card back behind the shared lookup budget, then
+copies the deck location with a second pair of maps and the `/profiles/` URLs.
 
 ## Design and why
 

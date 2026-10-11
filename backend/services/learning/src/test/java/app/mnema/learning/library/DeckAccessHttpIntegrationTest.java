@@ -6,6 +6,7 @@ import app.mnema.learning.catalog.exercise.ExerciseService;
 import app.mnema.learning.catalog.item.ItemService;
 import app.mnema.learning.library.LibraryFixtures.Deck;
 import app.mnema.learning.media.MediaCatalog;
+import app.mnema.learning.platform.security.ProfileLookupBudget;
 import app.mnema.learning.study.session.StudySessionService;
 import app.mnema.learning.support.HttpIdentityFixture;
 import app.mnema.learning.support.PostgresIntegrationTest;
@@ -68,8 +69,9 @@ class DeckAccessHttpIntegrationTest extends PostgresIntegrationTest {
         registry.add("learning.community.public-routes.enabled", () -> true);
         registry.add("learning.community.public-routes.guest-per-minute", () -> 100_000);
         registry.add("learning.community.public-routes.account-per-minute", () -> 100_000);
-        // the tests of this class spend more login lookups in a minute than one instance should: the budgets themselves are tested on the limiter and the service
-        registry.add("learning.community.grants.instance-lookups-per-minute", () -> 1_000);
+        // the tests of this class spend more login lookups in a window than one instance should: the budgets themselves are tested on the budget and the service
+        registry.add("learning.community.profile-lookups.instance-per-window", () -> 1_000);
+        registry.add("learning.community.profile-lookups.complaints-per-window", () -> 1_000);
     }
 
     @BeforeEach
@@ -560,27 +562,24 @@ class DeckAccessHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void identityBeingLimitedOrDownGrantsNothingAndTwentyLookupsAMinuteIsTheOwnersBudget() {
+    void identityBeingDownGrantsNothingAndTenLookupsAWindowIsTheOwnersBudget() {
         Shared deck = shared(DeckVisibility.INVITE);
-        HttpResponse<String> limited = post("/decks/" + deck.id() + "/grants", owner, JSON.createObjectNode().put("username", HttpIdentityFixture.LIMITED_LOGIN));
-        problem(limited, 429, "RATE_LIMITED");
-        assertThat(limited.headers().firstValue("retry-after")).contains("7");
         problem(post("/decks/" + deck.id() + "/grants", owner, JSON.createObjectNode().put("username", HttpIdentityFixture.BROKEN_LOGIN)), 503, "IDENTITY_UNAVAILABLE");
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck_access_grant WHERE deck_id = :deck").param("deck", deck.id()).query(Long.class).single()).isZero();
-        // the owner has used two of twenty lookups this minute; a fresh owner proves the budget
+        // the owner has used one of ten lookups of this 15-minute window; a fresh owner proves the budget (Identity limiting lookups: ProfileLookupBudgetHttpIntegrationTest)
         UUID spender = UUID.randomUUID();
         Deck own = new Deck(spender, UUID.fromString(decks.create(spender, new DeckCommand(UUID.randomUUID(), "Моя", "Описание")).acknowledgement().path("deck")
                 .path("deckId").stringValue(null)), null, null);
         fixtures.publishAt(own, DeckVisibility.INVITE);
         int ok = 0;
         HttpResponse<String> last = null;
-        for (int index = 0; index < LoginLookupLimiter.DEFAULT_PER_OWNER + 1; index++) {
+        for (int index = 0; index < ProfileLookupBudget.DEFAULT_PER_OWNER + 1; index++) {
             last = post("/decks/" + own.id() + "/grants", spender, JSON.createObjectNode().put("username", "nobody." + index));
             if (last.statusCode() == 404) ok++;
         }
-        assertThat(ok).isEqualTo(LoginLookupLimiter.DEFAULT_PER_OWNER);
+        assertThat(ok).isEqualTo(ProfileLookupBudget.DEFAULT_PER_OWNER);
         problem(last, 429, "RATE_LIMITED");
-        assertThat(Long.parseLong(last.headers().firstValue("retry-after").orElseThrow())).isBetween(1L, 60L);
+        assertThat(Long.parseLong(last.headers().firstValue("retry-after").orElseThrow())).as("the rest of the 15-minute window").isBetween(800L, 900L);
     }
 
     @Test

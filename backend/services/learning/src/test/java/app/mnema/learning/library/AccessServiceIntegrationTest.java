@@ -11,6 +11,7 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.RateLimitedException;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
+import app.mnema.learning.platform.security.ProfileLookupBudget;
 import app.mnema.learning.study.session.StudySessionService;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -228,7 +229,7 @@ class AccessServiceIntegrationTest extends PostgresIntegrationTest {
         Shared deck = shared(owner, DeckVisibility.INVITE);
         InviteService.Created created = invites.create(owner, deck.id(), null, null);
         UUID person = UUID.randomUUID();
-        GrantService grants = new GrantService(repository, library, username -> java.util.Optional.of(person), new LoginLookupLimiter(), metrics, transactions, clock);
+        GrantService grants = new GrantService(repository, library, username -> java.util.Optional.of(person), new ProfileLookupBudget(), metrics, transactions, clock);
         assertThat(redeem(person, created.token())).isEqualTo(deck.code());
         grants.revoke(owner, deck.id(), person);
         assertThat(readable(person, deck.code())).isFalse();
@@ -273,7 +274,7 @@ class AccessServiceIntegrationTest extends PostgresIntegrationTest {
         UUID waiting = UUID.randomUUID();
         requests.send(waiting, deck.code());
         UUID late = UUID.randomUUID();
-        GrantService byLogin = new GrantService(repository, library, username -> java.util.Optional.of(late), new LoginLookupLimiter(), metrics, transactions, clock);
+        GrantService byLogin = new GrantService(repository, library, username -> java.util.Optional.of(late), new ProfileLookupBudget(), metrics, transactions, clock);
         assertThatThrownBy(() -> redeem(UUID.randomUUID(), created.token())).isInstanceOfSatisfying(ResourceLimitExceededException.class,
                 refused -> assertThat(refused.extension().members()).containsEntry("limit", 1000L));
         assertThatThrownBy(() -> byLogin.grantByLogin(owner, deck.id(), "someone")).isInstanceOf(ResourceLimitExceededException.class);
@@ -363,18 +364,18 @@ class AccessServiceIntegrationTest extends PostgresIntegrationTest {
         GrantService grants = new GrantService(repository, library, username -> {
             asked[0]++;
             return java.util.Optional.empty();
-        }, new LoginLookupLimiter(2, 3, System::nanoTime), metrics, transactions, clock);
+        }, new ProfileLookupBudget(3, 3, 2, 3, System::nanoTime), metrics, transactions, clock);
         assertThatThrownBy(() -> grants.grantByLogin(owner, notInvite.id(), "someone")).as("a LINK deck has nobody to invite").isInstanceOf(PublicationRequiredException.class);
         Shared priv = shared(owner, DeckVisibility.INVITE);
         fixtures.level(priv.deck(), DeckVisibility.PRIVATE);
         assertThatThrownBy(() -> grants.grantByLogin(owner, priv.id(), "someone")).isInstanceOf(PublicationRequiredException.class);
         assertThat(asked[0]).as("no lookup for a deck that cannot use a grant").isZero();
         for (int index = 0; index < 2; index++) assertThatThrownBy(() -> grants.grantByLogin(owner, deck.id(), "someone")).isInstanceOf(ResourceNotFoundException.class);
-        assertThatThrownBy(() -> grants.grantByLogin(owner, deck.id(), "someone")).as("the owner's two a minute").isInstanceOf(RateLimitedException.class);
+        assertThatThrownBy(() -> grants.grantByLogin(owner, deck.id(), "someone")).as("the owner's two a window").isInstanceOf(RateLimitedException.class);
         UUID other = UUID.randomUUID();
         Shared othersDeck = shared(other, DeckVisibility.INVITE);
         assertThatThrownBy(() -> grants.grantByLogin(other, othersDeck.id(), "someone")).isInstanceOf(ResourceNotFoundException.class);
-        assertThatThrownBy(() -> grants.grantByLogin(other, othersDeck.id(), "someone")).as("the instance's three a minute").isInstanceOf(RateLimitedException.class);
+        assertThatThrownBy(() -> grants.grantByLogin(other, othersDeck.id(), "someone")).as("the instance's three a window").isInstanceOf(RateLimitedException.class);
         assertThat(asked[0]).isEqualTo(3);
     }
 
@@ -386,7 +387,7 @@ class AccessServiceIntegrationTest extends PostgresIntegrationTest {
         try {
             for (int round = 0; round < 25; round++) {
                 UUID person = UUID.randomUUID();
-                GrantService grants = new GrantService(repository, library, username -> java.util.Optional.of(person), new LoginLookupLimiter(1000, 1000, System::nanoTime),
+                GrantService grants = new GrantService(repository, library, username -> java.util.Optional.of(person), new ProfileLookupBudget(1000, 1000, 1000, 1000, System::nanoTime),
                         metrics, transactions, clock);
                 requests.send(person, deck.code());
                 CountDownLatch start = new CountDownLatch(1);
@@ -633,7 +634,7 @@ class AccessServiceIntegrationTest extends PostgresIntegrationTest {
     void approvingGrantsAndNotifiesOnceAndRevokingTheGrantStartsTheThirtyDaysAgain() {
         Shared deck = shared(owner, DeckVisibility.INVITE);
         UUID asker = UUID.randomUUID();
-        GrantService grants = new GrantService(repository, library, username -> java.util.Optional.empty(), new LoginLookupLimiter(), metrics, transactions, clock);
+        GrantService grants = new GrantService(repository, library, username -> java.util.Optional.empty(), new ProfileLookupBudget(), metrics, transactions, clock);
         requests.send(asker, deck.code());
         AccessRequestService.Decision approved = requests.approve(owner, deck.id(), asker);
         assertThat(approved.status()).isEqualTo("APPROVED");
@@ -662,7 +663,7 @@ class AccessServiceIntegrationTest extends PostgresIntegrationTest {
         requests.send(byLink, deck.code());
         requests.send(byLogin, deck.code());
         invites.redeem(byLink, invites.create(owner, deck.id(), null, null).token());
-        GrantService grants = new GrantService(repository, library, username -> java.util.Optional.of(byLogin), new LoginLookupLimiter(), metrics, transactions, clock);
+        GrantService grants = new GrantService(repository, library, username -> java.util.Optional.of(byLogin), new ProfileLookupBudget(), metrics, transactions, clock);
         grants.grantByLogin(owner, deck.id(), "some.login");
         assertThat(status(deck.id(), byLink)).isEqualTo("APPROVED");
         assertThat(status(deck.id(), byLogin)).isEqualTo("APPROVED");
@@ -705,7 +706,7 @@ class AccessServiceIntegrationTest extends PostgresIntegrationTest {
             cursor = page.nextCursor();
         } while (cursor != null);
         assertThat(inviteIds).hasSize(5).doesNotHaveDuplicates();
-        GrantService grants = new GrantService(repository, library, username -> java.util.Optional.empty(), new LoginLookupLimiter(), metrics, transactions, clock);
+        GrantService grants = new GrantService(repository, library, username -> java.util.Optional.empty(), new ProfileLookupBudget(), metrics, transactions, clock);
         List<UUID> granted = new ArrayList<>();
         cursor = null;
         do {

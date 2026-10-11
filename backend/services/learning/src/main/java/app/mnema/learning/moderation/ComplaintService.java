@@ -10,6 +10,7 @@ import app.mnema.learning.platform.api.RateLimitedException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.security.ProfileDirectory;
+import app.mnema.learning.platform.security.ProfileLookupBudget;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -31,8 +32,9 @@ import java.util.UUID;
  * reporter's complaint about that target is OPEN a repeat writes nothing and counts nothing, the first reason and text stand. The reporter must be able
  * to read the target now: a deck is resolved by {@link DeckAccess} with the reporter as viewer, so an unknown, private, rotated, never-published, deleted or
  * HIDDEN deck, and an invitation deck without a grant, are one opaque 404 (a complaint never confirms that a deck exists); the owner of the deck is 400. A
- * profile is resolved through Identity's public-profile lookup (a login that does not resolve is the same 404, the reporter's own is 400), under a budget of
- * its own ({@link ProfileLookupLimiter}, never the grants' budget), OUTSIDE any transaction, and only when the reporter has no open complaint about that login
+ * profile is resolved through Identity's public-profile lookup (a login that does not resolve is the same 404, the reporter's own is 400), under the shared
+ * {@link ProfileLookupBudget} (pool {@code COMPLAINTS}: at most 3 per reporter and 10 per instance in Identity's 15-minute window, so complaints cannot starve grants),
+ * OUTSIDE any transaction, and only when the reporter has no open complaint about that login
  * (that probe comes first, so a silent repeat costs no lookup).
  *
  * <p>Each new complaint is one transaction under an advisory lock of the reporter: the open-complaint probe, the daily limit (at most
@@ -49,19 +51,19 @@ public class ComplaintService {
     private final ComplaintSettings settings;
     private final DeckAccess access;
     private final ProfileDirectory profiles;
-    private final ProfileLookupLimiter lookups;
+    private final ProfileLookupBudget lookups;
     private final ComplaintRepository repository;
     private final MeterRegistry meters;
     private final Clock clock;
     private final TransactionTemplate transaction;
 
     @Autowired
-    ComplaintService(ComplaintSettings settings, DeckAccess access, ProfileDirectory profiles, ProfileLookupLimiter lookups, ComplaintRepository repository,
+    ComplaintService(ComplaintSettings settings, DeckAccess access, ProfileDirectory profiles, ProfileLookupBudget lookups, ComplaintRepository repository,
                      MeterRegistry meters, PlatformTransactionManager transactions) {
         this(settings, access, profiles, lookups, repository, meters, transactions, Clock.systemUTC());
     }
 
-    ComplaintService(ComplaintSettings settings, DeckAccess access, ProfileDirectory profiles, ProfileLookupLimiter lookups, ComplaintRepository repository,
+    ComplaintService(ComplaintSettings settings, DeckAccess access, ProfileDirectory profiles, ProfileLookupBudget lookups, ComplaintRepository repository,
                      MeterRegistry meters, PlatformTransactionManager transactions, Clock clock) {
         this.settings = settings;
         this.access = access;
@@ -120,7 +122,7 @@ public class ComplaintService {
     /**
      * @throws ResourceNotFoundException the route is off, or no public profile has this login
      * @throws InvalidRequestException the login is the reporter's own
-     * @throws RateLimitedException the reporter filed too many new complaints today, or the lookup budget is used (or Identity limits lookups)
+     * @throws RateLimitedException the reporter filed too many new complaints today, or the lookup budget is used (or Identity limits lookups; {@code Retry-After} is the rest of the budget window)
      * @throws app.mnema.learning.platform.api.IdentityUnavailableException Identity did not answer
      */
     public void fileProfile(UUID reporter, String username, ComplaintCommands.Filing filing) {
@@ -135,9 +137,8 @@ public class ComplaintService {
                 count("silent");
                 return;
             }
-            // the Identity call is outside any transaction (no connection is held across a network call) and under the complaints' own lookup budget
-            lookups.admit(reporter);
-            UUID account = profiles.accountOf(username).orElseThrow(ResourceNotFoundException::new);
+            // the Identity call is outside any transaction (no connection is held across a network call) and under the complaints' pool of the shared lookup budget
+            UUID account = lookups.lookup(ProfileLookupBudget.Pool.COMPLAINTS, reporter, () -> profiles.accountOf(username)).orElseThrow(ResourceNotFoundException::new);
             if (account.equals(reporter)) throw new InvalidRequestException();
             boolean created = Boolean.TRUE.equals(transaction.execute(status -> fileOnce(reporter, Complaint.PROFILE, account, filing,
                     now -> repository.insertProfile(reporter, account, login, filing.reason(), filing.text(), now, now.plus(REVIEW), retainUntil(now)))));

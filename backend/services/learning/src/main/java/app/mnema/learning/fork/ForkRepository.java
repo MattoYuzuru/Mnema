@@ -78,6 +78,17 @@ class ForkRepository {
                 """).param("owner", owner).query(Integer.class).single();
     }
 
+    /**
+     * How many copies of ALL accounts are not ready yet, counted up to {@code limit} (the global cap): the predicate is exactly that of the partial index
+     * {@code deck_fork_unfinished}, so this is an index(-only) scan of at most {@code limit} entries whatever the table holds. {@code released_at} is set by the trigger that
+     * deletes a copy, so a deleted copy is not counted and no join to {@code deck} is needed.
+     */
+    int unfinishedTotal(int limit) {
+        return jdbc.sql("""
+                SELECT count(*) FROM (SELECT 1 FROM app_learning.deck_fork WHERE materialized_at IS NULL AND released_at IS NULL LIMIT :limit) bounded
+                """).param("limit", limit).query(Integer.class).single();
+    }
+
     void insertDeck(UUID deck, UUID owner, UUID scope, UUID genesis) {
         jdbc.sql("""
                 INSERT INTO app_learning.deck(deck_id, owner_id, reuse_scope_id, head_revision_id, row_version, created_at)

@@ -11,7 +11,6 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,7 +22,7 @@ import java.util.regex.Pattern;
  * ({@code learning.identity.author-card-timeout}, 150 ms, at most {@code author-card-concurrency} calls at once): a link preview has a few hundred
  * milliseconds in all, and a card that does not arrive in time is simply left out. An answer ("here is the card" or "there is none") is cached for
  * {@value #TTL_SECONDS} seconds, the lifetime Identity gives its own public cards; anything else (timeout, 5xx, 429, a malformed body) is neither a card
- * nor a known absence, and is remembered for only {@value #FAILURE_TTL_SECONDS} seconds so that a struggling Identity is not asked again by every preview. The endpoints are configuration, the path is built only from a UUID or a login that passed the same shape check as Identity's.
+ * nor a known absence, and is remembered for only {@value #FAILURE_TTL_SECONDS} seconds so that a struggling Identity is not asked again by every preview. The endpoint is configuration, the path is built only from a UUID. (There is no lookup by login: see {@link AuthorCards}.)
  */
 @Component
 final class IdentityAuthorCards implements AuthorCards, AutoCloseable {
@@ -62,13 +61,6 @@ final class IdentityAuthorCards implements AuthorCards, AutoCloseable {
         if (accountId == null) return Optional.empty();
         String id = accountId.toString();
         return lookup("id:" + id, "/api/accounts/profiles/" + id, body -> id.equals(body.path("accountId").stringValue(null)));
-    }
-
-    @Override
-    public Optional<Card> byUsername(String username) {
-        if (username == null || !USERNAME.matcher(username).matches()) return Optional.empty();
-        return lookup("name:" + username.toLowerCase(Locale.ROOT), "/api/accounts/profiles/by-username/" + username,
-                body -> username.equalsIgnoreCase(body.path("profileUsername").stringValue(null)));
     }
 
     private Optional<Card> lookup(String key, String path, java.util.function.Predicate<JsonNode> sameAccount) {
