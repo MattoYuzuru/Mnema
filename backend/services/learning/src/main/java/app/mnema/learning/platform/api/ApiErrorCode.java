@@ -10,6 +10,8 @@ enum ApiErrorCode {
     DECK_INVITE_ONLY(HttpStatus.FORBIDDEN, "Deck is invite only", "The deck is shared by invitation."),
     FORK_OWN_DECK(HttpStatus.CONFLICT, "Own deck", "A deck cannot be copied by its owner."),
     DECK_PREPARING(HttpStatus.CONFLICT, "Deck is preparing", "The copy is still being prepared; try again when it is ready."),
+    UPDATE_PLAN_STALE(HttpStatus.CONFLICT, "Update plan stale", "The copy or its source changed after the plan was read; read the plan again."),
+    UPDATE_PLAN_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "Update plans busy", "Too many update plans are being computed right now; retry after the time in Retry-After."),
     PUBLIC_READ_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "Public reads busy", "Public reads are busy; retry after the time in Retry-After."),
     FORKS_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "Copies busy", "Too many copies are being prepared right now; retry after the time in Retry-After."),
     IDENTITY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Identity unavailable", "Authentication is temporarily unavailable."),
