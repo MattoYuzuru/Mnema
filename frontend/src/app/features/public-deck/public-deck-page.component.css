@@ -1,0 +1,53 @@
+:host { display: block; min-inline-size: 0; color: var(--mn-body); font-family: var(--mn-font-body, system-ui, sans-serif); }
+* { box-sizing: border-box; }
+
+.page {
+    inline-size: min(56rem, 100%);
+    margin-inline: auto;
+    padding: clamp(1.5rem, 6vw, 4rem) clamp(1.125rem, 5vw, 3rem);
+}
+
+.back-link {
+    display: inline-flex;
+    min-block-size: var(--mn-touch-min, 2.75rem);
+    align-items: center;
+    gap: .4rem;
+    color: var(--mn-ink);
+    text-underline-offset: .25em;
+}
+
+h1 { color: var(--mn-ink); font-family: var(--mn-font-display, Georgia, serif); font-weight: 500; overflow-wrap: anywhere; }
+.plain-title, .hub-title { max-inline-size: 32ch; margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); line-height: 1.12; text-wrap: balance; }
+h1:focus-visible { outline: none; }
+
+.hub-heading {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1.25rem 1.5rem;
+    margin-block: .5rem 1.25rem;
+    padding-block-end: 1.25rem;
+    border-block-end: 1px solid var(--mn-rule);
+}
+.titles { flex: 1 1 22rem; min-inline-size: 0; }
+.share { display: flex; align-items: start; gap: .5rem; flex: none; max-inline-size: 100%; }
+
+.facts { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.25rem; margin: 1rem 0 0; padding: 0; list-style: none; color: var(--mn-muted); font-size: .92rem; }
+.facts > li { min-inline-size: 0; }
+.stamp { gap: .35rem; --mn-glyph-size: 1rem; }
+.hub-description { max-inline-size: 62ch; margin-block-start: 1rem; color: var(--mn-body); line-height: 1.6; }
+
+.primary-slot { margin-block: 0 1.5rem; }
+.primary-slot:empty { display: none; }
+
+app-public-materials-list[hidden] { display: none; }
+.siblings { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; margin-block: 1.5rem 0; }
+.siblings .next { margin-inline-start: auto; }
+
+app-segmented-choice { display: block; margin-block: 0 1.5rem; }
+app-share-link-field { display: block; inline-size: min(100%, 26rem); margin-block: -.5rem 1.25rem; }
+
+@media (forced-colors: active) {
+    .hub-heading { border-color: CanvasText; }
+}

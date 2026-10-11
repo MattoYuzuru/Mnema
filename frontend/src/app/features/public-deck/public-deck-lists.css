@@ -1,0 +1,47 @@
+:host([hidden]) { display: none; }
+:host { display: block; min-inline-size: 0; color: var(--mn-body); font-family: var(--mn-font-body, system-ui, sans-serif); }
+* { box-sizing: border-box; }
+
+h2 { margin: 0 0 .75rem; font-size: clamp(1.4rem, 3vw, 1.9rem); line-height: 1.2; overflow-wrap: anywhere; }
+.count { color: var(--mn-muted); font-size: .8em; }
+.notice { margin-block: 1rem; }
+.status:empty { margin: 0; }
+.notice p:last-of-type { margin-block-end: .75rem; }
+
+.rows { display: grid; margin: 0; padding: 0; list-style: none; border-block-start: 1px solid var(--mn-ink); }
+.rows[hidden] { display: none; }
+
+/* The wave and its isolation come from the global row rule; overflow stays visible so focus rings are not clipped. */
+.item-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+    gap: .25rem .75rem;
+    align-items: center;
+    min-inline-size: 0;
+    min-block-size: 3.5rem;
+    border-block-end: 1px solid var(--mn-rule);
+    padding: .5rem .75rem .5rem 0;
+    overflow: visible;
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 3.5rem;
+    --mn-wave-fill: var(--mn-soft);
+}
+.item-row:has(.row-link:focus-visible) { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+.folio { color: var(--mn-ink); font: 1.4rem/1 var(--mn-font-display, Georgia, serif); text-align: end; }
+.row-link { min-inline-size: 0; color: var(--mn-ink); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+/* Stretched link: the whole row opens the material. */
+.row-link::after { content: ''; position: absolute; inset: 0; }
+.row-link:focus-visible { outline: none; }
+.item-row:hover .row-link { text-decoration: underline; text-underline-offset: .2em; }
+
+.copy { display: grid; gap: .35rem; min-inline-size: 0; }
+.kind { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; }
+.stamp.off { border-style: dashed; color: var(--mn-muted); }
+.prompt { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.prompt.empty { color: var(--mn-muted); }
+
+@media (forced-colors: active) {
+    .item-row { border-color: CanvasText; }
+    .item-row:has(.row-link:focus-visible) { outline-color: Highlight; }
+}

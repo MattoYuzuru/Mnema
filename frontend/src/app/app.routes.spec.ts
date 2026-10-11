@@ -14,6 +14,9 @@ import { ExerciseBuilderPageComponent } from './features/generation/exercise-bui
 import { WorkshopPageComponent } from './features/generation/workshop-page.component';
 import { StudySessionPageComponent } from './features/study/study-session-page.component';
 import { StyleguidePageComponent } from './styleguide/styleguide-page.component';
+import { PublicDeckPageComponent } from './features/public-deck/public-deck-page.component';
+import { publicDeckMatcher } from './features/public-deck/public-deck-routing';
+import { UrlSegment } from '@angular/router';
 
 describe('appRoutes', () => {
     it('keeps the Identity callback and exposes only canonical private deck routes', () => {
@@ -109,5 +112,23 @@ describe('appRoutes', () => {
         expect(route.component).toBeUndefined();
         expect(route.canActivate).toBeUndefined();
         expect(await route.loadComponent!()).toBe(StyleguidePageComponent);
+    });
+
+    it('opens the public deck view to guests: one lazy route for /d/:code/:slug and /d/:code, no guard, before the catch-all', async () => {
+        const route = appRoutes.find(candidate => candidate.matcher === publicDeckMatcher)!;
+        expect(route).toBeDefined();
+        expect(route.canActivate).toBeUndefined();
+        expect(route.component).toBeUndefined();
+        expect(appRoutes.indexOf(route)).toBeLessThan(appRoutes.findIndex(candidate => candidate.path === '**'));
+        expect(await route.loadComponent!()).toBe(PublicDeckPageComponent);
+        const match = (...parts: string[]) => publicDeckMatcher(parts.map(part => new UrlSegment(part, {})), undefined as never, undefined as never);
+        expect(match('d', 'Kq7xT3mNpR')?.posParams?.['code'].path).toBe('Kq7xT3mNpR');
+        expect(match('d', 'Kq7xT3mNpR')?.posParams?.['slug']).toBeUndefined();
+        expect(match('d', 'Kq7xT3mNpR', 'ispanskiy')?.posParams?.['slug'].path).toBe('ispanskiy');
+        // A malformed code still reaches the page (it says «Колода не найдена»); other shapes and prefixes do not.
+        expect(match('d', 'x')?.posParams?.['code'].path).toBe('x');
+        expect(match('d')).toBeNull();
+        expect(match('d', 'a', 'b', 'c')).toBeNull();
+        expect(match('decks', 'Kq7xT3mNpR')).toBeNull();
     });
 });

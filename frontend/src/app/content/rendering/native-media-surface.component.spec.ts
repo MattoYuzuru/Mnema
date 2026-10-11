@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 
 import { documentOf, nativeNode } from './native-renderer.fixtures';
@@ -65,5 +66,24 @@ describe('NativeMediaSurfaceComponent', () => {
         fixture.destroy();
         await vi.advanceTimersByTimeAsync(30000);
         expect(api.read).toHaveBeenCalledTimes(1);
+    });
+
+    it('tells a reader of a shared deck only that the file is unavailable, never that it belongs to another account', async () => {
+        for (const [audience, expected] of [['owner', 'не принадлежит этому аккаунту'], ['public', 'Файл недоступен: Схема API']] as const) {
+            const api = { read: vi.fn().mockName("MediaPlaybackApi.read") };
+            api.read.mockRejectedValue(new HttpErrorResponse({ status: 404 }));
+            TestBed.resetTestingModule();
+            TestBed.configureTestingModule({ providers: [{ provide: MediaPlaybackApi, useValue: api }] });
+            const fixture = TestBed.createComponent(NativeMediaSurfaceComponent);
+            fixture.componentRef.setInput('document', documentOf([nativeNode('image', { assetId, alt: 'Схема API' })]));
+            fixture.componentRef.setInput('audience', audience);
+            fixture.detectChanges();
+            await vi.advanceTimersByTimeAsync(0);
+            fixture.detectChanges();
+            const text = fixture.nativeElement.textContent as string;
+            expect(text).toContain(expected);
+            if (audience === 'public') expect(text).not.toContain('аккаунту');
+            fixture.destroy();
+        }
     });
 });

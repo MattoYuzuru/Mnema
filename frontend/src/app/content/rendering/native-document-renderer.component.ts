@@ -42,7 +42,19 @@ export class NativeDocumentRendererComponent implements NativeBlockHost {
     readonly exposeNodeIds = input(false);
     /** Marks and slots around top-level blocks (the Workshop's edits); `null` draws the document as it is. */
     readonly overlay = input<BlockOverlay | null>(null);
+    /**
+     * How many levels the host's own headings take below the page's `h1` and section heading. 0 (the default) draws a document's
+     * level 1 as `h2`; a host that puts its own `h2` above the document (a public material under «Материал 3 из 12») passes 1, and the
+     * document's level 1 becomes level 3 (`role="heading"` with `aria-level`, so the levels past `h6` stay valid).
+     */
+    readonly headingOffset = input(0);
     protected readonly sources = computed(() => new Map(Object.entries(this.assetSources())
         .map(([id, source]) => [id.toLowerCase(), typeof source === 'string' ? { url: source } : source])));
     protected readonly renderState = computed(() => buildNativeRenderState(this.document()));
+
+    /** «Статус: подпись». A status that already ends in a full stop or an ellipsis loses it, so no «Файл недоступен.: …» is read. */
+    protected pendingText(assetId: string, fallback: string, alt: string): string {
+        const status = (this.assetStatuses()[assetId.toLowerCase()] ?? fallback).replace(/[.…]+$/u, '');
+        return `${status}: ${alt}`;
+    }
 }

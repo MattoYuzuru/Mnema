@@ -196,6 +196,18 @@
       <button type="button" class="button" (click)="notify('ERROR')">Ошибка</button>
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Экран отказа" selector="<app-access-screen>"
+    when="Страница объясняет, почему колоды не видно: её нет или автор скрыл, она только по приглашению, слишком много запросов, сервис занят, нет связи. Заголовок страницы, одно короткое объяснение и только те действия, которые уже работают (ссылка или кнопка в слоте access-actions): мёртвых кнопок нет. Линии сверху и снизу, как у пустого состояния. Уровень заголовка headingLevel: 1, если экран и есть вся страница; здесь 4."
+    [tokens]="['--mn-ink', '--mn-rule']"
+    usage='<app-access-screen heading="Колода не найдена" eyebrow="Колода">
+  <p>Такой колоды нет, или автор её скрыл. Проверьте ссылку.</p>
+  <a access-actions class="button" routerLink="/">На главную</a>
+</app-access-screen>'>
+    <app-access-screen heading="Колода доступна по приглашению" eyebrow="Колода" [headingLevel]="4">
+      <p>Автор открыл эту колоду только приглашённым. Попросите доступ, и автор увидит ваш запрос.</p>
+      <button access-actions type="button" class="button">На главную</button>
+    </app-access-screen>
+  </app-sg-specimen>
   <app-sg-specimen title="Пустое состояние" selector=".empty-state"
     when="Здесь ничего нет, и ясно, что делать дальше: заголовок, одно предложение, одно действие. Линии сверху и снизу, без карточки и иллюстрации-заглушки."
     [tokens]="['--mn-ink']"

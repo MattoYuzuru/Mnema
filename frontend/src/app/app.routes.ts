@@ -13,6 +13,7 @@ import type { ExerciseAuthoringPageComponent } from './features/authoring/exerci
 import type { StudySessionPageComponent } from './features/study/study-session-page.component';
 import type { NewMaterialPageComponent } from './features/generation/new-material-page.component';
 import type { ManageEventsPageComponent } from './features/events/manage-events-page.component';
+import { publicDeckMatcher } from './features/public-deck/public-deck-routing';
 
 const lazyCanLeaveEventEditor: CanDeactivateFn<ManageEventsPageComponent> = (...args) =>
     import('./features/events/manage-events-page.component').then(module => module.canLeaveEventEditor(args[0]));
@@ -168,6 +169,12 @@ export const appRoutes: Routes = [
         path: 'plans/payment/:orderId',
         loadComponent: () => import('./features/billing/payment-return.component').then(module => module.PaymentReturnComponent),
         canActivate: [authGuard]
+    },
+    {
+        // Public, guests included, no authGuard: someone else's deck behind its code. `/d/:code/:slug` and `/d/:code` are one route
+        // (see publicDeckMatcher), so replacing a wrong slug with the canonical one does not rebuild the page.
+        matcher: publicDeckMatcher,
+        loadComponent: () => import('./features/public-deck/public-deck-page.component').then(module => module.PublicDeckPageComponent)
     },
     // Public: the footer and the «Что это?» toggletips of the AI actions link here, signed in or not.
     {
