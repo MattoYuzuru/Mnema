@@ -113,7 +113,7 @@ final class ManifestEditor {
             throw switch (failure.code()) {
                 case KEY_MISMATCH, INVALID_RANGE -> new VersionConflictException();
                 case BUDGET_EXCEEDED -> new InvalidRequestException();
-                case INVALID_PAGE -> failure;
+                case INVALID_PAGE, BULK_BUILD_FORBIDDEN -> failure;
             };
         }
     }
