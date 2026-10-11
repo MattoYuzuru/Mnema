@@ -137,6 +137,7 @@ artifact:
 | current | [AI operations runbook](./operations/ai-runbook.md) | Роли api/worker, ключи только на worker, kill switches и бюджеты, метрики на отдельном порту, инциденты провайдеров, хранение данных, eval-gate. |
 | current | [AI egress proxy](./operations/ai-egress-proxy.md) | Stateless Squid CONNECT proxy в Финляндии для AI-провайдеров, недоступных из РФ; kill switch и fallback. |
 | current | [Browser security headers](./operations/browser-security-headers.md) | Проверяемый response-security contract. |
+| current | [Link previews](./operations/link-previews.md) | OG-превью `/d/*` без SSR: nginx SSI + `GET /api/public/meta/…` Learning, три конфигурации web-сервера, порядок установки. |
 | current | [Production image inventory](./operations/production-image-inventory.md), [release security evidence](./operations/release-security-evidence.md) | Пины и supply-chain evidence четырёх VPS images. |
 | proposed | [Reset/capacity/offline plan](./operations/v2-reset-capacity-and-offline-plan.md) | Остаточные purge/capacity/offline решения с legacy inventory; текущий VPS сохраняет старые данные. |
 

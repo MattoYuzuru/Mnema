@@ -2,15 +2,17 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <title>Mnema</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="/assets/brand/mnema-mark.svg" type="image/svg+xml">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/assets/brand/app-icon-512.png">
+    <meta name="theme-color" content="#f4f0e5">
+    <!-- Link previews without SSR: docs/operations/link-previews.md -->
+<!--# block name="mnema_head" -->
+    <title>Mnema</title>
     <meta name="description"
           content="Mnema помогает собирать учебные материалы, создавать упражнения и возвращаться к знаниям в своём ритме.">
     <meta name="robots" content="index,follow">
-    <meta name="theme-color" content="#f4f0e5">
     <link rel="canonical" href="https://mnema.app/">
     <meta property="og:site_name" content="Mnema">
     <meta property="og:title" content="Mnema — учиться, понимать, помнить">
@@ -23,6 +25,8 @@
     <meta name="twitter:title" content="Mnema — учиться, понимать, помнить">
     <meta name="twitter:description" content="Ваши материалы и упражнения — в одном месте.">
     <meta name="twitter:image" content="https://mnema.app/assets/og-image.png">
+<!--# endblock -->
+<!--# include virtual="/__mnema_og_head" stub="mnema_head" -->
     <script type="application/ld+json">
         {
           "@context": "https://schema.org",

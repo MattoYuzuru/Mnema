@@ -39,6 +39,12 @@ public final class HttpIdentityFixture {
     private static final java.util.Set<String> REVOKED = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final java.util.Set<String> PUBLIC_PROFILE = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final AtomicInteger USER_INFO_CALLS = new AtomicInteger();
+    /** Public author cards by account id and by lower-case login, as Identity's {@code /api/accounts/profiles/...} answers them. */
+    private static final Map<String, String> CARDS_BY_ID = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, String> CARDS_BY_NAME = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final AtomicInteger CARD_CALLS = new AtomicInteger();
+    private static volatile int cardFailure;
+    private static volatile long cardDelayMillis;
 
     static {
         try {
@@ -66,6 +72,20 @@ public final class HttpIdentityFixture {
                 exchange.sendResponseHeaders(status, body.length);
                 try (var output = exchange.getResponseBody()) { output.write(body); }
             });
+            IDENTITY.createContext("/api/accounts/profiles/", exchange -> {
+                CARD_CALLS.incrementAndGet();
+                if (cardDelayMillis > 0) {
+                    try { Thread.sleep(cardDelayMillis); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                }
+                String rest = exchange.getRequestURI().getPath().substring("/api/accounts/profiles/".length());
+                String card = rest.startsWith("by-username/") ? CARDS_BY_NAME.get(rest.substring("by-username/".length()).toLowerCase(java.util.Locale.ROOT))
+                        : CARDS_BY_ID.get(rest);
+                int status = cardFailure != 0 ? cardFailure : card == null ? 404 : 200;
+                byte[] body = (status == 200 ? card : "{\"code\":\"profile_not_found\"}").getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(status, body.length);
+                try (var output = exchange.getResponseBody()) { output.write(body); }
+            });
             IDENTITY.start();
             Runtime.getRuntime().addShutdownHook(new Thread(() -> IDENTITY.stop(0)));
         } catch (Exception failure) {
@@ -89,6 +109,32 @@ public final class HttpIdentityFixture {
     public static void publicProfile(UUID account, boolean ready) {
         if (ready) PUBLIC_PROFILE.add(account.toString());
         else PUBLIC_PROFILE.remove(account.toString());
+    }
+
+    /** Identity publishes this public card (display name and bio may be null: the owner did not agree to show them). */
+    public static void authorCard(UUID account, String username, String displayName, String bio) {
+        String json = "{\"accountId\":\"" + account + "\",\"profileUsername\":" + quote(username) + ",\"displayName\":" + quote(displayName)
+                + ",\"bio\":" + quote(bio) + ",\"avatarPresent\":false}";
+        CARDS_BY_ID.put(account.toString(), json);
+        CARDS_BY_NAME.put(username.toLowerCase(java.util.Locale.ROOT), json);
+    }
+
+    public static void withdrawAuthorCard(UUID account) {
+        String json = CARDS_BY_ID.remove(account.toString());
+        if (json != null) CARDS_BY_NAME.values().remove(json);
+    }
+
+    /** Every card request answers with this status (0: normal behaviour) after {@code delayMillis}; for the failure paths of link previews. */
+    public static void authorCardFailure(int status, long delayMillis) {
+        cardFailure = status;
+        cardDelayMillis = delayMillis;
+    }
+
+    public static int authorCardCalls() { return CARD_CALLS.get(); }
+
+    private static String quote(String value) {
+        if (value == null) return "null";
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
     }
 
     public static int userInfoCalls() { return USER_INFO_CALLS.get(); }

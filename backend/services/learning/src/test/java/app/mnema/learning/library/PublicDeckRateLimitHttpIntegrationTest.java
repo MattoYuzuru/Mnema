@@ -87,6 +87,17 @@ class PublicDeckRateLimitHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void theLinkPreviewRoutesSpendTheSameGuestBudget() throws Exception {
+        // the web server sends the visitor's address in X-Forwarded-For; a preview read and a deck read are one budget of that visitor
+        assertThat(guest("/public/meta/decks/" + code, "203.0.113.30").statusCode()).isEqualTo(200);
+        assertThat(guest("/public/meta/decks/" + code + "/head", "203.0.113.30").statusCode()).isEqualTo(200);
+        assertThat(guest("/public/decks/" + code, "203.0.113.30").statusCode()).isEqualTo(200);
+        limited(guest("/public/meta/decks/" + code, "203.0.113.30"));
+        limited(guest("/public/meta/profiles/anna.k/head", "203.0.113.30"));
+        assertThat(guest("/public/meta/decks/" + code, "203.0.113.31").statusCode()).isEqualTo(200);
+    }
+
+    @Test
     void anIpv6SubscriberSharesOneBudgetAcrossItsWholeSlash64() throws Exception {
         String path = "/public/decks/" + code;
         assertThat(guest(path, "2001:db8:1:2::1").statusCode()).isEqualTo(200);

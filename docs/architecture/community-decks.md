@@ -281,6 +281,12 @@ erDiagram
   `GET /public/meta/{code|username}`: короткий кэш, только публичные поля и
   карточка автора с согласием. Он подставляет `title`, `description`, `og:*`,
   `canonical`, `robots` в `index.html`.
+  - **Реализовано (Share/14, #436):** `GET /api/public/meta/decks/{code}` (JSON) и `…/head` (экранированный
+    фрагмент `<head>`), nginx SSI (`include virtual` + `stub`) и `auth_request` для 301; три файла nginx
+    (production, автономный образ, локальный стек); без SSR. Сбой вызова отдаёт прежний `index.html`.
+    Подробности, порядок установки и отклонённые варианты (njs, `sub_filter`):
+    [link previews](../operations/link-previews.md). Маршрута `/u/{username}` во frontend ещё нет, поэтому nginx
+    его не подключает.
 - **Sitemap** строится из `public_deck`.
 - **Rate limits:**
   - публичное чтение и поиск гостя — по IP;

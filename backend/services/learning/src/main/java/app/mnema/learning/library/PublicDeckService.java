@@ -5,13 +5,11 @@ import app.mnema.learning.catalog.content.pages.CountedPageTypes.Entry;
 import app.mnema.learning.catalog.content.storage.NativeSnapshotDecoder;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
 import app.mnema.learning.platform.api.InvalidRequestException;
-import app.mnema.learning.platform.api.RateLimitedException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
-import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -26,7 +24,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.Semaphore;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -35,7 +32,7 @@ import java.util.function.Supplier;
  * checks the kill switch (off: 404 as if the route did not exist), takes a place in the abuse limit (before any lookup, so a flood of unknown codes is
  * limited too), resolves {@link DeckAccess} and only then reads, always from the immutable roots of the published revision: never the deck's head, its
  * drafts, its journal or any other deck of the lineage. The answers carry no editing metadata and no answer keys; media is not served here (Share/9).
- * Two semaphores are tried BEFORE the transaction opens ({@code max-concurrent} places in all, of which guests may hold at most one less), so excess reads fail fast with 503 and never queue for a connection and a signed-in viewer always has a place. Resolution and every SQL lookup are read-only transactions with a ten-second bound; storage reads run in their own short transactions (they take row locks); the titles of a page come from the cache in one statement, and the titles that had to be derived are cached as the last step inside the permit, in a short transaction of their own.
+ * The kill switch, the limit and the bulkhead are {@link PublicReadAdmission}, shared with the link-preview routes. Two semaphores are tried BEFORE the transaction opens ({@code max-concurrent} places in all, of which guests may hold at most one less), so excess reads fail fast with 503 and never queue for a connection and a signed-in viewer always has a place. Resolution and every SQL lookup are read-only transactions with a ten-second bound; storage reads run in their own short transactions (they take row locks); the titles of a page come from the cache in one statement, and the titles that had to be derived are cached as the last step inside the permit, in a short transaction of their own.
  *
  * <p>Outcomes are counted as {@code mnema_public_deck_requests_total{route,outcome}} (ok, not_found, invite_only, rate_limited, busy, disabled), the 404/403/429
  * figures of architecture section 14.
@@ -47,39 +44,30 @@ public class PublicDeckService {
     /** What a granted read works with: the level, the deck and the revision non-owners read. */
     private record Read(AccessLevel level, DeckRef deck, DeckRef.Published revision) { }
 
-    private final PublicRouteSettings settings;
-    private final PublicReadLimiter limiter;
+    private final PublicReadAdmission admission;
     private final DeckAccess access;
     private final ManifestPages manifests;
     private final PublishedContentRepository content;
     private final ItemPreviews previews;
     private final NativeStorageBatches nativeBatches;
-    private final MeterRegistry meters;
     private final TransactionTemplate transaction;
     private final TransactionTemplate cacheWrite;
-    private final Semaphore bulkhead;
-    private final Semaphore guestBulkhead;
 
-    PublicDeckService(PublicRouteSettings settings, PublicReadLimiter limiter, DeckAccess access, ManifestPages manifests,
-                      PublishedContentRepository content, ItemPreviews previews, ImmutableStorage storage, MeterRegistry meters,
+    PublicDeckService(PublicReadAdmission admission, DeckAccess access, ManifestPages manifests,
+                      PublishedContentRepository content, ItemPreviews previews, ImmutableStorage storage,
                       PlatformTransactionManager transactions) {
-        this.settings = settings;
-        this.limiter = limiter;
+        this.admission = admission;
         this.access = access;
         this.manifests = manifests;
         this.content = content;
         this.previews = previews;
         this.nativeBatches = new NativeStorageBatches(storage);
-        this.meters = meters;
         // The read is read-only: nothing it does can write. The title cache is filled afterwards in a short transaction of its own.
         this.transaction = new TransactionTemplate(transactions);
         this.transaction.setTimeout(10);
         this.transaction.setReadOnly(true);
         this.cacheWrite = new TransactionTemplate(transactions);
         this.cacheWrite.setTimeout(5);
-        this.bulkhead = new Semaphore(settings.maxConcurrent);
-        // guests may hold all but one place: the last one is always free for a signed-in viewer
-        this.guestBulkhead = new Semaphore(settings.maxConcurrent - 1);
     }
 
     public ObjectNode summary(Viewer viewer, String code) {
@@ -183,55 +171,28 @@ public class PublicDeckService {
     }
 
     private <T> T serve(String route, Viewer viewer, String code, Function<Read, T> body) {
-        if (!settings.enabled) {
-            count(route, "disabled");
-            throw new ResourceNotFoundException();
-        }
-        // A signed-in viewer was admitted by the filter of the public chain before Identity was asked (one token cannot drive unlimited
-        // Identity round trips); only guests are counted here.
-        if (viewer.isGuest()) {
+        return admission.within(route, viewer, () -> {
             try {
-                limiter.admit(viewer);
-            } catch (RateLimitedException failure) {
-                count(route, "rate_limited");
+                // Resolution is one short read-only transaction. The rest reads immutable data addressed by ids the resolution produced, so it needs no
+                // snapshot: storage reads (which take FOR KEY SHARE locks and so cannot run in a read-only transaction) run in their own short
+                // transactions, and each SQL lookup is a read-only transaction of its own ({@link #sql}), never one connection held across the whole read.
+                Read read = transaction.execute(status -> {
+                    Resolution resolution = access.resolve(viewer, code);
+                    if (resolution.denial() == Denial.INVITE_ONLY) throw new DeckInviteOnlyException();
+                    if (!resolution.granted() || resolution.deck().published() == null) throw new ResourceNotFoundException();
+                    return new Read(resolution.level(), resolution.deck(), resolution.deck().published());
+                });
+                T result = body.apply(read);
+                count(route, "ok");
+                return result;
+            } catch (DeckInviteOnlyException failure) {
+                count(route, "invite_only");
+                throw failure;
+            } catch (ResourceNotFoundException failure) {
+                count(route, "not_found");
                 throw failure;
             }
-        }
-        // Before a connection or a transaction is asked for: a flood of public reads is refused here, it never queues for the pool. A guest also
-        // needs a place of the guest share, so guests alone can never take the last place.
-        boolean guest = viewer.isGuest();
-        if (guest && !guestBulkhead.tryAcquire()) {
-            count(route, "busy");
-            throw new PublicReadBusyException();
-        }
-        if (!bulkhead.tryAcquire()) {
-            if (guest) guestBulkhead.release();
-            count(route, "busy");
-            throw new PublicReadBusyException();
-        }
-        try {
-            // Resolution is one short read-only transaction. The rest reads immutable data addressed by ids the resolution produced, so it needs no
-            // snapshot: storage reads (which take FOR KEY SHARE locks and so cannot run in a read-only transaction) run in their own short
-            // transactions, and each SQL lookup is a read-only transaction of its own ({@link #sql}), never one connection held across the whole read.
-            Read read = transaction.execute(status -> {
-                Resolution resolution = access.resolve(viewer, code);
-                if (resolution.denial() == Denial.INVITE_ONLY) throw new DeckInviteOnlyException();
-                if (!resolution.granted() || resolution.deck().published() == null) throw new ResourceNotFoundException();
-                return new Read(resolution.level(), resolution.deck(), resolution.deck().published());
-            });
-            T result = body.apply(read);
-            count(route, "ok");
-            return result;
-        } catch (DeckInviteOnlyException failure) {
-            count(route, "invite_only");
-            throw failure;
-        } catch (ResourceNotFoundException failure) {
-            count(route, "not_found");
-            throw failure;
-        } finally {
-            bulkhead.release();
-            if (guest) guestBulkhead.release();
-        }
+        });
     }
 
     /** One read-only lookup with the ten-second bound. */
@@ -240,7 +201,7 @@ public class PublicDeckService {
     }
 
     private void count(String route, String outcome) {
-        meters.counter("mnema_public_deck_requests_total", "route", route, "outcome", outcome).increment();
+        admission.count(route, outcome);
     }
 
     private static int start(PublicCursor cursor, DeckRef.Published published) {

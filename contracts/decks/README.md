@@ -271,6 +271,39 @@ the opaque 404 for any other account, whatever the deck's level.
 - Failure codes: `DECK_INVITE_ONLY` (403, new), `RESOURCE_NOT_FOUND` (404), `INVALID_REQUEST` (400), `VERSION_CONFLICT` (412),
   `RATE_LIMITED` (429), `PUBLIC_READ_BUSY` (503, new), `AUTHENTICATION_REQUIRED` (401), `ACCESS_DENIED` (403, a valid token without `learning.read`).
 
+## Link previews (Share/14, #436)
+
+The web server puts the card of a deck into the head of `index.html` for `/d/{code}/{slug}` (nginx SSI, no SSR), so Telegram, VK
+and search engines see the title, description and author of a PUBLIC deck. Exact examples and executable invariants are in
+[`public-meta.json`](public-meta.json); operations: [link previews](../../docs/operations/link-previews.md); the decision is
+[community decks §9](../../docs/architecture/community-decks.md#9-ссылки-og-rate-limits-cd-10).
+
+| Operation | Request | Success |
+|---|---|---|
+| Deck card | `GET\|HEAD /api/public/meta/decks/{code}` | 200, `{kind, title, description, canonical, robots, image, author}` |
+| Deck head | `GET\|HEAD /api/public/meta/decks/{code}/head` | 200, `text/plain;charset=UTF-8` fragment; `X-Mnema-Preview`, and `X-Mnema-Canonical` for a PUBLIC deck |
+| Author card | `GET\|HEAD /api/public/meta/profiles/{username}` and `/head` | 200, the same shape, `kind: PROFILE` only when Identity has a public card |
+
+- **Same chain, same switch.** The routes are in the optional-bearer public chain of the deck reads with the same limiter, bulkhead and kill
+  switch (`404` while public routes are off); the viewer is always a guest, a token changes nothing, and a present but invalid one is 401 like there.
+  Success is `Cache-Control: public, max-age=300`; problem answers stay `no-store`.
+- **Not an oracle.** Only a PUBLIC deck with a published revision gets its own card. LINK, INVITE, private, rotated, deleted, unknown, malformed
+  and never-published codes all get **the same** `GENERIC` card (`noindex`, `canonical: null`, `author: null`), byte for byte, with `200`; its `/head`
+  answer also carries `X-Robots-Tag: noindex`, which the web server puts on the page.
+- **Text, not markup.** Every JSON string is plain text on one line (whitespace and control characters become one space, bidirectional formatting
+  characters are dropped; title at most 120 code points, description at most 200, cut on a word boundary with `…`; blank falls back to `Колода` /
+  `Колода на Mnema.`). The `/head` fragment is the only markup: fixed `title`, `meta` and `link` tags with every value escaped (`& < > " '`), nothing
+  that can open a tag, a comment or an SSI directive. It is served as `text/plain;charset=UTF-8` with `Content-Security-Policy: default-src 'none';
+  sandbox` because it is reachable on the application origin: a browser shows it as text and never runs it, while the web server includes its bytes.
+- **Author.** `author {username, displayName|null}` only when Identity publishes the card (the owner's consent, fields per consent; `bio` is used for
+  a profile card only). Learning asks Identity with a 150 ms deadline of its own and caches a card or its absence 60 s and a failure 5 s; a failure
+  leaves `author: null` and never blocks the card.
+- **Canonical and redirect.** `canonical = {origin}/d/{code}/{slug}` (`origin` from `MNEMA_PUBLIC_BASE_URL`). The `/head` answer of a PUBLIC deck carries
+  `X-Mnema-Canonical: /d/{code}/{slug}`; the web server compares it with the path it was asked for and answers one `301` on a difference (a missing or
+  wrong slug), keeping the query string. No query parameter changes the answer, so a cache in front keys it by the code alone and one cached answer
+  serves both the redirect decision and the card. Every `/head` answer has `X-Mnema-Preview: card|generic`; the generic card also has `X-Robots-Tag: noindex`.
+- Failure codes are those of the public reads: `RESOURCE_NOT_FOUND` (404, switched off), `RATE_LIMITED` (429), `PUBLIC_READ_BUSY` (503), `AUTHENTICATION_REQUIRED` (401).
+
 ## Publication and the topic directory (Share/8, #430)
 
 The owner decides **who may read the published revision** of a deck, **when** the readers' state moves, and
