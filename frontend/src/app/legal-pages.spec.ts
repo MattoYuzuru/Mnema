@@ -135,7 +135,7 @@ describe('Personal data policy page', () => {
         expect([...dataTable.querySelectorAll('tbody th')].map(header => text(header))).toEqual(['Данные аккаунта', 'Вход через стороннего провайдера', 'Профиль', 'Учебные данные',
             'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Жалобы', 'Обращения в поддержку']);
         const purposes = tables.find(table => text(table.querySelector('caption')).startsWith('Цели'))!;
-        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(9);
+        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(10);
         for (const row of purposes.querySelectorAll('tbody tr')) expect(row.querySelectorAll('td'), text(row)).toHaveLength(3);
         const purposeText = text(purposes);
         for (const purpose of ['Регистрация, вход, ведение аккаунта и профиля', 'Работа сервиса', 'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки и рекомендация тарифа',
