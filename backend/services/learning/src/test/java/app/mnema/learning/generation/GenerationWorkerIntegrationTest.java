@@ -161,8 +161,10 @@ class GenerationWorkerIntegrationTest extends GenerationIntegrationTest {
             text.putObject("attrs").put("text", "ab").putArray("marks");
             text.putArray("content");
         }
-        int before = jdbc.sql("SELECT count(*) FROM app_learning.generation_event WHERE session_id=:id").param("id", session)
-                .query(Integer.class).single();
+        // Only BLOCKS_APPENDED rows are the checkpoint's: once the owner cancels, the worker of this context may append its own
+        // cancellation event at any moment, which made a count of all events flaky under load.
+        int before = jdbc.sql("SELECT count(*) FROM app_learning.generation_event WHERE session_id=:id AND type='BLOCKS_APPENDED'")
+                .param("id", session).query(Integer.class).single();
         assertThat(lifecycle.checkpoint(claim, 1, 0, blocks)).isTrue();
         assertThat(jdbc.sql("SELECT max(octet_length(payload::text)) FROM app_learning.generation_event WHERE session_id=:id AND type='BLOCKS_APPENDED'")
                 .param("id", session).query(Integer.class).single()).isLessThanOrEqualTo(32 * 1024);
@@ -172,8 +174,8 @@ class GenerationWorkerIntegrationTest extends GenerationIntegrationTest {
         // the owner cancels: the next checkpoint of the running claim is refused and writes nothing
         jdbc.sql("UPDATE app_learning.generation_step SET cancel_requested=TRUE WHERE step_id=:id").param("id", step).update();
         assertThat(lifecycle.checkpoint(claim, 2, 0, blocks)).isFalse();
-        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_event WHERE session_id=:id").param("id", session)
-                .query(Integer.class).single()).isEqualTo(before + 1);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_event WHERE session_id=:id AND type='BLOCKS_APPENDED'")
+                .param("id", session).query(Integer.class).single()).isEqualTo(before + 1);
     }
 
     @Autowired private GenerationTestConfiguration.VideoExecutor videoExecutor;
