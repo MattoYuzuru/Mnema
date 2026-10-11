@@ -41,7 +41,7 @@ artifact:
 | Копия O(1) и материализация (§5, CD-2) | Реализовано | Share/10; `V57` |
 | Ссылки и превью без SSR (§9, CD-10) | Реализовано, кроме `/u/{username}` и sitemap | Share/11, 14 |
 | Жалобы, скрытие, юридическое снятие (§11) | Реализовано; очистка через 3 года не написана ([#409](https://github.com/MattoYuzuru/Mnema/issues/409)) | Share/15; `V58` |
-| Обновления копий (§7, CD-5) | Идёт: frontier-diff реализован | эпик 2: Updates/1 |
+| Обновления копий (§7, CD-5) | Идёт: frontier-diff, комбинированная публикация и план реализованы | эпик 2: Updates/1–3; `V60`, `V61` |
 | Каталог, поиск, ранг, интересы, события (§10, CD-7, CD-8) | Не реализовано | эпики 3 и 4 |
 | Кабинет: флаги аномалий и «Выбор Мнемы» (§11) | Не реализовано | эпик 3 |
 
@@ -65,7 +65,7 @@ SQL и тесты — в [guide Learning](../../backend/services/learning/guide.
     `content_complaint` не имеет внешних ключей, чтобы пережить удаление колоды и аккаунта.
   - `deck_fork` хранит ещё `upstream_code`, `job_id` и `released_at`; `deck_invite` —
     `code_rotated_at` (поколение ссылки); `deck_access_request` — `revoked_at`.
-  - Таблиц `fork_unit_decision`, `public_deck`, `deck_engagement`, `deck_rank`,
+  - Таблиц `public_deck`, `deck_engagement`, `deck_rank`,
     `rank_generation`, `user_topic_interest`, `catalog_event`, `deck_exposure_day` ещё нет.
 - **Скрытие модератором (`HIDDEN`, §11).** Реализовано как флаг `hidden_by_moderation` в
   `deck_publication`, а не только `rank_penalty=0`: для всех, кроме владельца, `DeckAccess`
@@ -101,6 +101,29 @@ SQL и тесты — в [guide Learning](../../backend/services/learning/guide.
   на паттерне `platform/wake` и lease, нового фреймворка и зависимостей нет.
 - **Открытые технические вопросы §15.** frontier-diff закрыт Updates/1 (§7). Остаются
   `show_trgm('Привет')` и установка `unaccent` на production (Community/0).
+
+### Уточнено реализацией (эпик 2)
+
+Решения CD-1…CD-10 не менялись. Подробности, SQL и тесты — в
+[guide Learning](../../backend/services/learning/guide.md), разделы Updates/1–3.
+
+- **frontier-diff (Updates/1)** читает ровно страницы, которых нет в другом дереве; у
+  профилей манифестов нет массовой пересборки (§7).
+- **Комбинированная публикация (Updates/2, `V60`).** Копия «принимает» уже существующие
+  ревизии линии (автора или свои прежние), а не пишет новые. Поэтому сняты уникальности
+  номера ревизии по колоде-автору правки (`(deck_id, member_key, item_sequence)` и аналоги
+  для упражнений и целей): цепочка родителя и `(reuse_scope_id, revision_id)` остаются.
+  В журнале упражнений теперь много единиц на ревизию, повторный приём той же ревизии
+  разрешён (возврат единицы). Движок принимает только ревизии, видимые копии или её
+  источнику, и только для живой готовой неотвязанной копии. Синхронно до 100 единиц,
+  больше — задача `deck.combined.publish`; предел команды 10 000 единиц.
+- **План (Updates/3, `V61`).** Чтение ничего не пишет. Отпечаток содержимого считается
+  только для пар, где он нужен, с общим бюджетом на план; сверх бюджета пара считается
+  конфликтом (осторожный ответ). Изменения автора, которые закрыло юридическое снятие,
+  в план не попадают. `V61` разрешает сдвигать `deck_fork.base_revision_id` только вперёд и
+  не дальше опубликованной ревизии источника.
+- **Retention Study (#460, `V59`)** — попутная задача эпика: снимки выдач старше 7 дней
+  удаляются, постоянный слой остаётся (§12).
 
 ## 1. Решения
 
@@ -169,7 +192,7 @@ erDiagram
 | `deck_access_grant` | `(deck_id, grantee_id)` | `role` (`VIEWER`; `EDITOR` в резерве), `granted_by`, `granted_at` |
 | `deck_invite` | `invite_id` | `deck_id`, `token_hash` (unique), `max_uses`, `uses`, `expires_at`, `revoked_at` |
 | `deck_access_request` | `(deck_id, requester_id)` | `status`, `created_at`, `decided_at` |
-| `fork_unit_decision` | `(deck_id, unit_kind, unit_key)` | `resolved_upstream_revision_id`, `decision` (`KEEP_MINE` / `DECLINE_NEW` / `KEEP_DELETED`), `pending_base_revision_id` |
+| `fork_unit_decision` | `(deck_id, unit_kind, unit_key)` | `reuse_scope_id`, `decision` (`KEEP_MINE` / `DECLINE_NEW` / `KEEP_DELETED` / `PENDING`), `resolved_upstream_revision_id` или `resolved_upstream_absent` (какое состояние автора решено или предложено), `pending_base_revision_id` или `pending_base_absent` (своя база ожидающей единицы), `decided_at`; реализовано в `V61` |
 | `published_media` | `(deck_id, revision_id, asset_id)` | `kind`; пишется инкрементально командой публикации |
 | `topic`, `topic_alias` | `topic_id`; `(alias_norm, topic_id)` | Двухуровневый справочник, синонимы ru/en/исходные |
 | `public_deck` | `deck_id` | Проекция каталога (§10), STORED tsvector |
@@ -345,6 +368,11 @@ erDiagram
   - Идемпотентно по command id.
   - База колоды сдвигается, только если не осталось ожидающих единиц. Иначе у
     ожидающих единиц сохраняется своя `pending_base_revision_id`.
+  - **Уточнено реализацией (Updates/3):** применение всегда сдвигает базу копии к
+    опубликованной ревизии плана, а каждая показанная, но не решённая единица получает
+    строку `PENDING` со своей старой базой. Так принятое безопасное больше не
+    предлагается, а ожидающая единица сравнивается со своей базой. Значок (§7 ниже)
+    учитывает и такие строки.
 - **Авто-режим.** После публикации источника ставится задача для копий с
   `auto_update` и активностью за 30 дней, с троттлингом. Она применяет только
   безопасное и пишет «Что нового». Путь чтения ничего не записывает.
