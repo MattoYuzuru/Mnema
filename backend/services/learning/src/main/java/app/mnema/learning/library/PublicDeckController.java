@@ -20,16 +20,18 @@ import java.util.UUID;
 /**
  * Public reads of a deck by its code ({@code /api/public/decks/{code}}, contract {@code contracts/decks/public-read.json}). GET and HEAD only, served
  * by the optional-bearer security chain: no token is a guest, a valid token identifies the account, an invalid token is 401 and never a guest. The
- * routes are disabled (404) unless {@code learning.community.public-routes.enabled} is set. Answers vary with the bearer, so they are not cacheable.
+ * routes are disabled (404) unless {@code learning.community.public-routes.enabled} is set (the media route also needs {@code learning.community.public-media.enabled}). Answers vary with the bearer, so they are not cacheable.
  */
 @RestController
 @RequestMapping(value = "/public/decks/{code}", produces = MediaType.APPLICATION_JSON_VALUE)
 public class PublicDeckController {
     private final PublicDeckService service;
+    private final PublicMediaService media;
     private final ClientAddresses addresses;
 
-    PublicDeckController(PublicDeckService service, ClientAddresses addresses) {
+    PublicDeckController(PublicDeckService service, PublicMediaService media, ClientAddresses addresses) {
         this.service = service;
+        this.media = media;
         this.addresses = addresses;
     }
 
@@ -52,6 +54,16 @@ public class PublicDeckController {
     @GetMapping("/exercises")
     ResponseEntity<JsonNode> exercises(@AuthenticationPrincipal Jwt identity, @PathVariable String code, HttpServletRequest request) {
         return ok(service.exercises(viewer(identity, request), code, parameter(request, "limit"), parameter(request, "cursor")));
+    }
+
+    /** Signed derived variants of one asset of the published revision (Share/9); disabled (404) unless {@code learning.community.public-media.enabled}. */
+    @GetMapping("/media/{assetId}")
+    ResponseEntity<JsonNode> media(@AuthenticationPrincipal Jwt identity, @PathVariable String code, @PathVariable String assetId, HttpServletRequest request) {
+        HttpHeaders headers = new HttpHeaders();
+        // Signed URLs are credentials of the moment: never stored or shared by a cache.
+        headers.setCacheControl("private, no-store");
+        headers.setVary(java.util.List.of(HttpHeaders.AUTHORIZATION));
+        return ResponseEntity.ok().headers(headers).body(media.media(viewer(identity, request), code, assetId));
     }
 
     private Viewer viewer(Jwt identity, HttpServletRequest request) {

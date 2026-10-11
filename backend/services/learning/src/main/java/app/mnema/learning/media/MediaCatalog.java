@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Propagation;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeSet;
 import java.util.UUID;
 
@@ -69,11 +70,11 @@ public class MediaCatalog {
 
     /**
      * #237 must call this inside the transaction that inserts the item revision. The reference belongs to the revision
-     * (the lineage); {@code asset_owner_id} is the owner of the asset.
+     * (the lineage); {@code asset_owner_id} is the owner of the asset, which is not the actor's when a copy keeps an inherited asset.
      *
-     * <p>TODO(Share/9, #431): an attached asset must be the actor's own today because no copies exist yet. A copy edit that
-     * keeps the author's image must instead accept an asset mentioned by a revision visible to the deck (the database
-     * already allows it: the foreign key is on the asset's owner, not on the revision writer).
+     * <p>An attached asset is the actor's own, or one that the head revisions of THIS deck already reference (a copy's owner who edits a material keeps the
+     * author's image). The check runs before the head moves, so the revision being replaced still counts; an asset only the replaced revision held and that
+     * an earlier change of the same command already dropped is refused (fail closed).
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void attachRevision(UUID actor, UUID deck, UUID member, UUID revision, Collection<Reference> references) {
@@ -87,12 +88,13 @@ public class MediaCatalog {
                         + "WHERE d.deck_id=:deck AND r.deck_id=d.deck_id AND r.owner_id=:owner")
                 .param("deck", deck).param("member", member).param("revision", revision).param("owner", actor)
                 .query(UUID.class).optional().orElseThrow(ResourceNotFoundException::new);
-        validateReferences(actor, references);
+        Map<UUID, UUID> owners = validateReferences(actor, deck, references);
         for (Reference reference : references) jdbc.sql("INSERT INTO app_learning.content_media_ref "
                         + "(deck_id,reuse_scope_id,member_key,revision_id,node_id,asset_owner_id,asset_id) "
                         + "VALUES (:deck,:scope,:member,:revision,:node,:owner,:asset)")
                 .param("deck", deck).param("scope", scope).param("member", member).param("revision", revision)
-                .param("node", reference.nodeId()).param("owner", actor).param("asset", reference.assetId()).update();
+                .param("node", reference.nodeId()).param("owner", owners.get(reference.assetId()))
+                .param("asset", reference.assetId()).update();
     }
 
     /** Pin every media block of every slot atomically with one immutable exercise revision. */
@@ -107,8 +109,7 @@ public class MediaCatalog {
                 || assets.stream().anyMatch(java.util.Objects::isNull)) {
             throw new InvalidRequestException();
         }
-        // The revision is a lineage row; it is attachable by the account whose deck wrote it (the owner-only attach rule
-        // stays until Share/9 relaxes it): the revision's origin deck is this deck and the deck is the actor's.
+        // The revision is a lineage row; it is attachable by the account whose deck wrote it: the revision's origin deck is this deck and the deck is the actor's.
         if (!jdbc.sql("SELECT 1 FROM app_learning.deck d "
                         + "JOIN app_learning.exercise_revision r ON r.reuse_scope_id=d.reuse_scope_id "
                         + "AND r.exercise_id=:exercise AND r.revision_id=:revision AND r.deck_id=d.deck_id "
@@ -122,14 +123,14 @@ public class MediaCatalog {
             // One logical asset has one kind inside an exercise revision.
             if (kinds.putIfAbsent(asset.assetId(), asset.kind()) != null) throw new InvalidRequestException();
         }
-        validateAssets(actor, kinds.keySet());
+        Map<UUID, UUID> owners = validateAssets(actor, deck, kinds.keySet());
         kinds.forEach((asset, kind) -> requireDeclaredKind(asset, kind));
         kinds.forEach((asset, kind) -> jdbc.sql("INSERT INTO app_learning.exercise_media_ref "
                         + "(deck_id,reuse_scope_id,exercise_id,exercise_revision_id,asset_owner_id,asset_id,media_kind) "
                         + "SELECT d.deck_id,d.reuse_scope_id,:exercise,:revision,:owner,:asset,:kind "
                         + "FROM app_learning.deck d WHERE d.deck_id=:deck")
                 .param("deck", deck).param("exercise", exercise).param("revision", revision)
-                .param("owner", actor).param("asset", asset).param("kind", kind.column()).update());
+                .param("owner", owners.get(asset)).param("asset", asset).param("kind", kind.column()).update());
     }
 
     /**
@@ -162,81 +163,83 @@ public class MediaCatalog {
                 .param("owner", actor).query(Boolean.class).single();
     }
 
-    /** #238 must call this inside the transaction that saves the draft document. */
+    /**
+     * #238 must call this inside the transaction that saves the draft document. A draft holds the assets of its owner (the hold keeps an unsaved upload
+     * from collection). An asset the draft's deck inherits is validated against the deck's heads and NOT held by the draft: the lineage references of the
+     * revisions that carry it already keep it alive, and the hold row cannot name two owners.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     public void replaceDraft(UUID actor, UUID draft, Collection<Reference> references) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(draft, "draftId");
-        if (!jdbc.sql("SELECT 1 FROM app_learning.editing_draft WHERE draft_id=:draft "
+        UUID deck = jdbc.sql("SELECT deck_id FROM app_learning.editing_draft WHERE draft_id=:draft "
                         + "AND owner_id=:owner AND expires_at>CURRENT_TIMESTAMP FOR UPDATE")
-                .param("draft", draft).param("owner", actor).query(Integer.class).optional().isPresent()) {
-            throw new ResourceNotFoundException();
-        }
+                .param("draft", draft).param("owner", actor).query(UUID.class).optional()
+                .orElseThrow(ResourceNotFoundException::new);
         // Validate first so a foreign asset cannot evict an authorized draft's current holds.
-        validateReferences(actor, references);
+        Map<UUID, UUID> owners = validateReferences(actor, deck, references);
         jdbc.sql("DELETE FROM app_learning.draft_media_ref WHERE draft_id=:draft AND owner_id=:owner")
                 .param("draft", draft).param("owner", actor).update();
-        for (Reference reference : references) jdbc.sql("INSERT INTO app_learning.draft_media_ref "
-                        + "(draft_id,node_id,owner_id,asset_id) VALUES (:draft,:node,:owner,:asset)")
-                .param("draft", draft).param("node", reference.nodeId())
-                .param("owner", actor).param("asset", reference.assetId()).update();
+        for (Reference reference : references) {
+            if (!actor.equals(owners.get(reference.assetId()))) continue;
+            jdbc.sql("INSERT INTO app_learning.draft_media_ref "
+                            + "(draft_id,node_id,owner_id,asset_id) VALUES (:draft,:node,:owner,:asset)")
+                    .param("draft", draft).param("node", reference.nodeId())
+                    .param("owner", actor).param("asset", reference.assetId()).update();
+        }
     }
 
-    /** Return a storage locator only after checking logical ownership and reachability. */
+    /**
+     * Return a storage locator only after checking who may read the asset (see {@link Grant}). The ORIGINAL (no variant) is the owner's alone; a copy's owner
+     * reads the derived variants of the assets his heads reference.
+     */
     @Transactional(readOnly = true)
     public BlobLocation resolve(UUID actor, UUID asset, UUID variant) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(asset, "assetId");
-        if (variant != null) UuidPolicy.requireEntityId(variant, "variantId");
-        String sql = variant == null
-                ? "SELECT b.blob_id,b.object_key,b.byte_length,b.mime_type FROM app_learning.media_asset a "
-                    + "JOIN app_learning.media_blob b ON b.blob_id=a.source_blob_id "
-                    + "WHERE a.asset_id=:asset AND a.owner_id=:owner AND a.state='READY' "
-                    + "AND (a.owner_hold_until>CURRENT_TIMESTAMP OR EXISTS "
-                    + "(SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
-                    + "(SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
-                    + "(SELECT 1 FROM app_learning.draft_media_ref r JOIN app_learning.editing_draft d "
-                    + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP) "
-+ "OR EXISTS (SELECT 1 FROM app_learning.generation_media_hold r JOIN app_learning.generation_session s "
-                    + "ON s.session_id=r.session_id WHERE r.asset_id=a.asset_id AND s.expires_at>CURRENT_TIMESTAMP) "
-                    + "OR EXISTS (SELECT 1 FROM app_learning.media_manifest_asset_ref r "
-                    + "JOIN app_learning.media_manifest m ON m.manifest_id=r.manifest_id "
-                    + "WHERE r.asset_id=a.asset_id AND m.owner_id=a.owner_id "
-                    + "AND m.expires_at>CURRENT_TIMESTAMP))"
-                : "SELECT b.blob_id,b.object_key,b.byte_length,b.mime_type FROM app_learning.media_asset a "
-                    + "JOIN app_learning.media_variant v ON v.asset_id=a.asset_id "
-                    + "AND v.asset_generation=a.generation AND v.variant_id=:variant "
-                    + "JOIN app_learning.media_blob b ON b.blob_id=v.blob_id "
-                    + "WHERE a.asset_id=:asset AND a.owner_id=:owner AND a.state='READY' "
-                    + "AND (a.owner_hold_until>CURRENT_TIMESTAMP OR EXISTS "
-                    + "(SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
-                    + "(SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
-                    + "(SELECT 1 FROM app_learning.draft_media_ref r JOIN app_learning.editing_draft d "
-                    + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP) "
-+ "OR EXISTS (SELECT 1 FROM app_learning.generation_media_hold r JOIN app_learning.generation_session s "
-                    + "ON s.session_id=r.session_id WHERE r.asset_id=a.asset_id AND s.expires_at>CURRENT_TIMESTAMP) "
-                    + "OR EXISTS (SELECT 1 FROM app_learning.media_manifest_asset_ref r "
-                    + "JOIN app_learning.media_manifest m ON m.manifest_id=r.manifest_id "
-                    + "WHERE r.asset_id=a.asset_id AND m.owner_id=a.owner_id "
-                    + "AND m.expires_at>CURRENT_TIMESTAMP))";
-        var query = jdbc.sql(sql).param("asset", asset).param("owner", actor);
-        if (variant != null) query = query.param("variant", variant);
-        return query.query((row, ignored) -> new BlobLocation((UUID) row.getObject("blob_id"),
-                row.getString("object_key"), row.getLong("byte_length"), row.getString("mime_type")))
-                .optional().orElseThrow(ResourceNotFoundException::new);
+        if (variant == null) return locate(Grant.OWNER, actor, null, asset, null).orElseThrow(ResourceNotFoundException::new);
+        UuidPolicy.requireEntityId(variant, "variantId");
+        return locate(Grant.OWNER, actor, null, asset, variant)
+                .or(() -> locate(Grant.COPY, actor, null, asset, variant)).orElseThrow(ResourceNotFoundException::new);
     }
 
-    /** Read-only playback projection. READY bytes still pass through the canonical reachability check. */
+    /**
+     * Read-only playback projection. READY bytes still pass through the canonical reachability check. The owner also receives the original; the owner of
+     * a copy that holds the asset in its heads receives the derived variants only ({@code original} is {@code null}).
+     */
     @Transactional(readOnly = true)
     public PlaybackDescriptor playback(UUID actor, UUID asset) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(asset, "assetId");
-        AssetVersion version = jdbc.sql("SELECT state,generation FROM app_learning.media_asset "
-                        + "WHERE asset_id=:asset AND owner_id=:owner")
-                .param("asset", asset).param("owner", actor)
-                .query((row, ignored) -> new AssetVersion(row.getString("state"), row.getLong("generation")))
+        AssetVersion version = jdbc.sql("SELECT a.state,a.generation,(a.owner_id=:actor) AS owned FROM app_learning.media_asset a "
+                        + "WHERE a.asset_id=:asset AND (a.owner_id=:actor OR " + Grant.COPY.predicate + ")")
+                .param("asset", asset).param("actor", actor)
+                .query((row, ignored) -> new AssetVersion(row.getString("state"), row.getLong("generation"), row.getBoolean("owned")))
                 .optional().orElseThrow(ResourceNotFoundException::new);
         if (!"READY".equals(version.state())) return new PlaybackDescriptor(version.state(), null, null, null);
+        Grant grant = version.owned() ? Grant.OWNER : Grant.COPY;
+        return describe(grant, actor, null, asset, version);
+    }
+
+    /**
+     * The playback of an asset of a PUBLISHED deck for a viewer {@code DeckAccess} already admitted (guests included): the asset must be in the deck's
+     * {@code published_media} set (fail closed: no row, no answer), and only derived variants are returned, never the original. The caller owns the access
+     * decision; this method owns the media half of it.
+     */
+    @Transactional(readOnly = true)
+    public PlaybackDescriptor publishedPlayback(UUID deck, UUID asset) {
+        UuidPolicy.requireEntityId(deck, "deckId");
+        UuidPolicy.requireEntityId(asset, "assetId");
+        AssetVersion version = jdbc.sql("SELECT a.state,a.generation FROM app_learning.media_asset a "
+                        + "WHERE a.asset_id=:asset AND " + Grant.PUBLISHED.predicate)
+                .param("asset", asset).param("deck", deck)
+                .query((row, ignored) -> new AssetVersion(row.getString("state"), row.getLong("generation"), false))
+                .optional().orElseThrow(ResourceNotFoundException::new);
+        if (!"READY".equals(version.state())) return new PlaybackDescriptor(version.state(), null, null, null);
+        return describe(Grant.PUBLISHED, null, deck, asset, version);
+    }
+
+    private PlaybackDescriptor describe(Grant grant, UUID actor, UUID deck, UUID asset, AssetVersion version) {
         List<VariantIdentity> variants = jdbc.sql("SELECT variant_id,purpose,profile FROM app_learning.media_variant "
                         + "WHERE asset_id=:asset AND asset_generation=:generation ORDER BY purpose,profile")
                 .param("asset", asset).param("generation", version.generation())
@@ -247,10 +250,36 @@ public class MediaCatalog {
         UUID posterVariant = variants.stream().filter(value -> "poster".equals(value.purpose())
                         || "thumbnail".equals(value.purpose()))
                 .map(VariantIdentity::id).findFirst().orElse(null);
-        BlobLocation playable = resolve(actor, asset, playbackVariant);
-        BlobLocation poster = posterVariant == null ? null : resolve(actor, asset, posterVariant);
-        BlobLocation original = resolve(actor, asset, null);
+        BlobLocation playable = locate(grant, actor, deck, asset, playbackVariant).orElseThrow(ResourceNotFoundException::new);
+        BlobLocation poster = posterVariant == null ? null
+                : locate(grant, actor, deck, asset, posterVariant).orElseThrow(ResourceNotFoundException::new);
+        // The original is the owner's alone: a derived variant is all a copy's owner or a guest ever receives.
+        BlobLocation original = grant == Grant.OWNER
+                ? locate(grant, actor, deck, asset, null).orElseThrow(ResourceNotFoundException::new) : null;
         return new PlaybackDescriptor("READY", playable, poster, original);
+    }
+
+    /**
+     * The one statement that turns "this reader may use this asset" into a blob. {@code variant == null} is the verified source and is allowed for
+     * {@link Grant#OWNER} only: a programming error for any other grant, so no path can serve an original to a non-owner.
+     */
+    private java.util.Optional<BlobLocation> locate(Grant grant, UUID actor, UUID deck, UUID asset, UUID variant) {
+        if (variant == null && grant != Grant.OWNER) throw new IllegalArgumentException("Only the owner reads the original");
+        String sql = variant == null
+                ? "SELECT b.blob_id,b.object_key,b.byte_length,b.mime_type FROM app_learning.media_asset a "
+                    + "JOIN app_learning.media_blob b ON b.blob_id=a.source_blob_id "
+                    + "WHERE a.asset_id=:asset AND a.state='READY' AND " + grant.predicate
+                : "SELECT b.blob_id,b.object_key,b.byte_length,b.mime_type FROM app_learning.media_asset a "
+                    + "JOIN app_learning.media_variant v ON v.asset_id=a.asset_id "
+                    + "AND v.asset_generation=a.generation AND v.variant_id=:variant "
+                    + "JOIN app_learning.media_blob b ON b.blob_id=v.blob_id "
+                    + "WHERE a.asset_id=:asset AND a.state='READY' AND " + grant.predicate;
+        var query = jdbc.sql(sql).param("asset", asset);
+        if (grant.usesActor) query = query.param("actor", actor);
+        if (grant == Grant.PUBLISHED) query = query.param("deck", deck);
+        if (variant != null) query = query.param("variant", variant);
+        return query.query((row, ignored) -> new BlobLocation((UUID) row.getObject("blob_id"),
+                row.getString("object_key"), row.getLong("byte_length"), row.getString("mime_type"))).optional();
     }
 
     /** Tombstone only assets whose owner hold elapsed and which no content or draft still reaches. */
@@ -280,7 +309,7 @@ public class MediaCatalog {
         return candidates.size();
     }
 
-    private void validateReferences(UUID actor, Collection<Reference> references) {
+    private Map<UUID, UUID> validateReferences(UUID actor, UUID deck, Collection<Reference> references) {
         if (references == null || references.size() > 1_000) throw new InvalidRequestException();
         var nodes = new HashSet<UUID>();
         var assets = new TreeSet<UUID>();
@@ -288,13 +317,19 @@ public class MediaCatalog {
             if (reference == null || !nodes.add(reference.nodeId())) throw new InvalidRequestException();
             assets.add(reference.assetId());
         }
-        validateAssets(actor, assets);
+        return validateAssets(actor, deck, assets);
     }
 
-    private void validateAssets(UUID actor, Collection<UUID> assets) {
+    /**
+     * Every asset must be the actor's own (not deleted or rejected, and held or still reachable), or an asset the head revisions of {@code deck} reference
+     * (an inherited one; not locked for update, the key-share lock of the reference's foreign key is enough). Returns the owner of each asset: the owner the
+     * reference row names.
+     */
+    private Map<UUID, UUID> validateAssets(UUID actor, UUID deck, Collection<UUID> assets) {
+        var owners = new java.util.HashMap<UUID, UUID>();
         // Stable lock ordering avoids deadlocks when documents and exercises reuse the same assets.
         for (UUID asset : assets) {
-            if (!jdbc.sql("SELECT 1 FROM app_learning.media_asset a WHERE a.asset_id=:asset "
+            boolean own = jdbc.sql("SELECT 1 FROM app_learning.media_asset a WHERE a.asset_id=:asset "
                             + "AND a.owner_id=:owner AND a.state NOT IN ('DELETED','REJECTED') AND "
                             + "(a.state<>'READY' OR a.owner_hold_until>CURRENT_TIMESTAMP "
                             + "OR EXISTS (SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) "
@@ -306,7 +341,69 @@ public class MediaCatalog {
                             + "ON s.session_id=r.session_id WHERE r.asset_id=a.asset_id AND s.expires_at>CURRENT_TIMESTAMP)) "
                             + "FOR UPDATE OF a")
                     .param("asset", asset).param("owner", actor)
-                    .query(Integer.class).optional().isPresent()) throw new ResourceNotFoundException();
+                    .query(Integer.class).optional().isPresent();
+            if (own) {
+                owners.put(asset, actor);
+                continue;
+            }
+            UUID owner = jdbc.sql("SELECT a.owner_id FROM app_learning.media_asset a WHERE a.asset_id=:asset "
+                            + "AND a.state NOT IN ('DELETED','REJECTED') AND " + IN_HEADS_OF_DECK + " FOR SHARE OF a")
+                    .param("asset", asset).param("deck", deck).query(UUID.class).optional()
+                    .orElseThrow(ResourceNotFoundException::new);
+            owners.put(asset, owner);
+        }
+        return owners;
+    }
+
+    /**
+     * An asset is reachable from a deck's head revisions through a material reference or an exercise pin. The join order is PINNED by the statement, not
+     * left to the planner: the references of the asset (a subquery fenced with {@code OFFSET 0}) drive a lateral lookup of the decks (also fenced) and only then
+     * does the head get a primary-key probe. A planner that flattened it could start from everything the viewer owns, which is proportional to his whole library.
+     */
+    private static String heads(String deckLookup) {
+        return "(EXISTS (SELECT 1 FROM (SELECT r.reuse_scope_id,r.member_key,r.revision_id FROM app_learning.content_media_ref r "
+                + "WHERE r.asset_id=a.asset_id OFFSET 0) r " + deckLookup
+                + "JOIN app_learning.deck_head_item h ON h.deck_id=d.deck_id AND h.member_key=r.member_key AND h.revision_id=r.revision_id) "
+                + "OR EXISTS (SELECT 1 FROM (SELECT r.reuse_scope_id,r.exercise_id,r.exercise_revision_id FROM app_learning.exercise_media_ref r "
+                + "WHERE r.asset_id=a.asset_id OFFSET 0) r " + deckLookup
+                + "JOIN app_learning.deck_head_exercise h ON h.deck_id=d.deck_id AND h.exercise_id=r.exercise_id "
+                + "AND h.revision_id=r.exercise_revision_id))";
+    }
+
+    /** A live deck {@code :deck} of the lineage of the reference (the attach path names its deck). */
+    private static final String THE_DECK = "JOIN LATERAL (SELECT d.deck_id FROM app_learning.deck d WHERE d.reuse_scope_id=r.reuse_scope_id "
+            + "AND d.deck_id=:deck AND d.deleted_at IS NULL OFFSET 0) d ON TRUE ";
+    /** Any live deck of the lineage that the actor owns (a copy's owner holds an inherited asset in HIS heads). */
+    private static final String ACTOR_DECKS = "JOIN LATERAL (SELECT d.deck_id FROM app_learning.deck d WHERE d.reuse_scope_id=r.reuse_scope_id "
+            + "AND d.owner_id=:actor AND d.deleted_at IS NULL OFFSET 0) d ON TRUE ";
+    static final String IN_HEADS_OF_DECK = heads(THE_DECK);
+    static final String IN_HEADS_OF_ACTOR = heads(ACTOR_DECKS);
+
+    /** Why a reader may use an asset: the whole authorization of media, in one place (the SQL fragment is the alias {@code a} of {@code media_asset}). */
+    private enum Grant {
+        /** The asset is the actor's own and still reachable (hold, content, exercise, draft, generation or manifest). The only grant that reads the original. */
+        OWNER("a.owner_id=:actor AND (a.owner_hold_until>CURRENT_TIMESTAMP OR EXISTS "
+                + "(SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
+                + "(SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
+                + "(SELECT 1 FROM app_learning.draft_media_ref r JOIN app_learning.editing_draft d "
+                + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP) "
+                + "OR EXISTS (SELECT 1 FROM app_learning.generation_media_hold r JOIN app_learning.generation_session s "
+                + "ON s.session_id=r.session_id WHERE r.asset_id=a.asset_id AND s.expires_at>CURRENT_TIMESTAMP) "
+                + "OR EXISTS (SELECT 1 FROM app_learning.media_manifest_asset_ref r "
+                + "JOIN app_learning.media_manifest m ON m.manifest_id=r.manifest_id "
+                + "WHERE r.asset_id=a.asset_id AND m.owner_id=a.owner_id "
+                + "AND m.expires_at>CURRENT_TIMESTAMP))", true),
+        /** The actor owns a live deck of the asset's lineage whose head revisions reference it (a copy's inherited media). Derived variants only. */
+        COPY(IN_HEADS_OF_ACTOR, true),
+        /** The deck's published revision references it ({@code published_media}); the caller has already proved the viewer may read the deck. Derived variants only. */
+        PUBLISHED("EXISTS (SELECT 1 FROM app_learning.published_media pm WHERE pm.deck_id=:deck AND pm.asset_id=a.asset_id)", false);
+
+        private final String predicate;
+        private final boolean usesActor;
+
+        Grant(String predicate, boolean usesActor) {
+            this.predicate = predicate;
+            this.usesActor = usesActor;
         }
     }
 
@@ -322,7 +419,7 @@ public class MediaCatalog {
     public record PlaybackDescriptor(String state, BlobLocation playable, BlobLocation poster,
                                      BlobLocation original) { }
 
-    private record AssetVersion(String state, long generation) { }
+    private record AssetVersion(String state, long generation, boolean owned) { }
     private record VariantIdentity(UUID id, String purpose, String profile) { }
 
     private record Reservation(UUID assetId, String origin) { }

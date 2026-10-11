@@ -26,7 +26,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.Semaphore;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -34,8 +33,8 @@ import java.util.function.Supplier;
  * The read-only path of someone else's deck (CD-3): the published revision of a deck behind its public code, for guests and any account. Each call
  * checks the kill switch (off: 404 as if the route did not exist), takes a place in the abuse limit (before any lookup, so a flood of unknown codes is
  * limited too), resolves {@link DeckAccess} and only then reads, always from the immutable roots of the published revision: never the deck's head, its
- * drafts, its journal or any other deck of the lineage. The answers carry no editing metadata and no answer keys; media is not served here (Share/9).
- * Two semaphores are tried BEFORE the transaction opens ({@code max-concurrent} places in all, of which guests may hold at most one less), so excess reads fail fast with 503 and never queue for a connection and a signed-in viewer always has a place. Resolution and every SQL lookup are read-only transactions with a ten-second bound; storage reads run in their own short transactions (they take row locks); the titles of a page come from the cache in one statement, and the titles that had to be derived are cached as the last step inside the permit, in a short transaction of their own.
+ * drafts, its journal or any other deck of the lineage. The answers carry no editing metadata and no answer keys; the media of the deck has its own route ({@link PublicMediaService}).
+ * The bulkhead ({@link PublicReadBulkhead}) is tried BEFORE the transaction opens ({@code max-concurrent} places in all, of which guests may hold at most one less), so excess reads fail fast with 503 and never queue for a connection and a signed-in viewer always has a place. Resolution and every SQL lookup are read-only transactions with a ten-second bound; storage reads run in their own short transactions (they take row locks); the titles of a page come from the cache in one statement, and the titles that had to be derived are cached as the last step inside the permit, in a short transaction of their own.
  *
  * <p>Outcomes are counted as {@code mnema_public_deck_requests_total{route,outcome}} (ok, not_found, invite_only, rate_limited, busy, disabled), the 404/403/429
  * figures of architecture section 14.
@@ -57,12 +56,11 @@ public class PublicDeckService {
     private final MeterRegistry meters;
     private final TransactionTemplate transaction;
     private final TransactionTemplate cacheWrite;
-    private final Semaphore bulkhead;
-    private final Semaphore guestBulkhead;
+    private final PublicReadBulkhead bulkhead;
 
     PublicDeckService(PublicRouteSettings settings, PublicReadLimiter limiter, DeckAccess access, ManifestPages manifests,
                       PublishedContentRepository content, ItemPreviews previews, ImmutableStorage storage, MeterRegistry meters,
-                      PlatformTransactionManager transactions) {
+                      PlatformTransactionManager transactions, PublicReadBulkhead bulkhead) {
         this.settings = settings;
         this.limiter = limiter;
         this.access = access;
@@ -77,9 +75,7 @@ public class PublicDeckService {
         this.transaction.setReadOnly(true);
         this.cacheWrite = new TransactionTemplate(transactions);
         this.cacheWrite.setTimeout(5);
-        this.bulkhead = new Semaphore(settings.maxConcurrent);
-        // guests may hold all but one place: the last one is always free for a signed-in viewer
-        this.guestBulkhead = new Semaphore(settings.maxConcurrent - 1);
+        this.bulkhead = bulkhead;
     }
 
     public ObjectNode summary(Viewer viewer, String code) {
@@ -200,12 +196,7 @@ public class PublicDeckService {
         // Before a connection or a transaction is asked for: a flood of public reads is refused here, it never queues for the pool. A guest also
         // needs a place of the guest share, so guests alone can never take the last place.
         boolean guest = viewer.isGuest();
-        if (guest && !guestBulkhead.tryAcquire()) {
-            count(route, "busy");
-            throw new PublicReadBusyException();
-        }
-        if (!bulkhead.tryAcquire()) {
-            if (guest) guestBulkhead.release();
+        if (!bulkhead.tryAcquire(guest)) {
             count(route, "busy");
             throw new PublicReadBusyException();
         }
@@ -229,8 +220,7 @@ public class PublicDeckService {
             count(route, "not_found");
             throw failure;
         } finally {
-            bulkhead.release();
-            if (guest) guestBulkhead.release();
+            bulkhead.release(guest);
         }
     }
 

@@ -19,6 +19,10 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,7 +42,7 @@ import java.util.UUID;
  * outbox row for the catalog.
  *
  * <p>Load: the publication is one row; a read adds the head (two keys), the range of the journal after the published revision (two index range scans), at most 20 cached
- * titles, the non-commercial media probe (an empty partial-index probe for almost every owner) and the in-memory directory. Nothing is proportional to the number of copies.
+ * titles, the non-commercial media probe (the head's media references, then one partial-index probe per owner of those assets) and the in-memory directory. Nothing is proportional to the number of copies.
  */
 @Service
 public class PublicationService {
@@ -49,7 +53,11 @@ public class PublicationService {
     private static final int CODE_ATTEMPTS = 5;
     private static final String SCOPE = "deck.publication";
 
+    private static final Logger LOG = LoggerFactory.getLogger(PublicationService.class);
+
     private final PublicationRepository repository;
+    private final PublishedMediaRepository publishedMedia;
+    private final MeterRegistry meters;
     private final TopicDirectory topics;
     private final CommandReceiptService receipts;
     private final TransactionTemplate transaction;
@@ -57,13 +65,16 @@ public class PublicationService {
     private final SecureRandom random;
 
     @Autowired
-    PublicationService(PublicationRepository repository, TopicDirectory topics, CommandReceiptService receipts, PlatformTransactionManager transactions) {
-        this(repository, topics, receipts, transactions, new SecureRandom());
+    PublicationService(PublicationRepository repository, PublishedMediaRepository publishedMedia, TopicDirectory topics, CommandReceiptService receipts,
+                       PlatformTransactionManager transactions, MeterRegistry meters) {
+        this(repository, publishedMedia, topics, receipts, transactions, meters, new SecureRandom());
     }
 
-    PublicationService(PublicationRepository repository, TopicDirectory topics, CommandReceiptService receipts, PlatformTransactionManager transactions,
-                       SecureRandom random) {
+    PublicationService(PublicationRepository repository, PublishedMediaRepository publishedMedia, TopicDirectory topics, CommandReceiptService receipts,
+                       PlatformTransactionManager transactions, MeterRegistry meters, SecureRandom random) {
         this.repository = repository;
+        this.meters = meters;
+        this.publishedMedia = publishedMedia;
         this.topics = topics;
         this.receipts = receipts;
         this.random = random;
@@ -165,6 +176,8 @@ public class PublicationService {
                     : repository.update(deck, current.orElseThrow().rowVersion(), command.visibility(), rotated, pointer, moves, metadata, note,
                             command.requestsEnabled());
             if (result.isEmpty()) throw new VersionConflictException();
+            // The media non-owners may use follow the pointer, in the same transaction: the set of the new published revision, from the journal range.
+            if (moves) advanceMedia(deck, current.map(Row::publishedRevisionId).orElse(null), head);
             // One outbox row per effective write while the deck is public, so the catalog projector never misses a metadata edit; otherwise a level or revision change.
             boolean publicWrite = command.visibility() == DeckVisibility.PUBLIC;
             if ((publicWrite || before != command.visibility() || moves) && pointer != null) repository.appendEvent(deck, pointer, command.visibility());
@@ -173,6 +186,19 @@ public class PublicationService {
         acknowledgement.put("commandId", command.commandId().toString()).put("changed", changed);
         acknowledgement.set("publication", state(owner, head, result, profileReady));
         return acknowledgement;
+    }
+
+    private void advanceMedia(UUID deck, UUID previousRevision, Head head) {
+        Long previousSequence = previousRevision == null ? null
+                : repository.revision(deck, previousRevision).map(Revision::sequence)
+                        .orElseThrow(() -> new IllegalStateException("The published revision of a deck is missing"));
+        int drift = publishedMedia.advance(deck, previousSequence, head.sequence());
+        // The set disagreed with the journal (a decrement without a row, or a stored count that is not the head's). The repository rebuilt the deck's rows from
+        // the head in this transaction, so publishing stays possible and exact; report it, with the deck and nothing of its content.
+        if (drift != 0) {
+            LOG.error("published_media_drift deck_id={} deck_sequence={} disagreements={}", deck, head.sequence(), drift);
+            meters.counter("mnema_published_media_drift_total").increment();
+        }
     }
 
     /**
@@ -188,7 +214,7 @@ public class PublicationService {
         if (metadata.topicId() == null) failed.add("topic");
         if (metadata.contentLanguage() == null) failed.add("language");
         if (exposure && !profileReady) failed.add("publicProfile");
-        if (exposure && !repository.blockedMedia(owner, deck, 1).isEmpty()) failed.add("blockedMedia");
+        if (exposure && !repository.blockedMedia(deck, 1).isEmpty()) failed.add("blockedMedia");
         if (!failed.isEmpty()) throw new PublicationRequirementsException(failed);
     }
 
@@ -231,7 +257,7 @@ public class PublicationService {
                 .put("materials", head.memberCount()).put("exercises", head.exerciseCount()).put("needMaterials", NEED_MATERIALS)
                 .put("needExercises", NEED_EXERCISES);
         var blocked = checklist.putArray("blockedMedia");
-        for (Blocked media : repository.blockedMedia(owner, deck, PublicationRepository.MAX_BLOCKED)) {
+        for (Blocked media : repository.blockedMedia(deck, PublicationRepository.MAX_BLOCKED)) {
             ObjectNode entry = blocked.addObject();
             entry.put("item".equals(media.kind()) ? "memberKey" : "exerciseId", media.subjectId().toString());
             entry.put("reason", "NC_LICENSE");
