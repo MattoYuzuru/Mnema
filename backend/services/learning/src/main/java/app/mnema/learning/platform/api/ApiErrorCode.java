@@ -144,6 +144,16 @@ enum ApiErrorCode {
             "Bulk selection too large",
             "The selection exceeds the bulk operation limit."
     ),
+    PUBLICATION_REQUIRED(
+            HttpStatus.BAD_REQUEST,
+            "Publication required",
+            "The deck must publish its current head: for its first publication and for becoming public."
+    ),
+    PUBLICATION_REQUIREMENTS(
+            HttpStatus.CONFLICT,
+            "Publication requirements not met",
+            "The deck does not meet the requirements of a public deck."
+    ),
     INVALID_REQUEST(
             HttpStatus.BAD_REQUEST,
             "Invalid request",

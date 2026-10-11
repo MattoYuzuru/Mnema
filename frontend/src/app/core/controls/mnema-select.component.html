@@ -1,18 +1,30 @@
 <button type="button" class="select-trigger" role="combobox" [id]="controlId()" [disabled]="disabled()"
         [attr.aria-label]="label() + ': ' + selectedLabel()" [attr.aria-expanded]="open()"
         [attr.aria-controls]="open() ? controlId() + '-listbox' : null"
-        [attr.aria-activedescendant]="activeOptionId()" [attr.aria-invalid]="invalid() ? 'true' : null"
+        [attr.aria-activedescendant]="activeOptionId()" [attr.aria-invalid]="invalid() ? 'true' : null" [attr.aria-describedby]="describedBy()"
         [attr.data-answer-control]="answerControl() ? '' : null"
         (click)="toggle()" (keydown)="onKeydown($event)">
   <span class="selected-text">{{ selectedLabel() }}</span><span class="chevron" aria-hidden="true"></span>
 </button>
 @if (open()) {
   <div class="options" role="listbox" [id]="controlId() + '-listbox'" [attr.aria-label]="label()">
-    @for (option of options(); track option.value; let index = $index) {
-      <div role="option" class="option" [id]="controlId() + '-option-' + index"
-           [class.is-active]="activeIndex() === index" [attr.aria-selected]="option.value === value()"
-           [attr.aria-disabled]="option.disabled ? 'true' : null"
-           (mousedown)="$event.preventDefault()" (click)="choose(index)">{{ option.label }}</div>
+    @for (section of sections(); track section.key) {
+      @if (section.label !== null) {
+        <div class="group" role="group" [attr.aria-labelledby]="controlId() + '-group-' + section.key">
+          <div class="group-label" [id]="controlId() + '-group-' + section.key">{{ section.label }}</div>
+          @for (entry of section.entries; track entry.index) {
+            <ng-container *ngTemplateOutlet="optionTemplate; context: { $implicit: entry }" />
+          }
+        </div>
+      } @else {
+        <ng-container *ngTemplateOutlet="optionTemplate; context: { $implicit: section.entries[0] }" />
+      }
     }
   </div>
 }
+<ng-template #optionTemplate let-entry>
+  <div role="option" class="option" [id]="controlId() + '-option-' + entry.index"
+       [class.is-active]="activeIndex() === entry.index" [attr.aria-selected]="entry.option.value === value()"
+       [attr.aria-disabled]="entry.option.disabled ? 'true' : null"
+       (mousedown)="$event.preventDefault()" (click)="choose(entry.index)">{{ entry.option.label }}</div>
+</ng-template>

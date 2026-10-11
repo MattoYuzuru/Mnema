@@ -111,11 +111,24 @@
       <p class="hint" id="sg-note-hint">Сохранится в «На потом».</p>
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Поле тегов" selector="<app-tag-input>"
+    when="Короткий список свободных слов к объекту (теги колоды, не больше пяти). Enter или запятая добавляют тег, Backspace в пустом поле убирает последний, у каждого тега своя подписанная кнопка «Убрать тег …». Тег приводится к виду сервера (строчные буквы, пробелы схлопнуты), отказ — предложение под полем, изменение зачитывается: «Тег добавлен: …. Теги: 2 из 5». Достигнув предела, поле остаётся в фокусе (aria-disabled)."
+    [tokens]="['--mn-field-border', '--mn-soft', '--mn-ink', '--mn-danger']"
+    usage='<app-tag-input label="Теги" [(tags)]="tags" hint="До пяти слов, по которым колоду проще найти." />'>
+    <app-tag-input label="Теги" [(tags)]="tags" hint="До пяти слов, по которым колоду проще найти. Enter или запятая добавляют тег." />
+  </app-sg-specimen>
   <app-sg-specimen title="Выпадающий выбор" selector="<app-mnema-select>"
     when="Выбор из списка, где вариантов больше пяти или подписи длинные. Для двух–пяти коротких вариантов используйте «Сегменты» (раздел «Выбор»). Системного select в продукте нет."
     [tokens]="['--mn-field-border', '--mn-soft', '--mn-ink']"
     usage='<app-mnema-select controlId="lang" label="Язык" [options]="languages" [value]="language()" (valueChange)="language.set($event)" />'>
     <div class="sg-field"><app-mnema-select controlId="sg-language" label="Язык" [options]="languages" [value]="language()" (valueChange)="language.set($event)" /></div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Выбор с группами" selector="<app-mnema-select> + option.group"
+    when="Длинный список, который читается по разделам (темы: «Языки», «Наука»). Подряд идущие варианты с одной группой рисуются под общим заголовком: список получает role=group с именем из заголовка, а сам заголовок — просто текст, не вариант и не недоступный вариант, поэтому стрелки, Home, End и поиск по буквам его не касаются. Вариант без группы стоит отдельно."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-field-border']"
+    usage='<app-mnema-select controlId="topic" label="Тема" [options]="topics" [value]="topic()" (valueChange)="topic.set($event)" />
+// topics: [{ value: "japanese", label: "Японский", group: "Языки" }, …]'>
+    <div class="sg-field"><app-mnema-select controlId="sg-topic" label="Тема" [options]="topics" [value]="topic()" (valueChange)="topic.set($event)" /></div>
   </app-sg-specimen>
 </section>
 

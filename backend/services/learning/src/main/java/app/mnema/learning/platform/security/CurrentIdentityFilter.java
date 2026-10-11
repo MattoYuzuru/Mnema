@@ -36,11 +36,13 @@ final class CurrentIdentityFilter extends OncePerRequestFilter {
                     errors.unauthorized(request, response);
                     return;
                 }
-                if (result.statusCode() != 200 || !authentication.getName().equals(
-                        json.read(result.body()).path("sub").stringValue(null))) {
+                var claims = result.statusCode() == 200 ? json.read(result.body()) : null;
+                if (claims == null || !authentication.getName().equals(claims.path("sub").stringValue(null))) {
                     errors.unavailable(request, response);
                     return;
                 }
+                // The claim is read leniently: anything but a JSON true is "not ready".
+                IdentityClaims.publicProfile(request, claims.path(IdentityClaims.PUBLIC_PROFILE_CLAIM).booleanValue(false));
             } catch (IOException | IllegalArgumentException exception) {
                 errors.unavailable(request, response);
                 return;

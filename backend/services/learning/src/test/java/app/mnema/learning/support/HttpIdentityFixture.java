@@ -37,6 +37,7 @@ public final class HttpIdentityFixture {
     private static final HttpServer IDENTITY;
     private static final HttpClient CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
     private static final java.util.Set<String> REVOKED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.Set<String> PUBLIC_PROFILE = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final AtomicInteger USER_INFO_CALLS = new AtomicInteger();
 
     static {
@@ -59,7 +60,8 @@ public final class HttpIdentityFixture {
                     subject = "invalid";
                 }
                 int status = REVOKED.contains(subject) ? 401 : 200;
-                byte[] body = ("{\"sub\":\"" + subject + "\"}").getBytes(StandardCharsets.UTF_8);
+                byte[] body = ("{\"sub\":\"" + subject + "\",\"mnema_public_profile\":" + PUBLIC_PROFILE.contains(subject) + "}")
+                        .getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(status, body.length);
                 try (var output = exchange.getResponseBody()) { output.write(body); }
@@ -82,6 +84,12 @@ public final class HttpIdentityFixture {
     public static void revoke(UUID account) { REVOKED.add(account.toString()); }
 
     public static void restore(UUID account) { REVOKED.remove(account.toString()); }
+
+    /** Identity's answer for the claim {@code mnema_public_profile} (consent on and a login set) of the account; false by default. */
+    public static void publicProfile(UUID account, boolean ready) {
+        if (ready) PUBLIC_PROFILE.add(account.toString());
+        else PUBLIC_PROFILE.remove(account.toString());
+    }
 
     public static int userInfoCalls() { return USER_INFO_CALLS.get(); }
 

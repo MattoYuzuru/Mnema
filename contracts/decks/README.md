@@ -270,3 +270,111 @@ the opaque 404 for any other account, whatever the deck's level.
   not exist. (A bearer that is present and invalid is still 401, because authentication runs first.)
 - Failure codes: `DECK_INVITE_ONLY` (403, new), `RESOURCE_NOT_FOUND` (404), `INVALID_REQUEST` (400), `VERSION_CONFLICT` (412),
   `RATE_LIMITED` (429), `PUBLIC_READ_BUSY` (503, new), `AUTHENTICATION_REQUIRED` (401), `ACCESS_DENIED` (403, a valid token without `learning.read`).
+
+## Publication and the topic directory (Share/8, #430)
+
+The owner decides **who may read the published revision** of a deck, **when** the readers' state moves, and
+describes the deck for the catalog. Exact examples and executable invariants are in
+[`publication.json`](publication.json); the architecture is
+[community decks §6](../../docs/architecture/community-decks.md#6-доступ-и-публикация-cd-3-cd-4). Everything is owner-only
+(absent, foreign and deleted decks are the same opaque 404), private/no-store, and needs `learning.read` (GET) or
+`learning.write` (PUT). **Publishing never creates a deck revision and never changes `deck.row_version`**: an
+open editor with its own `If-Match` still saves (no 412) after the owner publishes or changes the level.
+
+| Operation | Request | Success |
+|---|---|---|
+| State | `GET /api/decks/{deckId}/publication` | 200, state + ETag |
+| Save | `PUT /api/decks/{deckId}/publication` + `If-Match`, command body | 200, acknowledgement |
+| Topic directory | `GET /api/topics` | 200, two-level tree, `Cache-Control: private, max-age=3600` |
+
+### State
+
+`{visibility, publicCode, link, publishedRevisionId, publishedAt, headRevisionId, unpublishedChanges, metadata,
+suggested, releaseNote, requestsEnabled, checklist, rowVersion}`.
+
+- `visibility` is `PRIVATE | INVITE | LINK | PUBLIC` (the deck JSON of `metadata.json` carries the same level in
+  lowercase). A deck that never left «Приватная» has no row and reports `PRIVATE`, null code and link,
+  `unpublishedChanges: null`.
+- `link` is `/d/{code}/{slug}` for `PUBLIC`, `/d/{code}` for `LINK` and `INVITE`, `null` for `PRIVATE`
+  (`publicCode` is `null` for `PRIVATE` too: the code is the credential of a shared link).
+- `unpublishedChanges` = distinct materials + distinct exercises changed in the deck journal after the published
+  revision. `headRevisionId ≠ publishedRevisionId` with `0` changes means the title or description changed only.
+  The hub text is «Изменения для учеников не опубликованы (N) — Опубликовать обновление».
+- `metadata` = `{topicId, contentLanguage, targetLanguage, level, tags}`. `topicId` is a leaf of the topic directory
+  (a top-level topic without children, «Другое», is a leaf). Languages are the lowercase BCP 47 primary subtag
+  (`^[a-z]{2,3}$`): `contentLanguage` is the language of the deck's text, `targetLanguage` the language being learned.
+  `level` is `null` or one of the single closed list `A1 A2 B1 B2 C1 C2 BEGINNER INTERMEDIATE ADVANCED` (CEFR for
+  languages and exams, the three words for the rest; the server does not tie a level to a topic). `tags`: at most 5, each
+  1–32 code points, trimmed, NFKC, lowercase, inner whitespace collapsed, letters/digits/space/`-_+#.` only; duplicates
+  after normalization are 400. The response carries the normalized form.
+- `suggested` = `{contentLanguage, topicIds}` is the server's guess, never stored: a dependency-free detector over the
+  title, the description and the cached titles of up to 20 materials (script ranges plus small stopword lists for
+  `ru en es de fr it pt`; kana → `ja`, Hangul → `ko`, Han → `zh`; `null` when unsure) and alias matches of the title and
+  description against the directory (at most 3 leaf topics, best first). «Язык — определяется автоматически, можно
+  поправить»: the client pre-fills the form with it.
+- `releaseNote` is the «Что нового» of the last publication (at most 500 code points). `requestsEnabled` is the
+  author's switch for access requests (default `true`; Share/13 reads it).
+- `checklist` = `{description, topic, language, publicProfile, catalogThreshold, blockedMedia}`: booleans for the items
+  of the «Публичная» checklist as the stored state stands, `catalogThreshold {met, materials, exercises, needMaterials: 10,
+  needExercises: 1}` (informational: below it a public deck is still public by link and in the profile; the catalog epic
+  owns the ranking rule) and `blockedMedia`, the materials (`memberKey`) and exercises (`exerciseId`) of the head
+  that use stock media under a non-commercial license (`reason: "NC_LICENSE"`, at most 50 entries).
+  `publicProfile` mirrors the Identity claim `mnema_public_profile` (consent plus a login) read from the same
+  `/userinfo` call that authorizes the request; Learning reads no Identity table.
+- `rowVersion` is a decimal **string**: the stored row version plus one, and `"0"` when the deck has no publication row yet.
+  The ETag is the quoted `rowVersion`.
+
+### Save
+
+`PUT` with exactly one `If-Match` (house rules: missing 428, malformed 400, stale 412 `VERSION_CONFLICT`; `"0"` is the
+version of a deck without a row) and a strict body, all fields required:
+`{commandId, visibility, metadata{topicId, contentLanguage, targetLanguage, level, tags}, requestsEnabled, publish}`
+where `publish` is `null` or `{expectedHeadRevisionId, releaseNote}`. Unknown fields, duplicate keys, bodies over 8192
+bytes and invalid Unicode are 400. The state after the command is **exactly the body** (not a merge).
+
+- **Receipts** (house rules): bound to actor, command type, deck, expected version and the whole body; an exact retry
+  returns the original acknowledgement with `Idempotency-Replayed: true` and no ETag (a historical state: re-read with
+  GET); a used `commandId` with other input is 409 `IDEMPOTENCY_CONFLICT`. Fresh writes carry the ETag of the new version.
+- **Publish.** `publish` sets the published revision to the deck's current head. `expectedHeadRevisionId` is the head the
+  owner saw; any other head is 412 `VERSION_CONFLICT` and nothing is written. `releaseNote` (nullable, blank is `null`)
+  is stored with it. No deck revision is created.
+- **First publication.** Leaving `PRIVATE` for the first time requires `publish`: otherwise 400 `PUBLICATION_REQUIRED`.
+  `publish` with `visibility: "PRIVATE"` is 400 `INVALID_REQUEST`. A deck that is `PRIVATE` again keeps its published
+  revision, so it can be shared again without publishing.
+- **«Публичная».** A resulting level `PUBLIC` is accepted only when the revision readers will get has a non-empty
+  description, `topicId` and `contentLanguage` are set, Identity reports the public profile ready and the deck head has
+  no non-commercial stock media (license containing an `NC` token or "non-commercial", any case); otherwise 409
+  `PUBLICATION_REQUIREMENTS` with the member `failed` (a list of checklist keys: `description`, `topic`, `language`,
+  `publicProfile`, `blockedMedia`) and nothing is written. It applies to every effective write that leaves a deck `PUBLIC`,
+  with one relaxation: the public profile and the media items gate only the **exposure**, i.e. becoming `PUBLIC` and a
+  `publish` while `PUBLIC`. A benign edit of a deck that is already public (tags, `requestsEnabled`, topic, language, level)
+  is not blocked by a withdrawn consent. Withdrawing the consent hides the author at once (Identity: the card answers like
+  an unknown account); whether the deck itself is then demoted is an **open owner decision**.
+- **Becoming public needs the head.** The media check reads the deck head while readers get the published revision. A
+  command that makes the deck `PUBLIC` (from any other level) while the published revision is not the head must therefore
+  carry `publish` for that head; otherwise it is 400 `PUBLICATION_REQUIRED` and nothing is written. `GET` still lists the
+  `blockedMedia` of the head, so the form can say what to fix.
+- **Rotation.** Any step to a more restrictive level rotates the public code (`PUBLIC` > `LINK` > `INVITE` > `PRIVATE`);
+  raising the level keeps it. Old links answer the same 404 as an unknown code.
+- **Unchanged state.** A command whose result equals the stored state writes nothing (`changed: false`, same `rowVersion`).
+- **Outbox.** Every effective change of the level or of the published revision, and every effective write whose resulting
+  level is `PUBLIC` (metadata, tags and `requestsEnabled` included, so the catalog projector never misses an edit), appends
+  one `deck_publication_event` row (`eventId` uuidv7, deck, published revision, level, time) for the catalog epic. A command
+  that changes nothing appends none. Nothing consumes it yet.
+- **Acknowledgement:** `{commandId, changed, publication}` where `publication` is the state above after the command.
+- Check order (as the controller and service run): authentication (401/403), path, `If-Match` and body shape (400/428,
+  including `publish` with `PRIVATE`), the deck being the owner's (404), receipt replay, the topic being a leaf of the
+  directory (400), the version (412), the first-publication rule (400 `PUBLICATION_REQUIRED`), the head pin (412), the
+  becoming-public-needs-the-head rule (400 `PUBLICATION_REQUIRED`), then the checklist (409).
+
+### Topic directory
+
+`GET /api/topics` returns `{topics: [{topicId, nameRu, nameEn, ordinal, children: [{topicId, nameRu, nameEn, ordinal}]}]}`,
+two levels, siblings ordered by `ordinal`. It is static data seeded by the migration (names and synonyms in Russian,
+English and the languages' own names); the owner can edit it as data later. Synonyms are matched after the alias
+normalization (lowercase, NFKC, `ё`→`е`, diacritics stripped from Latin/Greek/Arabic letters, spaces collapsed).
+
+### Codes
+
+New: `PUBLICATION_REQUIRED` (400: the command must publish the head, for the first publication or for becoming public) and `PUBLICATION_REQUIREMENTS` (409, member `failed`: list of strings). Existing
+codes keep their status/title/detail. Problem text never echoes titles, descriptions, tags or identifiers.

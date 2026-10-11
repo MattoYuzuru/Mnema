@@ -1,0 +1,15 @@
+/* The field itself (border, padding, sheet, font) comes from the global field styling; this file only lays the tags out. */
+:host { display: block; min-inline-size: 0; }
+.tag-input { min-inline-size: 0; }
+.tag-input label { font-weight: 700; }
+.tag-input input { inline-size: 100%; min-inline-size: 0; min-block-size: var(--mn-touch-min, 2.75rem); }
+.tag-input input[aria-invalid='true'] { border: 2px solid var(--mn-danger); }
+.tag-input input[aria-disabled='true'] { background: var(--mn-soft); cursor: not-allowed; }
+.tag-input input:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 2px; }
+.tag-list { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.tag { display: inline-flex; align-items: center; min-inline-size: 0; max-inline-size: 100%; border: 1px solid var(--mn-ink); background: var(--mn-soft); color: var(--mn-ink); }
+.tag-text { min-inline-size: 0; padding: .2rem .25rem .2rem .65rem; overflow-wrap: anywhere; }
+.tag-remove { display: inline-flex; align-items: center; justify-content: center; min-inline-size: var(--mn-touch-min, 2.75rem); min-block-size: var(--mn-touch-min, 2.75rem); margin-block: -.4rem; border: 0; padding: 0; color: inherit; background: transparent; font-weight: 700; font-size: 1.25rem; line-height: 1; cursor: pointer; }
+.tag-remove:hover { text-decoration: underline; }
+.tag-remove:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: -3px; }
+@media (forced-colors: active) { .tag, .tag-input input { border-color: CanvasText; } .tag-remove:focus-visible, .tag-input input:focus-visible { outline-color: Highlight; } }

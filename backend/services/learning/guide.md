@@ -1429,13 +1429,72 @@ the running application and fails when a new one has no row).
 - **Load.** Zero decks published: a request is one unique-index miss. Scenario H (~25 rps peak): the code lookup is an index probe, pages are O(log N + P),
   one material is a traversal of the manifest's leaf pages (as the owner's single-item read; a candidate for a key-addressed manifest in the copy-on-write step, §13).
   **Deploy order:** V52 (Share/5, exercises/objectives lineage) must be merged and released BEFORE V53 ships; the exercise statement below depends on its keys.
-  Open items: the owner's deck JSON still reports `visibility: "private"` (the owner commands of Share/8/13 replace it with the publication row); the exercise
-  statement of `PublishedContentRepository` reads the deck-keyed exercise tables as of V51 and is the one query to re-key when exercises move to lineage keys (Share/5).
+  Open items: the exercise statement of `PublishedContentRepository` reads the deck-keyed exercise tables as of V51 and is the one query to re-key when exercises move to lineage keys (Share/5).
+  The owner's deck JSON reports the real level since Share/8 (below).
 - Tests: `DeckAccessIntegrationTest` (resolution matrix over every level/state/viewer by code and by id, rotation rules (all 16 pairs), CAS, grants, schema constraints, code
   collision), `PublicDeckHttpIntegrationTest` (every route × the matrix, 403 without data and indistinguishable 404s, published vs head, shared lineage scope,
   paging and stale cursors, invalid/revoked bearer, methods, contract shapes), `PublicDeckRateLimitHttpIntegrationTest`, `PublicDeckDisabledHttpIntegrationTest`, `PublicDeckReadPathHttpIntegrationTest` (bulkhead, title batch, read-only, cache written outside),
   `PublicDeckLogRedactionIntegrationTest`, `LoggablePathTest`,
   `OwnerOnlyRoutesHttpIntegrationTest`, and unit tests for the code alphabet, slug, prompt summary, cursor and limiter.
+
+### Publication and the topic directory (Share/8, #430, migration `V54__deck_publication.sql`)
+
+Package `app.mnema.learning.library` (`PublicationController`, `PublicationService`, `PublicationRepository`, `TopicDirectory`), wire contract
+[`contracts/decks/publication.json`](../../../contracts/decks/publication.json) and its README section; architecture
+[community decks §3, §6, §8](../../../docs/architecture/community-decks.md#6-доступ-и-публикация-cd-3-cd-4). **Publishing sets the revision non-owners read to the
+deck's head and nothing else**: no deck revision, `deck.row_version` untouched (an open editor gets no 412; `PublicationHttpIntegrationTest` saves with the editor's
+`If-Match` after a publish).
+
+- **Data.** `deck_publication` gains `topic_id` (FK `topic`), `content_language` / `target_language` (BCP 47 primary subtag, lowercase, CHECK `^[a-z]{2,3}$`), `level`
+  (NULL or ONE closed list `A1..C2, BEGINNER, INTERMEDIATE, ADVANCED`: CEFR for languages and exams, three words for the rest; one list because the catalog filters by one
+  optional facet, and the server does not tie a level to a topic), `tags TEXT[]` (CHECK function: at most 5, 1..32 characters, trimmed, unique; the application also
+  lowercases and NFKC-normalizes), `release_note` (1..500) and `requests_enabled` (default true). `topic (topic_id slug, parent_id, name_ru, name_en, ordinal)` is two levels
+  (a guard trigger), siblings have distinct ordinals; `topic_alias (alias_norm, topic_id)` holds each name and synonym already in the normal form of `AliasNormalizer`
+  (NFKC, lower case, `ё`→`е`, marks stripped from Latin/Greek/Arabic letters only, so `й` and kana voicing marks survive; spaces collapsed): no `unaccent` extension (that is
+  Community/0). The seed is data: edit it with SQL, `TopicDirectory` reloads within 10 minutes per instance. `deck_publication_event (event_id uuidv7, deck_id,
+  published_revision_id, visibility, occurred_at)` is the append-only outbox of the catalog (epic 3); nothing consumes it yet. Indexes: `deck_item_change_sequence` and
+  `deck_exercise_change_sequence` `(deck_id, deck_sequence)` for "changes after the published revision", and the partial `generation_provenance_nc` (owner) for the NC probe.
+- **Wire version.** `rowVersion` / ETag = stored `row_version` + 1; **`"0"` means "no row yet"**, so a client holding the sentinel cannot overwrite a row another tab created
+  (the first insert is `ON CONFLICT (deck_id) DO NOTHING`; losing it is 412). `DeckPublications.setVisibility` (Share/7) keeps its own `UNPUBLISHED = -1` / raw version and
+  writes no outbox row and checks no checklist: it is **package-private** (the low-level CAS for tests), so production code outside `library` cannot bypass the checklist and the outbox; the owner's command is `PublicationService`.
+- **`PUT` is the whole state.** `{commandId, visibility, metadata, requestsEnabled, publish}`; `publish` = `{expectedHeadRevisionId, releaseNote}` moves the published
+  revision to the head. Order (as the code runs): path, `If-Match` and body shape (400/428, `publish` with PRIVATE included) → ACL (404) → receipt replay → topic is a leaf (400) → version (412) →
+  first publication needs `publish` (400 `PUBLICATION_REQUIRED`) → head pin (412 `VERSION_CONFLICT`; the handoff said 409 but `VERSION_CONFLICT` is 412 in `ApiErrorCode` and the hub contract uses 412
+  for stale expected revisions) → **becoming PUBLIC needs the head** (400 `PUBLICATION_REQUIRED`: the media check judges the head, readers get the published pointer, so a command that
+  makes the deck public with a pointer that is not the head must `publish`) → checklist (409 `PUBLICATION_REQUIREMENTS`, member `failed`). Unchanged state writes nothing (`changed: false`,
+  no version bump, no event). The head is locked `FOR SHARE` when the command publishes or targets PUBLIC, so it cannot move between the check and the pointer (an editor's save waits for this
+  short transaction, then proceeds with its own version). **The lock statement selects the deck row alone and the revision is read by a second statement**: a join under `FOR SHARE` is
+  re-evaluated after the wait against the new head and could find no revision row, answering 404 for an existing deck (reproduced; `aPublishThatWaitsForAnEditorSaveAnswersTheStaleHeadNotNotFound`
+  holds an editor save open and expects 412).
+- **Checklist (target PUBLIC, any effective write).** Non-empty description of the revision readers will get (the head when publishing, else the published one), topic,
+  content language, `mnema_public_profile` (below) and no NC media. The public profile and the NC media gate only the **exposure** (becoming PUBLIC, or `publish` while PUBLIC): a benign edit
+  of a deck that is already public (tags, request switch, topic, language) is not blocked by a withdrawn consent. Withdrawal hides the author at once (Identity card = unknown account); demoting
+  the deck itself is an **open owner decision**. **Outbox:** one `deck_publication_event` for every effective write while the resulting level is PUBLIC (metadata included, so the catalog projector
+  never misses an edit) and for every level or revision change; a no-op appends none. The catalog threshold (10 materials, 1 exercise) is only displayed. **NC media** (`blockedMedia`):
+  assets whose stock provenance (`generation_provenance.media[].license`, V35) names a non-commercial term (a CC "NC" token or "non-commercial", **case-insensitive**: `cc-by-nc-4.0`, `NON-COMMERCIAL`; the same
+  regex in the `~*` filter and in the `flag "i"` predicate of the partial index) for THIS owner (**the lookup is keyed by `owner_id`; when copies exist (Share/9/10) it must be re-keyed by asset**), referenced by
+  the head's materials (`content_media_ref` ⋈ `deck_head_item`) or exercises (`exercise_media_ref` ⋈ `deck_head_exercise`, up to 50). The image sources already filter to commercial
+  licenses, so this is defense in depth; it checks the **head** (media of an older published revision is not re-derived, a known limit until a per-revision media inventory exists).
+- **Public profile.** Identity adds the boolean claim `mnema_public_profile` to `/userinfo` (consent on, account active, login set); `CurrentIdentityFilter` keeps it as a
+  request attribute (`IdentityClaims.publicProfileReady(request)`; only a JSON `true` counts) so no second call is made and Learning reads no Identity table. Withdrawing the
+  consent later does not demote a public deck by itself; the next effective write of a public deck re-runs the checklist.
+- **Suggestions (never stored).** `LanguageDetector`: script ranges first (kana→`ja`, Han→`zh`, Hangul→`ko`, Greek, Hebrew, Thai; a script needs 60% of the letters; Cyrillic is
+  `ru` unless `іїєґ`→`uk`, `ў`→`be` or Serbian/Macedonian letters; Arabic and Devanagari are not guessed), then stopword lists for `en es de fr it pt` weighted 1/n for
+  words shared by n lists, a point for a letter unique to one language (umlauts half), letters of uncovered languages make the text unsure; the winner needs ≥ 2 points and
+  1.5× the runner-up, otherwise `null`. Input: title, description and up to 20 head material titles **from the preview cache** (`item_preview`, filled by the owner's reads).
+  Topics: normalized aliases in the title (×3) and description at word boundaries (scripts without spaces match inside a run), ≤ 3 leaf topics. `GET /api/topics` is
+  `private, max-age=3600`.
+- **Load.** Zero decks: no rows; `GET publication` is the deck key, the publication key, one revision key, two index range scans, ≤ 20 title rows and one empty partial-index
+  probe. H (5k public decks, one viral deck with 20k copies): the publication is O(1) rows per deck, the journal count is bounded by an index range (not by copies),
+  the NC probe by the media of the head, and copies read only the published pointer, so a republication costs the viral deck exactly one row update plus one outbox row.
+- **V52 (Share/5).** `PublicationRepository.BLOCKED_MEDIA_SQL` joins the exercise head by `(exercise_id, revision_id)` and filters `h.deck_id`, and `changesAfter` uses `deck_id, deck_sequence`: columns
+  that exist before and after V52, and the renamed `exercise_media_ref.asset_owner_id` is not read, so both statements work on either tree. The only line with a stricter V52 form is the exercise
+  join in `BLOCKED_MEDIA_SQL` (add `h.reuse_scope_id = r.reuse_scope_id`); `V54` indexes `deck_exercise_change(deck_id, deck_sequence)`, which V52 keeps. The plan test
+  `theJournalRangeAndTheNonCommercialProbeAreIndexRangesNotScans` EXPLAINs the real statement.
+- Tests: `PublicationHttpIntegrationTest` (first publication, replay, stale head/version, open editor, counting, the checklist one item at a time, NC media for materials and
+  exercises, rotation and outbox, metadata validation, ownership/scopes, suggestions, directory, level in the deck JSON), `PublicationSchemaIntegrationTest` (constraints, seed
+  inventory, guards, outbox, index use), `CurrentIdentityFilterClaimTest`, `AliasNormalizerTest`, `LanguageDetectorTest`, `TopicDirectoryMatchTest`, the two rows in
+  `OwnerOnlyRoutesHttpIntegrationTest`; Identity: `IdentitySecurityIntegrationTest.userInfoCarriesThePublicProfileReadinessClaim...`.
 
 ## Notification center
 

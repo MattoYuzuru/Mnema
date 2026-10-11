@@ -16,6 +16,7 @@ import {
     isCanonicalCommandId,
     isCanonicalEntityId,
     isCanonicalVersion,
+    isDeckVisibility,
     validateDeckMetadata
 } from './own-deck.models';
 
@@ -161,14 +162,15 @@ function parseOwnDeck(value: unknown): OwnDeck {
         description: requireString(metadataObject['description'], 'description')
     };
     if (!validateDeckMetadata(metadata).valid) throw new OwnDeckProtocolError('Invalid deck metadata.');
-    if (object['visibility'] !== 'private') throw new OwnDeckProtocolError('Invalid deck visibility.');
+    const visibility = object['visibility'];
+    if (!isDeckVisibility(visibility)) throw new OwnDeckProtocolError('Invalid deck visibility.');
     const createdAt = requireInstant(object['createdAt'], 'createdAt');
     const updatedAt = requireInstant(object['updatedAt'], 'updatedAt');
     const memberCount = requireCount(object['memberCount'], 'memberCount');
     const exerciseCount = requireCount(object['exerciseCount'], 'exerciseCount');
     return {
         deckId: deckId.toLowerCase(), revisionId: revisionId.toLowerCase(),
-        rowVersion, sequence, metadata, visibility: 'private',
+        rowVersion, sequence, metadata, visibility,
         createdAt, updatedAt, memberCount, exerciseCount
     };
 }
