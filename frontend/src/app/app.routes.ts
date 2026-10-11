@@ -159,6 +159,13 @@ export const appRoutes: Routes = [
         canActivate: [authGuard]
     },
     {
+        // The review of what the author changed since this copy was made (Updates/5): owner of the copy only, the API answers 404 otherwise.
+        path: 'decks/:deckId/update',
+        loadComponent: () => import('./features/own-decks/update/update-review-page.component')
+            .then(module => module.UpdateReviewPageComponent),
+        canActivate: [authGuard]
+    },
+    {
         path: 'decks/:deckId',
         loadComponent: () => import('./features/own-decks/own-deck-detail-page.component')
             .then(module => module.OwnDeckDetailPageComponent),
