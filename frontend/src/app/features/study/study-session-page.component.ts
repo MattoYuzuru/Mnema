@@ -73,6 +73,8 @@ export class StudySessionPageComponent {
     /** The server refused to take the grade back (a later answer exists); the offer is withdrawn. */
     readonly disputeBlocked = signal(false);
     readonly message = signal<string | null>(null);
+    /** The deck is a copy that is still being prepared (409 `DECK_PREPARING`): starting again cannot succeed, the hub explains. */
+    readonly deckPreparing = signal(false);
     readonly pending = signal<AttemptCommand | null>(null);
     readonly progress = signal<readonly MaterialProgress[]>([]);
     readonly progressNextCursor = signal<string | null>(null);
@@ -641,7 +643,9 @@ export class StudySessionPageComponent {
     private handle(error: unknown, fallback: string): void {
         this.phase.set('error');
         const code = this.errorCode(error);
-        this.message.set(code === 'RESOURCE_NOT_FOUND' ? 'Колода или сессия недоступна этому аккаунту.' : fallback);
+        this.deckPreparing.set(code === 'DECK_PREPARING');
+        this.message.set(code === 'RESOURCE_NOT_FOUND' ? 'Колода или сессия недоступна этому аккаунту.'
+            : code === 'DECK_PREPARING' ? 'Колода ещё готовится. Загляните сюда позже.' : fallback);
     }
 
     private loadSupportingState(): void {

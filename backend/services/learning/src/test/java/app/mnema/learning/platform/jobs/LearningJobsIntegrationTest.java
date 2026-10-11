@@ -1030,6 +1030,13 @@ class LearningJobsIntegrationTest extends PostgresIntegrationTest {
     void theRetentionLeaseAndDueConditionsAreAnsweredByTheirIndexes() {
         List<String> plans = new TransactionTemplate(transactions).execute(status -> {
             jdbc.sql("SET LOCAL enable_seqscan = off").update();
+            // The planner's choice between the partial index and the unique (queue, dedupe_key) index of a queue that has no row depends on the statistics the earlier
+            // tests of this JVM happened to leave (autoanalyze runs in the background and any test that enqueues jobs moves it). Give it the shape of a real table, many
+            // finished jobs and none running, and roll everything back: statistics, like rows, are transactional.
+            jdbc.sql("INSERT INTO app_learning.learning_job(queue, dedupe_key, account_id, payload, state, max_attempts, run_after, finished_at) "
+                    + "SELECT 'plan-bulk-' || (g % 40), 'k' || g, NULL, '{}'::jsonb, 'SUCCEEDED', 5, now(), now() - interval '1 day' FROM generate_series(1, 5000) g").update();
+            jdbc.sql("ANALYZE app_learning.learning_job").update();
+            status.setRollbackOnly();
             List<String> found = new ArrayList<>();
             for (String sql : List.of(
                     "SELECT job_id FROM app_learning.learning_job WHERE state IN ('SUCCEEDED','FAILED','CANCELLED') AND finished_at < now() - (604800000 * interval '1 millisecond') ORDER BY finished_at, job_id LIMIT 500",

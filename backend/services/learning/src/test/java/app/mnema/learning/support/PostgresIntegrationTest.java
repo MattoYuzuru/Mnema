@@ -14,8 +14,8 @@ public abstract class PostgresIntegrationTest {
                     .withDatabaseName("mnema_learning")
                     .withUsername("mnema")
                     .withPassword("mnema")
-                    // every distinct Spring test context keeps its own pool open for the whole JVM: leave room for them
-                    .withCommand("postgres", "-c", "max_connections=300");
+                    // every cached Spring test context (up to 32) keeps its own pool open for the whole JVM: leave room for them
+                    .withCommand("postgres", "-c", "max_connections=500");
 
     static {
         // One fail-closed container survives Spring's context cache for the whole test JVM.

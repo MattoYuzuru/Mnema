@@ -38,7 +38,11 @@ h1:focus-visible { outline: none; }
 .stamp { gap: .35rem; --mn-glyph-size: 1rem; }
 .hub-description { max-inline-size: 62ch; margin-block-start: 1rem; color: var(--mn-body); line-height: 1.6; }
 
-.primary-slot { margin-block: 0 1.5rem; }
+.primary-slot { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1rem; margin-block: 0 1.5rem; }
+.copy-hint { margin: 0; }
+.copy-notice { flex: 1 1 100%; max-inline-size: 40rem; }
+.request-sent { margin-block: 1rem 0; font-weight: 600; color: var(--mn-ink); }
+.request-sent:focus-visible { outline: none; }
 .primary-slot:empty { display: none; }
 
 app-public-materials-list[hidden] { display: none; }

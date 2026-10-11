@@ -1,3 +1,5 @@
+import type { DeckFork } from './fork/fork.models';
+
 export const OWN_DECK_PAGE_SIZE = 20;
 export const DECK_TITLE_MAX_CODE_POINTS = 200;
 export const DECK_TITLE_MAX_BYTES = 800;
@@ -32,6 +34,11 @@ export interface OwnDeck {
     readonly updatedAt: string;
     readonly memberCount: number;
     readonly exerciseCount: number;
+    /**
+     * The state of this copy of somebody else's deck (Share/10). `null` for an ordinary deck, and absent in answers that do not
+     * carry it (acknowledgements, and the older contract fixtures): absent means `null`. The api service always sets it.
+     */
+    readonly fork?: DeckFork | null;
 }
 
 export interface OwnDeckPage {
