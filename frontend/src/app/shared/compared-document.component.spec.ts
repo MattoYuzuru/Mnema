@@ -1,0 +1,118 @@
+import { Component, signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+
+import { CompareColumnsComponent } from './compare-columns.component';
+
+import { ComparedDocumentComponent } from './compared-document.component';
+import { AUTHOR, MINE, OUTLINED, nodeId } from './update-test-data';
+
+describe('ComparedDocumentComponent', () => {
+    function render(side: 'mine' | 'author', withCounterpart = true): HTMLElement {
+        const fixture = TestBed.createComponent(ComparedDocumentComponent);
+        fixture.componentRef.setInput('document', side === 'mine' ? MINE : AUTHOR);
+        fixture.componentRef.setInput('counterpart', withCounterpart ? (side === 'mine' ? AUTHOR : MINE) : null);
+        fixture.componentRef.setInput('side', side);
+        fixture.detectChanges();
+        return fixture.nativeElement as HTMLElement;
+    }
+
+    it('draws the author\'s version through the renderer with words added underlined and the new block stamped', () => {
+        const host = render('author');
+        expect(host.querySelector('app-native-document-renderer article.native-document')).not.toBeNull();
+        const changed = host.querySelector(`[data-change='changed']`)!;
+        expect(changed.querySelector('.stamp')?.textContent).toBe('Изменено');
+        expect(changed.querySelector('ins')?.textContent).toContain('устойчивые');
+        expect(changed.querySelector('del')).toBeNull();
+        const added = host.querySelector(`[data-change='added']`)!;
+        expect(added.querySelector('.stamp')?.textContent).toBe('Добавлено');
+        expect(host.querySelector('hr')).not.toBeNull();
+    });
+
+    it('keeps an untouched paragraph as the renderer draws it, marked by nothing', () => {
+        const host = render('author');
+        const untouched = [...host.querySelectorAll('p.native-paragraph')].find(node => node.textContent === 'Глагол estar описывает состояние и место.')!;
+        expect(untouched).toBeTruthy();
+        expect(untouched.classList.contains('is-target')).toBe(false);
+        expect(host.querySelectorAll('.stamp')).toHaveLength(2);
+    });
+
+    it('shows the reader\'s version with the removed words struck through and the paragraph the author deleted stamped', () => {
+        const host = render('mine');
+        expect(host.querySelector(`[data-change='changed'] del`)?.textContent).toContain('постоянные');
+        expect(host.querySelector(`[data-change='changed'] ins`)).toBeNull();
+        expect(host.querySelector(`[data-change='removed'] .stamp`)?.textContent).toBe('Удалено автором');
+        const removed = host.querySelector<HTMLElement>(`[data-node-id='${nodeId(3)}']`)!;
+        expect(removed.classList.contains('is-target')).toBe(true);
+    });
+
+    it('marks a block that is not drawn as text by its node id through the overlay', () => {
+        const host = render('author');
+        expect(host.querySelector<HTMLElement>(`[data-node-id='${nodeId(4)}']`)?.classList.contains('is-target')).toBe(true);
+    });
+
+    it('draws the document plainly when the other side does not exist', () => {
+        const host = render('author', false);
+        expect(host.querySelectorAll('.stamp')).toHaveLength(0);
+        expect(host.querySelector('ins, del')).toBeNull();
+        expect(host.querySelectorAll('p.native-paragraph')).toHaveLength(2);
+    });
+
+    it('draws its own headings from the level below the document level 1 when it stands alone', () => {
+        const fixture = TestBed.createComponent(ComparedDocumentComponent);
+        fixture.componentRef.setInput('document', OUTLINED);
+        fixture.componentRef.setInput('side', 'mine');
+        fixture.detectChanges();
+        expect(outline(fixture.nativeElement as HTMLElement)).toEqual([2, 3]);
+    });
+});
+
+@Component({
+    imports: [CompareColumnsComponent, ComparedDocumentComponent],
+    template: `
+      <app-compare-columns [headingLevel]="level()">
+        <app-compared-document compare-mine side="mine" [document]="document" [counterpart]="document" />
+        <app-compared-document compare-author side="author" [document]="document" [counterpart]="document" [headingOffset]="explicit()" />
+      </app-compare-columns>`
+})
+class ColumnsHostComponent {
+    readonly document = OUTLINED;
+    readonly level = signal<3 | 4 | 5>(4);
+    readonly explicit = signal<number | null>(null);
+}
+
+/** The levels of the headings of an element in reading order, native or `role=heading`. */
+function outline(root: HTMLElement): number[] {
+    return [...root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6, [role=heading]')]
+        .map(node => node.hasAttribute('aria-level') ? Number(node.getAttribute('aria-level')) : Number(node.tagName.slice(1)));
+}
+
+describe('ComparedDocumentComponent inside compare columns', () => {
+    function create(level: 3 | 4 | 5) {
+        const fixture = TestBed.createComponent(ColumnsHostComponent);
+        fixture.componentInstance.level.set(level);
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        return { fixture, root, column: (name: 'mine' | 'author') => root.querySelector<HTMLElement>(`.column[data-column='${name}']`)! };
+    }
+
+    it.each([[3, [3, 4, 5]], [4, [4, 5, 6]], [5, [5, 6, 7]]] as const)('under column headings at level %i the outline is %j in both columns, never jumping or repeating', (level, expected) => {
+        const { column } = create(level);
+        expect(outline(column('mine'))).toEqual([...expected]);
+        expect(outline(column('author'))).toEqual([...expected]);
+    });
+
+    it('lets an explicit offset win', () => {
+        const { fixture, column } = create(4);
+        fixture.componentInstance.explicit.set(0);
+        fixture.detectChanges();
+        expect(outline(column('mine'))).toEqual([4, 5, 6]);
+        expect(outline(column('author'))).toEqual([4, 2, 3]);
+    });
+
+    it('follows a change of the column heading level', () => {
+        const { fixture, column } = create(3);
+        fixture.componentInstance.level.set(5);
+        fixture.detectChanges();
+        expect(outline(column('mine'))).toEqual([5, 6, 7]);
+    });
+});

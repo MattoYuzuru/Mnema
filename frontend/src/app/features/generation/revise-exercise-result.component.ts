@@ -11,7 +11,7 @@ import { exerciseTextLines } from './exercise-text';
 import { mechanicName } from './exercise-builder';
 import { artifactStatus, exerciseFailureReason, failureNote, turnFailureReason, voiceRedoneText } from './generation-view';
 import { ArtifactSummary, ArtifactTurn, SessionState, SpeechVoice, allows, isApprovable } from './generation.models';
-import { DiffParagraph, diffLines, hasChanges } from './word-diff';
+import { DiffParagraph, diffLines, hasChanges } from '../../content/word-diff';
 import { DetailEntry, WorkshopSessionStore } from './workshop-session.store';
 
 type DiffState =
