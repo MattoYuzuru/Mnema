@@ -693,7 +693,8 @@ export async function runCommunity(ctx) {
       const titleless = await member.page('return document.title;');
       member.need(!titleless.includes(pass.title), 'the document title names the deck');
       member.need(await member.page(`return document.querySelector('meta[name="robots"]')?.getAttribute('content') === 'noindex' && document.querySelector('meta[name="referrer"]')?.getAttribute('content') === 'no-referrer';`), 'noindex / no-referrer are not set on the invitation screen');
-      const asked = await member.tabTo(`element => element.matches('app-access-screen button.primary') && element.textContent.trim() === ${JSON.stringify(WORDS.askAccess)}`, '«Запросить доступ»');
+      // Tab predicates are page code: they carry literal words only, never a value spliced in at run time.
+      const asked = await member.tabTo(`element => element.matches('app-access-screen button.primary') && element.textContent.trim() === 'Запросить доступ'`, '«Запросить доступ»');
       await member.press('Enter');
       await until(async () => await member.has(WORDS.requestSent) || await exists('.request-error', member.tab), 'neither the approved «Запрос отправлен…» text nor an error appeared', 30000);
       if (!(await member.has(WORDS.requestSent))) {
@@ -745,8 +746,8 @@ export async function runCommunity(ctx) {
       await member.metrics(pass.size);
       await navigate(`/d/${world.newCode}`, member.tab);
       await until(() => member.has(WORDS.inviteOnly), 'the member sees no «Колода доступна по приглашению»', 30000);
-      const ask = `element => element.matches('app-access-screen .actions button') && element.textContent.trim() === ${JSON.stringify(WORDS.askAccess)}`;
-      const cancel = `element => element.matches('app-access-screen .actions button') && element.textContent.trim() === ${JSON.stringify(WORDS.withdraw)}`;
+      const ask = `element => element.matches('app-access-screen .actions button') && element.textContent.trim() === 'Запросить доступ'`;
+      const cancel = `element => element.matches('app-access-screen .actions button') && element.textContent.trim() === 'Отменить запрос'`;
       // A repeat of an open request looks like the first one (the request was made in the previous stage).
       await member.tabTo(ask, '«Запросить доступ»');
       await member.press('Enter');
