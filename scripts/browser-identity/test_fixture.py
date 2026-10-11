@@ -408,6 +408,11 @@ module.main()
         self.assertNotIn("Fetch.failRequest", source)
         self.assertIn("Target.createBrowserContext", driver)
         self.assertIn("openGuestTab", source)
+        # A broken flow is a recorded gap and a failed stage, never finished through the API on the user's behalf.
+        self.assertNotIn("api-fallback", source)
+        self.assertNotIn("Via = 'api", source)
+        for stage in ("'complaint'", "'withdraw'", "'invite_create'", "'invite_redeem'"):
+            self.assertIn(f"stage(pass, {stage}", source)
         # The three kill switches ship OFF; this run turns them on in the ordinary Learning only (never the Stub or promo instance).
         switches = HARNESS.community_switches("https://127.0.0.1:1")
         self.assertEqual({"LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED", "LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED",

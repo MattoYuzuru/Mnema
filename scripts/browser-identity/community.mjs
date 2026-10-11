@@ -1,10 +1,12 @@
-// Real-browser check of community decks (Share/17, #439, epic #419): publication -> guest -> copy -> study -> by invitation.
+// Real-browser check of community decks (Share/17, #439, epic #419): publication -> guest -> copy -> study -> complaint -> by invitation
+// -> withdrawn request -> approval -> invitation link.
 // Runs with `--community` against the real Identity and Learning jars (the Learning of this run has the three community kill
 // switches on, see run.py), on the two accounts of the base flow, once on a desktop viewport and once on a 390 px mobile
 // viewport, with real CDP keyboard events wherever the interaction is natural. Node 24 built-ins only.
 //
 // Who is who: the owner is the first account (the first tab), the member is the second account (the second tab), the guest is
-// a third tab in a NEW browser context: no cookies, no storage, no session. The fixture is made through the real UI (the deck and
+// a third tab in a NEW browser context: no cookies, no storage, no session; the invitee of the invitation link is a third synthetic
+// account that registers in yet another new context. The fixture is made through the real UI (the deck and
 // its materials in the real editor, the public profile consent in /profile, the access change in the hub) except one exercise,
 // which is created through the authenticated API exactly like the Study fixture of the base flow.
 //
@@ -52,7 +54,25 @@ const WORDS = {
   askAccess: 'Запросить доступ',
   requestSent: 'Запрос отправлен. Если автор согласится, колода появится по этой же ссылке.',
   sourceClosed: 'Автор закрыл исходную колоду. Ваша копия остаётся с вами, но обновлений больше не будет.',
-  rotates: 'Ссылка изменится, и старые ссылки перестанут работать.'
+  rotates: 'Ссылка изменится, и старые ссылки перестанут работать.',
+  signInToAccept: 'Войдите, чтобы принять приглашение.',
+  withdraw: 'Отменить запрос',
+  withdrawn: 'Запрос отменён.',
+  complain: 'Пожаловаться',
+  complaintTitle: 'Пожаловаться на колоду',
+  complaintSend: 'Отправить жалобу',
+  complaintMissing: 'Выберите причину.',
+  complaintSent: 'Жалоба отправлена',
+  complaintReasons: ['Нарушены авторские права', 'Раскрыты личные данные', 'Запрещённое содержимое', 'Спам или реклама', 'Другое'],
+  invitesHeading: 'Пригласительные ссылки',
+  createInvite: 'Создать ссылку',
+  inviteOnce: 'Ссылка показана один раз.',
+  inviteDone: 'Готово, я сохранил ссылку',
+  inviteUnused: 'Одноразовая, ещё не открыта',
+  inviteUsed: 'Одноразовая, открыта',
+  inviteStatusUsed: 'Использована',
+  inviteStatusActive: 'Действует',
+  requestsEmpty: 'Новых запросов нет.'
 };
 
 const PASSES = [
@@ -86,6 +106,19 @@ function makeActor(ctx, label, tab, bearer) {
   const metrics = size => tab.call('Emulation.setDeviceMetricsOverride', size);
   /** Every API request this tab sent: path with codes and ids masked, whether the PAGE set an Authorization header, and the status that came back. */
   const wire = [];
+  /** Everything this tab wrote to its console (calls, uncaught exceptions, the browser's own log entries with their URLs), as plain text. */
+  const consoleText = [];
+  const argText = argument => [argument.value, argument.description, argument.unserializableValue, ...(argument.preview?.properties ?? []).map(property => property.value)]
+    .filter(part => part !== undefined && part !== null).map(String).join(' ');
+  tab.on('Runtime.consoleAPICalled', event => consoleText.push((event.args ?? []).map(argText).join(' ')));
+  tab.on('Runtime.exceptionThrown', event => consoleText.push([event.exceptionDetails?.text, event.exceptionDetails?.url, event.exceptionDetails?.exception?.description].filter(Boolean).join(' ')));
+  tab.on('Log.entryAdded', event => consoleText.push([event.entry?.text, event.entry?.url].filter(Boolean).join(' ')));
+  tab.call('Log.enable').catch(() => {});
+  /** Requests other than the typed navigation whose URL carries `invite=`: the token must never leave the address in a sub-request. */
+  const leakyRequests = [];
+  tab.on('Network.requestWillBeSent', event => {
+    if (event.type !== 'Document' && event.request.url.includes('invite=')) leakyRequests.push(event.request.method + ' ' + new URL(event.request.url).pathname);
+  });
   tab.on('Network.requestWillBeSent', event => {
     const url = new URL(event.request.url);
     if (url.origin !== config.frontend || !url.pathname.startsWith('/api/')) return;
@@ -138,7 +171,9 @@ function makeActor(ctx, label, tab, bearer) {
       const text = await response.text();
       return { status: response.status, etag: response.headers.get('etag'), text, body: text && (response.headers.get('content-type') ?? '').includes('json') ? JSON.parse(text) : null };`,
   method, path, payload ?? null, headers, bearer === null ? null : 'Bearer ' + bearer, config.frontend);
-  return { label, tab, bearer, wire, lastRequest, need, page, frames, front, press, metrics, body, has, read, count, location, search, focus, enter, tabTo, overflow, api };
+  /** How many requests of this tab went to `path` with `method` (masked, as in {@link wire}). */
+  const requestCount = (path, method = 'POST') => wire.filter(entry => entry.path === path && entry.method === method).length;
+  return { label, tab, bearer, wire, lastRequest, requestCount, consoleText, leakyRequests, need, page, frames, front, press, metrics, body, has, read, count, location, search, focus, enter, tabTo, overflow, api };
 }
 
 export async function runCommunity(ctx) {
@@ -305,10 +340,9 @@ export async function runCommunity(ctx) {
         'description, profile and pictures should already be ready: ' + JSON.stringify(state));
       const beforePublish = await publicationState();
       let topicVia = 'suggestion';
-      let publishedVia = 'checklist';
       if (state['Тема'] !== 'done' && await exists('app-publication-checklist li.checklist-item:nth-child(2) .field-error', owner.tab)) {
-        // The directory did not load in the page. Name the cause from the wire: a request the page sent without a bearer is a product gap
-        // (the public deck cannot be published through the UI); anything else is a failure with the server's own answer for comparison.
+        // The directory did not load in the page. Name the cause from the wire: a request the page sent without a bearer is a product gap,
+        // recorded with its evidence (the stage fails and the run is red); anything else is a failure with the server's own answer for comparison.
         const sent = owner.lastRequest('/api/topics');
         const probe = await owner.api('GET', '/api/topics', null, {}, ownerBearer);
         if (sent !== null && sent.authorization === false && sent.status === 401 && probe.status === 200) {
@@ -316,11 +350,11 @@ export async function runCommunity(ctx) {
             seen: 'the page shows «Не удалось загрузить список тем.» and «Загрузить темы снова»',
             evidence: `GET /api/topics: the page sent no Authorization header and got ${sent.status}; the same request with the owner's bearer answers ${probe.status}`,
             cause: 'frontend/src/app/auth.interceptor.ts isCredentialTarget() lists no `/topics` among learningExact/learningRoots', effect: 'a deck cannot be made «Публичная» in the UI' });
-          publishedVia = 'api-fallback';
-        } else {
-          throw new SafeFailure(`owner: the topic directory did not load in the checklist; the page sent ${JSON.stringify(sent)}, the same GET /api/topics answers ${probe.status}, body shape ${JSON.stringify(topicShape(probe.body))}`);
+          throw new SafeFailure('owner: gap topics-request-sent-without-bearer: GET /api/topics was sent without Authorization and answered 401 (the same request with the bearer answers 200)');
         }
-      } else if (state['Тема'] !== 'done') {
+        throw new SafeFailure(`owner: the topic directory did not load in the checklist; the page sent ${JSON.stringify(sent)}, the same GET /api/topics answers ${probe.status}, body shape ${JSON.stringify(topicShape(probe.body))}`);
+      }
+      if (state['Тема'] !== 'done') {
         if (await exists('app-publication-checklist .suggest button', owner.tab)) await owner.enter('app-publication-checklist .suggest button');
         else {
           topicVia = 'select';
@@ -333,33 +367,18 @@ export async function runCommunity(ctx) {
       }
       const languageShown = await owner.page(`return document.querySelector('app-publication-checklist li:nth-of-type(3) [role="combobox"]')?.textContent.trim() ?? null;`);
       let languageVia = 'detected';
-      if (publishedVia === 'checklist') {
-        state = Object.fromEntries((await items()).map(entry => [entry.title, entry.state]));
-        if (state['Язык'] !== 'done') {
-          languageVia = 'select';
-          await owner.focus('app-publication-checklist li:nth-of-type(3) [role="combobox"]');
-          await owner.press('ArrowDown');
-          await until(() => exists('[role="option"]', owner.tab), 'the language list did not open');
-          await owner.press('ArrowDown'); await owner.press('Enter');
-          await until(async () => (await items()).find(entry => entry.title === 'Язык')?.state === 'done', 'the language was not accepted');
-        }
-        await until(() => owner.page(`return document.querySelector('.checklist-actions .button.primary')?.getAttribute('aria-disabled') === null;`), 'the submit button stayed disabled');
-        await shoot(owner, `community-${pass.name}-checklist-owner.png`, { full: true });
-        await owner.enter('.checklist-actions .button.primary', 'Опубликовать и сделать публичной');
-      } else {
-        // The same command the checklist would send (contracts/decks/README.md, «Save»), with the bearer the page failed to attach.
-        await shoot(owner, `community-${pass.name}-checklist-owner.png`, { full: true });
-        const topics = await owner.api('GET', '/api/topics', null, {}, ownerBearer);
-        const leaves = topics.body.topics.flatMap(topic => topic.children.length === 0 ? [topic.topicId] : topic.children.map(child => child.topicId));
-        const topicId = beforePublish.suggested?.topicIds?.[0] ?? leaves[0];
-        const current = await owner.api('GET', `/api/decks/${world.deckId}/publication`, null, {}, ownerBearer);
-        const saved = await owner.api('PUT', `/api/decks/${world.deckId}/publication`, { commandId: crypto.randomUUID(), visibility: 'PUBLIC',
-          metadata: { topicId, contentLanguage: 'ru', targetLanguage: null, level: null, tags: [] }, requestsEnabled: true,
-          publish: { expectedHeadRevisionId: current.body.headRevisionId, releaseNote: null } }, { 'If-Match': current.etag }, ownerBearer);
-        owner.need(saved.status === 200, 'the API fallback of the publication answered ' + saved.status + ' ' + saved.text.slice(0, 160));
-        await navigate(world.deckPath, owner.tab);
-        await until(() => exists('section.publication .link-text', owner.tab), 'the hub does not show the public link after the API publication');
+      state = Object.fromEntries((await items()).map(entry => [entry.title, entry.state]));
+      if (state['Язык'] !== 'done') {
+        languageVia = 'select';
+        await owner.focus('app-publication-checklist li:nth-of-type(3) [role="combobox"]');
+        await owner.press('ArrowDown');
+        await until(() => exists('[role="option"]', owner.tab), 'the language list did not open');
+        await owner.press('ArrowDown'); await owner.press('Enter');
+        await until(async () => (await items()).find(entry => entry.title === 'Язык')?.state === 'done', 'the language was not accepted');
       }
+      await until(() => owner.page(`return document.querySelector('.checklist-actions .button.primary')?.getAttribute('aria-disabled') === null;`), 'the submit button stayed disabled');
+      await shoot(owner, `community-${pass.name}-checklist-owner.png`, { full: true });
+      await owner.enter('.checklist-actions .button.primary', 'Опубликовать и сделать публичной');
       await until(async () => (await publicationState()).visibility === 'PUBLIC', 'the deck did not become public', 30000);
       const published = await publicationState();
       owner.need(/^[1-9A-HJ-NP-Za-km-z]{10}$/u.test(published.publicCode ?? ''), 'public code has the wrong shape');
@@ -372,7 +391,7 @@ export async function runCommunity(ctx) {
       world.titles = rows;
       owner.need(!(await owner.overflow()), 'the hub overflows horizontally after publication');
       await shoot(owner, `community-${pass.name}-published-owner.png`, { full: true });
-      return { materials: rows.length, publishedVia, topicVia, languageVia, suggestedLanguage: beforePublish.suggested?.contentLanguage ?? null, suggestedTopics: beforePublish.suggested?.topicIds?.length ?? 0, languageShown, link: published.link.replace(world.code, '{code}'), keyboardLevelPick: true };
+      return { materials: rows.length, topicVia, languageVia, suggestedLanguage: beforePublish.suggested?.contentLanguage ?? null, suggestedTopics: beforePublish.suggested?.topicIds?.length ?? 0, languageShown, link: published.link.replace(world.code, '{code}'), keyboardLevelPick: true };
     });
 
     // ---- 2. the guest, in a new browser context ---------------------------------------------------------------------------------
@@ -538,6 +557,101 @@ export async function runCommunity(ctx) {
       return { primaryAction: WORDS.openCopy, linksToCopy: true, keyboard: true, tabPresses: reached.presses, secondRequestReturnsLiveCopy: true };
     });
 
+    // ---- 4b. a complaint about the public deck (Share/15, contracts/moderation) ----------------------------------------------------------
+    await stage(pass, 'complaint', ['publish'], async () => {
+      const trigger = `element => element.matches('app-action-menu button.trigger')`;
+      const menuOpen = actor => actor.page(`return document.querySelector('app-action-menu [role="menu"]')?.matches(':popover-open') === true;`);
+      const items = actor => actor.page(`return [...document.querySelectorAll('app-action-menu [role="menuitem"]')].map(node => node.textContent.trim());`);
+      const onTrigger = actor => actor.page(`return document.activeElement?.matches('app-action-menu button.trigger') === true;`);
+
+      // The owner of the deck: «⋯» offers «Поделиться» and no «Пожаловаться»; the server refuses a complaint about one's own deck as well.
+      await owner.front();
+      await owner.metrics(pass.size);
+      await navigate(world.link, owner.tab);
+      await until(() => exists('h1.hub-title', owner.tab), 'the owner does not see his own public deck', 30000);
+      await owner.tabTo(trigger, 'the «⋯» button of the deck');
+      await owner.press('Enter');
+      await until(() => menuOpen(owner), 'the «⋯» menu did not open for the owner');
+      const ownerItems = await items(owner);
+      owner.need(ownerItems.length === 1 && ownerItems[0] === 'Поделиться', 'the owner\'s «⋯» offers ' + JSON.stringify(ownerItems));
+      await owner.press('Escape');
+      await until(async () => !(await menuOpen(owner)) && await onTrigger(owner), 'Escape did not close the owner\'s menu and return the focus to «⋯»');
+      const own = await owner.api('POST', `/api/public/decks/${world.code}/complaints`, { reason: 'OTHER' }, {}, ownerBearer);
+      owner.need(own.status === 400, 'a complaint about one\'s own deck answered ' + own.status + ' instead of 400');
+
+      // The member: «⋯» -> «Пожаловаться» by keyboard.
+      await member.front();
+      await member.metrics(pass.size);
+      await navigate(world.link, member.tab);
+      await until(() => exists('h1.hub-title', member.tab), 'the member does not see the public deck', 30000);
+      const label = await member.page(`return document.querySelector('app-action-menu button.trigger')?.getAttribute('aria-label');`);
+      member.need(label === `Действия с колодой «${pass.title}»`, `the «⋯» button is named «${label}»`);
+      await member.page(`window.__mnemaToasts = [];
+        const note = () => { for (const node of document.querySelectorAll('.toast .text')) { const text = node.textContent.trim(); if (!window.__mnemaToasts.includes(text)) window.__mnemaToasts.push(text); } };
+        new MutationObserver(note).observe(document.body, { subtree: true, childList: true, characterData: true }); note(); return true;`);
+      const reached = await member.tabTo(trigger, 'the «⋯» button of the deck');
+      member.need(reached.focusVisible, 'the focus ring is not keyboard-visible on «⋯»');
+      const complaintsBefore = member.requestCount('/api/public/decks/{code}/complaints');
+      const openDialog = async () => {
+        await member.press('Enter');
+        await until(() => menuOpen(member), 'the «⋯» menu did not open');
+        member.need(JSON.stringify(await items(member)) === JSON.stringify(['Поделиться', WORDS.complain]), 'the reader\'s «⋯» offers ' + JSON.stringify(await items(member)));
+        await member.press('ArrowDown');
+        member.need(await member.page(`return document.activeElement?.getAttribute('role') === 'menuitem' && document.activeElement.textContent.trim() === args[0];`, WORDS.complain),
+          'ArrowDown did not reach «Пожаловаться»');
+        await member.press('Enter');
+        await until(() => member.page(`return document.querySelector('dialog.complaint-dialog')?.open === true && document.activeElement?.tagName === 'H2';`),
+          'the complaint dialog did not open with the focus on its heading');
+      };
+      await openDialog();
+      const opened = await member.page(`const dialog = document.querySelector('dialog.complaint-dialog'); const box = dialog.getBoundingClientRect();
+        return { title: dialog.querySelector('h2')?.textContent.trim(), subject: dialog.querySelector('.subject')?.textContent.trim(),
+          reasons: [...dialog.querySelectorAll('app-segmented-choice label.segment .text')].map(node => node.textContent.trim()),
+          checked: dialog.querySelectorAll('input[type="radio"]:checked').length, modal: dialog.matches(':modal'),
+          inside: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
+          smallestButton: Math.min(...[...dialog.querySelectorAll('.button')].map(node => node.getBoundingClientRect().height)) };`);
+      member.need(opened.title === WORDS.complaintTitle && opened.subject === pass.title, 'the dialog heading or subject is wrong: ' + JSON.stringify(opened));
+      member.need(JSON.stringify(opened.reasons) === JSON.stringify(WORDS.complaintReasons) && opened.checked === 0, 'the reasons are wrong or one is preselected: ' + JSON.stringify(opened));
+      member.need(opened.modal && opened.inside, 'the dialog is not modal or does not fit the viewport: ' + JSON.stringify(opened));
+      member.need(opened.smallestButton >= 44, `a dialog button is ${opened.smallestButton}px high`);
+      member.need(!(await member.overflow()), 'the page overflows horizontally while the dialog is open');
+      // Escape closes it and gives the focus back to «⋯»; then it opens again.
+      await member.press('Escape');
+      await until(async () => !(await exists('dialog.complaint-dialog', member.tab)) && await onTrigger(member), 'Escape did not close the dialog and return the focus to «⋯»');
+      await openDialog();
+      // Sending without a reason names the problem and puts the focus on the reason.
+      await member.focus('dialog.complaint-dialog button[type="submit"]', WORDS.complaintSend);
+      await member.press('Enter');
+      await until(() => member.has(WORDS.complaintMissing), 'sending without a reason did not say «Выберите причину.»');
+      member.need(await member.page(`return document.activeElement?.matches('dialog.complaint-dialog input[type="radio"]') === true;`), 'the focus did not go to the reason');
+      member.need(await exists('dialog.complaint-dialog[open]', member.tab) && member.requestCount('/api/public/decks/{code}/complaints') === complaintsBefore, 'a complaint without a reason was sent or the dialog closed');
+      // The reason by keyboard: three ArrowDown from the first radio reach «Спам или реклама».
+      for (let step = 0; step < 3; step++) await member.press('ArrowDown');
+      const chosen = await member.page(`const dialog = document.querySelector('dialog.complaint-dialog');
+        return { value: dialog.querySelector('input[type="radio"]:checked')?.value ?? null, label: dialog.querySelector('input[type="radio"]:checked')?.parentElement.textContent.trim() ?? null,
+          hint: dialog.querySelector('app-segmented-choice p.hint')?.textContent.trim() ?? '', missing: dialog.textContent.includes(args[0]) };`, WORDS.complaintMissing);
+      member.need(chosen.value === 'SPAM' && chosen.label === 'Спам или реклама' && chosen.hint.length > 0 && !chosen.missing, 'the keyboard choice is wrong: ' + JSON.stringify(chosen));
+      // Tab reaches the optional text, then the send button.
+      await member.press('Tab');
+      member.need(await member.page(`return document.activeElement?.tagName === 'TEXTAREA';`), 'Tab from the reason did not reach the text field');
+      await member.tab.call('Input.insertText', { text: 'Проверка жалобы из браузерного сценария' });
+      await member.press('Tab');
+      member.need(await member.page(`return document.activeElement?.matches('button[type="submit"]') === true && document.activeElement.textContent.trim() === args[0];`, WORDS.complaintSend), 'Tab from the text did not reach «Отправить жалобу»');
+      await shoot(member, `community-${pass.name}-complaint-member.png`);
+      await member.press('Enter');
+      await until(async () => !(await exists('dialog.complaint-dialog', member.tab)), 'the dialog stayed open after sending', 30000);
+      await until(() => member.page(`return window.__mnemaToasts.includes(args[0]);`, WORDS.complaintSent), 'no toast «Жалоба отправлена»');
+      member.need(await onTrigger(member), 'the focus did not return to «⋯» after sending');
+      const filed = member.lastRequest('/api/public/decks/{code}/complaints', 'POST');
+      member.need(filed?.authorization === true && filed.status === 202 && member.requestCount('/api/public/decks/{code}/complaints') === complaintsBefore + 1, 'the complaint request was not sent once with the bearer and answered 202: ' + JSON.stringify(filed));
+      member.need(!(await member.overflow()), 'the deck page overflows horizontally after the complaint');
+      // Filing is idempotent: the same reporter and deck is the same 202.
+      const again = await member.api('POST', `/api/public/decks/${world.code}/complaints`, { reason: 'OTHER' }, {}, memberBearer);
+      member.need(again.status === 202 && again.body?.status === 'RECEIVED', 'a repeated complaint answered ' + again.status);
+      return { ownerMenuItems: ownerItems, ownerOwnComplaintStatus: own.status, memberMenuItems: 2, tabPresses: reached.presses, dialogModalAndFits: true, smallestButtonPx: Math.round(opened.smallestButton),
+        escapeReturnsFocus: true, emptyReasonRefused: true, reasonByKeyboard: chosen.value, toast: WORDS.complaintSent, focusBackOnMenu: true, requestStatus: filed.status, repeatStatus: again.status };
+    });
+
     // ---- 5. the owner turns the deck «По приглашению»; the member without a grant asks ----------------------------------------------
     await stage(pass, 'invite_only', ['publish'], async () => {
       await owner.front();
@@ -582,26 +696,23 @@ export async function runCommunity(ctx) {
       const asked = await member.tabTo(`element => element.matches('app-access-screen button.primary') && element.textContent.trim() === ${JSON.stringify(WORDS.askAccess)}`, '«Запросить доступ»');
       await member.press('Enter');
       await until(async () => await member.has(WORDS.requestSent) || await exists('.request-error', member.tab), 'neither the approved «Запрос отправлен…» text nor an error appeared', 30000);
-      let requestVia = 'ui';
-      if (await member.has(WORDS.requestSent)) {
-        member.need(await member.page(`return document.activeElement?.classList.contains('request-sent');`), 'focus did not move to the confirmation');
-      } else {
-        // An error instead of the confirmation. A request the page sent without a bearer is a product gap; anything else is a failure.
+      if (!(await member.has(WORDS.requestSent))) {
+        // An error instead of the confirmation. A request the page sent without a bearer is a product gap (recorded with its evidence, the stage
+        // fails and the run is red); anything else is a failure with what the page showed.
         const sent = member.lastRequest('/api/public/decks/{code}/access-requests', 'POST');
         const shown = await member.read('.request-error');
         if (sent !== null && sent.authorization === false && sent.status === 401) {
           gaps.push({ id: 'access-request-sent-without-bearer', pass: pass.name, where: 'screen «Колода доступна по приглашению», button «Запросить доступ»',
             seen: `the page says «${shown}»`,
             evidence: `POST /api/public/decks/{code}/access-requests: the page sent no Authorization header and got ${sent.status}`,
-            cause: 'frontend/src/app/auth.interceptor.ts isCredentialTarget() publicRead matches only /public/decks/{code}, /items, /exercises and /media; `/access-requests`, `/access-requests:withdraw` and `/api/invites:redeem` are not listed',
-            effect: 'a signed-in reader cannot ask for access (and, by the same list, cannot redeem an invitation link) in the UI' });
-          requestVia = 'api-fallback';
-          const fallback = await member.api('POST', `/api/public/decks/${world.newCode}/access-requests`, null, {}, memberBearer);
-          member.need(fallback.status === 202 && fallback.body?.status === 'PENDING', 'the API fallback of the access request answered ' + fallback.status);
-        } else {
-          throw new SafeFailure(`member: «Запросить доступ» ended with «${shown}»; the page sent ${JSON.stringify(sent)}`);
+            cause: 'frontend/src/app/auth.interceptor.ts isCredentialTarget() publicRead does not match `/access-requests`', effect: 'a signed-in reader cannot ask for access in the UI' });
+          throw new SafeFailure('member: gap access-request-sent-without-bearer: POST /api/public/decks/{code}/access-requests was sent without Authorization and answered 401');
         }
+        throw new SafeFailure(`member: «Запросить доступ» ended with «${shown}»; the page sent ${JSON.stringify(sent)}`);
       }
+      member.need(await member.page(`return document.activeElement?.classList.contains('request-sent');`), 'focus did not move to the confirmation');
+      const asking = member.lastRequest('/api/public/decks/{code}/access-requests', 'POST');
+      member.need(asking?.authorization === true && asking.status === 202, 'the page did not send the request with the bearer and get 202: ' + JSON.stringify(asking));
       member.need(!(await member.overflow()), 'the invitation screen overflows horizontally');
       await shoot(member, `community-${pass.name}-invite-only-member.png`);
       // The copy keeps working and says the source is closed (the code that it was copied by was rotated away).
@@ -618,8 +729,57 @@ export async function runCommunity(ctx) {
         buttons: [...row.querySelectorAll('button')].map(node => node.textContent.trim()), hasTime: row.querySelector('time') !== null }));`);
       owner.need(requests.length === 1 && requests[0].buttons.join('|') === 'Принять|Отклонить' && requests[0].hasTime, 'the request row is wrong: ' + JSON.stringify(requests));
       await shoot(owner, `community-${pass.name}-requests-owner.png`, { full: true });
-      return { oldLinkNotFound: true, codeRotated: true, linkWithoutSlug: true, guestScreen: true, requestApprovedText: requestVia === 'ui', requestVia, askedByKeyboard: true,
+      return { oldLinkNotFound: true, codeRotated: true, linkWithoutSlug: true, guestScreen: true, requestSentText: true, requestSentWithBearer: true, askedByKeyboard: true,
         tabPresses: asked.presses, sourceClosedOnCopy: true, ownerSeesRequest: requests.length, titleHidden: true };
+    });
+
+    // ---- 5a. the member takes the request back and asks again ("Отменить запрос") ------------------------------------------------------
+    await stage(pass, 'withdraw', ['invite_only'], async () => {
+      const ownerRequests = async () => {
+        await owner.front();
+        await navigate(world.deckPath, owner.tab);
+        await until(async () => await exists('app-access-requests .roster-row', owner.tab) || await owner.has(WORDS.requestsEmpty), 'the requests panel did not load', 30000);
+        return owner.count('app-access-requests .roster-row');
+      };
+      await member.front();
+      await member.metrics(pass.size);
+      await navigate(`/d/${world.newCode}`, member.tab);
+      await until(() => member.has(WORDS.inviteOnly), 'the member sees no «Колода доступна по приглашению»', 30000);
+      const ask = `element => element.matches('app-access-screen .actions button') && element.textContent.trim() === ${JSON.stringify(WORDS.askAccess)}`;
+      const cancel = `element => element.matches('app-access-screen .actions button') && element.textContent.trim() === ${JSON.stringify(WORDS.withdraw)}`;
+      // A repeat of an open request looks like the first one (the request was made in the previous stage).
+      await member.tabTo(ask, '«Запросить доступ»');
+      await member.press('Enter');
+      await until(() => member.has(WORDS.requestSent), 'the repeated request did not give the approved sentence', 30000);
+      member.need(await member.page(`return document.activeElement?.classList.contains('request-sent');`), 'focus did not move to the confirmation');
+      member.need(await member.page(`return !document.querySelector('app-access-screen .actions button.primary');`), 'the request button stays after the request is sent');
+      // «Отменить запрос» replaces «Запросить доступ» and is reached by Tab.
+      const reached = await member.tabTo(cancel, '«Отменить запрос»');
+      member.need(reached.focusVisible, 'the focus ring is not keyboard-visible on «Отменить запрос»');
+      const withdrawals = member.requestCount('/api/public/decks/{code}/access-requests:withdraw');
+      await member.press('Enter');
+      await until(() => member.has(WORDS.withdrawn), 'no «Запрос отменён.» after taking the request back', 30000);
+      member.need(await member.page(`return document.activeElement?.matches('app-access-screen .actions button') && document.activeElement.textContent.trim() === args[0];`, WORDS.askAccess),
+        'the focus did not go to «Запросить доступ» after the request was taken back');
+      member.need(!(await member.has(WORDS.requestSent)), 'the sentence «Запрос отправлен…» stays after the request was taken back');
+      const taken = member.lastRequest('/api/public/decks/{code}/access-requests:withdraw', 'POST');
+      member.need(taken?.authorization === true && taken.status === 204 && member.requestCount('/api/public/decks/{code}/access-requests:withdraw') === withdrawals + 1,
+        'the withdrawal was not sent once with the bearer and answered 204: ' + JSON.stringify(taken));
+      await shoot(member, `community-${pass.name}-withdrawn-member.png`);
+      // The owner no longer has a request to decide.
+      const afterWithdraw = await ownerRequests();
+      owner.need(afterWithdraw === 0, `the owner still sees ${afterWithdraw} requests after the member took the request back`);
+      // The request can be made again at once.
+      await member.front();
+      await member.press('Enter');
+      await until(() => member.has(WORDS.requestSent), 'asking again after the withdrawal did not give the approved sentence', 30000);
+      const asking = member.lastRequest('/api/public/decks/{code}/access-requests', 'POST');
+      member.need(asking?.authorization === true && asking.status === 202, 'asking again was not sent with the bearer and answered 202: ' + JSON.stringify(asking));
+      const afterAsk = await ownerRequests();
+      const rows = await owner.page(`return [...document.querySelectorAll('app-access-requests .roster-row')].map(row => [...row.querySelectorAll('button')].map(node => node.textContent.trim()).join('|'));`);
+      owner.need(afterAsk === 1 && rows[0] === 'Принять|Отклонить', 'the owner does not see exactly one decidable request after the member asked again: ' + JSON.stringify(rows));
+      return { repeatWhileOpenSameSentence: true, withdrawByKeyboard: true, tabPresses: reached.presses, withdrawStatus: taken.status, noticeShown: WORDS.withdrawn, focusOnAsk: true,
+        ownerRequestsAfterWithdraw: afterWithdraw, askedAgainSameSentence: true, ownerRequestsAfterAsk: afterAsk };
     });
 
     // ---- 5b. approval: the same link now opens the deck for the member ------------------------------------------------------------------
@@ -634,6 +794,125 @@ export async function runCommunity(ctx) {
       member.need(await member.page(`return [...document.querySelectorAll('.facts li')].some(node => node.innerText.toLowerCase().includes('по приглашению'));`), 'the level «По приглашению» is not shown to the grantee');
       member.need(await member.read('.primary-slot a.button.primary') === WORDS.openCopy, 'the grantee who already holds a copy should be offered «Открыть мою копию»');
       return { sameLinkOpensForGrantee: true, level: 'По приглашению' };
+    });
+
+    // ---- 6. the owner creates an invitation link in the «Доступ» panel --------------------------------------------------------------
+    await stage(pass, 'invite_create', ['approve'], async () => {
+      await owner.front();
+      await owner.metrics(pass.size);
+      await navigate(world.deckPath, owner.tab);
+      await until(() => exists('app-invite-links form.invite-form', owner.tab), 'the invitation links section did not load', 30000);
+      const section = await owner.page(`const root = document.querySelector('app-invite-links');
+        return { heading: root.querySelector('h3')?.textContent.trim(), choices: [...root.querySelectorAll('[role="combobox"]')].map(node => node.textContent.trim()),
+          empty: root.textContent.includes('Ссылок пока нет.') };`);
+      owner.need(section.heading === WORDS.invitesHeading, `the section heading reads «${section.heading}»`);
+      owner.need(JSON.stringify(section.choices) === JSON.stringify(['Один раз', '7 дней']), 'the defaults of the form are ' + JSON.stringify(section.choices));
+      await until(() => owner.page(`return document.querySelector('app-invite-links').textContent.includes('Ссылок пока нет.');`), 'the invitation list did not load as empty');
+      await owner.enter('app-invite-links button[type="submit"]', WORDS.createInvite);
+      await until(() => exists('app-invite-links .new-link', owner.tab), 'the new link was not shown', 30000);
+      owner.need(await owner.page(`return document.activeElement?.classList.contains('new-link') === true;`), 'the focus did not move to the new link');
+      const shown = await owner.page(`return document.querySelector('app-invite-links .new-url').innerText.replace(/\\s+/g, ' ').trim();`);
+      const match = /(?:^|\s)([^\s/]+)\/d\/([1-9A-HJ-NP-Za-km-z]{10})\?invite=([A-Za-z0-9_-]{43})$/u.exec(shown);
+      owner.need(match !== null, 'the shown link is not host/d/{code}?invite={43 characters}');
+      owner.need(match[1] === new URL(config.frontend).host && match[2] === world.newCode, 'the link points to another host or deck than the invitation deck');
+      world.inviteToken = match[3];
+      world.invitePath = `/d/${match[2]}?invite=${match[3]}`;
+      owner.need(await owner.has(WORDS.inviteOnce), 'the sentence that the link is shown once is missing');
+      await shoot(owner, `community-${pass.name}-invite-link-owner.png`, { full: true });
+      owner.need(!(await owner.overflow()), 'the owner hub overflows horizontally with the new link');
+      // «Готово»: the token leaves the page; the list row never had it.
+      await owner.enter('app-invite-links .new-actions .button.primary', WORDS.inviteDone);
+      await until(async () => !(await exists('app-invite-links .new-link', owner.tab)), 'the new link stayed after «Готово»');
+      owner.need(!(await owner.has(world.inviteToken)), 'the token is still on the page after «Готово»');
+      owner.need(await owner.page(`return document.activeElement?.matches('app-invite-links button[type="submit"]') === true;`), 'the focus did not return to «Создать ссылку»');
+      await until(() => owner.page(`return document.querySelectorAll('app-invite-links .roster-row').length === 1;`), 'the created link is not in the list');
+      const row = await owner.page(`return document.querySelector('app-invite-links .roster-row').textContent.replace(/\\s+/g, ' ').trim();`);
+      owner.need(row.includes(WORDS.inviteStatusActive) && row.includes(WORDS.inviteUnused), 'the list row of the new link reads «' + row + '»');
+      const listed = await owner.api('GET', `/api/decks/${world.deckId}/invites?limit=20`, null, {}, ownerBearer);
+      owner.need(listed.status === 200 && !listed.text.includes(world.inviteToken), 'the invitation list answer failed or carries the token');
+      return { createdByKeyboard: true, defaults: section.choices, linkShape: 'host/d/{code}?invite={43 characters}', shownOnceSentence: true, tokenGoneAfterDone: true,
+        listAnswerHasNoToken: true, row: 'Действует · Одноразовая, ещё не открыта' };
+    });
+
+    // ---- 6b. a new account opens the link: the sign-in, the redemption, the deck, no token left in the address -----------------------
+    await stage(pass, 'invite_redeem', ['invite_create'], async () => {
+      const context = await openGuestTab();
+      const invitee = makeActor(ctx, 'invitee', context.tab, null);
+      const token = world.inviteToken;
+      const leaked = () => [...owner.consoleText, ...member.consoleText, ...guest.consoleText, ...invitee.consoleText].some(line => line.includes(token));
+      try {
+        await invitee.front();
+        await invitee.metrics(pass.size);
+        // 1. As a guest: the address is cleaned at once, the screen asks to sign in.
+        await navigate(world.invitePath, invitee.tab);
+        await until(async () => await invitee.has(WORDS.inviteOnly) && (await invitee.search()) === '', 'the invitation link did not give the invitation screen with a clean address', 30000);
+        invitee.need((await invitee.location()) === `/d/${world.newCode}`, 'the guest address is ' + await invitee.location());
+        invitee.need(await invitee.has(WORDS.signInToAccept), 'the screen does not say «Войдите, чтобы принять приглашение.»');
+        const guestView = await invitee.page(`return { title: document.title, body: document.body.innerText, href: location.href, state: JSON.stringify(history.state ?? null),
+          local: JSON.stringify(Object.entries(localStorage)), cookies: document.cookie };`);
+        invitee.need(![guestView.title, guestView.body, guestView.href, guestView.state, guestView.local, guestView.cookies].some(text => text.includes(token)), 'the token is in the title, the page, the address, the history or the storage of a guest');
+        invitee.need(!guestView.title.includes(pass.title) && !guestView.body.includes(pass.title), 'the invitation screen names the deck to a guest');
+        await shoot(invitee, `community-${pass.name}-invite-guest-invitee.png`);
+        // 2. The way through the sign-in: «Войти» -> «Создать аккаунт», both reached by Tab; the return address carries no token.
+        await invitee.tabTo(`element => element.matches('app-access-screen .actions a.button.primary') && element.textContent.trim() === 'Войти'`, '«Войти»');
+        await invitee.press('Enter');
+        await until(async () => (await invitee.location()) === '/login', '«Войти» did not open the sign-in page', 30000);
+        const loginSearch = await invitee.search();
+        invitee.need(loginSearch.startsWith('?returnUrl=') && !loginSearch.includes(token) && !loginSearch.includes('invite'), 'the sign-in return address is wrong or carries the token: ' + loginSearch.replace(token, '<token>'));
+        await invitee.tabTo(`element => element.matches('.switch-mode a') && element.textContent.trim() === 'Создать аккаунт'`, '«Создать аккаунт»');
+        await invitee.press('Enter');
+        await until(async () => (await invitee.location()) === '/register', '«Создать аккаунт» did not open the registration page', 30000);
+        invitee.need((await invitee.search()).startsWith('?returnUrl=') && !(await invitee.search()).includes(token), 'the registration return address is wrong');
+        const login = `${config.login}_invitee_${pass.name}`;
+        await fill('#email', `invitee_${pass.name}_${config.email}`, invitee.tab);
+        await fill('#username', login, invitee.tab);
+        await fill('#password', config.password, invitee.tab);
+        await submit(invitee.tab);
+        // 3. Registered and signed in, the page returns to the deck and redeems the invitation.
+        await until(async () => (await invitee.location()) === `/d/${world.newCode}` && await exists('h1.hub-title', invitee.tab),
+          'after registration the invitee did not land on the deck (' + await invitee.location() + ')', 60000);
+        const landed = await invitee.page(`return { title: document.querySelector('h1.hub-title')?.textContent.trim(), search: location.search, documentTitle: document.title, body: document.body.innerText,
+          facts: [...document.querySelectorAll('.facts li')].map(node => node.innerText.replace(/\\s+/g, ' ').trim()), primary: document.querySelector('.primary-slot .button.primary')?.textContent.trim() ?? null,
+          pending: sessionStorage.getItem('mnema.invite.pending') };`);
+        invitee.need(landed.title === pass.title && landed.search === '', `the invitee landed on «${landed.title}» with the address «${landed.search}»`);
+        invitee.need(landed.facts.some(fact => fact.toLowerCase().includes('по приглашению')), 'the level «По приглашению» is not shown to the invitee: ' + JSON.stringify(landed.facts));
+        invitee.need(landed.documentTitle.startsWith(pass.title), 'the document title does not carry the deck title');
+        invitee.need(landed.primary === WORDS.add, `the invitee's primary action is «${landed.primary}», not «Добавить к себе»`);
+        invitee.need(landed.pending === null, 'the pending invitation stayed in sessionStorage after it was spent');
+        const redeemed = invitee.lastRequest('/api/invites:redeem', 'POST');
+        invitee.need(redeemed?.authorization === true && redeemed.status === 200 && invitee.requestCount('/api/invites:redeem') === 1,
+          'the redemption was not sent once with the bearer and answered 200: ' + JSON.stringify(redeemed) + ' x' + invitee.requestCount('/api/invites:redeem'));
+        invitee.need(!(await invitee.overflow()), 'the invited deck overflows horizontally');
+        await shoot(invitee, `community-${pass.name}-invite-landed-invitee.png`, { full: true });
+        // 4. The grant is permanent: a reload opens the deck, and the same link a second time opens it too (a one-time link is not spent twice).
+        await navigate(`/d/${world.newCode}`, invitee.tab);
+        await until(async () => (await invitee.read('h1.hub-title')) === pass.title, 'a reload of the invited deck does not open it', 30000);
+        await navigate(world.invitePath, invitee.tab);
+        await until(async () => (await invitee.read('h1.hub-title')) === pass.title && (await invitee.search()) === '', 'the same link a second time does not open the deck with a clean address', 30000);
+        invitee.need(invitee.requestCount('/api/invites:redeem') === 2 && invitee.lastRequest('/api/invites:redeem', 'POST').status === 200, 'the second redemption did not answer 200');
+        // 5. The token never reached a title, a console, or a sub-request URL of any actor.
+        const after = await invitee.page(`return { title: document.title, body: document.body.innerText, href: location.href, local: JSON.stringify(Object.entries(localStorage)), session: JSON.stringify(Object.entries(sessionStorage)) };`);
+        invitee.need(![after.title, after.body, after.href, after.local, after.session].some(text => text.includes(token)), 'the token is on the page, in the title, the address or the storage after the redemption');
+        invitee.need(!leaked(), 'the token appeared in a console message');
+        const leakyRequests = [...owner.leakyRequests, ...member.leakyRequests, ...guest.leakyRequests, ...invitee.leakyRequests];
+        invitee.need(leakyRequests.length === 0, 'a sub-request carried `invite=` in its URL: ' + leakyRequests.slice(0, 3).join(', '));
+        // 6. The owner: the link is used, the invitee is among the people.
+        await owner.front();
+        await navigate(world.deckPath, owner.tab);
+        await until(() => owner.page(`return document.querySelectorAll('app-access-people .roster-row').length === 2 && document.querySelector('app-invite-links .roster-row')?.textContent.includes(args[0]);`, WORDS.inviteUsed),
+          'the owner does not see two people and the used link', 30000);
+        const ownerRow = await owner.page(`return document.querySelector('app-invite-links .roster-row').textContent.replace(/\\s+/g, ' ').trim();`);
+        owner.need(ownerRow.includes(WORDS.inviteStatusUsed) && ownerRow.includes(WORDS.inviteUsed), 'the used link row reads «' + ownerRow + '»');
+        owner.need(!(await owner.has(token)), 'the token is on the owner\'s page');
+        owner.need(!leaked(), 'the token appeared in a console message');
+        await shoot(owner, `community-${pass.name}-invite-used-owner.png`, { full: true });
+        return { guestAddressCleaned: true, signInPromptShown: true, signInAndRegisterByKeyboard: true, returnUrlWithoutToken: true, landedOnDeck: true, addressClean: true,
+          redeemRequests: invitee.requestCount('/api/invites:redeem'), redeemStatus: 200, pendingEntrySpent: true, reloadOpens: true, sameLinkTwiceOpens: true,
+          tokenNotInTitleConsoleStorageOrSubrequestUrl: true, consoleLines: owner.consoleText.length + member.consoleText.length + guest.consoleText.length + invitee.consoleText.length,
+          ownerSeesUsedLink: true, ownerPeople: 2 };
+      } finally {
+        await context.close().catch(() => {});
+      }
     });
   }
 

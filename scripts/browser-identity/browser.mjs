@@ -178,8 +178,9 @@ try {
       // The paywall scenario (#301) loads the app about twenty times (every width and the quiet routes of the goal question).
       // The bounded 1317-item infinite-list fixture adds 66 reads + 66 publications + 27 pages, plus its shell/assets.
       const infiniteListBudget = config.mechanics ? 250 : 0;
-      // Community decks (#439): two passes of ~16 full page loads each on three tabs, every one with its public reads, the author card and the shell assets.
-      const communityBudget = config.community ? 2500 : 0;
+      // Community decks (#439): two passes of ~24 full page loads each on four tabs (the invitee registers in its own browser context), every one with
+      // its public reads, the author card and the shell assets.
+      const communityBudget = config.community ? 3600 : 0;
       if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0) + (config.admin ? 1000 : 0) + communityBudget
           || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0) + (config.community ? 300 : 0)) {
         asynchronousFailure = true;
