@@ -8,6 +8,8 @@ enum ApiErrorCode {
     AUTHENTICATION_REQUIRED(HttpStatus.UNAUTHORIZED, "Authentication required", "Valid authentication is required."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "Access denied", "The operation is not permitted."),
     DECK_INVITE_ONLY(HttpStatus.FORBIDDEN, "Deck is invite only", "The deck is shared by invitation."),
+    FORK_OWN_DECK(HttpStatus.CONFLICT, "Own deck", "A deck cannot be copied by its owner."),
+    DECK_PREPARING(HttpStatus.CONFLICT, "Deck is preparing", "The copy is still being prepared; try again when it is ready."),
     PUBLIC_READ_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "Public reads busy", "Public reads are busy; retry after the time in Retry-After."),
     IDENTITY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Identity unavailable", "Authentication is temporarily unavailable."),
     SUPPORT_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Support unavailable", "The support inbox is temporarily unavailable."),

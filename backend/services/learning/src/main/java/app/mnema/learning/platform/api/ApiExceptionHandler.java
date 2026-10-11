@@ -8,6 +8,8 @@ import app.mnema.learning.generation.EditInProgressException;
 import app.mnema.learning.generation.GenerationStateConflictException;
 import app.mnema.learning.generation.SourceUnavailableException;
 import app.mnema.learning.generation.StaleArtifactsException;
+import app.mnema.learning.fork.DeckPreparingException;
+import app.mnema.learning.fork.ForkOwnDeckException;
 import app.mnema.learning.library.DeckInviteOnlyException;
 import app.mnema.learning.library.PublicationRequiredException;
 import app.mnema.learning.library.PublicationRequirementsException;
@@ -108,6 +110,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(DeckInviteOnlyException.class)
     ResponseEntity<Object> handleDeckInviteOnly(DeckInviteOnlyException exception, HttpServletRequest request) {
         return response(ApiErrorCode.DECK_INVITE_ONLY, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(DeckPreparingException.class)
+    ResponseEntity<Object> handleDeckPreparing(DeckPreparingException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.DECK_PREPARING, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(ForkOwnDeckException.class)
+    ResponseEntity<Object> handleForkOwnDeck(ForkOwnDeckException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.FORK_OWN_DECK, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(PublicationRequiredException.class)
@@ -290,16 +302,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return response(ApiErrorCode.INTERNAL_ERROR, request.getRequestURI(), new HttpHeaders());
     }
 
-    private static final java.util.regex.Pattern PUBLIC_DECK_PATH = java.util.regex.Pattern.compile("^(.*/public/decks/)[^/]+");
+    private static final java.util.regex.Pattern PUBLIC_DECK_PATH = java.util.regex.Pattern.compile("^(.*/public/(?:decks|meta/decks)/)[^/]+");
 
     /**
      * The request path for a log line. The public code of a deck is a credential of its link ({@code LINK} and {@code INVITE} decks are reachable by
-     * it alone), so it never reaches a log: the route template the request was mapped to is logged (for example {@code /public/decks/{code}/items}),
-     * and when no mapping was made, the segment after {@code /public/decks/} is redacted.
+     * it alone), so it never reaches a log: the route template the request was mapped to is logged (for example {@code /public/decks/{code}/items} or
+     * {@code /public/meta/decks/{code}/head}), and when no mapping was made, the segment after {@code /public/decks/} or {@code /public/meta/decks/} is redacted.
      */
     static String loggablePath(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        if (uri == null || !uri.contains("/public/decks/")) return uri;
+        if (uri == null || !(uri.contains("/public/decks/") || uri.contains("/public/meta/decks/"))) return uri;
         Object template = request.getAttribute(org.springframework.web.servlet.HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         if (template instanceof String pattern && !pattern.isBlank()) return request.getContextPath() + pattern;
         return PUBLIC_DECK_PATH.matcher(uri).replaceFirst("$1{code}");

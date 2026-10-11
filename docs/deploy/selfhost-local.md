@@ -271,6 +271,15 @@ its owner while it is valid, so on a local stack the configuration above stays t
 catalogue and the current plan and charges nothing; `learning.plans.max-teaser.enabled=true` (on the local stack `LEARNING_PLANS_MAXTEASER_ENABLED=true`) shows Max as «В работе». Credits and counters
 live in the retained PostgreSQL volume and are cleared by `reset`.
 
+### Public decks and link previews (Share/7, Share/14)
+
+The public read of shared decks and the link-preview metadata are off by default (`404` as if absent). `LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED=true`
+switches them on for the local stack (it is passed through `compose.local-full-stack.yml`; restart the stack). The local nginx
+(`deploy/local-full-stack/nginx.conf`) then answers `https://localhost:3443/d/{code}/{slug}` like production: the Open Graph tags and canonical of a
+PUBLIC deck inserted into `index.html`, a `301` for a missing or wrong slug, and the generic `noindex` card for link-only, invitation-only, private or
+unknown codes; any failure serves the plain page. Canonical addresses use `MNEMA_PUBLIC_BASE_URL` (`https://localhost:3443` here). See
+[link previews](../operations/link-previews.md); check with `curl -k -A 'TelegramBot' https://localhost:3443/d/<code>/<slug>`.
+
 ### Promo codes, A/B and the promo popup (#302)
 
 Promo codes need no extra configuration locally. An administrator creates a code with `POST /api/admin/promo-codes` (the caller's token and an

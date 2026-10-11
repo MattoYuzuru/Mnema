@@ -532,7 +532,11 @@ class PublicDeckHttpIntegrationTest extends PostgresIntegrationTest {
 
         assertThat(names(json(get("/public/decks/" + publicCode, null)))).isEqualTo(names(contract.path("summary").path("public")));
         assertThat(names(json(get("/public/decks/" + linkCode, null)))).isEqualTo(names(contract.path("summary").path("link")));
-        assertThat(names(json(get("/public/decks/" + inviteCode, grantee)))).isEqualTo(names(contract.path("summary").path("invitedGrantee")));
+        // Share/10: a signed-in viewer's summary also carries `myCopy` (contracts/decks/forks.json); public-read.json's examples are the guest shape
+        Set<String> signedIn = names(json(get("/public/decks/" + inviteCode, grantee)));
+        assertThat(signedIn).contains("myCopy");
+        signedIn.remove("myCopy");
+        assertThat(signedIn).isEqualTo(names(contract.path("summary").path("invitedGrantee")));
         JsonNode page = json(get("/public/decks/" + publicCode + "/items", null));
         assertThat(names(page)).isEqualTo(names(contract.path("items").path("page").path("response")));
         assertThat(names(page.path("items").get(0))).isEqualTo(names(contract.path("items").path("page").path("response").path("items").get(0)));

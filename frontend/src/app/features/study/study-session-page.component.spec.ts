@@ -643,6 +643,30 @@ describe('StudySessionPageComponent', () => {
         expect(lastCall(api.start)[2]).toEqual({ mode: 'SCHEDULED', preset: 'QUICK' });
     });
 
+    it('says that a copy is still being prepared when Study answers 409 DECK_PREPARING, and not the generic failure', () => {
+        api.start.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'DECK_PREPARING' } })));
+        fixture = TestBed.createComponent(StudySessionPageComponent);
+        fixture.detectChanges();
+        fixture.componentInstance.startScheduled('QUICK');
+        fixture.detectChanges();
+        expect(page().textContent).toContain('Колода ещё готовится. Загляните сюда позже.');
+        expect(page().textContent).not.toContain('Не удалось начать Study-сессию.');
+        // «Начать заново» cannot succeed before the copy is ready: the way out is the hub that explains.
+        const buttons = [...page().querySelectorAll('.notice button')].map(button => button.textContent?.trim());
+        expect(buttons).not.toContain('Начать заново');
+        expect(page().querySelector<HTMLAnchorElement>('.notice a.button')?.textContent?.trim()).toBe('К колоде');
+    });
+
+    it('keeps «Начать заново» for any other start failure', () => {
+        api.start.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+        fixture = TestBed.createComponent(StudySessionPageComponent);
+        fixture.detectChanges();
+        fixture.componentInstance.startScheduled('QUICK');
+        fixture.detectChanges();
+        expect([...page().querySelectorAll('.notice button')].map(button => button.textContent?.trim())).toContain('Начать заново');
+        expect(page().querySelector('.notice a.button')).toBeNull();
+    });
+
     // ------------------------------------------------------------------------------------------
 
     function page(): HTMLElement { return fixture.nativeElement as HTMLElement; }

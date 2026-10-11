@@ -1,0 +1,82 @@
+{
+  "contract": "public-meta-v1",
+  "description": "Shared fixtures for the link-preview metadata of the web server (Share/14, #436, docs/operations/link-previews.md): the card of a deck or of an author that nginx puts into the head of index.html for /d/{code}/{slug}, so Telegram, VK and search engines see the deck without server-side rendering. GET and HEAD only, the public chain of the deck reads (same limiter, bulkhead and kill switch), a guest's view that never depends on a token. The /head fragment is served as text/plain with a restrictive Content-Security-Policy because it is reachable on the application origin. Every case that is not a PUBLIC deck (or a profile with a public card) is the SAME generic card, so the answer is not an oracle. All JSON strings are plain text; the HTML fragment is the only markup and has every value escaped. `invariants` are executable: PublicMetaContractFixtureTest builds these examples with the production code.",
+  "constants": {
+    "origin": "https://mnema.app (learning.community.public-origin, from MNEMA_PUBLIC_BASE_URL)",
+    "imagePath": "/assets/og-image.png",
+    "titleMaxCodePoints": 120,
+    "descriptionMaxCodePoints": 200,
+    "cacheControl": "public, max-age=300",
+    "killSwitch": "learning.community.public-routes.enabled (default false: every route answers 404)",
+    "authorCardTimeout": "150 ms, cached 60 s; any failure leaves the author out",
+    "fragmentContentType": "text/plain;charset=UTF-8",
+    "fragmentContentSecurityPolicy": "default-src 'none'; sandbox",
+    "canonicalHeader": "X-Mnema-Canonical: /d/{code}/{slug}, on the /head answer of a PUBLIC deck only; the web server compares it with the requested path and answers 301 on a difference",
+    "previewHeader": "X-Mnema-Preview: card|generic on every /head answer (the web server reports card|generic|redirect|fallback on the page)",
+    "robotsHeader": "X-Robots-Tag: noindex on the /head answer of the generic card (the web server puts it on the page)"
+  },
+  "routes": [
+    {
+      "route": "GET|HEAD /api/public/meta/decks/{code}",
+      "answer": "JSON card"
+    },
+    {
+      "route": "GET|HEAD /api/public/meta/decks/{code}/head",
+      "answer": "text/plain;charset=UTF-8 head fragment with Content-Security-Policy: default-src 'none'; sandbox, X-Mnema-Preview, and for a PUBLIC deck X-Mnema-Canonical; the generic card also answers X-Robots-Tag: noindex. No query parameter changes the answer."
+    },
+    {
+      "route": "GET|HEAD /api/public/meta/profiles/{username}",
+      "answer": "JSON card"
+    },
+    {
+      "route": "GET|HEAD /api/public/meta/profiles/{username}/head",
+      "answer": "text/plain;charset=UTF-8 head fragment, same headers (no canonical header)"
+    }
+  ],
+  "publicDeck": {
+    "code": "Kq7xT3mNpR",
+    "json": {
+      "kind": "DECK",
+      "title": "Испанские глаголы",
+      "description": "Двести самых частых глаголов.",
+      "canonical": "https://mnema.app/d/Kq7xT3mNpR/ispanskie-glagoly",
+      "robots": "index,follow",
+      "image": "https://mnema.app/assets/og-image.png",
+      "author": {
+        "username": "anna.k",
+        "displayName": "Анна"
+      }
+    },
+    "head": "<title>Испанские глаголы — Mnema</title>\n<meta name=\"description\" content=\"Автор: Анна (@anna.k). Двести самых частых глаголов.\">\n<meta name=\"robots\" content=\"index,follow\">\n<link rel=\"canonical\" href=\"https://mnema.app/d/Kq7xT3mNpR/ispanskie-glagoly\">\n<meta name=\"author\" content=\"Анна (@anna.k)\">\n<meta property=\"og:site_name\" content=\"Mnema\">\n<meta property=\"og:title\" content=\"Испанские глаголы\">\n<meta property=\"og:description\" content=\"Автор: Анна (@anna.k). Двести самых частых глаголов.\">\n<meta property=\"og:type\" content=\"website\">\n<meta property=\"og:url\" content=\"https://mnema.app/d/Kq7xT3mNpR/ispanskie-glagoly\">\n<meta property=\"og:image\" content=\"https://mnema.app/assets/og-image.png\">\n<meta property=\"og:locale\" content=\"ru_RU\">\n<meta name=\"twitter:card\" content=\"summary_large_image\">\n<meta name=\"twitter:title\" content=\"Испанские глаголы\">\n<meta name=\"twitter:description\" content=\"Автор: Анна (@anna.k). Двести самых частых глаголов.\">\n<meta name=\"twitter:image\" content=\"https://mnema.app/assets/og-image.png\">\n",
+    "headers": {
+      "X-Mnema-Preview": "card",
+      "X-Mnema-Canonical": "/d/Kq7xT3mNpR/ispanskie-glagoly"
+    }
+  },
+  "generic": {
+    "appliesTo": "LINK, INVITE, PRIVATE, rotated, deleted, unknown and malformed codes, a deck without a published revision, a profile without a public card",
+    "json": {
+      "kind": "GENERIC",
+      "title": "Mnema — учиться, понимать, помнить",
+      "description": "Ваши материалы и упражнения — в одном месте.",
+      "canonical": null,
+      "robots": "noindex",
+      "image": "https://mnema.app/assets/og-image.png",
+      "author": null
+    },
+    "head": "<title>Mnema</title>\n<meta name=\"description\" content=\"Ваши материалы и упражнения — в одном месте.\">\n<meta name=\"robots\" content=\"noindex\">\n<meta property=\"og:site_name\" content=\"Mnema\">\n<meta property=\"og:title\" content=\"Mnema — учиться, понимать, помнить\">\n<meta property=\"og:description\" content=\"Ваши материалы и упражнения — в одном месте.\">\n<meta property=\"og:type\" content=\"website\">\n<meta property=\"og:image\" content=\"https://mnema.app/assets/og-image.png\">\n<meta property=\"og:locale\" content=\"ru_RU\">\n<meta name=\"twitter:card\" content=\"summary_large_image\">\n<meta name=\"twitter:title\" content=\"Mnema — учиться, понимать, помнить\">\n<meta name=\"twitter:description\" content=\"Ваши материалы и упражнения — в одном месте.\">\n<meta name=\"twitter:image\" content=\"https://mnema.app/assets/og-image.png\">\n",
+    "headers": {
+      "X-Mnema-Preview": "generic",
+      "X-Robots-Tag": "noindex"
+    }
+  },
+  "invariants": [
+    "the JSON of every non-public case equals `generic.json` byte for byte, and so does the fragment; no canonical header is ever sent for them",
+    "the JSON has exactly the members kind, title, description, canonical, robots, image, author in this order",
+    "a title or description is one line of plain text, cut on a word boundary with an ellipsis, at most 120 and 200 code points",
+    "a title, description or name is one line of plain text: whitespace and control characters become one space, bidirectional formatting characters (U+200E/F, U+202A-202E, U+2066-2069, U+061C) are dropped",
+    "the fragment has one tag per line and only title, meta and link tags; & < > \" ' in a value are character references, so a value cannot open a tag, a comment (<!--) or an SSI directive",
+    "the fragment replaces the whole default block of frontend/src/index.html: it declares every name and property that block declares (and `author` besides)",
+    "problem answers (404 disabled, 429, 503) stay no-store; the web server turns every status of 300 and above into the plain index.html"
+  ]
+}

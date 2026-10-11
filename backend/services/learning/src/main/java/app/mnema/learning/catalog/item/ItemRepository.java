@@ -54,6 +54,12 @@ class ItemRepository {
                 """).param("actor", actor).param("deck", deck).query(DECK).optional();
     }
 
+    /** Whether the deck is a copy whose heads the materialization job has not completed (Share/10): its member list is empty until it is ready. */
+    boolean preparing(UUID deck) {
+        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck_fork WHERE deck_id=:deck AND materialized_at IS NULL)")
+                .param("deck", deck).query(Boolean.class).single();
+    }
+
     /**
      * The current revision of one material of the owner's deck. Reads start at the deck's own head row and reach the
      * lineage rows through the deck's scope; the deck revision and version reported are the reading deck's current ones.

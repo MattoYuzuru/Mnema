@@ -16,4 +16,7 @@ public record Resolution(AccessLevel level, Denial denial, DeckRef deck) {
     static Resolution denied(Denial denial) { return new Resolution(AccessLevel.NONE, denial, null); }
 
     public boolean granted() { return level != AccessLevel.NONE; }
+
+    /** Whether the viewer may copy the deck: a granted non-owner level that has a published revision ({@link AccessLevel#canFork}). */
+    public boolean canFork() { return level.canFork() && deck != null && deck.published() != null; }
 }

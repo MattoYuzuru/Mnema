@@ -39,6 +39,12 @@ public final class HttpIdentityFixture {
     private static final java.util.Set<String> REVOKED = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final java.util.Set<String> PUBLIC_PROFILE = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final AtomicInteger USER_INFO_CALLS = new AtomicInteger();
+    /** Public author cards by account id and by lower-case login, as Identity's {@code /api/accounts/profiles/...} answers them. */
+    private static final Map<String, String> CARDS_BY_ID = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, String> CARDS_BY_NAME = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final AtomicInteger CARD_CALLS = new AtomicInteger();
+    private static volatile int cardFailure;
+    private static volatile long cardDelayMillis;
     /** lower-case profile username to account id: the public profiles of the by-username lookup (consent on, login set) */
     private static final java.util.Map<String, UUID> PROFILES = new java.util.concurrent.ConcurrentHashMap<>();
     private static final AtomicInteger PROFILE_LOOKUPS = new AtomicInteger();
@@ -72,24 +78,41 @@ public final class HttpIdentityFixture {
                 exchange.sendResponseHeaders(status, body.length);
                 try (var output = exchange.getResponseBody()) { output.write(body); }
             });
-            IDENTITY.createContext("/api/accounts/profiles/by-username/", exchange -> {
-                PROFILE_LOOKUPS.incrementAndGet();
-                String requested = exchange.getRequestURI().getPath().substring("/api/accounts/profiles/by-username/".length());
-                UUID account = PROFILES.get(requested.toLowerCase(java.util.Locale.ROOT));
+            // One handler for everything Identity publishes under /api/accounts/profiles/: the public author cards (by account id and by login, for link
+            // previews) and the by-username lookup of Share/13 (a login that is limited, broken, public or unknown).
+            IDENTITY.createContext("/api/accounts/profiles/", exchange -> {
+                CARD_CALLS.incrementAndGet();
+                if (cardDelayMillis > 0) {
+                    try { Thread.sleep(cardDelayMillis); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                }
+                String rest = exchange.getRequestURI().getPath().substring("/api/accounts/profiles/".length());
+                boolean byName = rest.startsWith("by-username/");
+                String requested = byName ? rest.substring("by-username/".length()) : rest;
+                if (byName) PROFILE_LOOKUPS.incrementAndGet();
+                String lower = requested.toLowerCase(java.util.Locale.ROOT);
                 int status = 200;
                 String body;
-                if (LIMITED_LOGIN.equals(requested)) {
+                if (cardFailure != 0) {
+                    status = cardFailure;
+                    body = "{}";
+                } else if (byName && LIMITED_LOGIN.equals(requested)) {
                     status = 429;
                     body = "{\"code\":\"try_later\"}";
                     exchange.getResponseHeaders().set("Retry-After", "7");
-                } else if (BROKEN_LOGIN.equals(requested)) {
+                } else if (byName && BROKEN_LOGIN.equals(requested)) {
                     status = 500;
                     body = "{}";
-                } else if (account == null) {
-                    status = 404;
-                    body = "{\"code\":\"profile_not_found\"}";
                 } else {
-                    body = "{\"accountId\":\"" + account + "\",\"profileUsername\":\"" + requested + "\",\"displayName\":null,\"bio\":null,\"avatarPresent\":false}";
+                    String card = byName ? CARDS_BY_NAME.get(lower) : CARDS_BY_ID.get(requested);
+                    UUID account = byName ? PROFILES.get(lower) : null;
+                    if (card != null) {
+                        body = card;
+                    } else if (account != null) {
+                        body = "{\"accountId\":\"" + account + "\",\"profileUsername\":\"" + requested + "\",\"displayName\":null,\"bio\":null,\"avatarPresent\":false}";
+                    } else {
+                        status = 404;
+                        body = "{\"code\":\"profile_not_found\"}";
+                    }
                 }
                 byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -119,6 +142,32 @@ public final class HttpIdentityFixture {
     public static void publicProfile(UUID account, boolean ready) {
         if (ready) PUBLIC_PROFILE.add(account.toString());
         else PUBLIC_PROFILE.remove(account.toString());
+    }
+
+    /** Identity publishes this public card (display name and bio may be null: the owner did not agree to show them). */
+    public static void authorCard(UUID account, String username, String displayName, String bio) {
+        String json = "{\"accountId\":\"" + account + "\",\"profileUsername\":" + quote(username) + ",\"displayName\":" + quote(displayName)
+                + ",\"bio\":" + quote(bio) + ",\"avatarPresent\":false}";
+        CARDS_BY_ID.put(account.toString(), json);
+        CARDS_BY_NAME.put(username.toLowerCase(java.util.Locale.ROOT), json);
+    }
+
+    public static void withdrawAuthorCard(UUID account) {
+        String json = CARDS_BY_ID.remove(account.toString());
+        if (json != null) CARDS_BY_NAME.values().remove(json);
+    }
+
+    /** Every card request answers with this status (0: normal behaviour) after {@code delayMillis}; for the failure paths of link previews. */
+    public static void authorCardFailure(int status, long delayMillis) {
+        cardFailure = status;
+        cardDelayMillis = delayMillis;
+    }
+
+    public static int authorCardCalls() { return CARD_CALLS.get(); }
+
+    private static String quote(String value) {
+        if (value == null) return "null";
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
     }
 
     /** Gives the account a public profile with this login (Identity: consent on, a login set); the lookup is case-insensitive. */

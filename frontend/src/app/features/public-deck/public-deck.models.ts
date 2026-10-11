@@ -31,6 +31,13 @@ export interface PublicDeck {
     readonly ownerId: string;
     /** The transliterated title of a PUBLIC deck; `null` for every other level (a link never shows a slug). */
     readonly slug: string | null;
+    /** The signed-in viewer's live copy of exactly this deck («Открыть мою копию»); `null` for a guest, the owner and a viewer without one. */
+    readonly myCopy: PublicDeckCopy | null;
+}
+
+export interface PublicDeckCopy {
+    readonly deckId: string;
+    readonly preparing: boolean;
 }
 
 export interface PublicMaterial {
@@ -180,7 +187,7 @@ const ACCESSES: readonly PublicAccess[] = ['OWNER', 'GRANTEE', 'PUBLIC', 'LINK']
 const SLUG = /^[^\s/?#%\\]{1,80}$/u;
 
 export function parsePublicDeck(value: unknown, code: string): PublicDeck {
-    const f = exact(value, ['code', 'visibility', 'access', 'title', 'description', 'memberCount', 'exerciseCount', 'publishedAt', 'ownerId'], ['slug']);
+    const f = exact(value, ['code', 'visibility', 'access', 'title', 'description', 'memberCount', 'exerciseCount', 'publishedAt', 'ownerId'], ['slug', 'myCopy']);
     sameCode(f['code'], code);
     const visibility = f['visibility'];
     const access = f['access'];
@@ -193,8 +200,17 @@ export function parsePublicDeck(value: unknown, code: string): PublicDeck {
         code, visibility: visibility as PublicVisibility, access: access as PublicAccess,
         title: text(f['title'], 400, false), description: text(f['description'], 8192, true),
         memberCount: count(f['memberCount'], 100_000), exerciseCount: count(f['exerciseCount'], 1_000_000),
-        publishedAt: instant(f['publishedAt']), ownerId: f['ownerId'].toLowerCase(), slug: typeof slug === 'string' ? slug : null
+        publishedAt: instant(f['publishedAt']), ownerId: f['ownerId'].toLowerCase(), slug: typeof slug === 'string' ? slug : null,
+        myCopy: parseMyCopy(f['myCopy'])
     };
+}
+
+/** `myCopy` (Share/10): absent for a guest, `null` or `{deckId, preparing}` for a signed-in viewer. */
+function parseMyCopy(value: unknown): PublicDeckCopy | null {
+    if (value === undefined || value === null) return null;
+    const f = exact(value, ['deckId', 'preparing']);
+    if (typeof f['preparing'] !== 'boolean') throw new PublicDeckFailure('unavailable');
+    return { deckId: entity(f['deckId']), preparing: f['preparing'] };
 }
 
 export function parsePublicMaterialPage(value: unknown, code: string, limit: number): PublicMaterialPage {

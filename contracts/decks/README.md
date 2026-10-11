@@ -311,6 +311,39 @@ optional-bearer chain as the other public routes. Examples and executable shapes
   the asset, stops serving it. Editing a material of a copy may keep an inherited asset (an asset the deck's heads already reference); any other asset must be the
   editor's own, and an asset of another account that no head holds is `404` on save.
 
+## Link previews (Share/14, #436)
+
+The web server puts the card of a deck into the head of `index.html` for `/d/{code}/{slug}` (nginx SSI, no SSR), so Telegram, VK
+and search engines see the title, description and author of a PUBLIC deck. Exact examples and executable invariants are in
+[`public-meta.json`](public-meta.json); operations: [link previews](../../docs/operations/link-previews.md); the decision is
+[community decks §9](../../docs/architecture/community-decks.md#9-ссылки-og-rate-limits-cd-10).
+
+| Operation | Request | Success |
+|---|---|---|
+| Deck card | `GET\|HEAD /api/public/meta/decks/{code}` | 200, `{kind, title, description, canonical, robots, image, author}` |
+| Deck head | `GET\|HEAD /api/public/meta/decks/{code}/head` | 200, `text/plain;charset=UTF-8` fragment; `X-Mnema-Preview`, and `X-Mnema-Canonical` for a PUBLIC deck |
+| Author card | `GET\|HEAD /api/public/meta/profiles/{username}` and `/head` | 200, the same shape, `kind: PROFILE` only when Identity has a public card |
+
+- **Same chain, same switch.** The routes are in the optional-bearer public chain of the deck reads with the same limiter, bulkhead and kill
+  switch (`404` while public routes are off); the viewer is always a guest, a token changes nothing, and a present but invalid one is 401 like there.
+  Success is `Cache-Control: public, max-age=300`; problem answers stay `no-store`.
+- **Not an oracle.** Only a PUBLIC deck with a published revision gets its own card. LINK, INVITE, private, rotated, deleted, unknown, malformed
+  and never-published codes all get **the same** `GENERIC` card (`noindex`, `canonical: null`, `author: null`), byte for byte, with `200`; its `/head`
+  answer also carries `X-Robots-Tag: noindex`, which the web server puts on the page.
+- **Text, not markup.** Every JSON string is plain text on one line (whitespace and control characters become one space, bidirectional formatting
+  characters are dropped; title at most 120 code points, description at most 200, cut on a word boundary with `…`; blank falls back to `Колода` /
+  `Колода на Mnema.`). The `/head` fragment is the only markup: fixed `title`, `meta` and `link` tags with every value escaped (`& < > " '`), nothing
+  that can open a tag, a comment or an SSI directive. It is served as `text/plain;charset=UTF-8` with `Content-Security-Policy: default-src 'none';
+  sandbox` because it is reachable on the application origin: a browser shows it as text and never runs it, while the web server includes its bytes.
+- **Author.** `author {username, displayName|null}` only when Identity publishes the card (the owner's consent, fields per consent; `bio` is used for
+  a profile card only). Learning asks Identity with a 150 ms deadline of its own and caches a card or its absence 60 s and a failure 5 s; a failure
+  leaves `author: null` and never blocks the card.
+- **Canonical and redirect.** `canonical = {origin}/d/{code}/{slug}` (`origin` from `MNEMA_PUBLIC_BASE_URL`). The `/head` answer of a PUBLIC deck carries
+  `X-Mnema-Canonical: /d/{code}/{slug}`; the web server compares it with the path it was asked for and answers one `301` on a difference (a missing or
+  wrong slug), keeping the query string. No query parameter changes the answer, so a cache in front keys it by the code alone and one cached answer
+  serves both the redirect decision and the card. Every `/head` answer has `X-Mnema-Preview: card|generic`; the generic card also has `X-Robots-Tag: noindex`.
+- Failure codes are those of the public reads: `RESOURCE_NOT_FOUND` (404, switched off), `RATE_LIMITED` (429), `PUBLIC_READ_BUSY` (503), `AUTHENTICATION_REQUIRED` (401).
+
 ## Publication and the topic directory (Share/8, #430)
 
 The owner decides **who may read the published revision** of a deck, **when** the readers' state moves, and
@@ -511,3 +544,57 @@ No new codes: `RESOURCE_NOT_FOUND`, `INVALID_REQUEST`, `DECK_INVITE_ONLY`, `RESO
 `RATE_LIMITED` (with `Retry-After` and `retryAfter`), `PUBLICATION_REQUIRED`, `IDENTITY_UNAVAILABLE`. These routes carry no
 `If-Match` (every write is idempotent by state), so there is no `VERSION_CONFLICT` and no `IDEMPOTENCY_CONFLICT`. Problem text never
 echoes tokens, logins or identifiers.
+
+## «Добавить к себе»: a copy of somebody's deck (Share/10, #432)
+
+A signed-in account copies a deck it may read into its own library in **O(1)**; a background job then fills the copy's
+heads from the **published** manifest. Exact examples and executable invariants are in [`forks.json`](forks.json); the
+architecture is [community decks §5](../../docs/architecture/community-decks.md#5-копия-cd-2). The copy is the caller's own
+private deck from the first answer on (it appears in `GET /api/decks`), in the source's storage lineage, so nothing is
+duplicated and edits never cross in either direction.
+
+| Operation | Request | Success |
+|---|---|---|
+| Copy | `POST /api/decks/forks`, `{commandId, sourceCode}` | 201 `{commandId, deckId, preparing: true, existing: false}` + `Location`; 200 with `existing: true` when a live copy of this source already exists |
+| Retry a failed copy | `POST /api/decks/{deckId}/fork:retry` (no body) | 200 `{deckId, preparing, failed}` |
+| Detach from the author | `POST /api/decks/{deckId}/fork:detach` (no body) | 200 `{deckId, detached: true}` |
+| State of the copy | the existing `GET /api/decks/{deckId}` and `GET /api/decks` | `fork` member (below) |
+| «Открыть мою копию» | `GET /api/public/decks/{code}` | `myCopy` member for a signed-in viewer (below) |
+
+- **Who may copy** is `DeckAccess` by the code in the body, the same decision as the public read: `PUBLIC` and `LINK` decks by any
+  signed-in account, an `INVITE` deck by a grantee (403 `DECK_INVITE_ONLY` without a grant). A private deck, an unknown, malformed or
+  rotated code, a deleted deck and a deck that was never published are the same 404 `RESOURCE_NOT_FOUND`. The owner of the source gets
+  **409 `FORK_OWN_DECK`**. The kill switch `learning.community.forks.enabled` is **false** by default: creation answers 404 as if the
+  route did not exist (existing copies are unaffected).
+- **Idempotent twice.** By `commandId` (house receipts: an exact retry returns the original acknowledgement and status with
+  `Idempotency-Replayed: true`; a used `commandId` with another body is 409 `IDEMPOTENCY_CONFLICT`), and by **(owner, source)**: a second request
+  with any `commandId` while a live copy of this source exists returns that copy (`existing: true`, 200). A deleted copy does not count.
+  A copy of a copy is allowed (its own published revision; a copy can be published once it is ready).
+- **What the copy is.** The title, description and counts of the **published** revision; the manifests of that revision are pinned for the copy
+  (its own durable pins), so the source can later change, be deleted or go private without touching the copy. Anything the author did after
+  publishing, including a new image only an unpublished revision uses, is not in the copy and is 404 on every media route.
+- **`fork` in the owner's deck JSON.** Detail and every list item carry `fork`: `null` for an ordinary deck, otherwise
+  `{upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached}`.
+  - `preparing`: the heads are not complete yet (true from the answer of `POST` until the job ends successfully). `failed` (implies `preparing`):
+    the job ended `FAILED`/`CANCELLED` or its record is gone; show «Повторить» (`fork:retry`), the copy can also be deleted. Poll `GET` at a bounded
+    backoff while `preparing && !failed`.
+  - `sourceAvailable`, `upstreamCode`, `upstreamTitle`: computed at read for the copier through `DeckAccess` with the code he copied by, so they
+    go dark when the source is deleted, made private, or its link is rotated away (lowering the level rotates the code, and a copier gets no new
+    code). Nothing is written on read. Unavailable means `sourceAvailable` is `false` and the other two are `null`: show the approved text «Автор закрыл исходную колоду. Ваша
+    копия остаётся с вами, но обновлений больше не будет.»
+  - `detached`: the owner pressed «Отвязать от автора» (`fork:detach`); idempotent, never changes the content.
+- **While preparing.** Every mutation of the copy and Study answer **409 `DECK_PREPARING`** (every non-GET method under `/api/decks/{deckId}/…` except `fork:retry`,
+  `fork:detach` and `DELETE /api/decks/{deckId}`; `POST /api/capture-notes` and `POST /api/editing-drafts` that name the copy). The hub reads normally:
+  `memberCount`/`exerciseCount` are the counts being prepared and the material list is empty (its `total` names the count being prepared). Deleting a preparing or failed
+  copy is allowed. Only the owner ever sees 409; a stranger gets the opaque 404.
+- **`myCopy` in the public summary.** `GET /api/public/decks/{code}` for a signed-in viewer carries `myCopy`: `null` or `{deckId, preparing}` for his live copy
+  of exactly this deck («Открыть мою копию»); the guest's summary is unchanged («Войдите, чтобы добавить колоду к себе»).
+- **Limits.** At most `learning.community.forks.max-preparing` (10) live copies per account may be unfinished at once: one more is 422
+  `RESOURCE_LIMIT_EXCEEDED` with the member `limit`. At most `learning.community.forks.max-per-window` (20) copies may be **created** per account in a sliding `learning.community.forks.window` (one hour), deleted copies included: one more is 429
+  `RATE_LIMITED` with `Retry-After` (and the member `retryAfter`), the time until the oldest creation leaves the window; answering an existing copy never counts. The job runs one copy per account at a time (`learning.jobs` per-account limit) in slices of at most 200 entries.
+
+### Codes
+
+New: `DECK_PREPARING` (409) and `FORK_OWN_DECK` (409); no members. Existing codes keep their status/title/detail
+(`RATE_LIMITED` 429, `RESOURCE_NOT_FOUND` 404, `DECK_INVITE_ONLY` 403, `IDEMPOTENCY_CONFLICT` 409, `INVALID_REQUEST` 400, `RESOURCE_LIMIT_EXCEEDED` 422). Problem text never echoes
+codes, titles or identifiers.

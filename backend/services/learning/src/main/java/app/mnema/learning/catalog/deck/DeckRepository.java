@@ -1,5 +1,6 @@
 package app.mnema.learning.catalog.deck;
 
+import app.mnema.learning.fork.ForkLink;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -16,10 +17,14 @@ class DeckRepository {
             SELECT d.deck_id, d.head_revision_id, d.reuse_scope_id, d.row_version,
                    r.title, r.description, d.created_at, r.created_at AS updated_at,
                    r.members_root_id, r.exercises_root_id, r.member_count, r.exercise_count,
-                   lower(COALESCE(p.visibility, 'PRIVATE')) AS visibility
+                   lower(COALESCE(p.visibility, 'PRIVATE')) AS visibility,
+                   f.deck_id AS fork_deck_id, f.upstream_deck_id, f.upstream_code, f.materialized_at IS NULL AS fork_preparing,
+                   f.detached_at IS NOT NULL AS fork_detached, j.state AS fork_job_state
               FROM app_learning.deck d JOIN app_learning.deck_revision r
                 ON r.deck_id = d.deck_id AND r.revision_id = d.head_revision_id
               LEFT JOIN app_learning.deck_publication p ON p.deck_id = d.deck_id
+              LEFT JOIN app_learning.deck_fork f ON f.deck_id = d.deck_id
+              LEFT JOIN app_learning.learning_job j ON j.job_id = f.job_id
              WHERE d.owner_id = :actor AND d.deleted_at IS NULL
             """;
     private static final RowMapper<DeckRecord> ROW = (row, number) -> new DeckRecord(
@@ -28,7 +33,9 @@ class DeckRepository {
             row.getString("title"), row.getString("description"), row.getTimestamp("created_at").toInstant(),
             row.getTimestamp("updated_at").toInstant(), row.getObject("members_root_id", UUID.class),
             row.getObject("exercises_root_id", UUID.class), row.getInt("member_count"), row.getInt("exercise_count"),
-            row.getString("visibility"));
+            row.getString("visibility"), row.getObject("fork_deck_id", UUID.class) == null ? null
+            : ForkLink.of(row.getObject("upstream_deck_id", UUID.class), row.getString("upstream_code"), row.getBoolean("fork_preparing"),
+            row.getString("fork_job_state"), row.getBoolean("fork_detached")));
     private final JdbcClient jdbc;
 
     DeckRepository(JdbcClient jdbc) { this.jdbc = jdbc; }

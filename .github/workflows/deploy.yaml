@@ -159,6 +159,9 @@ jobs:
       - name: Verify browser response-security contract
         run: ./scripts/test-browser-security-headers.sh
 
+      - name: Verify link-preview web server contract
+        run: ./scripts/test-link-previews.sh
+
       - name: Verify release security evidence contract
         run: ./scripts/test-release-security-contract.sh
 

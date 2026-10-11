@@ -22,6 +22,10 @@ import { ComplaintDialogComponent } from '../shared/complaint-dialog.component';
 import { ModerationNoticeComponent } from '../shared/moderation-notice.component';
 import { UnavailableNoteComponent } from '../shared/unavailable-note.component';
 import { AccessLevelComponent } from '../shared/access-level.component';
+import { CopyMarkComponent } from '../shared/copy-mark.component';
+import { CopyOriginComponent } from '../shared/copy-origin.component';
+import { CopyStatusComponent } from '../shared/copy-status.component';
+import type { DeckFork } from '../features/own-decks/fork/fork.models';
 import { ActionMenuComponent, ActionMenuItem } from '../shared/action-menu.component';
 import { PublicDeckCardComponent } from '../shared/public-deck-card.component';
 import { PublicDeckCard } from '../shared/public-deck-card';
@@ -69,6 +73,16 @@ const CARD_SAMPLES: readonly PublicDeckCard[] = [
     }
 ];
 
+/** Образцы состояний копии (форма — `fork` из contracts/decks/forks.json). */
+const FORK_BASE: DeckFork = { upstreamCode: 'Kq7xT3mNpR', upstreamTitle: 'Испанский язык: базовые глаголы', sourceAvailable: true, preparing: false, failed: false, detached: false };
+const FORK_SAMPLES: readonly { readonly title: string; readonly fork: DeckFork }[] = [
+    { title: 'готова', fork: FORK_BASE },
+    { title: 'готовится', fork: { ...FORK_BASE, preparing: true } },
+    { title: 'не удалось подготовить', fork: { ...FORK_BASE, preparing: true, failed: true } },
+    { title: 'источник закрыт', fork: { ...FORK_BASE, upstreamCode: null, upstreamTitle: null, sourceAvailable: false } },
+    { title: 'отвязана', fork: { ...FORK_BASE, detached: true } }
+];
+
 const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
 
 /** «Меню и окна», «Вкладки и пейджер», «Статусы и ход» (в том числе чип автора), «Обратная связь», «Карточки и области». */
@@ -77,7 +91,8 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, AccessScreenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
         NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent, AutoLoadComponent,
-        AccessLevelComponent, PublicationBlockComponent, AccessPanelComponent, ComplaintDialogComponent, ModerationNoticeComponent, UnavailableNoteComponent],
+        AccessLevelComponent, PublicationBlockComponent, AccessPanelComponent, ComplaintDialogComponent, ModerationNoticeComponent, UnavailableNoteComponent,
+        CopyMarkComponent, CopyOriginComponent, CopyStatusComponent],
     providers: [{ provide: PublicationApiService, useClass: DemoPublicationApi }, { provide: ItemApiService, useClass: DemoItemApi },
         { provide: AccessApiService, useClass: DemoAccessApi }, { provide: AuthorCardsService, useClass: DemoAuthorCards },
         { provide: ComplaintApiService, useClass: DemoComplaintApi }],
@@ -118,6 +133,13 @@ export class SgSurfacesComponent {
     protected readonly menuItems: readonly ActionMenuItem[] = [SHARE_MENU_ITEM, REPORT_ITEM];
     protected readonly menuStates: readonly ActionMenuItem[] = [SHARE_MENU_ITEM, { id: 'soon', label: 'Недоступное действие', disabled: true }, { id: 'danger', label: 'Опасное действие', danger: true }];
     protected readonly cardSamples = CARD_SAMPLES;
+    protected readonly forkSamples = FORK_SAMPLES;
+    protected readonly copyRetry = signal(false);
+
+    protected pressRetry(): void {
+        this.copyRetry.set(true);
+        setTimeout(() => this.copyRetry.set(false), 1200);
+    }
     protected readonly menuStatus = signal('Выберите пункт меню: здесь будет сказано, что произошло.');
     protected readonly menuFallback = signal<string | null>(null);
 

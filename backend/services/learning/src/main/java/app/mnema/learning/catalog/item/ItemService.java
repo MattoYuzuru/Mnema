@@ -106,6 +106,12 @@ public class ItemService {
         ObjectNode result = JsonNodeFactory.instance.objectNode().put("deckId", deckId.toString())
                 .put("deckRevisionId", deck.revisionId().toString()).put("deckVersion", Long.toString(deck.version()))
                 .put("total", deck.memberCount());
+        // A copy whose materialization has not finished has no heads yet: the list is empty (the total still names what is being prepared) until it is ready.
+        if (repository.preparing(deckId)) {
+            result.putObject("exemplars").put("count", 0).put("limit", ItemExemplarService.MAX_EXEMPLARS);
+            result.putArray("items");
+            return result.putNull("nextCursor");
+        }
         Set<UUID> exemplars = new HashSet<>(repository.exemplars(deckId));
         result.putObject("exemplars").put("count", exemplars.size()).put("limit", ItemExemplarService.MAX_EXEMPLARS);
         ArrayNode items = result.putArray("items");

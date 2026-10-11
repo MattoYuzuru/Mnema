@@ -63,6 +63,7 @@ generate() {
   cp -R "$FRONTEND_DIST/." "$mode_root/html/"
   MNEMA_APP_CONFIG_OUT="$mode_root/html/app-config.js" \
   MNEMA_SECURITY_HEADERS_OUT="$mode_root/security-headers.inc" \
+  MNEMA_OG_META_OUT="$mode_root/mnema-og-meta.inc" \
   MNEMA_APP_ENV="$mode" \
   MNEMA_PUBLIC_ORIGIN="https://app.example.test" \
   MNEMA_AUTH_SERVER_URL="https://auth.example.test" \
@@ -97,6 +98,7 @@ invalid_headers="$TEST_ROOT/invalid-security-headers.inc"
 printf '%s\n' sentinel > "$invalid_headers"
 if MNEMA_APP_CONFIG_OUT="$TEST_ROOT/invalid-app-config.js" \
   MNEMA_SECURITY_HEADERS_OUT="$invalid_headers" \
+  MNEMA_OG_META_OUT="$TEST_ROOT/invalid-og-meta.inc" \
   MNEMA_APP_ENV=prod \
   MNEMA_PUBLIC_ORIGIN=https://app.example.test \
   MNEMA_AUTH_SERVER_URL='https://auth.example.test;add_header X-Injected yes' \
@@ -109,6 +111,7 @@ test "$(cat "$invalid_headers")" = sentinel
 
 if MNEMA_APP_CONFIG_OUT="$TEST_ROOT/invalid-mode-app-config.js" \
   MNEMA_SECURITY_HEADERS_OUT="$TEST_ROOT/invalid-mode-security-headers.inc" \
+  MNEMA_OG_META_OUT="$TEST_ROOT/invalid-mode-og-meta.inc" \
   MNEMA_APP_ENV=preview \
     "$GENERATOR" >/dev/null 2>&1; then
   echo "Runtime generator accepted an unknown deployment environment" >&2

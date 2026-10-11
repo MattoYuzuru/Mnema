@@ -134,6 +134,36 @@
       <app-moderation-notice [hiddenFromCommunity]="true" [exercises]="3" />
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Метка копии" selector="<app-copy-mark>"
+    when="Колода в «Моих колодах» — копия чужой: знак «ветвь», слово «Копия» и, только если владельцу есть что знать, одно состояние словами: «Готовим колоду…» пока копия заполняется, «Не удалось подготовить колоду», «Источник больше недоступен» (после того как автор закрыл колоду; у отвязанной копии этой пометки нет). Знак повторяет слово и скрыт от скринридера. Метка не ссылка и не кнопка: строка списка уже ведёт в хаб."
+    [tokens]="['--mn-ink', '--mn-font-mono']"
+    usage='<app-copy-mark [fork]="deck.fork" />'>
+    <div class="sg-stack">
+      @for (sample of forkSamples; track sample.title) { <app-copy-mark [fork]="sample.fork" /> }
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Происхождение копии" selector="<app-copy-origin>"
+    when="Под названием хаба копии: «Копия колоды «…»», название — ссылка на публичную страницу источника, пока он доступен владельцу. Когда автор закрыл колоду, вместо ссылки одно утверждённое предложение: «Автор закрыл исходную колоду. Ваша копия остаётся с вами, но обновлений больше не будет.» После «Отвязать от автора» рядом штамп «Отвязана от автора»."
+    [tokens]="['--mn-ink', '--mn-muted']"
+    usage='<app-copy-origin [fork]="deck.fork" />'>
+    <div class="sg-stack">
+      <app-copy-origin [fork]="forkSamples[0].fork" />
+      <app-copy-origin [fork]="forkSamples[3].fork" />
+      <app-copy-origin [fork]="forkSamples[4].fork" />
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Состояние копии" selector="<app-copy-status>"
+    when="Хаб копии, пока она не готова, показывает вместо содержимого этот блок. «Готовим колоду…» — что будет в копии и что страница обновится сама (без полосы прогресса: сервер сообщает только состояние). «Не удалось подготовить колоду» — «Повторить» и то, что страница положит в слот copy-actions (удаление колоды). Если страница перестала проверять сама, появляется «Проверить снова». Смена состояния озвучивается один раз областью status страницы, сам блок не живой. Уровень заголовка headingLevel: 2 в хабе, здесь 4."
+    [tokens]="['--mn-soft', '--mn-ink', '--mn-danger']"
+    usage='<app-copy-status state="failed" [busy]="retrying()" (retry)="retry()">
+  <app-hold-to-delete-button copy-actions label="Удалить колоду" (confirmed)="remove()" />
+</app-copy-status>'>
+    <div class="sg-stack">
+      <app-copy-status [headingLevel]="4" state="preparing" summary="40 материалов · 12 упражнений" />
+      <app-copy-status [headingLevel]="4" state="preparing" summary="40 материалов · 12 упражнений" [stalled]="true" />
+      <app-copy-status [headingLevel]="4" state="failed" [busy]="copyRetry()" (retry)="pressRetry()" />
+    </div>
+  </app-sg-specimen>
   <app-sg-specimen title="Пункт чек-листа" selector=".checklist > .checklist-item[data-state]"
     when="Шаги задачи списком, где у каждого шага состояние словами: «Готово», «Нужно сделать», «Не принято» (после отказа сервера), «По желанию». Знак рядом со словом — не единственный признак. Исправляющий элемент (поле, ссылка, кнопка) стоит внутри пункта; пункты не прячут то, что осталось сделать."
     [tokens]="['--mn-rule', '--mn-positive', '--mn-danger', '--mn-muted']"

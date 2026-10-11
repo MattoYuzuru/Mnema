@@ -19,6 +19,12 @@ import { ShareButtonComponent } from '../../shared/share-button.component';
 import { ShareLinkFieldComponent } from '../../shared/share-link-field.component';
 import { SHARE_MENU_ITEM, ShareLinkService } from '../../shared/share-link.service';
 import { DeckDescriptionComponent } from '../own-decks/deck-description.component';
+import { AccessApiService } from '../own-decks/access/access-api.service';
+import { accessFailureOf } from '../own-decks/access/access.models';
+import { ForkApiService } from '../own-decks/fork/fork-api.service';
+import { forkFailureOf, newForkCommandId } from '../own-decks/fork/fork.models';
+import { AccessRequestFlow } from './access-request-flow';
+import { INVITE_TOKEN, clearInvite, peekInvite, stashInvite, takeInvite } from './invite-token-store';
 import { PublicDeckApiService } from './public-deck-api.service';
 import {
     LEVEL_LABELS,
@@ -30,19 +36,20 @@ import {
     publicFailureOf,
     publishedLabel
 } from './public-deck.models';
-import { COMMUNITY_ROUTE, RETRY_NOW_TEXT, waitText } from './public-deck.text';
+import { COMMUNITY_ROUTE, PUBLIC_ACTION_TEXT, RETRY_NOW_TEXT, waitText } from './public-deck.text';
 import { PublicExercisesListComponent } from './public-exercises-list.component';
 import { PublicMaterialComponent } from './public-material.component';
 import { PublicMaterialsListComponent } from './public-materials-list.component';
 import { PublicPageMeta } from './public-page-meta';
 
-type Phase = 'loading' | 'ready' | 'not-found' | 'invite-only' | 'rate-limited' | 'busy' | 'error';
+type Phase = 'loading' | 'ready' | 'not-found' | 'invite-only' | 'full' | 'rate-limited' | 'busy' | 'error';
 type Tab = 'materials' | 'exercises';
 
 const LEVEL_GLYPHS: Readonly<Record<PublicVisibility, GlyphName>> = { PUBLIC: 'book-open', LINK: 'link', INVITE: 'lock' };
 const COMPLAINT_MENU_ITEM: ActionMenuItem = { id: 'complain', label: 'Пожаловаться' };
 const OWNER_MENU_ITEMS: readonly ActionMenuItem[] = [SHARE_MENU_ITEM];
 const READER_MENU_ITEMS: readonly ActionMenuItem[] = [SHARE_MENU_ITEM, COMPLAINT_MENU_ITEM];
+
 
 /**
  * `/d/:code/:slug` and `/d/:code`: the read-only view of someone else's deck behind its public code, for guests and any
@@ -52,7 +59,13 @@ const READER_MENU_ITEMS: readonly ActionMenuItem[] = [SHARE_MENU_ITEM, COMPLAINT
  * a LINK or INVITE deck never shows a slug. The head carries `referrer: no-referrer` and, unless the deck is PUBLIC, `noindex`.
  *
  * Failures are screens, not toasts: «Колода не найдена» (an unknown, hidden, closed or never published deck: one answer),
- * «Колода доступна по приглашению», and plain retry notices for too many requests, a busy service and a lost connection.
+ * «Колода доступна по приглашению» (a signed-in viewer can «Запросить доступ» and «Отменить запрос»), and plain retry notices for too
+ * many requests, a busy service and a lost connection.
+ *
+ * A signed-in viewer who does not own the deck gets «Добавить к себе» (a copy in O(1), then the copy's hub) or, with a live copy,
+ * «Открыть мою копию». `/d/{code}?invite={token}` redeems the invitation once the viewer is signed in; the token leaves the address
+ * at once (a guest's too); a guest's token waits in a ten-minute `sessionStorage` entry and is spent once after the sign-in, a signed-in
+ * viewer's stays only in this component until the answer. It is never logged, put in a title, the login `returnUrl` or the history.
  */
 @Component({
     selector: 'app-public-deck-page',
@@ -74,15 +87,27 @@ export class PublicDeckPageComponent {
     /** The complaint dialog is open (a signed-in reader chose «Пожаловаться»). */
     protected readonly complaintOpen = signal(false);
     protected readonly communityRoute = COMMUNITY_ROUTE;
+    protected readonly text = PUBLIC_ACTION_TEXT;
+    /** «Добавить к себе» is on its way. */
+    protected readonly copying = signal(false);
+    /** The plain sentence for the last copy attempt that did not succeed. */
+    protected readonly copyNotice = signal<string | null>(null);
+    /** A guest arrived by an invitation link (or one still waits for the sign-in): the screen says what signing in is for. */
+    protected readonly invitePending = signal(false);
+    /** The invitation is being redeemed (the loading line says so instead of «Загружаем колоду…»). */
+    protected readonly redeeming = signal(false);
 
     private readonly route = inject(ActivatedRoute);
     private readonly router = inject(Router);
     private readonly api = inject(PublicDeckApiService);
     private readonly auth = inject(AuthService);
+    private readonly forks = inject(ForkApiService);
+    private readonly access = inject(AccessApiService);
     private readonly authors = inject(AuthorCardsService);
     private readonly links = inject(ShareLinkService);
     private readonly meta = inject(PublicPageMeta);
-    private readonly location = inject(DOCUMENT).location;
+    private readonly document = inject(DOCUMENT);
+    private readonly location = this.document.location;
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
     private readonly destroyRef = inject(DestroyRef);
@@ -102,8 +127,9 @@ export class PublicDeckPageComponent {
     protected readonly returnUrl = computed(() => {
         const slug = this.routeSlug();
         const material = this.materialKey();
-        return safeReturnUrl(`/d/${encodeURIComponent(this.code())}${slug === null ? '' : `/${encodeURIComponent(slug)}`}`
-            + (material === null ? '' : `?material=${encodeURIComponent(material)}`));
+        // The login returns to this very view, and never carries an invitation token (see `invite-token-store.ts`).
+        const query = material === null ? '' : `?material=${encodeURIComponent(material)}`;
+        return safeReturnUrl(`/d/${encodeURIComponent(this.code())}${slug === null ? '' : `/${encodeURIComponent(slug)}`}${query}`);
     });
     protected readonly shareUrl = computed(() => {
         const deck = this.deck();
@@ -126,7 +152,19 @@ export class PublicDeckPageComponent {
     /** The material before and after the open one, as far as the list has read. */
     protected readonly neighbors = computed(() => this.materialsList()?.neighbors() ?? { previous: null, next: null });
 
+    /** «Запросить доступ» / «Отменить запрос» of the invitation-only screen. */
+    protected readonly request = new AccessRequestFlow(this.access, this.destroyRef, {
+        sent: () => afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('.request-sent')?.focus(), { injector: this.injector }),
+        gone: () => this.fail(new PublicDeckFailure('not-found')),
+        withdrawn: () => afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('app-access-screen .actions button')?.focus(), { injector: this.injector }),
+        readable: () => void this.load(this.code())
+    });
+
     private subscription: Subscription | null = null;
+    /** The invitation to redeem, between its arrival and the answer (a retry after a lost connection needs it again). */
+    private inviteToken: { readonly token: string; readonly code: string } | null = null;
+    /** One command id per attempt to copy this deck, kept while the outcome is unknown so that the retry is the same command. */
+    private copyCommand: { readonly code: string; readonly commandId: string } | null = null;
     private sequence = 0;
     private openedKey: string | null = null;
     private countdown: ReturnType<typeof setInterval> | null = null;
@@ -204,6 +242,36 @@ export class PublicDeckPageComponent {
         });
     }
 
+    /** «Добавить к себе»: copies the deck in O(1) and opens the copy, which the hub shows while it is being prepared. */
+    protected addCopy(): void {
+        const deck = this.deck();
+        if (deck === null || this.copying()) return;
+        const code = deck.code;
+        // The same attempt keeps its command id (a lost answer is retried as the same command); a new deck or a refusal starts a new one.
+        if (this.copyCommand?.code !== code) this.copyCommand = { code, commandId: newForkCommandId() };
+        const { commandId } = this.copyCommand;
+        this.copying.set(true);
+        this.copyNotice.set(null);
+        this.forks.copy(code, commandId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: created => {
+                this.copyCommand = null;
+                void this.router.navigate(['/decks', created.deckId]).finally(() => this.copying.set(false));
+            },
+            error: (error: unknown) => {
+                const failure = forkFailureOf(error);
+                if (failure.kind !== 'unknown') this.copyCommand = null;
+                this.copying.set(false);
+                this.copyNotice.set(failure.kind === 'not-found' ? PUBLIC_ACTION_TEXT.copyNotFound
+                    : failure.kind === 'own-deck' ? PUBLIC_ACTION_TEXT.copyOwn
+                    : failure.kind === 'limit' ? PUBLIC_ACTION_TEXT.copyLimit(failure.limit)
+                    : failure.kind === 'rate-limited' ? `Слишком много запросов. ${waitText(failure.retryAfter)}`
+                    : failure.kind === 'busy' ? PUBLIC_ACTION_TEXT.copyBusy : PUBLIC_ACTION_TEXT.copyFailed);
+                // The deck may have just become private, rotated or ours: the summary says which screen is true now.
+                if (failure.kind === 'not-found' || failure.kind === 'invite-only' || failure.kind === 'own-deck') this.recheck();
+            }
+        });
+    }
+
     private async load(code: string): Promise<void> {
         const sequence = ++this.sequence;
         this.subscription?.unsubscribe();
@@ -212,6 +280,11 @@ export class PublicDeckPageComponent {
         this.author.set(null);
         this.tab.set('materials');
         this.menuFallback.set(null);
+        this.copying.set(false);
+        this.copyNotice.set(null);
+        this.invitePending.set(false);
+        this.redeeming.set(false);
+        this.request.reset();
         this.complaintOpen.set(false);
         this.stopCountdown();
         this.meta.indexable(false);
@@ -219,9 +292,79 @@ export class PublicDeckPageComponent {
         // A signed-in viewer's bearer must be on the first request, so the server can say OWNER or GRANTEE.
         await this.auth.restore();
         if (sequence !== this.sequence) return;
+        const token = this.takeInviteToken(code);
+        if (token !== null) this.redeem(token, code, sequence);
+        else this.readSummary(code, sequence);
+    }
+
+    private readSummary(code: string, sequence: number): void {
         this.subscription = this.api.summary(code).subscribe({
             next: deck => { if (sequence === this.sequence) this.accept(deck); },
             error: (error: unknown) => { if (sequence === this.sequence) this.fail(publicFailureOf(error)); }
+        });
+    }
+
+    /**
+     * The invitation to redeem. `?invite=` is taken out of the address at once, for a guest too (the history entry is replaced). A
+     * signed-in viewer keeps the token in this component until the answer (a retry after a 429 needs it again); a guest's token
+     * waits in a short-lived `sessionStorage` entry (`invite-token-store.ts`) and is spent once, after the sign-in returns here.
+     */
+    private takeInviteToken(code: string): string | null {
+        const typed = this.queries().get('invite');
+        if (typed !== null) {
+            void this.router.navigate([], { relativeTo: this.route, queryParams: { invite: null }, queryParamsHandling: 'merge', replaceUrl: true });
+            if (INVITE_TOKEN.test(typed)) {
+                if (this.signedIn()) {
+                    this.inviteToken = { token: typed, code };
+                    clearInvite(this.sessionStore());
+                } else {
+                    stashInvite(this.sessionStore(), typed, code);
+                    this.invitePending.set(true);
+                }
+            }
+        }
+        if (!this.signedIn()) {
+            if (peekInvite(this.sessionStore(), code)) this.invitePending.set(true);
+            return null;
+        }
+        // A token that was kept for another deck is not used for this one.
+        if (this.inviteToken?.code !== code) this.inviteToken = null;
+        if (this.inviteToken === null) {
+            const stored = takeInvite(this.sessionStore(), code);
+            if (stored !== null) this.inviteToken = { token: stored, code };
+        }
+        return this.inviteToken?.token ?? null;
+    }
+
+    private sessionStore(): Storage | null {
+        try { return this.document.defaultView?.sessionStorage ?? null; } catch { return null; }
+    }
+
+    /** Exchanges the invitation for the deck's current code, then reads the deck under that code. */
+    private redeem(token: string, code: string, sequence: number): void {
+        this.redeeming.set(true);
+        this.subscription = this.access.redeem(token).subscribe({
+            next: current => {
+                if (sequence !== this.sequence) return;
+                this.redeeming.set(false);
+                this.inviteToken = null;
+                if (current === code) { this.readSummary(code, sequence); return; }
+                // Another code: the route change loads the deck under it.
+                void this.router.navigate(['/d', current], { replaceUrl: true });
+            },
+            error: (error: unknown) => {
+                if (sequence !== this.sequence) return;
+                this.redeeming.set(false);
+                const failure = accessFailureOf(error);
+                if (failure?.status === 404 || failure?.status === 422) this.inviteToken = null;
+                if (failure?.status === 422 && failure.code === 'RESOURCE_LIMIT_EXCEEDED') {
+                    this.deck.set(null);
+                    this.author.set(null);
+                    this.phase.set('full');
+                } else {
+                    this.fail(publicFailureOf(error));
+                }
+            }
         });
     }
 
@@ -230,9 +373,10 @@ export class PublicDeckPageComponent {
         this.phase.set('ready');
         this.meta.indexable(deck.visibility === 'PUBLIC');
         this.meta.title(deck.title);
-        // The slug belongs to PUBLIC decks only; a wrong or missing one is replaced (the 301 for crawlers is Share/14).
+        // The slug belongs to PUBLIC decks only; a wrong or missing one is replaced (crawlers get a 301 from the web server, Share/14).
         if ((this.routeSlug() ?? null) !== deck.slug) {
-            void this.router.navigate(canonicalPath(deck), { replaceUrl: true, queryParamsHandling: 'preserve' });
+            // The address never keeps an invitation token.
+            void this.router.navigate(canonicalPath(deck), { replaceUrl: true, queryParamsHandling: 'merge', queryParams: { invite: null } });
         }
         const code = deck.code;
         void this.authors.card(deck.ownerId).then(card => {

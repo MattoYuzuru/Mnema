@@ -237,4 +237,5 @@ input[readonly], textarea[readonly] { background: var(--mn-soft); }
 .deck-detail-page .editor-panel .metadata-form { padding-block-start: 0; }
 
 .hub-level { margin: .75rem 0 0; }
-.deck-level { justify-self: start; }
+.deck-level, .deck-copy-mark { justify-self: start; }
+.detach-confirm { display: grid; gap: .6rem; margin-block: 0 1.5rem; }

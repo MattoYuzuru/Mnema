@@ -35,6 +35,7 @@ printf '%s\n' "$asset_location" | grep -Fq 'Cache-Control "public, immutable"'
 release_sha=0123456789abcdef0123456789abcdef01234567
 MNEMA_APP_CONFIG_OUT="$TEST_ROOT/app-config.js" \
 MNEMA_SECURITY_HEADERS_OUT="$TEST_ROOT/security-headers.inc" \
+MNEMA_OG_META_OUT="$TEST_ROOT/mnema-og-meta.inc" \
 MNEMA_APP_ENV=development \
 MNEMA_BUILD_ID="$release_sha" \
   "$REPO_ROOT/frontend/docker/40-gen-app-config.sh"

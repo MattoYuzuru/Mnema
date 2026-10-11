@@ -68,6 +68,8 @@ x-learning-environment: &learning-environment
   MNEMA_ADMIN_SUPPORT_SECRET: ${MNEMA_ADMIN_SUPPORT_SECRET:-}
   MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP: ${MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP:-false}
   LEARNING_PLANS_MAXTEASER_ENABLED: ${LEARNING_PLANS_MAXTEASER_ENABLED:-false}
+  # Public read of shared decks and the link-preview metadata the local nginx puts into /d/{code} pages (docs/operations/link-previews.md); off by default.
+  LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED: ${LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED:-false}
   # Billing (#389) against the owner's T-Bank DEMO terminal; names only, off by default (docs/deploy/selfhost-local.md). The bank cannot reach a
   # local NotificationURL, so a local order is confirmed by the return page's GetState refresh and the reconciler.
   MNEMA_BILLING_CHECKOUT: ${MNEMA_BILLING_CHECKOUT:-OFF}

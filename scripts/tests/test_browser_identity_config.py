@@ -15,7 +15,8 @@ class BrowserIdentityConfigTests(unittest.TestCase):
             root = Path(directory)
             env = {key: value for key, value in os.environ.items() if not key.startswith("MNEMA_")}
             env.update(MNEMA_APP_CONFIG_OUT=str(root / "app.js"), MNEMA_AI_ROUTE_OUT=str(root / "ai.inc"),
-                       MNEMA_SECURITY_HEADERS_OUT=str(root / "headers.inc"), MNEMA_APP_ENV="development",
+                       MNEMA_SECURITY_HEADERS_OUT=str(root / "headers.inc"), MNEMA_OG_META_OUT=str(root / "og.inc"),
+                       MNEMA_APP_ENV="development",
                        MNEMA_PUBLIC_ORIGIN="https://localhost:8443", MNEMA_AUTH_SERVER_URL="https://localhost:9443")
             env.update(overrides)
             result = subprocess.run([str(GENERATOR)], env=env, capture_output=True, text=True, timeout=5)
