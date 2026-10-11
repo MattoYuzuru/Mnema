@@ -301,7 +301,7 @@ module.main()
     def test_deck_hub_scenario_is_wired_stubs_nothing_and_is_syntactically_valid(self):
         driver = Path(__file__).with_name("browser.mjs").read_text()
         source = Path(__file__).with_name("hub.mjs").read_text()
-        self.assertIn("import { runHub } from './hub.mjs'", driver)
+        self.assertRegex(driver, r"import \{ runHub(?:, [A-Za-z]+)* \} from './hub.mjs'")
         self.assertIn("hub_overview_sort_star_select_delete", source)
         # Real API, real editor, real 3 s hold: no interception, mocked route or synthetic click on the hold button.
         self.assertNotIn("Fetch.fulfillRequest", source)
@@ -391,6 +391,35 @@ module.main()
             self.assertEqual(0, result.returncode)
         for extra in ([], ["--generation", "--only-plan"], ["--only-plans"]):
             with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--only-promo", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+
+    def test_community_scenario_is_wired_enables_the_switches_for_the_ordinary_instance_only_and_is_syntactically_valid(self):
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("community.mjs").read_text()
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn("import { runCommunity } from './community.mjs'", driver)
+        self.assertIn("config.community", driver)
+        self.assertIn('"community": getattr(self.args, "community", False)', runner)
+        self.assertIn('"community.mjs"', runner)
+        # Everything the user does is the real UI against the real services; nothing is injected or stubbed.
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("Fetch.failRequest", source)
+        self.assertIn("Target.createBrowserContext", driver)
+        self.assertIn("openGuestTab", source)
+        # The three kill switches ship OFF; this run turns them on in the ordinary Learning only (never the Stub or promo instance).
+        switches = HARNESS.community_switches("https://127.0.0.1:1")
+        self.assertEqual({"LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED", "LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED",
+                          "LEARNING_COMMUNITY_FORKS_ENABLED", "MNEMA_PUBLIC_BASE_URL"}, set(switches))
+        self.assertEqual(1, runner.count("community_switches(self.frontend_origin)"))
+        self.assertIn('getattr(self.args, "community", False) and not generation and not promo', runner)
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("community.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+        for extra in (["--generation", "--authoring"], ["--assessment", "--authoring"], ["--authoring", "--only-promo"]):
+            with self.subTest(extra=extra), patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--community", *extra]), \
                     contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
                 HARNESS.main()
             self.assertEqual(2, exit_code.exception.code)

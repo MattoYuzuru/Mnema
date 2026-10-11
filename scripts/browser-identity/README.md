@@ -513,6 +513,45 @@ At every screenshot the page must not overflow horizontally at 1440 and 390 px a
 assertions (no offer before 5 s, the offer after 4.7 s) use wall-clock timers: a machine under load can throttle them, so rerun once before
 investigating a failure that names a timer.
 
+## Community decks (`--community`, #439)
+
+`python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node "$NODE24" --community` (no `--authoring` needed;
+default deadline 600 s; not combinable with `--generation`, `--assessment`, `--only-promo` or `--admin`). The runner boots the **ordinary**
+Learning with the three kill switches of epic #419 on, for this disposable run only: `LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED`,
+`LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED`, `LEARNING_COMMUNITY_FORKS_ENABLED` (all `false` as shipped) and `MNEMA_PUBLIC_BASE_URL` set to the
+harness's own HTTPS origin. Identity needs no switch: the public-profile consent is a normal account setting. After the base flow's two
+accounts exist, `community.mjs` runs on the first account's tab (**owner**), the second account's tab (**member**) and a third tab in a
+**new browser context** (**guest**: `Target.createBrowserContext`, no cookies, empty storage, no bearer), once with a 1440 px desktop viewport and once
+with a 390 px mobile viewport (`mobile: true`), each pass with its own deck. It skips the base flow's two long polling waits (as `--media` does)
+and the public `/ai` and events scenarios, which the default run keeps (`/ai` carries the known 320 px / 200 % text check that headless Chrome fails).
+Everything the user does goes through the real UI with CDP keyboard events; the exception is one exercise, created through the authenticated API like
+the Study fixture of the base flow, and the two recorded API fallbacks below. Nothing is stubbed or intercepted.
+
+| Stage | Assertions |
+|---|---|
+| `community_consent` (once) | `/profile`: the switch «Показывать мой профиль другим» starts off, the per-field boxes «Имя», «Фото», «О себе» start unticked and disabled, the approved consent text is shown; Space turns it on, the preview shows `@login`, Identity reports `enabled` and `publishReady` with every field off |
+| `publish` | deck and three materials through the real editor, one exercise through the API; the hub's picker has exactly «Приватная · По ссылке · По приглашению · Публичная» and starts «Приватная»; ArrowRight x3 stages «Публичная» («Изменить доступ: Публичная»), Enter on «Сделать публичной…» opens the checklist (description, profile, pictures ready; language detected); topic; publication; the API reports `PUBLIC`, a 10-character code and `/d/{code}/{slug}`, the hub shows the link and lists the materials |
+| `guest` | `/d/{code}/wrong-slug` and `/d/{code}` are replaced by the canonical address; the context holds no cookie and no storage; title, `@author` chip, «Публичная», «3 материала · 1 упражнение», the published description; `meta referrer` is `no-referrer` and `robots` `index,follow`; the materials are the owner's titles; the first material link is reached by real Tab (focus-visible) and opened with Enter («Материал 1 из 3», «← К колоде»); the exercise preview shows the prompt, never the accepted answer (page text and `/api/public/decks/{code}/exercises`); the primary action is «Войдите, чтобы добавить колоду к себе» with a `/login?returnUrl=` link; no «Учить», «Изменить», «Мастерская»; no horizontal overflow, 44 px target; no bearer on any public read and none answered 5xx; an unknown code gives «Колода не найдена» and the approved sentence |
+| `copy` | the member sees «Добавить к себе» only; real Tab reaches it, Enter copies; the copy hub opens within the SPA; a MutationObserver installed beforehand records the heading «Готовим колоду…», (the job can finish in about 150 ms on a fast machine, so the heading is required only when preparation took 2.5 s or more; `preparingTextObserved` and `materializedAfterMs` say what happened), then (bounded 60 s) the ready hub with «Копия колоды «…»», the same three materials and «Учить»; `GET /api/decks/{id}` reports `fork {preparing:false, failed:false, sourceAvailable:true, upstreamTitle}` |
+| `study` | Study of the copy: Space starts, the author's prompt is shown without the answer, the typed answer gets a correct feedback with focus on its heading; the author's `GET /api/decks/{id}/insights` is unchanged (timestamps ignored) |
+| `reopen` | the second visit offers only «Открыть мою копию» (a link to the copy, reached by Tab, opened with Enter); a second `POST /api/decks/forks` returns the live copy (`existing: true`) |
+| `invite_only` | the owner steps the picker back with ArrowLeft («Изменить доступ: По приглашению», the line «Ссылка изменится, и старые ссылки перестанут работать.»), «Применить»; the code is rotated and the link is `/d/{code}` without a slug; the old link shows «Колода не найдена» to a guest and names no title; the new link shows a guest and the member without a grant «Колода доступна по приглашению» with the approved sentence, no title, `noindex`, and «Запросить доступ» (reached by Tab, Enter); then the approved «Запрос отправлен. Если автор согласится, колода появится по этой же ссылке.» with focus on it; the member's copy hub says «Автор закрыл исходную колоду. Ваша копия остаётся с вами, но обновлений больше не будет.» and still works; the owner's «Запросы доступа» panel lists the request with «Принять»/«Отклонить» |
+| `approve` | «Принять» by keyboard empties the list; the same link now opens the deck for the member («По приглашению», «Открыть мою копию») |
+
+Findings are recorded, never worked around: a failed stage writes `failure-community-<pass>-<stage>-<actor>.png` and `failure-community_<pass>_<stage>.txt`, the
+stages that depend on it are `skipped`, and the run fails. A **gap** is a flow the product does not complete through its own UI. It is recorded in
+`communityGaps` with the request the page sent (from `Network` events), the cause and the effect, the scenario continues through the same API command
+the UI would have sent (the result says `publishedVia`/`requestVia: "api-fallback"`), and the run is red until the product is fixed. Two gaps are detected today:
+`topics-request-sent-without-bearer` (`GET /api/topics` is sent without `Authorization`, 401, so the checklist cannot choose a topic) and
+`access-request-sent-without-bearer` (`POST /api/public/decks/{code}/access-requests` likewise); both come from the credential allowlist in
+`frontend/src/app/auth.interceptor.ts`. Screenshots: `community-<desktop|mobile>-{checklist,published,requests}-owner.png`,
+`…-{hub,material}-guest.png`, `…-{copy-ready,study,study-feedback,invite-only}-member.png`.
+
+Not verified here: Chrome only; no real touch input, screen reader, Safari/Firefox or physical phone (the mobile pass is a 390 px emulated viewport);
+public media (the decks have no media, so the media route is switched on but not exercised) and the link-preview HTML head (the harness serves the built
+SPA without nginx SSI); invitation links (`/d/{code}?invite=…`, `POST /api/invites:redeem`); «Отменить запрос»; grant by login; the catalog,
+Community page, profile `/u/{username}` and update review (other epics); zero-load and 100k-MAU (scenario H) behaviour; production.
+
 ## Infinite scroll (`--authoring --media --mechanics`, #397)
 
 `hub_infinite_scroll` creates a disposable 1317-material deck through the real API in bounded batches of 20.
