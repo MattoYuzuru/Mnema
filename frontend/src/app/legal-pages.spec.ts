@@ -23,8 +23,8 @@ describe('Personal data policy page', () => {
         const root = render(PrivacyPageComponent);
         expect(text(root.querySelector('h1'))).toBe('Политика обработки персональных данных');
         expect(text(root.querySelector('.last-updated'))).toContain(LEGAL_EFFECTIVE_DATE);
-        // 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
-        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 10 октября 2026 · версия 1.2');
+        // 1.3: plain-language edit; 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
+        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 11 октября 2026 · версия 1.3');
         expect(root.querySelector('.legal-page')?.getAttribute('lang')).toBe('ru');
         const block = text(root.querySelector('app-legal-operator-block'));
         for (const value of [LEGAL_OPERATOR.name, LEGAL_OPERATOR.inn, LEGAL_OPERATOR.ogrnip, LEGAL_OPERATOR.email]) expect(block).toContain(value);
@@ -83,7 +83,7 @@ describe('Personal data policy page', () => {
         expect(recipients).toContain('файлы (изображения, аудио, видео), которые вы прикрепляете к материалам');
         expect(recipients).toContain('обрабатываются на сервере Mnema, внешним сервисам обработки файлы не передаются');
         expect(recipients).toContain('удаляется из хранилища автоматически примерно через 7 дней');
-        expect(recipients).toContain('при удалении аккаунта по вашему запросу файлы удаляются вместе с ним');
+        expect(recipients).toContain('При удалении аккаунта по вашему запросу аватар и файлы удаляются вместе с ним');
         expect(recipients).not.toContain('сейчас не предоставляется');
         expect(recipients).toContain('Telegram FZ-LLC');
         expect(recipients).not.toContain('Telegram хранит');
@@ -120,9 +120,71 @@ describe('Personal data policy page', () => {
         expect(root.querySelector('nav.toc a[href$="#public-profile"]')).not.toBeNull();
     });
 
+    it('keeps every data category, legal basis, retention period and the Russian-storage rule', () => {
+        const root = render(PrivacyPageComponent);
+        const tables = [...root.querySelectorAll('table')];
+        const dataTable = tables.find(table => text(table.querySelector('caption')).startsWith('Категории'))!;
+        expect([...dataTable.querySelectorAll('thead th')].map(header => text(header))).toEqual(['Категория', 'Состав', 'Источник']);
+        expect([...dataTable.querySelectorAll('tbody th')].map(header => text(header))).toEqual(['Данные аккаунта', 'Вход через стороннего провайдера', 'Профиль', 'Учебные данные',
+            'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Обращения в поддержку']);
+        const purposes = tables.find(table => text(table.querySelector('caption')).startsWith('Цели'))!;
+        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(9);
+        for (const row of purposes.querySelectorAll('tbody tr')) expect(row.querySelectorAll('td'), text(row)).toHaveLength(3);
+        const purposeText = text(purposes);
+        for (const purpose of ['Регистрация, вход, ведение аккаунта и профиля', 'Работа сервиса', 'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки и рекомендация тарифа',
+            'Безопасность', 'Служебные письма', 'Поддержка и обратная связь', 'Резервное копирование и восстановление', 'Выполнение требований закона']) expect(purposeText).toContain(purpose);
+        // legal bases per purpose, and the periods of the table
+        for (const basis of ['п. 5 ч. 1 ст. 6', 'п. 7 ч. 1 ст. 6', 'п. 2 ч. 1 ст. 6']) expect(purposeText).toContain(basis);
+        for (const period of ['до 30 дней', '2 часа', 'до 35 минут', '3 суток', '10 минут', 'до 12 месяцев', 'не более двух последних копий', 'Срок, установленный законом']) expect(purposeText).toContain(period);
+        const bases = text(root.querySelector('#bases')!.closest('section'));
+        for (const phrase of ['согласие на обработку не нужно', 'ч. 1 ст. 9 152-ФЗ', 'от 24.06.2025 № 156-ФЗ', 'отдельным документом']) expect(bases).toContain(phrase);
+        const retention = text(root.querySelector('#retention')!.closest('section'));
+        for (const phrase of ['до 30 дней', 'ч. 4–5 ст. 21 152-ФЗ', 'ч. 6 ст. 21', 'шести месяцев', 'не более двух последних копий базы данных', 'до трёх файлов по 10 МБ']) expect(retention).toContain(phrase);
+        expect(text(root.querySelector('#localization')!.closest('section'))).toContain('ч. 5 ст. 18 152-ФЗ');
+        expect(text(root.querySelector('#general')!.closest('section'))).toContain('ч. 2 ст. 18.1');
+    });
+
+    it('keeps every recipient, the full cross-border disclosure and the security measures', () => {
+        const root = render(PrivacyPageComponent);
+        const recipients = text(root.querySelector('#recipients')!.closest('section'));
+        for (const recipient of ['самому оператору', 'АО «Селектел»', 'ООО «Яндекс.Облако»', 'Cloudflare, Inc. (США)', 'Google LLC', 'ООО «Яндекс»', 'GitHub, Inc.', 'Telegram', 'государственным органам',
+            'Мы не продаём персональные данные и не передаём их для рекламы']) expect(recipients).toContain(recipient);
+        const crossBorder = root.querySelector('#cross-border')!.closest('section')!;
+        expect([...crossBorder.querySelectorAll('dl.facts dt')].map(term => text(term))).toEqual(['Получатель', 'Цель', 'Какие данные', 'Когда', 'Роль Cloudflare', 'Уведомление']);
+        const facts = text(crossBorder);
+        for (const fact of ['101 Townsend St., San Francisco, CA 94107, США', 'dpo@cloudflare.com', 'отпечаток TLS-соединения', 'одноразовый токен проверки', 'секретный ключ сайта',
+            'обработчиком по поручению оператора', 'самостоятельным лицом', 'уведомление о намерении осуществлять трансграничную передачу (ч. 3 ст. 12 152-ФЗ)',
+            'остаются закрытыми до новой успешной проверки']) expect(facts).toContain(fact);
+        const security = text(root.querySelector('#security')!.closest('section'));
+        for (const measure of ['HTTPS, HSTS', 'bcrypt', 'Cloudflare Turnstile', 'недоступна из интернета', 'SHA-256', 'HMAC', 'ч. 3.1 ст. 21 152-ФЗ']) expect(security).toContain(measure);
+    });
+
+    it('keeps every right, how to use it, each response deadline, the minors rule and the legal references', () => {
+        const root = render(PrivacyPageComponent);
+        const rights = root.querySelector('#rights')!.closest('section')!;
+        expect(text(rights)).toContain('ст. 14, 20, 21 152-ФЗ');
+        expect(rights.querySelectorAll('ul > li')).toHaveLength(4);
+        const rightsText = text(rights);
+        for (const right of ['получить подтверждение', 'уточнить, заблокировать или удалить данные', 'отозвать согласие', 'потребовать прекратить обработку', 'возмещения убытков и компенсации морального вреда (ст. 17)']) {
+            expect(rightsText).toContain(right);
+        }
+        expect(rights.querySelector('a[href="https://rkn.gov.ru/"]')).not.toBeNull();
+        for (const phrase of ['адрес оператора из раздела 1', 'подтвердить личность', 'Telegram-бот поддержки']) expect(rightsText).toContain(phrase);
+        const deadlines = text([...rights.querySelectorAll('p')].find(paragraph => text(paragraph).startsWith('Сроки ответа')));
+        for (const deadline of ['на запрос о ваших данных', 'до 10 рабочих дней', 'не более чем на 5 рабочих дней', 'мотивированно уведомим', 'до 7 рабочих дней', 'до 30 дней']) {
+            expect(deadlines.toLowerCase(), deadline).toContain(deadline.toLowerCase());
+        }
+        const minors = text(root.querySelector('#minors')!.closest('section'));
+        for (const phrase of ['младше 14 лет', 'от 14 до 18 лет', 'родителей или законных представителей', 'мы удалим данные']) expect(minors).toContain(phrase);
+        const sources = root.querySelector('#sources')!.closest('section')!;
+        expect(sources.querySelector('a[href="https://www.consultant.ru/document/cons_doc_LAW_61801/"]')).not.toBeNull();
+        expect(text(sources)).toContain('от 24.06.2025 № 156-ФЗ');
+        expect(text(root.querySelector('#changes')!.closest('section'))).toContain('Предыдущие редакции можно запросить у оператора');
+    });
+
     it('lists the browser storage keys and the server-side promo state', () => {
         const body = text(render(PrivacyPageComponent));
-        for (const key of ['mnema.identity.access', 'mnema.promo-popup.session', 'mnema:exercise-review:']) expect(body).toContain(key);
+        for (const key of ['mnema.identity.access', 'mnema.identity.pkce', 'mnema.promo-popup.session', 'mnema:exercise-review:', 'SameSite=Lax', 'localStorage', 'youtube-nocookie.com']) expect(body).toContain(key);
         expect(body).toContain('Состояние промо-предложения');
         expect(body).toContain('получаем, но не сохраняем');
     });
@@ -161,6 +223,23 @@ describe('Terms of service page', () => {
         }
     });
 
+    it('keeps the contract basis, the account duties, the prohibited uses and the dispute rules', () => {
+        const root = render(TermsPageComponent);
+        const section = (id: string): string => text(root.querySelector(`#${id}`)!.closest('section'));
+        for (const phrase of ['ст. 428 ГК РФ', 'ст. 438 ГК РФ', 'вы не даёте согласия на обработку данных']) expect(section('parties')).toContain(phrase);
+        expect(section('account')).toContain('не менее 14 лет');
+        expect(section('account')).toContain('Один аккаунт предназначен для одного человека');
+        expect(root.querySelectorAll('#rules ~ ul > li')).toHaveLength(5);
+        expect(section('rules')).toContain('Cloudflare Turnstile');
+        expect(section('content')).toContain('остаются вашими');
+        expect(section('content')).toContain('срок их хранения, указанный в политике');
+        expect(section('liability')).toContain('ст. 400 ГК РФ');
+        expect(section('liability')).toContain('Наша ответственность ограничена реальным ущербом');
+        expect(section('law')).toContain('в течение 30 дней');
+        expect(section('law')).toContain('по месту жительства потребителя');
+        expect(section('termination')).toContain('потребовать удалить аккаунт');
+    });
+
     it('keeps payments closed, the AI caveat and the consumer-law proviso explicit', () => {
         const body = text(render(TermsPageComponent));
         expect(body).toContain('тарифе Free');
@@ -169,4 +248,14 @@ describe('Terms of service page', () => {
         expect(body).toContain('Закона РФ «О защите прав потребителей»');
         expect(body).toContain('законодательством Российской Федерации');
     });
+});
+
+describe('Legal pages wording', () => {
+    for (const [name, page] of [['policy', PrivacyPageComponent], ['agreement', TermsPageComponent]] as const) {
+        it(`uses no long dash in the ${name}`, () => {
+            const root = render(page);
+            expect(root.textContent).not.toContain('\u2014');
+            expect(root.innerHTML).not.toContain('\u2014');
+        });
+    }
 });
