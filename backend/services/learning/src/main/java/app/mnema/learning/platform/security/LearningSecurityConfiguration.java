@@ -1,5 +1,7 @@
 package app.mnema.learning.platform.security;
 
+import app.mnema.learning.library.PublicAccountLimitFilter;
+import app.mnema.learning.library.PublicReadLimiter;
 import app.mnema.learning.platform.api.ApiSecurityErrors;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -18,6 +20,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.BadJwtException;
@@ -28,6 +34,7 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -125,8 +132,42 @@ public class LearningSecurityConfiguration {
                         .accessDeniedHandler((r, s, e) -> errors.forbidden(r, s))).build();
     }
 
+    /**
+     * The public read of a deck by its code (Share/7): an OPTIONAL bearer, GET and HEAD only. Without a token the request is a guest; with one it must
+     * validate exactly like the private API (the same decoder and the same live Identity check): the resource server rejects a present but invalid
+     * token with 401 before authorization, so it is never silently treated as a guest ({@code permitAll} does not override that). A valid token without
+     * {@code learning.read} is 403, as on the private API. An account is admitted by the limiter BEFORE Identity is asked ({@link PublicAccountLimitFilter}). Every other method is refused; no session, cookie or form login exists here.
+     */
     @Bean
     @Order(4)
+    SecurityFilterChain publicDecks(HttpSecurity http, JwtDecoder decoder, IdentityHttp identity, IdentityEndpoints endpoints,
+                                    ApiSecurityErrors errors, PublicReadLimiter limiter) throws Exception {
+        AuthorizationManager<RequestAuthorizationContext> guestOrReader = AuthorizationManagers.anyOf(
+                AuthenticatedAuthorizationManager.<RequestAuthorizationContext>anonymous(),
+                AuthorityAuthorizationManager.<RequestAuthorizationContext>hasAuthority("SCOPE_learning.read"));
+        PublicAccountLimitFilter accountLimit = new PublicAccountLimitFilter(limiter, errors);
+        http.securityMatcher("/public/decks/**")
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Only GET and HEAD reach a controller and the bearer header is the only credential: there is no cookie for a forged request to ride on.
+                .csrf(csrf -> csrf.disable()).requestCache(cache -> cache.disable()).logout(logout -> logout.disable())
+                .authorizeHttpRequests(requests -> requests.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/public/decks/**").access(guestOrReader)
+                        .requestMatchers(HttpMethod.HEAD, "/public/decks/**").access(guestOrReader)
+                        .anyRequest().denyAll())
+                .exceptionHandling(failures -> failures.authenticationEntryPoint((r, s, e) -> errors.unauthorized(r, s))
+                        .accessDeniedHandler((r, s, e) -> errors.forbidden(r, s)))
+                .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.decoder(decoder))
+                        .authenticationEntryPoint((r, s, e) -> errors.unauthorized(r, s))
+                        .accessDeniedHandler((r, s, e) -> errors.forbidden(r, s)))
+                // The account is admitted (limit per account) before Identity is asked: one token cannot drive unlimited /userinfo round trips.
+                .addFilterAfter(accountLimit, AuthorizationFilter.class)
+                .addFilterAfter(new CurrentIdentityFilter(identity,
+                        endpoints.base() == null ? null : endpoints.endpoint("/userinfo"), errors), PublicAccountLimitFilter.class);
+        return http.build();
+    }
+
+    @Bean
+    @Order(5)
     SecurityFilterChain learningSecurity(HttpSecurity http, JwtDecoder decoder, IdentityHttp identity,
                                          IdentityEndpoints endpoints, ApiSecurityErrors errors) throws Exception {
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

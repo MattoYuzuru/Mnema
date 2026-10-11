@@ -1361,6 +1361,82 @@ own deck.
   `LineageExerciseContextIntegrationTest`, `LineageExerciseMediaIntegrationTest` (fail-closed readiness for every place a mechanic holds
   media), `LineageAttemptIntegrationTest` (same-account source and copy), `StudyProgressScaleIntegrationTest` (10k materials / 30k exercises).
 
+### Deck access: levels, grants and the read-only path (Share/7, #429, migration `V53__deck_access.sql`)
+
+Package `app.mnema.learning.library` ([community decks architecture §6](../../../docs/architecture/community-decks.md#6-доступ-и-публикация-cd-3-cd-4),
+wire contract [`contracts/decks/public-read.json`](../../../contracts/decks/public-read.json)). **Sharing changes who may READ the published
+revision of a deck and nothing else**: all existing deck, item, exercise, draft, capture, study, generation and media routes keep their owner
+predicate and answer the opaque 404 to everybody else, whatever the level (`OwnerOnlyRoutesHttpIntegrationTest` proves it over every deck route of
+the running application and fails when a new one has no row).
+
+- **Data.** `deck_publication` (one row per deck that ever left «private»; no row = private) holds `visibility` (`PRIVATE|LINK|INVITE|PUBLIC`),
+  the unique `public_code` (10 base58 characters, CSPRNG, redrawn on a collision in a fresh transaction), `code_rotated_at`, `published_revision_id`
+  (NULL until Share/8 publishes; FK to a revision of THE SAME deck) and `row_version`. It is a table of its own because `deck_head_guard` forbids
+  new `deck` columns: **a level change never touches `deck.row_version`** (an open editor gets no 412). `deck_access_grant` is
+  `(deck_id, grantee_id)` with `role` `VIEWER` (the only role the code writes; `EDITOR` is reserved by the CHECK).
+- **`DeckPublications`** (repository-level, called by the commands of Share/8 and Share/13): `setVisibility(owner, deck, level, expectedRowVersion)`
+  is a compare-and-set of the publication row (`UNPUBLISHED = -1` for a deck without a row; a stale version is `VersionConflictException` / 412).
+  **Any move to a more restrictive level rotates the code** (`DeckVisibility.lowersTo`, the openness order `PUBLIC` > `LINK` > `INVITE` > `PRIVATE`,
+  `PUBLIC` to `LINK` included; product contract «при понижении видимости ссылка меняется»); raising the level keeps it. `grant`/`revoke` are idempotent and owner-only, reject `EDITOR` and a grant to the owner. A foreign or deleted deck is the opaque 404.
+- **`DeckAccess.resolve(viewer, code | deckId)`** (the one decision; read-only):
+
+  | Viewer / deck by code | PUBLIC | LINK | INVITE | PRIVATE | unknown or rotated code, deleted deck, no published revision |
+  |---|---|---|---|---|---|
+  | owner | `OWNER` | `OWNER` | `OWNER` | `OWNER` | `NOT_FOUND` for an unknown, rotated or deleted deck; `OWNER` for a deck without a published revision (the public routes then answer 404) |
+  | grantee | `PUBLIC` | `LINK` | `GRANTEE` | `NOT_FOUND` | `NOT_FOUND` |
+  | other account, guest | `PUBLIC` | `LINK` | `INVITE_ONLY` (403) | `NOT_FOUND` | `NOT_FOUND` |
+
+  By deck id only the owner and the grantee of an `INVITE` deck with a published revision resolve (`OWNER` / `GRANTEE`); everybody else, guests
+  included, gets `NOT_FOUND`. A non-owner needs a published revision at every level (checked before `INVITE_ONLY`, so an unpublished invitation deck
+  is not revealed). A malformed code is `NOT_FOUND` without a lookup; a real lookup is one unique-index probe plus the deck key (and one grant probe for
+  `INVITE`), identical for unknown and private codes. `INVITE_ONLY` is `403 DECK_INVITE_ONLY` (`ApiErrorCode`, house schema) with no deck data.
+- **Routes** (`PublicDeckController`, `GET`/`HEAD` only, `/api/public/decks/{code}`, `/items?limit&cursor`, `/items/{memberKey}`, `/exercises?limit&cursor`).
+  `PublicDeckService` checks the kill switch, takes a place in the limiter, tries the **bulkhead** (two `Semaphore`s: `max-concurrent` places, default 3, of which guests may hold at most one less so a place is always free for a signed-in
+  viewer; `tryAcquire` before any transaction or connection; the excess read is refused at once with `503 PUBLIC_READ_BUSY` and `Retry-After: 1`; the title-cache
+  write is the last step inside the permit), resolves access
+  in one short read-only transaction and reads **only the immutable roots of the published revision**. Every SQL lookup is a read-only transaction with a
+  10-second bound of its own; storage reads (which take `FOR KEY SHARE` row locks, forbidden in a read-only transaction) run in their own short
+  transactions, so no connection is held across the whole read: the members/exercises manifests through `CountedPages` (`ManifestPages`, O(log N + P) per page), the item
+  revision of an entry by `(scope, member, descriptor root)` and its document from storage, the material in the manifest by the same recursive traversal the
+  owner's single-item read uses (`PublishedContentRepository.locate`; a member that is not in THIS manifest is 404, so another deck of the same lineage
+  never leaks). Exercise rows are read by `(deck, exercise, descriptor)` and only the question parts (`prompt`, `passage`) are selected (the objective's authoring title is not part of the public page); `ExercisePrompts` turns
+  them into the plain-text `prompt` summary. Answer keys, options, references, bindings and evaluator policies are never selected. Titles of a page are read from the preview cache in ONE statement
+  (`cachedTitles`, no N+1); only a miss derives the title from the document (`ItemPreviews.derive`, read-only) and the derived titles are stored AFTER the read in a
+  short transaction of their own (`storeTitles`; a failed store is logged and never fails the page). Summary `slug` (PUBLIC only) is `DeckSlug` (Russian/Ukrainian transliteration, ≤ 80 characters, computed).
+  Cursors (`PublicCursor`) are bound to the published revision (a republication makes them 412) and grant nothing.
+- **Security chain.** `LearningSecurityConfiguration.publicDecks` (`@Order(4)`, matcher `/public/decks/**`; the private chain moved to `@Order(5)`) is a second
+  chain with an **optional bearer** ([Spring Security reference](https://docs.spring.io/spring-security/reference/servlet/configuration/java.html), multiple
+  `SecurityFilterChain`s with `securityMatcher` and `@Order`; [bearer tokens](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/bearer-tokens.html),
+  an invalid token is an `InvalidBearerTokenException` answered by the entry point): GET/HEAD are authorized for an anonymous caller or one with
+  `SCOPE_learning.read`, everything else is `denyAll`; the same `JwtDecoder` and the same per-request Identity check (`CurrentIdentityFilter`) run when a token is
+  present, so an invalid or revoked token is 401 and never a silent guest; no session, cookie, form or query token exists (CSRF is off: nothing can ride on a
+  credential that only travels in a header). Responses are `no-store` with `Vary: Authorization`.
+- **Limits and switch.** `PublicReadLimiter`: fixed one-minute windows on the monotonic clock (`System.nanoTime`) in memory of the instance. Three tables: guests per
+  client network (`ClientAddresses.resolveNetwork`: IPv4 as is, IPv6 as its /64, `X-Forwarded-For` only from `learning.trusted-proxy-cidrs`), IPv6 guests per /48
+  (`resolveCoarseNetwork`; a request must pass both, so rotating /64s inside a site is bounded) and accounts (a table of its own: guests never starve a signed-in
+  viewer; an account is admitted by `PublicAccountLimitFilter` in the public chain BEFORE `CurrentIdentityFilter` asks Identity, so one token cannot drive unlimited
+  `/userinfo` round trips; the service counts only guests). Defaults 120 / 600 (/48) / 600 / 600 a minute. Every request counts, found or not; a refused request charges nothing; `Retry-After` is the real remaining
+  time of the refusing window. Each table is bounded (`max-tracked`): when the guest table is full, new guest keys are folded into one shared overflow bucket with its
+  own cap (`overflow-per-minute`) instead of being refused one by one; only a new ACCOUNT finds a full account table refused (429). Limiter events are counted on `mnema_public_deck_requests_total{route="limiter"}` as `guest_table_full`, `overflow_bucket` and `account_table_full`.
+  **Connection budget.** The bulkhead bounds the pool use of public reads but the pool is shared with the private API and the job executor, so `PublicRouteConnectionBudget`
+  fails the start (public routes enabled) when `max-concurrent` + `learning.jobs.max-concurrency` (worker/all roles, jobs enabled) leave fewer than 3 connections of the
+  effective Hikari pool. It is not database-backed like `PromoAttempts` on purpose: promo attempts are
+  rare writes that must be exact across instances, while this sits before every public read (~25 rps at peak in scenario H) and a database write per read would turn
+  the cheapest request into the most expensive one and give a flood a write amplifier; the price is a limit per instance. Kill switch
+  `learning.community.public-routes.enabled=false` (default): 404 as if absent. **Logs:** the public code is a credential, so `ApiExceptionHandler` logs the route
+  template (`/api/public/decks/{code}/items`) and never the request path of these routes (`loggablePath`; the segment is redacted when no mapping was made). Keys and the metric `mnema_public_deck_requests_total{route,outcome}` are in the
+  [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
+- **Load.** Zero decks published: a request is one unique-index miss. Scenario H (~25 rps peak): the code lookup is an index probe, pages are O(log N + P),
+  one material is a traversal of the manifest's leaf pages (as the owner's single-item read; a candidate for a key-addressed manifest in the copy-on-write step, §13).
+  **Deploy order:** V52 (Share/5, exercises/objectives lineage) must be merged and released BEFORE V53 ships; the exercise statement below depends on its keys.
+  Open items: the owner's deck JSON still reports `visibility: "private"` (the owner commands of Share/8/13 replace it with the publication row); the exercise
+  statement of `PublishedContentRepository` reads the deck-keyed exercise tables as of V51 and is the one query to re-key when exercises move to lineage keys (Share/5).
+- Tests: `DeckAccessIntegrationTest` (resolution matrix over every level/state/viewer by code and by id, rotation rules (all 16 pairs), CAS, grants, schema constraints, code
+  collision), `PublicDeckHttpIntegrationTest` (every route × the matrix, 403 without data and indistinguishable 404s, published vs head, shared lineage scope,
+  paging and stale cursors, invalid/revoked bearer, methods, contract shapes), `PublicDeckRateLimitHttpIntegrationTest`, `PublicDeckDisabledHttpIntegrationTest`, `PublicDeckReadPathHttpIntegrationTest` (bulkhead, title batch, read-only, cache written outside),
+  `PublicDeckLogRedactionIntegrationTest`, `LoggablePathTest`,
+  `OwnerOnlyRoutesHttpIntegrationTest`, and unit tests for the code alphabet, slug, prompt summary, cursor and limiter.
+
 ## Notification center
 
 `app.mnema.learning.notification` implements [`contracts/notifications`](../../../contracts/notifications/README.md)

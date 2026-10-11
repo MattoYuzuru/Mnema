@@ -34,12 +34,23 @@ public final class ApiSecurityErrors {
         write(request, response, ApiErrorCode.IDENTITY_UNAVAILABLE);
     }
 
+    /** A filter's {@code 429 RATE_LIMITED}: the same problem and {@code Retry-After} as the MVC handler writes, with the member {@code retryAfter}. */
+    public void rateLimited(HttpServletRequest request, HttpServletResponse response, long retryAfterSeconds) throws IOException {
+        response.setHeader(HttpHeaders.RETRY_AFTER, Long.toString(retryAfterSeconds));
+        write(request, response, ApiErrorCode.RATE_LIMITED, retryAfterSeconds);
+    }
+
     private void write(HttpServletRequest request, HttpServletResponse response, ApiErrorCode code) throws IOException {
+        write(request, response, code, null);
+    }
+
+    private void write(HttpServletRequest request, HttpServletResponse response, ApiErrorCode code, Long retryAfter) throws IOException {
         var problem = ProblemDetail.forStatusAndDetail(code.status(), code.detail());
         problem.setType(code.type());
         problem.setTitle(code.title());
         problem.setInstance(URI.create(request.getRequestURI()));
         problem.setProperty("code", code.name());
+        if (retryAfter != null) problem.setProperty("retryAfter", retryAfter);
         response.setStatus(code.status().value());
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");

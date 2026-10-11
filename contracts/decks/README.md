@@ -221,3 +221,52 @@ Existing codes keep their status/title/detail. New: `EXEMPLAR_LIMIT_REACHED` (42
 [`contracts/generation/errors.json`](../generation/errors.json): that registry is scoped to the operations
 of `contracts/generation/http.json`. A missing `expectedDeckRevisionId` or `expectedItemRevisionId` is 428.
 Problem text never echoes titles, content or identifiers.
+
+## Public read of a shared deck (Share/7, #429)
+
+Someone else's deck is read through its **public code** (10 characters of base58, never the deck id) on a
+read-only path that serves the **published revision**. Exact examples and executable invariants are in
+[`public-read.json`](public-read.json); the architecture is
+[community decks §6](../../docs/architecture/community-decks.md#6-доступ-и-публикация-cd-3-cd-4). Nothing else changes:
+every existing deck, item, exercise, draft, capture, study, generation and media route stays owner-only and answers
+the opaque 404 for any other account, whatever the deck's level.
+
+| Operation | Request | Success |
+|---|---|---|
+| Summary | `GET /api/public/decks/{code}` | 200, title, description, counts, `access`, `ownerId`, `slug` (PUBLIC only) |
+| Materials | `GET /api/public/decks/{code}/items?limit=&cursor=` | 200, page + nullable `nextCursor` |
+| One material | `GET /api/public/decks/{code}/items/{memberKey}` | 200, native document as pinned by the published manifest |
+| Exercises | `GET /api/public/decks/{code}/exercises?limit=&cursor=` | 200, page of learner-safe summaries + nullable `nextCursor` |
+
+- **Bearer is optional.** No token is a guest; a valid token (scope `learning.read`) identifies the account and is checked
+  against Identity exactly like the private API; a present but invalid Bearer token (invalid, expired or revoked) is 401 and is
+  never treated as a guest. Only GET and HEAD exist; no cookie, query or form token is read. Answers are `Cache-Control: no-store` and
+  `Vary: Authorization` (the `access` field depends on who asks).
+- **Who sees what** (`DeckAccess`, by code): the owner at any level (`access: OWNER`); `PUBLIC` and `LINK` decks are readable
+  by guests and any account (`PUBLIC` / `LINK`); an `INVITE` deck by accounts with a grant (`GRANTEE`), and everybody else gets
+  **403 `DECK_INVITE_ONLY`** with a body that says nothing about the deck. A private deck, an unknown code, a code that was
+  rotated away (the level was lowered), a deleted deck and a deck that was never published are one and the same **404**
+  `RESOURCE_NOT_FOUND`. The code of a deck is changed on ANY move to a more restrictive level (`PUBLIC` > `LINK` > `INVITE` >
+  `PRIVATE`, `PUBLIC` to `LINK` included); raising the level keeps it. Old links stop working at once.
+- **`ownerId` is exposed on purpose.** The UI needs it to ask Identity for the author's card; the card (name, avatar) is
+  consent-gated in Identity (Share/1), Learning exposes only the opaque account id.
+- **Published, not head.** Title, description, materials, exercises and counts are those of the published revision.
+  Edits the owner makes afterwards are invisible here until the next publication; a member that is not in the published
+  manifest is 404 even when the deck's head has it. A cursor is bound to the published revision: after a republication it
+  is 412 `VERSION_CONFLICT` and the client restarts from the first page. Page size defaults to 20, maximum 100; cursors are
+  opaque, malformed ones are 400.
+- **No editing metadata, no answers.** Responses carry no deck id, deck revision or version, draft ids, journal or origin
+  data. An exercise is `{exerciseId, exerciseRevisionId, ordinal, type, enabled, prompt}`: `prompt` is a plain-text summary of the question
+  (≤ 200 code points, `null` if the question has no plain text); the objective's authoring title is not part of the page, and answer
+  keys, options, references, transcripts, bindings and evaluator policies never leave the server. Media is not served here
+  (Share/9); the document is returned as stored and the owner-only media endpoints keep refusing everyone else.
+- **Limits.** `429 RATE_LIMITED` with `Retry-After` (the real remaining time of the window that refused): a guest is counted per
+  client network (IPv4 address, IPv6 /64) and, for IPv6, all guests of one /48 together; guests that find the guest table full share
+  one overflow bucket; a signed-in viewer is counted per account in a table of its own, so a flood of guests never starves an
+  account, and an account is admitted before Identity is asked about its token (one token cannot drive unlimited Identity round trips) (defaults 120 / 600 / 600 / 600 a minute per instance). Every request counts, found or not.
+- **Bulkhead.** At most 3 public reads run at once per instance (guests at most 2 of them, so one place stays free for a signed-in viewer); the next one is refused before any lookup with **503
+  `PUBLIC_READ_BUSY`** and `Retry-After: 1` (house schema, member `retryAfter`). Clients retry after the delay.
+- **Kill switch.** `learning.community.public-routes.enabled` is **false** by default: every route answers 404 as if it did
+  not exist. (A bearer that is present and invalid is still 401, because authentication runs first.)
+- Failure codes: `DECK_INVITE_ONLY` (403, new), `RESOURCE_NOT_FOUND` (404), `INVALID_REQUEST` (400), `VERSION_CONFLICT` (412),
+  `RATE_LIMITED` (429), `PUBLIC_READ_BUSY` (503, new), `AUTHENTICATION_REQUIRED` (401), `ACCESS_DENIED` (403, a valid token without `learning.read`).

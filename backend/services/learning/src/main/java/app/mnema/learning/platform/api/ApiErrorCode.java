@@ -7,6 +7,8 @@ import java.net.URI;
 enum ApiErrorCode {
     AUTHENTICATION_REQUIRED(HttpStatus.UNAUTHORIZED, "Authentication required", "Valid authentication is required."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "Access denied", "The operation is not permitted."),
+    DECK_INVITE_ONLY(HttpStatus.FORBIDDEN, "Deck is invite only", "The deck is shared by invitation."),
+    PUBLIC_READ_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "Public reads busy", "Public reads are busy; retry after the time in Retry-After."),
     IDENTITY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Identity unavailable", "Authentication is temporarily unavailable."),
     SUPPORT_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Support unavailable", "The support inbox is temporarily unavailable."),
     SUPPORT_CONFLICT(HttpStatus.CONFLICT, "Support conflict", "The ticket changed or the command identifier was already used."),
