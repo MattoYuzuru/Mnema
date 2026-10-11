@@ -73,9 +73,13 @@ describe('StyleguidePageComponent', () => {
         const wait = async (): Promise<void> => { await new Promise(resolve => setTimeout(resolve, 450)); await fixture.whenStable(); fixture.detectChanges(); };
         await wait();
         const blocks = [...root.querySelectorAll<HTMLElement>('#status app-publication-block')];
-        expect(blocks).toHaveLength(2);
-        expect(blocks[0].textContent).toContain('Колода видна только вам');
+        expect(blocks).toHaveLength(3);
+        const checked = (block: HTMLElement): string => block.querySelector<HTMLInputElement>('app-segmented-choice input:checked')!.closest('label')!.textContent!.trim();
+        expect(checked(blocks[0])).toBe('Приватная');
         expect(blocks[1].textContent).toContain('Изменения для учеников не опубликованы (4)');
+        expect(checked(blocks[2])).toBe('По приглашению');
+        [...blocks[0].querySelectorAll<HTMLInputElement>('app-segmented-choice input')].find(radio => radio.closest('label')!.textContent!.trim() === 'Публичная')!.click();
+        fixture.detectChanges();
         const open = [...blocks[0].querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Сделать публичной…')!;
         open.click();
         await wait();
@@ -84,13 +88,41 @@ describe('StyleguidePageComponent', () => {
         fixture.detectChanges();
         blocks[0].querySelector<HTMLButtonElement>('.checklist-actions .primary')!.click();
         await wait();
-        expect(blocks[0].querySelector('app-access-level')!.textContent).toContain('Публичная');
+        expect(checked(blocks[0])).toBe('Публичная');
         const update = [...blocks[1].querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Опубликовать обновление')!;
         update.click();
         fixture.detectChanges();
         blocks[1].querySelector('form')!.dispatchEvent(new Event('submit'));
         await wait();
         expect(blocks[1].textContent).toContain('Все изменения опубликованы');
+    });
+
+    it('runs the access panel on demo data: approve a request, create a link once, find a person by login', async () => {
+        const wait = async (): Promise<void> => { await new Promise(resolve => setTimeout(resolve, 450)); await fixture.whenStable(); fixture.detectChanges(); };
+        await wait();
+        const panel = root.querySelector<HTMLElement>('#status app-access-panel')!;
+        const names = (section: string): string[] => [...panel.querySelectorAll(`${section} .roster-main`)].map(row => row.textContent!.replace(/\s+/g, ' ').trim());
+        expect(names('app-access-requests')[0]).toContain('@anna.k');
+        expect(names('app-access-requests')[1]).toContain('Пользователь без публичного профиля');
+        [...panel.querySelectorAll<HTMLButtonElement>('app-access-requests button')].find(button => button.textContent!.trim() === 'Принять')!.click();
+        await wait();
+        expect(names('app-access-requests')).toHaveLength(1);
+        await wait();
+        expect(names('app-access-people').join(' ')).toContain('@anna.k');
+        [...panel.querySelectorAll<HTMLButtonElement>('app-invite-links button')].find(button => button.textContent!.trim() === 'Создать ссылку')!.click();
+        await wait();
+        expect(panel.querySelector('app-invite-links .new-url')!.textContent).toContain('/d/Kq7xT3mNpR?invite=');
+        expect(panel.querySelector('app-invite-links form')).toBeNull();
+        [...panel.querySelectorAll<HTMLButtonElement>('app-invite-links button')].find(button => button.textContent!.includes('Готово'))!.click();
+        await wait();
+        expect(panel.querySelector('app-invite-links .new-url')).toBeNull();
+        const login = panel.querySelector<HTMLInputElement>('app-access-people input')!;
+        login.value = '@mikhail_s';
+        login.dispatchEvent(new Event('input'));
+        panel.querySelector('app-access-people form')!.dispatchEvent(new Event('submit'));
+        await wait();
+        await wait();
+        expect(names('app-access-people').join(' ')).toContain('@mikhail_s');
     });
 
     it('opens the grouped select specimen with named groups and no heading among the options', () => {

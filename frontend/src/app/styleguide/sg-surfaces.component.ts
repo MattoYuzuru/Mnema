@@ -8,6 +8,9 @@ import { ToastService } from '../core/notifications/toast.service';
 import { AiPromptWindowComponent } from '../features/generation/ai-prompt-window.component';
 import { BatchPagerComponent } from '../features/generation/batch-pager.component';
 import { ArtifactSummary } from '../features/generation/generation.models';
+import { AuthorCardsService } from '../author-cards.service';
+import { AccessApiService } from '../features/own-decks/access/access-api.service';
+import { AccessPanelComponent } from '../features/own-decks/access/access-panel.component';
 import { PublicationApiService } from '../features/own-decks/publication/publication-api.service';
 import { PublicationBlockComponent } from '../features/own-decks/publication/publication-block.component';
 import { ItemApiService } from '../features/authoring/item-api.service';
@@ -30,7 +33,8 @@ import { ToggletipComponent } from '../shared/toggletip.component';
 import { UsageMeterComponent } from '../shared/usage-meter.component';
 import { AutoLoadComponent } from '../shared/auto-load.component';
 import { SgLegalComponent } from './sg-legal.component';
-import { DemoItemApi, DemoPublicationApi, SG_PRIVATE_DECK, SG_SHARED_DECK } from './sg-publication-demo';
+import { DemoAccessApi, DemoAuthorCards } from './sg-access-demo';
+import { DemoItemApi, DemoPublicationApi, SG_INVITE_DECK, SG_PRIVATE_DECK, SG_SHARED_DECK } from './sg-publication-demo';
 import { SgSpecimenComponent } from './sg-specimen.component';
 
 const ARTIFACT_STATES: readonly ArtifactSummary['state'][] = ['PUBLISHED', 'PROPOSED', 'GENERATING', 'FAILED', 'REJECTED', 'STALE'];
@@ -68,8 +72,9 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, AccessScreenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
         NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent, AutoLoadComponent,
-        AccessLevelComponent, PublicationBlockComponent],
-    providers: [{ provide: PublicationApiService, useClass: DemoPublicationApi }, { provide: ItemApiService, useClass: DemoItemApi }],
+        AccessLevelComponent, PublicationBlockComponent, AccessPanelComponent],
+    providers: [{ provide: PublicationApiService, useClass: DemoPublicationApi }, { provide: ItemApiService, useClass: DemoItemApi },
+        { provide: AccessApiService, useClass: DemoAccessApi }, { provide: AuthorCardsService, useClass: DemoAuthorCards }],
     templateUrl: './sg-surfaces.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -79,6 +84,7 @@ export class SgSurfacesComponent {
     private nextToast = 0;
     protected readonly privateDeck = SG_PRIVATE_DECK;
     protected readonly sharedDeck = SG_SHARED_DECK;
+    protected readonly inviteDeck = SG_INVITE_DECK;
 
     protected readonly scrollCount = signal(20);
     protected readonly scrollRows = computed(() => Array.from({ length: this.scrollCount() }, (_, index) => index + 1));

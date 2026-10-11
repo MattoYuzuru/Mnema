@@ -60,6 +60,16 @@ class PublicDeckDisabledHttpIntegrationTest extends PostgresIntegrationTest {
                 assertThat(response.body()).doesNotContain("Выключено");
             }
         }
+        // asking for access follows the same switch (Share/13): a signed-in account gets the 404 of an absent route and nothing is written
+        Deck invitation = fixtures.deck(owner, "Выключено по приглашению");
+        String invitationCode = fixtures.publishAt(invitation, DeckVisibility.INVITE);
+        UUID asker = UUID.randomUUID();
+        for (String target : new String[] {invitationCode, code, "AAAAAAAAAA"}) {
+            HttpResponse<String> response = HttpIdentityFixture.send(port, "POST", "/public/decks/" + target + "/access-requests", HttpIdentityFixture.reader(asker), null, Map.of());
+            assertThat(response.statusCode()).as(target).isEqualTo(404);
+            assertThat(JSON.readTree(response.body()).path("code").stringValue(null)).isEqualTo("RESOURCE_NOT_FOUND");
+        }
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck_access_request WHERE requester_id = :asker").param("asker", asker).query(Long.class).single()).isZero();
         // a bad token is still refused before anything is looked at: the security chain does not know the switch
         assertThat(HttpIdentityFixture.send(port, "GET", "/public/decks/" + code, "garbage", null, Map.of()).statusCode()).isEqualTo(401);
         assertThat(meters.find("mnema_public_deck_requests_total").tags("route", "summary", "outcome", "disabled").counter().count()).isGreaterThanOrEqualTo(3);

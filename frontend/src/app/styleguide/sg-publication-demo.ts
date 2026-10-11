@@ -11,6 +11,7 @@ import {
 
 export const SG_PRIVATE_DECK = 'd6000000-0000-4000-8000-000000000001';
 export const SG_SHARED_DECK = 'd6000000-0000-4000-8000-000000000002';
+export const SG_INVITE_DECK = 'd6000000-0000-4000-8000-000000000003';
 
 const HEAD = 'd6000000-0000-4000-8000-0000000000a1';
 const PUBLISHED = 'd6000000-0000-4000-8000-0000000000a2';
@@ -27,9 +28,9 @@ const TOPICS: readonly Topic[] = [
 ];
 
 function initial(deckId: string): PublicationState {
-    const shared = deckId === SG_SHARED_DECK;
+    const shared = deckId === SG_SHARED_DECK || deckId === SG_INVITE_DECK;
     return {
-        deckId, visibility: shared ? 'LINK' : 'PRIVATE', publicCode: shared ? 'Kq7xT3mNpR' : null, link: shared ? '/d/Kq7xT3mNpR' : null,
+        deckId, visibility: deckId === SG_INVITE_DECK ? 'INVITE' : shared ? 'LINK' : 'PRIVATE', publicCode: shared ? 'Kq7xT3mNpR' : null, link: shared ? '/d/Kq7xT3mNpR' : null,
         publishedRevisionId: shared ? PUBLISHED : null, publishedAt: shared ? '2026-10-11T09:30:00Z' : null, headRevisionId: HEAD,
         unpublishedChanges: shared ? 4 : null,
         metadata: shared ? { topicId: 'japanese', contentLanguage: 'ru', targetLanguage: 'ja', level: 'A2', tags: ['jlpt n5'] }
@@ -60,8 +61,8 @@ export class DemoPublicationApi implements Pick<PublicationApiService, 'read' | 
         const next: PublicationState = {
             ...current,
             visibility: command.visibility,
-            publicCode: current.publicCode ?? 'Kq7xT3mNpR',
-            link: command.visibility === 'PUBLIC' ? '/d/Kq7xT3mNpR/primer' : '/d/Kq7xT3mNpR',
+            publicCode: command.visibility === 'PRIVATE' ? null : current.publicCode ?? 'Kq7xT3mNpR',
+            link: command.visibility === 'PRIVATE' ? null : command.visibility === 'PUBLIC' ? '/d/Kq7xT3mNpR/primer' : '/d/Kq7xT3mNpR',
             metadata: command.metadata,
             requestsEnabled: command.requestsEnabled,
             publishedRevisionId: publish === null ? current.publishedRevisionId : publish.expectedHeadRevisionId,

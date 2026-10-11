@@ -39,6 +39,12 @@ public final class HttpIdentityFixture {
     private static final java.util.Set<String> REVOKED = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final java.util.Set<String> PUBLIC_PROFILE = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final AtomicInteger USER_INFO_CALLS = new AtomicInteger();
+    /** lower-case profile username to account id: the public profiles of the by-username lookup (consent on, login set) */
+    private static final java.util.Map<String, UUID> PROFILES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final AtomicInteger PROFILE_LOOKUPS = new AtomicInteger();
+    /** a login for which the lookup answers 429 with Retry-After 7, and one for which it answers 500 */
+    public static final String LIMITED_LOGIN = "limited-login";
+    public static final String BROKEN_LOGIN = "broken-login";
 
     static {
         try {
@@ -66,6 +72,30 @@ public final class HttpIdentityFixture {
                 exchange.sendResponseHeaders(status, body.length);
                 try (var output = exchange.getResponseBody()) { output.write(body); }
             });
+            IDENTITY.createContext("/api/accounts/profiles/by-username/", exchange -> {
+                PROFILE_LOOKUPS.incrementAndGet();
+                String requested = exchange.getRequestURI().getPath().substring("/api/accounts/profiles/by-username/".length());
+                UUID account = PROFILES.get(requested.toLowerCase(java.util.Locale.ROOT));
+                int status = 200;
+                String body;
+                if (LIMITED_LOGIN.equals(requested)) {
+                    status = 429;
+                    body = "{\"code\":\"try_later\"}";
+                    exchange.getResponseHeaders().set("Retry-After", "7");
+                } else if (BROKEN_LOGIN.equals(requested)) {
+                    status = 500;
+                    body = "{}";
+                } else if (account == null) {
+                    status = 404;
+                    body = "{\"code\":\"profile_not_found\"}";
+                } else {
+                    body = "{\"accountId\":\"" + account + "\",\"profileUsername\":\"" + requested + "\",\"displayName\":null,\"bio\":null,\"avatarPresent\":false}";
+                }
+                byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(status, bytes.length);
+                try (var output = exchange.getResponseBody()) { output.write(bytes); }
+            });
             IDENTITY.start();
             Runtime.getRuntime().addShutdownHook(new Thread(() -> IDENTITY.stop(0)));
         } catch (Exception failure) {
@@ -90,6 +120,14 @@ public final class HttpIdentityFixture {
         if (ready) PUBLIC_PROFILE.add(account.toString());
         else PUBLIC_PROFILE.remove(account.toString());
     }
+
+    /** Gives the account a public profile with this login (Identity: consent on, a login set); the lookup is case-insensitive. */
+    public static void publicLogin(String username, UUID account) { PROFILES.put(username.toLowerCase(java.util.Locale.ROOT), account); }
+
+    /** The profile is hidden or the consent withdrawn: the lookup answers 404 like for an unknown login. */
+    public static void hideLogin(String username) { PROFILES.remove(username.toLowerCase(java.util.Locale.ROOT)); }
+
+    public static int profileLookups() { return PROFILE_LOOKUPS.get(); }
 
     public static int userInfoCalls() { return USER_INFO_CALLS.get(); }
 

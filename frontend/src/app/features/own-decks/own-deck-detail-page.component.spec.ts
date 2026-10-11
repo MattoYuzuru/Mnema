@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { BehaviorSubject, of, throwError } from 'rxjs';
 
 import hubFixture from '../../../../../contracts/decks/hub.json';
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
@@ -36,10 +36,12 @@ describe('OwnDeckDetailPageComponent', () => {
     const deck = metadataFixture.detail as unknown as OwnDeck;
     const detail = signal<DeckDetailState>({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
     const mutation = signal<DeckMutationState>({ phase: 'idle' });
+    const fragment = new BehaviorSubject<string | null>(null);
 
     beforeEach(async () => {
         detail.set({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
         mutation.set({ phase: 'idle' });
+        fragment.next(null);
         store = spyObj<OwnDecksStore>({
             openDeck: vi.fn().mockName("OwnDecksStore.openDeck"),
             retryDetail: vi.fn().mockName("OwnDecksStore.retryDetail"),
@@ -88,7 +90,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 { provide: CapabilitiesApiService, useValue: capabilities },
                 { provide: GenerationApiService, useValue: generation },
                 { provide: PublicationApiService, useValue: publication },
-                { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })) } }
+                { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })), fragment } }
             ]
         }).overrideComponent(OwnDeckDetailPageComponent, {
             set: { providers: [{ provide: OwnDecksStore, useValue: store }] }
@@ -102,10 +104,10 @@ describe('OwnDeckDetailPageComponent', () => {
         expect((fixture.nativeElement as HTMLElement).querySelector('app-deck-workshops section')).toBeNull();
     });
 
-    it('reads the publication as its own request: a private deck gets one quiet line and no level mark', () => {
+    it('reads the publication as its own request: a private deck gets the picker on «Приватная» and no level mark', () => {
         const root = fixture.nativeElement as HTMLElement;
         expect(publication.read).toHaveBeenCalledWith(deck.deckId);
-        expect(root.querySelector('app-publication-block')!.textContent).toContain('Колода видна только вам');
+        expect(root.querySelector('app-publication-block')!.textContent).toContain('Только вы.');
         expect(root.querySelector('.hub-level')).toBeNull();
     });
 
@@ -249,6 +251,33 @@ describe('OwnDeckDetailPageComponent', () => {
             expect(root().querySelector('app-deck-materials')).not.toBeNull();
             // The old separate list route is gone from the hub.
             expect(root().innerHTML).not.toContain('/materials"');
+        });
+
+        it('offers «Доступ…» in the «⋯» menu of the deck and brings the access section into focus', async () => {
+            document.body.append(root());
+            expect(root().querySelector('app-action-menu button[aria-haspopup="menu"]')!.getAttribute('aria-label')).toBe(`Действия с колодой «${deck.metadata.title}»`);
+            const items = [...root().querySelectorAll<HTMLButtonElement>('app-action-menu [role=menuitem]')];
+            expect(items.map(item => item.textContent!.trim())).toEqual(['Доступ…']);
+            const section = root().querySelector<HTMLElement>('app-publication-block section')!;
+            expect(section.id).toBe('access');
+            const reveal = vi.spyOn(section, 'scrollIntoView');
+            items[0].click();
+            fixture.detectChanges();
+            expect(reveal).toHaveBeenCalled();
+            expect(document.activeElement).toBe(section.querySelector('h2'));
+            root().remove();
+        });
+
+        it('lands on the access section when the address carries #access, once per deck', async () => {
+            fragment.next('access');
+            document.body.append(root());
+            fixture.detectChanges();
+            await fixture.whenStable();
+            expect(document.activeElement).toBe(root().querySelector('app-publication-block h2'));
+            (document.activeElement as HTMLElement).blur();
+            fixture.detectChanges();
+            expect(document.activeElement).not.toBe(root().querySelector('app-publication-block h2'));
+            root().remove();
         });
 
         it('opens the form from «Изменить», focuses the title, and closes on Esc keeping the draft', async () => {

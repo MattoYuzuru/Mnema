@@ -61,6 +61,29 @@ describe('notification presenter', () => {
         expect(media('AUDIO', 'MYSTERY')).toBeUndefined();
     });
 
+    it('presents the access request and approval notifications without naming anyone', () => {
+        const requested = (pendingCount: unknown): string | undefined => text(make('DECK_ACCESS_REQUESTED', { deckId: DECK, pendingCount }, { route: 'DECK' }));
+        expect(requested(1)).toBe('Запрос доступа к вашей колоде ждёт ответа');
+        expect(requested(3)).toBe('3 запроса доступа к вашей колоде ждут ответа');
+        expect(requested(21)).toBe('21 запрос доступа к вашей колоде ждёт ответа');
+        expect(requested(11)).toBe('11 запросов доступа к вашей колоде ждут ответа');
+        expect(requested(1000)).toBe('Запросов доступа к вашей колоде 1000 и больше, они ждут ответа');
+        expect(requested(0)).toBeUndefined();
+        expect(requested('3')).toBeUndefined();
+        expect(text(make('DECK_ACCESS_GRANTED', { code: 'Kq7xT3mNpR' }, { route: 'DECK' }))).toBe('Автор принял ваш запрос: колода теперь доступна вам');
+        expect(text(make('DECK_ACCESS_GRANTED', {}, { route: 'DECK' }))).toBeUndefined();
+    });
+
+    it('opens the access section for a request and the public deck for an approval', () => {
+        const requested = presentNotification(make('DECK_ACCESS_REQUESTED', { deckId: DECK, pendingCount: 2 }, { route: 'DECK' }));
+        expect(requested?.link).toEqual({ label: 'Открыть доступ', commands: ['/decks', DECK], fragment: 'access' });
+        const granted = (params: Record<string, unknown>): unknown => presentNotification(make('DECK_ACCESS_GRANTED', params, { route: 'DECK' }))?.link;
+        expect(granted({ code: 'Kq7xT3mNpR' })).toEqual({ label: 'Открыть колоду', commands: ['/d', 'Kq7xT3mNpR'] });
+        expect(granted({ code: '../x' })).toBeNull();
+        expect(granted({ deckId: DECK })).toBeUndefined();
+        expect(presentNotification(make('DECK_ACCESS_REQUESTED', { deckId: '../x', pendingCount: 2 }, { route: 'DECK' }))?.link).toBeNull();
+    });
+
     it('shows nothing for an unknown kind or params that do not fit', () => {
         expect(presentNotification(make('FROM_THE_FUTURE', { a: 1 }))).toBeNull();
         expect(presentNotification(make('GENERATION_READY', { sessionKind: 'MATERIALS', artifactCount: '5' }))).toBeNull();

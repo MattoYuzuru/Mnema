@@ -107,6 +107,27 @@ class NotificationUnitTest {
     }
 
     @Test
+    void theDeckAccessKindsCarryOnlyIdsACountAndThePublicCodeAndAlwaysRouteToTheDeck() {
+        Map<String, Object> requested = new HashMap<>(Map.of("deckId", UUID.randomUUID(), "pendingCount", 3));
+        NotificationKind.DECK_ACCESS_REQUESTED.validate(requested);
+        assertThat(NotificationKind.DECK_ACCESS_REQUESTED.route(requested)).isEqualTo(NotificationRoute.DECK);
+        assertThat(NotificationKind.DECK_ACCESS_REQUESTED.severity()).isEqualTo(NotificationSeverity.INFO);
+        for (Map<String, Object> bad : java.util.List.<Map<String, Object>>of(
+                Map.of("deckId", UUID.randomUUID()), Map.of("deckId", UUID.randomUUID(), "pendingCount", -1),
+                Map.of("deckId", UUID.randomUUID(), "pendingCount", 3, "requester", UUID.randomUUID()),
+                Map.of("deckId", UUID.randomUUID(), "pendingCount", "3"), Map.of("deckId", new UUID(0, 0), "pendingCount", 3))) {
+            assertThatThrownBy(() -> NotificationKind.DECK_ACCESS_REQUESTED.validate(bad)).as(bad.toString()).isInstanceOf(IllegalArgumentException.class);
+        }
+        Map<String, Object> granted = Map.of("code", "Kq7xT3mNpR");
+        NotificationKind.DECK_ACCESS_GRANTED.validate(granted);
+        assertThat(NotificationKind.DECK_ACCESS_GRANTED.route(granted)).as("a reader never learns the deck id").isEqualTo(NotificationRoute.DECK);
+        for (Map<String, Object> bad : java.util.List.<Map<String, Object>>of(
+                Map.of("code", "has space"), Map.of("code", "Anna Karenina wants in"), Map.of("code", "Kq7xT3mNpR", "deckId", UUID.randomUUID()), Map.of())) {
+            assertThatThrownBy(() -> NotificationKind.DECK_ACCESS_GRANTED.validate(bad)).as(bad.toString()).isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
     void theWorkerRepeatsFullBatchesUpToABoundAndStopsOnTheFirstShortOne() {
         var service = mock(NotificationRetentionService.class);
         when(service.purgeBatch()).thenReturn(NotificationRetentionService.BATCH_SIZE, 7);

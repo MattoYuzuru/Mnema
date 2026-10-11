@@ -39,7 +39,11 @@ public enum NotificationKind {
     /** The route is {@link #route(Map)}: WORKSHOP with a session, DECK with only a deck, else NONE. */
     MEDIA_PROCESSING_FAILED(NotificationSeverity.ERROR, null,
             param("assetId", UUID), param("mediaKind", TOKEN), nullable("deckId", UUID), nullable("sessionId", UUID),
-            nullable("artifactId", UUID), nullable("slotKey", TOKEN), param("reason", TOKEN));
+            nullable("artifactId", UUID), nullable("slotKey", TOKEN), param("reason", TOKEN)),
+    /** To the author of an invitation-only deck (Share/13): somebody asked for access; {@code pendingCount} is the open requests then, capped at 1000. */
+    DECK_ACCESS_REQUESTED(NotificationSeverity.INFO, NotificationRoute.DECK, param("deckId", UUID), param("pendingCount", COUNT)),
+    /** To the requester whose request was approved (Share/13): {@code code} is the public code of the deck, a reader never learns the deck id. */
+    DECK_ACCESS_GRANTED(NotificationSeverity.INFO, NotificationRoute.DECK, param("code", TOKEN));
 
     /** Value type of one params field. */
     enum ParamType { UUID, TOKEN, COUNT, TIMESTAMP }

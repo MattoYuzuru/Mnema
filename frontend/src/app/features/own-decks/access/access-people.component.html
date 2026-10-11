@@ -1,0 +1,55 @@
+<section class="access-section" [attr.aria-labelledby]="uid + '-title'">
+  <h3 #heading class="subsection-heading" [id]="uid + '-title'" tabindex="-1">{{ text.peopleHeading }}</h3>
+  <p class="visually-hidden" role="status" aria-live="polite">{{ status() }}</p>
+
+  @if (list.phase() === 'loading') {
+    <p class="hint" role="status">{{ text.loading }}</p>
+  } @else if (list.phase() === 'error') {
+    <div class="notice error inline-retry" role="group" [attr.aria-label]="text.peopleHeading">
+      <p>{{ text.loadError }}</p>
+      <button type="button" class="button small" (click)="reload()">{{ text.retry }}</button>
+    </div>
+  } @else {
+    @if (list.items().length === 0) {
+      <p class="hint">{{ text.peopleEmpty }}</p>
+    } @else {
+      <ul #rows class="roster" role="list" [attr.aria-label]="text.peopleHeading">
+        @for (grant of list.items(); track grant.granteeId) {
+          <li class="roster-row">
+            <div class="roster-main">
+              <app-access-person [identity]="identities.of(grant.granteeId)" (retry)="identities.resolve([grant.granteeId])" />
+              <span class="hint">{{ text.grantedOn }} <time [attr.datetime]="grant.grantedAt">{{ grant.grantedAt | date:'dd.MM.y' }}</time></span>
+            </div>
+            <div class="roster-actions">
+              <button type="button" class="button small" [attr.aria-label]="closeLabel(grant)"
+                [attr.aria-disabled]="closing() !== null ? 'true' : null" [attr.aria-busy]="closing() === grant.granteeId ? 'true' : null"
+                (click)="revoke(grant)">{{ closing() === grant.granteeId ? text.closing : text.closeAccess }}</button>
+            </div>
+          </li>
+        }
+      </ul>
+      <app-auto-load [content]="rows" [context]="list.context()" [continuation]="list.next()" [loading]="list.loadingMore()"
+        [error]="list.moreError()" [loadingText]="text.loadingMore" (loadNext)="list.more()" />
+    }
+  }
+  @if (problem(); as message) {
+    <p class="field-error" role="alert">{{ message }}</p>
+  }
+
+  <form class="access-login" (submit)="$event.preventDefault(); invite()" novalidate>
+    <div class="field">
+      <label [for]="uid + '-login'">{{ text.loginHeading }}</label>
+      <div class="field-row">
+        <input #loginField type="text" [id]="uid + '-login'" name="login" [value]="login()" (input)="onLogin($event)"
+          autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="60"
+          [attr.aria-invalid]="loginProblem() !== null ? 'true' : null"
+          [attr.aria-describedby]="uid + '-login-hint' + (loginProblem() !== null ? ' ' + uid + '-login-error' : '')" />
+        <button type="submit" class="button" [attr.aria-disabled]="granting() ? 'true' : null" [attr.aria-busy]="granting() ? 'true' : null">{{ granting() ? text.loginInviting : text.loginInvite }}</button>
+      </div>
+      <p class="hint" [id]="uid + '-login-hint'">{{ text.loginHint }}</p>
+      @if (loginProblem(); as message) {
+        <p class="field-error" role="alert" [id]="uid + '-login-error'">{{ message }}</p>
+      }
+    </div>
+  </form>
+</section>

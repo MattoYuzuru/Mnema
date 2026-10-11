@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, a
 import { DatePipe } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subscription } from 'rxjs';
 import { AuthoringApiService } from '../authoring/authoring-api.service';
@@ -9,6 +10,7 @@ import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/c
 
 import { DeckMetadata, DeckVisibility, OwnDeck, validateDeckMetadata } from './own-deck.models';
 import { AccessLevelComponent } from '../../shared/access-level.component';
+import { ActionMenuComponent, ActionMenuItem } from '../../shared/action-menu.component';
 import { PublicationBlockComponent } from './publication/publication-block.component';
 import { DeckDescriptionComponent } from './deck-description.component';
 import { OwnDecksApiService } from './own-decks-api.service';
@@ -31,7 +33,7 @@ import {
 @Component({
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
-        DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent],
+        DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',
@@ -65,6 +67,9 @@ export class OwnDeckDetailPageComponent {
     /** Bumped when the deck's head revision changes (a saved description), so the publication block re-reads. */
     readonly publicationToken = signal(0);
     readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
+    readonly publication = viewChild(PublicationBlockComponent);
+    /** The «⋯» menu of the deck: only actions that work. */
+    readonly menuItems: readonly ActionMenuItem[] = [{ id: 'access', label: 'Доступ…', glyph: 'lock' }];
     readonly materials = viewChild(DeckMaterialsComponent);
     readonly failureMessage = deckFailureMessage;
     readonly mayRetrySameCommand = mayRetrySameCommand;
@@ -89,6 +94,9 @@ export class OwnDeckDetailPageComponent {
     private insightsLoad: Subscription | null = null;
     private insightsDeckId: string | null = null;
     private publicationRevisionId: string | null = null;
+    private readonly fragment = toSignal(this.route.fragment, { initialValue: null });
+    /** The fragment `access` was already followed for this deck, so a later re-render does not pull the focus again. */
+    private followedAccess: string | null = null;
 
     constructor() {
         this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
@@ -126,6 +134,15 @@ export class OwnDeckDetailPageComponent {
         });
 
         effect(() => {
+            // `/decks/{id}#access` (the link of «Запрошен доступ») lands on the access section once the block is on the page.
+            const block = this.publication();
+            const deckId = this.store.detailState().deck?.deckId ?? null;
+            if (block === undefined || deckId === null || this.fragment() !== 'access' || this.followedAccess === deckId) return;
+            this.followedAccess = deckId;
+            untracked(() => block.focusSection());
+        });
+
+        effect(() => {
             const detail = this.store.detailState();
             const mutation = this.store.mutationState();
             // A save that needs a decision (conflict, error) or just finished is shown with the form that caused it.
@@ -156,6 +173,11 @@ export class OwnDeckDetailPageComponent {
             if (detail.deck.revisionId === this.loadedRevisionId) return;
             this.loadForm(detail.deck);
         });
+    }
+
+    /** «Доступ…» of the «⋯» menu. */
+    onMenu(id: string): void {
+        if (id === 'access') this.publication()?.focusSection();
     }
 
     openEditor(field: 'title' | 'description' = 'title'): void {

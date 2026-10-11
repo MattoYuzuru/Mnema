@@ -8,7 +8,7 @@
       "kind": "One of the kinds below. A client ignores unknown kinds (shows nothing, still counts them unread).",
       "severity": "INFO | WARNING | ERROR: drives the glyph and the toast duration, never the only signal (the text always names the outcome).",
       "params": "Object of at most 4 KiB; the fields per kind below. No server-rendered prose and no personal data: no email, name, titles, note or material text, only identifiers, counts, enums and timestamps. The client builds the sentence from kind and params and fetches titles itself.",
-      "route": "WORKSHOP (params.deckId, params.sessionId) | DECK (params.deckId) | PLANS | NONE; the kind table says DYNAMIC where the producer picks one. The client maps the key to its own URL; the server never sends a URL.",
+      "route": "WORKSHOP (params.deckId, params.sessionId) | DECK (params.deckId; for DECK_ACCESS_GRANTED params.code, the public code of the deck, because a reader never learns the deck id) | PLANS | NONE; the kind table says DYNAMIC where the producer picks one. The client maps the key to its own URL; the server never sends a URL.",
       "createdAt": "UTC RFC 3339.",
       "expiresAt": "createdAt + 30 days (exactly; same time of day)."
     },
@@ -263,6 +263,52 @@
         "route": "WORKSHOP",
         "createdAt": "2026-10-02T09:07:00Z",
         "expiresAt": "2026-11-01T09:07:00Z"
+      }
+    },
+    "DECK_ACCESS_REQUESTED": {
+      "severity": "INFO",
+      "route": "DECK",
+      "producer": "deck access requests (Share/13, #435)",
+      "when": "A signed-in account asked for access to the author's invitation-only deck and the request is new (not a repeat while it is open, not a repeat within 30 days of a rejection). At most one per deck per UTC day: later requests of that day publish nothing, and the count is not refreshed.",
+      "params": {
+        "deckId": "uuid",
+        "pendingCount": "integer >= 1: the deck's open requests when the notification was published, capped at 1000 (1000 means 1000 or more); no names, the author's panel lists who asked through Identity author cards"
+      },
+      "dedupeKey": "deck-access:{deckId}:requested:{yyyyMMdd UTC}",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-000000000030",
+        "seq": "48",
+        "kind": "DECK_ACCESS_REQUESTED",
+        "severity": "INFO",
+        "params": {
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "pendingCount": 3
+        },
+        "route": "DECK",
+        "createdAt": "2026-10-11T09:45:00Z",
+        "expiresAt": "2026-11-10T09:45:00Z"
+      }
+    },
+    "DECK_ACCESS_GRANTED": {
+      "severity": "INFO",
+      "route": "DECK",
+      "producer": "deck access requests (Share/13, #435)",
+      "when": "The author approved the requester's request (not when the author grants by login or an invitation link is redeemed: those are the person's own action or the author's, not an answer to a request). Rejection publishes nothing.",
+      "params": {
+        "code": "the public code of the deck (10 base58 characters); the route DECK opens /d/{code}. The deck id is not sent: a reader never learns it"
+      },
+      "dedupeKey": "deck-access:{deckId}:granted:{decision time in epoch milliseconds}",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-000000000031",
+        "seq": "49",
+        "kind": "DECK_ACCESS_GRANTED",
+        "severity": "INFO",
+        "params": {
+          "code": "Kq7xT3mNpR"
+        },
+        "route": "DECK",
+        "createdAt": "2026-10-11T10:05:00Z",
+        "expiresAt": "2026-11-10T10:05:00Z"
       }
     }
   },
