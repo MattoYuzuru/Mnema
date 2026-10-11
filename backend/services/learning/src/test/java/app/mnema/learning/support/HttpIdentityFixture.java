@@ -45,6 +45,12 @@ public final class HttpIdentityFixture {
     private static final AtomicInteger CARD_CALLS = new AtomicInteger();
     private static volatile int cardFailure;
     private static volatile long cardDelayMillis;
+    /** lower-case profile username to account id: the public profiles of the by-username lookup (consent on, login set) */
+    private static final java.util.Map<String, UUID> PROFILES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final AtomicInteger PROFILE_LOOKUPS = new AtomicInteger();
+    /** a login for which the lookup answers 429 with Retry-After 7, and one for which it answers 500 */
+    public static final String LIMITED_LOGIN = "limited-login";
+    public static final String BROKEN_LOGIN = "broken-login";
 
     static {
         try {
@@ -72,19 +78,46 @@ public final class HttpIdentityFixture {
                 exchange.sendResponseHeaders(status, body.length);
                 try (var output = exchange.getResponseBody()) { output.write(body); }
             });
+            // One handler for everything Identity publishes under /api/accounts/profiles/: the public author cards (by account id and by login, for link
+            // previews) and the by-username lookup of Share/13 (a login that is limited, broken, public or unknown).
             IDENTITY.createContext("/api/accounts/profiles/", exchange -> {
                 CARD_CALLS.incrementAndGet();
                 if (cardDelayMillis > 0) {
                     try { Thread.sleep(cardDelayMillis); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
                 }
                 String rest = exchange.getRequestURI().getPath().substring("/api/accounts/profiles/".length());
-                String card = rest.startsWith("by-username/") ? CARDS_BY_NAME.get(rest.substring("by-username/".length()).toLowerCase(java.util.Locale.ROOT))
-                        : CARDS_BY_ID.get(rest);
-                int status = cardFailure != 0 ? cardFailure : card == null ? 404 : 200;
-                byte[] body = (status == 200 ? card : "{\"code\":\"profile_not_found\"}").getBytes(StandardCharsets.UTF_8);
+                boolean byName = rest.startsWith("by-username/");
+                String requested = byName ? rest.substring("by-username/".length()) : rest;
+                if (byName) PROFILE_LOOKUPS.incrementAndGet();
+                String lower = requested.toLowerCase(java.util.Locale.ROOT);
+                int status = 200;
+                String body;
+                if (cardFailure != 0) {
+                    status = cardFailure;
+                    body = "{}";
+                } else if (byName && LIMITED_LOGIN.equals(requested)) {
+                    status = 429;
+                    body = "{\"code\":\"try_later\"}";
+                    exchange.getResponseHeaders().set("Retry-After", "7");
+                } else if (byName && BROKEN_LOGIN.equals(requested)) {
+                    status = 500;
+                    body = "{}";
+                } else {
+                    String card = byName ? CARDS_BY_NAME.get(lower) : CARDS_BY_ID.get(requested);
+                    UUID account = byName ? PROFILES.get(lower) : null;
+                    if (card != null) {
+                        body = card;
+                    } else if (account != null) {
+                        body = "{\"accountId\":\"" + account + "\",\"profileUsername\":\"" + requested + "\",\"displayName\":null,\"bio\":null,\"avatarPresent\":false}";
+                    } else {
+                        status = 404;
+                        body = "{\"code\":\"profile_not_found\"}";
+                    }
+                }
+                byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(status, body.length);
-                try (var output = exchange.getResponseBody()) { output.write(body); }
+                exchange.sendResponseHeaders(status, bytes.length);
+                try (var output = exchange.getResponseBody()) { output.write(bytes); }
             });
             IDENTITY.start();
             Runtime.getRuntime().addShutdownHook(new Thread(() -> IDENTITY.stop(0)));
@@ -136,6 +169,14 @@ public final class HttpIdentityFixture {
         if (value == null) return "null";
         return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
     }
+
+    /** Gives the account a public profile with this login (Identity: consent on, a login set); the lookup is case-insensitive. */
+    public static void publicLogin(String username, UUID account) { PROFILES.put(username.toLowerCase(java.util.Locale.ROOT), account); }
+
+    /** The profile is hidden or the consent withdrawn: the lookup answers 404 like for an unknown login. */
+    public static void hideLogin(String username) { PROFILES.remove(username.toLowerCase(java.util.Locale.ROOT)); }
+
+    public static int profileLookups() { return PROFILE_LOOKUPS.get(); }
 
     public static int userInfoCalls() { return USER_INFO_CALLS.get(); }
 

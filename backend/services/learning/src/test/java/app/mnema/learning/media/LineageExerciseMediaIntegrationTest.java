@@ -109,15 +109,17 @@ class LineageExerciseMediaIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void theOfflineManifestListsTheHeadExercisesOfTheDeckWithTheAssetsItsOwnerOwns() {
+    void theOfflineManifestListsTheHeadExercisesOfTheDeckWhoeverOwnsTheAssetsAndOffersTheOriginalToItsOwnerOnly() {
         Material a = fixtures.material();
         UUID asset = fixtures.readyAsset(a.actor(), "image/png");
         JsonNode published = fixtures.publish(a, fixtures.freeResponse(a, blocks(text("Look"), image(asset, "A picture")), blocks(), "memory"));
         Copy copy = shared.copy(a.deck(), UUID.randomUUID());
-        // the author's manifest pins the exercise reference; the copy's owner owns no asset, so the owner-only rule leaves it empty
+        // the author's manifest pins the exercise reference and offers his verified original
         String authorManifest = manifests.current(a.actor(), a.deck()).body();
-        assertThat(authorManifest).contains(asset.toString()).contains(published.path("exerciseId").stringValue(null));
-        assertThat(manifests.current(copy.owner(), copy.deckId()).body()).doesNotContain(asset.toString());
+        assertThat(authorManifest).contains(asset.toString()).contains(published.path("exerciseId").stringValue(null)).contains("\"purpose\":\"original\"");
+        // the copy's heads reference the same exercise (Share/9): his manifest lists the author's asset, without the original (no variants exist in this fixture)
+        String copyManifest = manifests.current(copy.owner(), copy.deckId()).body();
+        assertThat(copyManifest).contains(asset.toString()).contains(published.path("exerciseId").stringValue(null)).doesNotContain("\"purpose\":\"original\"");
     }
 
     private record Case(String name, String mime, BiFunction<Material, UUID, ObjectNode> exercise) { }

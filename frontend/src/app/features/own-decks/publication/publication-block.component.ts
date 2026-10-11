@@ -4,9 +4,10 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subscription } from 'rxjs';
 
 import { ToastService } from '../../../core/notifications/toast.service';
-import { AccessLevelComponent } from '../../../shared/access-level.component';
 import { ShareButtonComponent } from '../../../shared/share-button.component';
 import type { DeckVisibility } from '../own-deck.models';
+import { AccessPanelComponent } from '../access/access-panel.component';
+import { AccessControlsComponent } from './access-controls.component';
 import { PublicationApiService } from './publication-api.service';
 import { PublicationChecklistComponent } from './publication-checklist.component';
 import {
@@ -28,14 +29,16 @@ type PublicationView =
 let nextBlock = 0;
 
 /**
- * Who may read the deck and what the readers see, in the Deck hub. It loads its own request: a failure shows a retry here and
- * never hides the hub. A private deck shows one quiet line and «Сделать публичной…» (the checklist, an inline panel). A shared
- * deck shows its level, the link with a copy action, the time of the last publication and, when the deck changed after it,
+ * «Доступ и публикация» of the Deck hub, the one place where the access of a deck is managed. It loads its own request: a failure
+ * shows a retry here and never hides the hub. At the top `app-access-controls`: the level picker (Приватная, По ссылке, По
+ * приглашению, Публичная; «Публичная» opens the checklist, an inline panel) and, at «По приглашению», the switch for access requests.
+ * A shared deck shows its link with a share action, the time of the last publication and, when the deck changed after it,
  * «Изменения для учеников не опубликованы (N)» with «Опубликовать обновление», which opens a small form with the optional «Что нового».
+ * At «По приглашению» the panel `app-access-panel` follows: requests, invitation links and people with access.
  */
 @Component({
     selector: 'app-publication-block',
-    imports: [DatePipe, AccessLevelComponent, ShareButtonComponent, PublicationChecklistComponent],
+    imports: [DatePipe, ShareButtonComponent, PublicationChecklistComponent, AccessControlsComponent, AccessPanelComponent],
     templateUrl: './publication-block.component.html',
     styleUrl: './publication-block.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -50,6 +53,8 @@ export class PublicationBlockComponent {
     readonly editDescription = output<void>();
     /** Bump to re-read the state after the deck itself changed (a saved description, for example). */
     readonly reloadToken = input(0);
+    /** The `id` of the section, so a link such as `/decks/{id}#access` lands on it; `null` where several blocks share a page. */
+    readonly anchor = input<string | null>(null);
 
     protected readonly text = PUBLICATION_TEXT;
     protected readonly uid = `mn-publication-${nextBlock++}`;
@@ -68,7 +73,8 @@ export class PublicationBlockComponent {
     protected readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
     protected readonly noteField = viewChild<ElementRef<HTMLTextAreaElement>>('noteField');
     protected readonly updateButton = viewChild<ElementRef<HTMLButtonElement>>('updateButton');
-    protected readonly makePublicButton = viewChild<ElementRef<HTMLButtonElement>>('makePublicButton');
+    protected readonly section = viewChild<ElementRef<HTMLElement>>('section');
+    protected readonly controls = viewChild(AccessControlsComponent);
 
     private readonly api = inject(PublicationApiService);
     private readonly toasts = inject(ToastService);
@@ -107,10 +113,6 @@ export class PublicationBlockComponent {
         return (state.unpublishedChanges ?? 0) > 0 || (state.publishedRevisionId !== null && state.headRevisionId !== state.publishedRevisionId);
     }
 
-    protected canMakePublic(state: PublicationState): boolean {
-        return state.visibility !== 'PUBLIC';
-    }
-
     protected load(deckId: string = this.deckId()): void {
         this.loading?.unsubscribe();
         if (this.view().phase !== 'ready') this.view.set({ phase: 'loading' });
@@ -142,7 +144,18 @@ export class PublicationBlockComponent {
 
     protected closeChecklist(): void {
         this.checklistOpen.set(false);
-        afterNextRender(() => this.makePublicButton()?.nativeElement.focus(), { injector: this.injector });
+        this.controls()?.focusPublicButton();
+    }
+
+    /** «Доступ…» of the hub menu and the notification link: brings the section into view and puts the focus on its heading. */
+    focusSection(): void {
+        this.section()?.nativeElement.scrollIntoView({ block: 'start' });
+        this.heading()?.nativeElement.focus({ preventScroll: true });
+    }
+
+    /** A level was applied by the picker: the new state (the picker keeps the focus). */
+    protected onLevelSaved(state: PublicationState): void {
+        this.apply(state);
     }
 
     protected onChecklistPublished(state: PublicationState): void {

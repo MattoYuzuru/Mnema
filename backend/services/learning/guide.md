@@ -1290,8 +1290,8 @@ Today every scope has exactly one deck; a copy (Share/10) will add a second deck
   head branch (bindings only target a current head). A copy therefore never reads the source's later revisions or the
   source's history before the copy, and the source never reads a copy's revision.
 - **Media.** `content_media_ref.asset_owner_id` is the owner of the asset (FK to `media_asset`); the revision writer may be
-  another account. Media of deck D are the references of D's heads. The application-level rule "an attached asset is the
-  actor's own" stays until Share/9 (#431); no copy exists before then.
+  another account. Media of deck D are the references of D's heads. Since Share/9 (#431) an attached asset is the actor's own **or** one the heads of the same
+  deck already reference (see "Media of someone else's deck").
 - **Previews.** `item_preview` is a cache per lineage revision, read and written as `ItemPreviews.title(scope, member,
   revision)`; the content root is read from `item_revision`, never supplied by the caller.
 - **GC.** A removal that fails with a foreign-key violation (a domain row holds the root) is "still referenced": the
@@ -1347,7 +1347,7 @@ own deck.
   `objectiveOf` derives it from a visible exercise revision, and `GenerationRepository.objectiveTitle` accepts only D's objective
   head or a revision D itself wrote.
 - **Media.** `exercise_media_ref.asset_owner_id` owns the asset (FK to `media_asset`); the writer may be another account. The
-  owner-only attach rule stays until Share/9 (#431). `exercise_media_ready(scope, exercise, revision)` has no actor or deck filter and
+  owner-only attach rule was relaxed by Share/9 (#431, "Media of someone else's deck"). `exercise_media_ready(scope, exercise, revision)` has no actor or deck filter and
   **fails closed**: the revision must exist, and every asset its content declares (`assetId` anywhere in `content`) must have a READY
   reference of the declared kind; a missing reference row is "not ready" (no `COALESCE(..., TRUE)`), a text-only revision is ready. V52 reports with a `NOTICE` how many existing revisions declare an asset that no reference pins (they flip to not ready).
 - **Migration.** V52 is one transaction with `lock_timeout`, guards disabled only around the backfill and checked enabled at the end,
@@ -1472,7 +1472,7 @@ deck's head and nothing else**: no deck revision, `deck.row_version` untouched (
   the deck itself is an **open owner decision**. **Outbox:** one `deck_publication_event` for every effective write while the resulting level is PUBLIC (metadata included, so the catalog projector
   never misses an edit) and for every level or revision change; a no-op appends none. The catalog threshold (10 materials, 1 exercise) is only displayed. **NC media** (`blockedMedia`):
   assets whose stock provenance (`generation_provenance.media[].license`, V35) names a non-commercial term (a CC "NC" token or "non-commercial", **case-insensitive**: `cc-by-nc-4.0`, `NON-COMMERCIAL`; the same
-  regex in the `~*` filter and in the `flag "i"` predicate of the partial index) for THIS owner (**the lookup is keyed by `owner_id`; when copies exist (Share/9/10) it must be re-keyed by asset**), referenced by
+  regex in the `~*` filter and in the `flag "i"` predicate of the partial index) (since Share/9 the lookup is keyed by the **asset**: a provenance row counts for a reference whose `asset_owner_id` is the row's account, whoever publishes, so a copy re-publishing an inherited NC image is caught), referenced by
   the head's materials (`content_media_ref` ⋈ `deck_head_item`) or exercises (`exercise_media_ref` ⋈ `deck_head_exercise`, up to 50). The image sources already filter to commercial
   licenses, so this is defense in depth; it checks the **head** (media of an older published revision is not re-derived, a known limit until a per-revision media inventory exists).
 - **Public profile.** Identity adds the boolean claim `mnema_public_profile` to `/userinfo` (consent on, account active, login set); `CurrentIdentityFilter` keeps it as a
@@ -1484,17 +1484,148 @@ deck's head and nothing else**: no deck revision, `deck.row_version` untouched (
   1.5× the runner-up, otherwise `null`. Input: title, description and up to 20 head material titles **from the preview cache** (`item_preview`, filled by the owner's reads).
   Topics: normalized aliases in the title (×3) and description at word boundaries (scripts without spaces match inside a run), ≤ 3 leaf topics. `GET /api/topics` is
   `private, max-age=3600`.
-- **Load.** Zero decks: no rows; `GET publication` is the deck key, the publication key, one revision key, two index range scans, ≤ 20 title rows and one empty partial-index
-  probe. H (5k public decks, one viral deck with 20k copies): the publication is O(1) rows per deck, the journal count is bounded by an index range (not by copies),
-  the NC probe by the media of the head, and copies read only the published pointer, so a republication costs the viral deck exactly one row update plus one outbox row.
-- **V52 (Share/5).** `PublicationRepository.BLOCKED_MEDIA_SQL` joins the exercise head by `(exercise_id, revision_id)` and filters `h.deck_id`, and `changesAfter` uses `deck_id, deck_sequence`: columns
-  that exist before and after V52, and the renamed `exercise_media_ref.asset_owner_id` is not read, so both statements work on either tree. The only line with a stricter V52 form is the exercise
-  join in `BLOCKED_MEDIA_SQL` (add `h.reuse_scope_id = r.reuse_scope_id`); `V54` indexes `deck_exercise_change(deck_id, deck_sequence)`, which V52 keeps. The plan test
-  `theJournalRangeAndTheNonCommercialProbeAreIndexRangesNotScans` EXPLAINs the real statement.
+- **Load.** Zero decks: no rows; `GET publication` is the deck key, the publication key, one revision key, two index range scans, ≤ 20 title rows and the non-commercial probe (the head's references, then one partial-index probe per owner of those assets). H (5k public decks, one viral deck with 20k copies): the publication is O(1) rows per deck, the journal count is bounded by an index range (not by copies),
+  the NC probe by the head's media references and the non-commercial rows of their owners, and copies read only the published pointer, so a republication costs the viral deck exactly one row update plus one outbox row.
+- **V52 (Share/5), Share/9.** `PublicationRepository.BLOCKED_MEDIA_SQL` joins the exercise head by `(exercise_id, revision_id)` and filters `h.deck_id`; since Share/9 it reads the V52 column
+  `asset_owner_id` of both reference tables, so it needs the tree V52 and later (V54 is after V52, so it always has it). `V54` indexes `deck_exercise_change(deck_id, deck_sequence)`, which V52 keeps.
+  The plan test `theJournalRangeAndTheNonCommercialProbeAreIndexRangesNotScans` EXPLAINs the real statement.
 - Tests: `PublicationHttpIntegrationTest` (first publication, replay, stale head/version, open editor, counting, the checklist one item at a time, NC media for materials and
   exercises, rotation and outbox, metadata validation, ownership/scopes, suggestions, directory, level in the deck JSON), `PublicationSchemaIntegrationTest` (constraints, seed
   inventory, guards, outbox, index use), `CurrentIdentityFilterClaimTest`, `AliasNormalizerTest`, `LanguageDetectorTest`, `TopicDirectoryMatchTest`, the two rows in
   `OwnerOnlyRoutesHttpIntegrationTest`; Identity: `IdentitySecurityIntegrationTest.userInfoCarriesThePublicProfileReadinessClaim...`.
+
+### Media of someone else's deck (Share/9, #431, migration `V55__shared_media.sql`)
+
+Packages `app.mnema.learning.media` (`MediaCatalog`, `MediaManifestCatalog`, `SharedMediaPlayback`) and `app.mnema.learning.library` (`PublishedMediaRepository`,
+`PublicMediaService`, `PublicMediaLimiter`, `PublicReadBulkhead`); wire contract [`contracts/decks/public-read.json`](../../../contracts/decks/public-read.json) (`media`) and its README
+section; architecture [community decks §8–§9](../../../docs/architecture/community-decks.md#8-медиа-cd-6). **A non-owner gets media of a deck exactly when he can read the
+deck, as derived variants only; a guest gets the media of the published MATERIALS only.**
+
+- **The authorization function** (`MediaCatalog.Grant`, the only place media access is decided; each grant is one SQL predicate on `media_asset a`, the blob is read by one statement):
+  asset A is readable by viewer V when (1) `OWNER`: V owns A and it is still reachable (hold, content, exercise, draft, generation or manifest); the **original** exists for this grant alone
+  (`locate` refuses a null variant for any other grant, a programming error); (2) `PUBLISHED`: `DeckAccess` (Share/7) granted V a level for deck D by its code, D has a published
+  revision, and `published_media(D, A)` exists; (3) `COPY`: V owns a live deck of A's lineage whose **head** revisions reference A (`content_media_ref` / `exercise_media_ref` joined to
+  `deck_head_item` / `deck_head_exercise` of V's decks). Grants 2 and 3 return derived variants (playback, poster or thumbnail) and never the source. No row means no access: no
+  `COALESCE` defaults anywhere, and a `READY` asset is required for any blob.
+- **`published_media(deck_id, asset_id, ref_count > 0)` holds the assets of the MATERIALS of the published revision.** Exercise pins are left out on purpose: the public view shows
+  exercises as plain-text prompts, and `exercise_media_ref` does not say whether an asset is part of the question or of the answer, so an exercise-only asset is the same 404 for every viewer of
+  the public route (the owner of a copy keeps exercise media through the `COPY` grant). The architecture sketch keys the table `(deck_id, revision_id, asset_id)`, which copies every row at every
+  publication; this is the incremental shape: one row per asset and the number of `content_media_ref` rows (nodes) that point at it. The publication
+  command (`PublicationService.apply`, same transaction as the pointer, publication row locked, head share-locked) calls `PublishedMediaRepository.advance(deck, previousSequence, headSequence)`.
+  A first publication rebuilds the deck's rows from the head's materials (O(head)); a republication applies `Σ (references of the head revision − references of the revision the FIRST journal
+  change in `(previous, head]` replaced)` over the materials changed in that range (O(references of the changed materials)): `deck_item_change` rows carry `previous_revision_id`; a material created
+  in the range replaced nothing, a deleted one has no head, a reorder replaces nothing. One statement with data-modifying CTEs updates rows that stay positive, deletes rows that reach zero and
+  inserts new assets. A downgrade to PRIVATE keeps the rows (the pointer is kept, access decides). A read is one primary-key probe. V55 backfills decks published before it by the same correction
+  written backwards from the head (`-- BACKFILL BEGIN … END` in the migration); the test runs that very text on a database and compares the result with the incrementally maintained rows of every deck.
+  **Self-check and repair.** After a published head the stored count of an asset equals the number of references to it in the head's materials, so after each incremental step the assets the delta touched are
+  recounted from the head (an index probe each) and a decrement that found no row is counted too. Any disagreement, an over-count included, rebuilds the deck's rows from the head inside the same
+  transaction (publishing stays possible and the set is exact), logs `published_media_drift deck_id=… disagreements=…` (the deck id, nothing of its content) and counts
+  `mnema_published_media_drift_total`. An over-count on an asset the step did not touch is not found until a step touches it. `PublishedMediaIntegrationTest` also runs seeded random sequences of
+  creates, saves, deletes, publishes and level changes and compares the set with a recompute from the head after every publish (no repair may be needed).
+  Limit: a journal that does not record a head change (a future materialization of a copy or an applied upstream update, Updates/2 #441) must write its journal rows or call `advance` itself.
+- **Indexes and plans.** `deck_scope_owner(reuse_scope_id, owner_id) WHERE deleted_at IS NULL` serves the copy owner's lookup. The statement PINS its join order instead of trusting the planner: the
+  references of the asset (a subquery fenced with `OFFSET 0`, `content_media_ref_asset` / `exercise_media_ref_asset`) drive a `JOIN LATERAL` lookup of the viewer's decks of that lineage (also
+  fenced; the lineage index or his deck list, a few decks times the few references of one asset) and only then does each head get a primary-key probe; a planner that flattened it could start from
+  everything the viewer owns. `SharedMediaCopyOwnerIntegrationTest` EXPLAINs the very constants the catalog runs (no table scan, references before heads).
+- **Routes.** Public: `GET /api/public/decks/{code}/media/{assetId}` → `{assetId, state, playback|null, poster|null}` (optional bearer, `PublicMediaService`): kill switches
+  `learning.community.public-routes.enabled` and `learning.community.public-media.enabled` (default false, 404 as if absent), the guest's network window (before any lookup), the **shared bulkhead**
+  `PublicReadBulkhead` (extracted from `PublicDeckService`; one number for the connection budget), one short read-only transaction (`DeckAccess.resolve`, the guest's deck window, the published-set probe and
+  the variants), `SharedMediaPlayback` signs the derived links offline for `learning.community.public-media.url-ttl` (default ten minutes; the owner's playback keeps its hour). `INVITE_ONLY` is a 404 here
+  (a media request never reveals that a deck exists). States are collapsed for a non-owner: `READY`, an upload still going (`PENDING_UPLOAD`, `VERIFYING`, `PROCESSING`) or a single `UNAVAILABLE` for
+  `REJECTED`, `FAILED_RETRYABLE` and `DELETED`. The answer is `Cache-Control: private, no-store`, `Vary: Authorization`. Private chain: `MediaCatalog.resolve`/`playback` and
+  `MediaManifestCatalog.current` serve the copy owner (rule 3): `playback.download` is `null` for an asset he does not own and the manifest lists no `original` variant for it. Limits are
+  `PublicMediaLimiter`: a guest per client network, for IPv6 also all guests of the /48 (a request passes both, as in `PublicReadLimiter`), and all guests together per deck (a signed-in viewer is
+  limited per account by the public chain and is never charged to the deck). **They count requests for signed links, not bytes**: the object store serves the bytes after a link is handed out, so they
+  bound how fast links are minted, not the egress itself. `mnema_public_media_requests_total{outcome}`. Keys and defaults are in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
+- **Editing a copy.** `attachRevision` / `attachExerciseRevision` / `replaceDraft` accept an asset the actor owns **or** one that the head revisions of the editing deck already reference (checked before the
+  head moves, so the revision being replaced still counts). The reference row names the asset's real owner (`asset_owner_id`, the foreign key to `media_asset(asset_id, owner_id)` is unchanged). A draft
+  holds only its owner's assets (`draft_media_ref` names one owner for both foreign keys); an inherited asset in a draft is validated and not held, the lineage references keep it alive. An asset that no head holds
+  (the author's other media, a stranger's) is `404` and the save fails. Dropping an inherited image from the last material that holds it ends the deck's right to it: it cannot be attached again.
+- **EXIF.** The media worker re-encodes every variant with `-map_metadata -1` (images through libwebp/GIF, audio AAC, video H.264/AAC). Verified on the pinned FFmpeg 6.1.1 image with a JPEG carrying a real EXIF block
+  (Make and Software with a canary, Orientation, GPS latitude and longitude), an MP4 with `location`, `title` and a stream handler name, and an MP3 with ID3 tags: no `Exif`/`EXIF`/`XMP `/`GPS` marker, canary or
+  tag survives in any variant (`test_derived_image_variants_carry_no_exif_or_gps`, `test_derived_video_and_audio_variants_carry_no_location_or_tags`; CI runs them against the built image). FFmpeg 7.1 and later pass
+  EXIF through as frame side data: a bump of the pinned package must keep these tests green (strip there explicitly) before shared media is enabled.
+- **NC provenance.** `PublicationRepository.BLOCKED_MEDIA_SQL` is keyed by the asset, not the publisher; see "Publication" above. It collects the head's references first (materials and exercises:
+  `kind`, subject, `asset_id`, `asset_owner_id`), then probes the partial index `generation_provenance_nc` once per DISTINCT asset owner of the head with `owner_id = <owner>` and the non-commercial
+  predicate (a lateral join), and joins on `(asset_id, asset_owner_id)`. The cost is proportional to the head's references and the non-commercial rows of those owners; it no longer scans every
+  non-commercial row of the table (measured 1.4 s at 496k rows before). `PublicationSchemaIntegrationTest` EXPLAINs the real statement and requires the `owner_id` index condition.
+- **Load.** Zero decks: `published_media` is empty, a media read is a code-index miss. Scenario H: publish cost is O(references of the changed materials) plus one row update and one outbox row per
+  publication; a read is the code index, the deck key, one `published_media` primary key and the variants of one asset (~25 rps of reads, each page of a deck shows a few dozen media). The limits bound how
+  fast links are minted per instance and the metric counts them; the egress itself (bytes) is the object store's and a CDN for the derived variants stays a separate decision, §12. The copy owner's lookup is bounded by the references
+  of one asset times his decks of the lineage.
+- Tests: `PublishedMediaIntegrationTest` (first publication, republication adds/removes/ref_count, exercises never counted, created-and-removed in one range, downgrade, replay, drift and over-count repair,
+  seeded random differential, the V55 backfill against the live rows, NC for a copy), `PublicMediaHttpIntegrationTest` (the matrix {owner, grantee, link viewer, guest, copy owner} × {PRIVATE, LINK, INVITE, PUBLIC},
+  exercise media refused, an unpublished change, a removed asset, another deck's asset, pending, collapsed and malformed states, ten-minute links, the original never, the copy owner's private routes, the contract fixture,
+  metrics), `PublicMediaRateLimitHttpIntegrationTest` (network, /48, deck), `PublicMediaDisabledHttpIntegrationTest`, `SharedMediaCopyOwnerIntegrationTest` (playback, heads decide, manifest, Study of an
+  inherited sound, attach/draft rules, plans), `PublicMediaLimiterTest`, `PublicReadBulkheadTest`, and the worker's metadata tests.
+
+### Invitation links, access requests and grants (Share/13, #435, migration `V56__deck_invites_and_requests.sql`)
+
+Package `app.mnema.learning.library` (`InviteService`, `AccessRequestService`, `GrantService`, `AccessRepository`, `DeckAccessController`, `InviteRedeemController`), wire contract
+[`contracts/decks/access.json`](../../../contracts/decks/access.json) and its README section; architecture [community decks §3, §6, §9](../../../docs/architecture/community-decks.md#6-доступ-и-публикация-cd-3-cd-4).
+**The level of a deck is changed only by the Share/8 publication `PUT`** (no second writer); this is what lets people **in** to an `INVITE` deck. Nothing touches `deck.row_version`.
+
+- **Data.** `deck_invite (invite_id uuidv7, deck_id, token_hash BYTEA UNIQUE, max_uses NULL|1..1000, uses, expires_at, revoked_at, last_used_at, created_at, code_rotated_at)`: the token is 32 CSPRNG bytes in base64url (43 characters),
+  returned **once** by the creation answer; only the SHA-256 digest is stored (`InviteTokens`), so lists never contain it and a lost link is revoked and replaced. `CHECK (uses <= max_uses)` is the
+  backstop of the redeem lock, `(uses = 0) = (last_used_at IS NULL)`, and a guard trigger freezes everything but `uses` (only grows, with `last_used_at`) and the first `revoked_at`.
+  **`code_rotated_at` is the generation of the link**: it is copied from `deck_publication.code_rotated_at` at creation, and any lowering of the level (which rotates the code) makes every older
+  invitation `STALE` for good (`Invite.Status`), for the owner and the grantees too. `deck_access_request (deck_id, requester_id) PK, status PENDING|APPROVED|REJECTED|WITHDRAWN,
+  created_at, decided_at, revoked_at)`: one row per pair, rewritten (not appended) when a rejected request is repeated after the waiting period; `WITHDRAWN` is the requester's own `:withdraw`; `revoked_at` marks a `REJECTED` row that an owner's revocation of a grant left (CHECK: only on `REJECTED`). Indexes: the owner's newest-first lists
+  (`deck_invite_deck`, partial `deck_access_request_pending`), the requester's limits (partial `deck_access_request_open`, `deck_access_request_requester`) and the unique digest.
+- **Time** is the service's `Clock` (`Clock.systemUTC()`, injected in the tests), not the database clock, because the 30-day silence, the 24-hour window, the expiry and the notification day are decisions the tests must be able to move.
+- **Invitation links.** `create` (owner; `maxUses` and `expiresInDays`, both required, null = unlimited): an advisory lock of the deck serializes the counts (20 active, 200 stored; dead ones older than 30 days are
+  pruned in the same transaction: dead means revoked, expired, used up or stale, by the TIME OF DEATH - `revoked_at`, `expires_at`, `last_used_at`, the last rotation - not by creation), a deck that is private or has never been shared is `400 PUBLICATION_REQUIRED`. There is no `commandId` on purpose: a receipt would have to store the secret answer. `revoke` stops new
+  redemptions only (the grants stay), twice is the same 200. **`redeem`** (`POST /api/invites:redeem {token}`, any signed-in account, the token only in the body) is one transaction that locks the invitation
+  row (`FOR UPDATE OF i`), in this order: a deck that is private or unpublished is a 404; an invitation of an older code generation is a 404 for everybody; the owner and an account that already holds the
+  grant are answered with the code and consume nothing, even if the invitation has been used up or revoked since (opening the same link twice must not turn a one-time link into a 404); anybody else needs
+  an unrevoked, unexpired invitation with uses left; on a `LINK`/`PUBLIC` deck that is a no-op answer with the code (no grant, no use); on an `INVITE` deck the deck's grants lock is taken, the person's request row
+  is locked (a revocation within 30 days is a 404, so a live link cannot undo a revoke), the grant is written FIRST and the use is consumed only when a grant was created, and a waiting request of the
+  account is closed as `APPROVED`. **Every failure is the same `404 RESOURCE_NOT_FOUND`** (unknown, malformed, revoked, expired, exhausted, stale, deleted deck, revoked person); the only other answer is
+  `422` for a valid token of a deck that already holds 1000 people. The answer is the CURRENT code of the deck. The private chain's blanket rule gives `learning.write`; the token is read from the body by
+  `AccessCommands` (strict, bounded to 1 KiB, never echoed in an error) and appears in no log (`InviteService.Created.toString()` redacts it too): `InviteLogRedactionIntegrationTest` forces a 500 and reads
+  every log line, `DeckAccessHttpIntegrationTest.noLogLineCarriesAnInvitationToken` reads the lines of the failure paths.
+- **Access requests.** `POST /api/public/decks/{code}/access-requests` lives on the **public chain** (the code is redacted from its logs by the same `loggablePath` as the reads) and is its only write: the chain admits
+  exactly `POST /public/decks/*/access-requests` and `…:withdraw` with `SCOPE_learning.write` (a guest is 401, a read-only token 403; `PublicAccountLimitFilter` and the per-request Identity check run first). It follows the kill switch
+  `learning.community.public-routes.enabled` (off: 404, nothing written). One transaction under an advisory lock of the requester: `DeckAccess.resolve` (a readable deck, the owner or a grantee is `400`; unknown, private,
+  rotated or never published is the opaque 404), then the author's switch (`requests_enabled` off: `403 DECK_INVITE_ONLY`, the body of the «по приглашению» screen), then the existing row (open, or decided less than 30
+  days ago: the same `202 {status: PENDING}` and nothing is written), then the limits (20 open: `422 RESOURCE_LIMIT_EXCEEDED` with `limit`; 5 new in a rolling 24 hours: `429 RATE_LIMITED`, `Retry-After` = the
+  time the oldest one leaves the window), then the upsert and the notification. The owner side (`list`, `approve`, `reject`) locks the request row; `approve` writes the grant, the status and `DECK_ACCESS_GRANTED`
+  in one transaction (not for a PRIVATE deck, which has no link to open), `reject` is silent; the same decision twice is the same answer, the opposite decision is a 404; `approve` is `422` when the deck holds 1000 people (the request stays open). **`withdraw`** (`POST …/access-requests:withdraw`)
+  is the requester's way to free one of the 20 open slots: `PENDING` becomes `WITHDRAWN`, the answer is a uniform 204 (idempotent, no state is revealed), an unknown/private/rotated code is the opaque 404, and the
+  request can be made again at once (the daily limit still counts it).
+- **Notifications** (`NotificationKind`, [`contracts/notifications`](../../../contracts/notifications/README.md)): `DECK_ACCESS_REQUESTED` to the author with params `{deckId, pendingCount}`, dedupe key
+  `deck-access:{deckId}:requested:{yyyyMMdd UTC}` (at most one per deck per UTC calendar day; the count is the open requests when it was published, capped at 1000 by a limited index scan, and the first of the day stands),
+  and `DECK_ACCESS_GRANTED` to the requester with params `{code}`, key `deck-access:{deckId}:granted:{decision millis}`. Both are INFO and route `DECK`; the granted kind carries the public CODE and not the deck id
+  (a reader never learns it) and no names anywhere. Both are published as the last write of the transaction, after the requester's advisory lock and the request-row lock, so the lock order is requester,
+  request, recipient's notification cursor and no flow takes them the other way. The **frontend `notification-presenter` needs a sentence for each new kind**, or `notifications-contract.spec.ts` fails.
+- **Grants by login** (`GrantService`). The owner predicate first (a stranger never makes Learning call Identity), then **the deck must be a published INVITE deck** (a grant means nothing at another level:
+  `400 PUBLICATION_REQUIRED`, no lookup), then the shape of the login and the two budgets of `LoginLookupLimiter` - 10 a minute per owner and 40 a minute per instance
+  (`learning.community.grants.owner-lookups-per-minute` / `instance-lookups-per-minute`; both fixed windows in memory) - then **`ProfileDirectory.accountOf`** OUTSIDE any transaction (the Identity public-profile
+  lookup `GET /api/accounts/profiles/by-username/{u}` over the bounded `IdentityHttp`, no credential sent, nothing cached, the answer trusted only when it names the asked login), then a short write
+  transaction. Unknown, malformed and hidden are one `404`; the owner's own login is 400; Identity `429` is `429 RATE_LIMITED` with its `Retry-After`, any other failure `503 IDENTITY_UNAVAILABLE` and nothing is
+  granted. **Shared budget:** Identity limits this lookup per NETWORK (60 a minute) and all Learning instances call from one address, so every owner of every instance shares that budget; the instance cap keeps
+  one instance below it, and with N instances behind one address it should be set to about 40 / N. The grant is idempotent, closes a waiting request as `APPROVED` without a notification and, being the owner's
+  deliberate act, lifts the revocation block. `DELETE …/grants/{id}`: the request row is taken first (an upsert of a `REJECTED` row with `revoked_at`, only when the grant existed - for a person who never
+  asked it is created, but not counted in the 24-hour window), then the grant is deleted, so the next read is refused at once and a live invitation link cannot undo it for 30 days; copies stay (Share/10);
+  idempotent. A deck holds at most 1000 grants (`AccessRepository.GRANT_LIMIT`, `422` with `limit`), counted under the deck's grants advisory lock by every way in.
+- **Lock order** (outermost first; no path takes them the other way): the invitation row (redeem), the deck's grants advisory lock (redeem, approve, grant by login), the request row (redeem, approve, grant by login,
+  revoke), the grant row. The requester's advisory lock (request, withdraw) is taken before its request row and never together with the others. `AccessServiceIntegrationTest.approveRevokeRedeemAndLoginGrantOnOnePersonNeverDeadlock`
+  runs the four paths against one person 25 times.
+- **Metrics** `mnema_deck_access_total{op,outcome}` (`AccessMetrics`, fixed labels, never an id): see the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
+- **Owner routes** (`GET`/`POST …/invites`, `…/invites/{id}:revoke`, `GET …/access-requests`, `…:approve`, `…:reject`, `GET`/`POST …/grants`, `DELETE …/grants/{id}`) answer the opaque 404 to everybody but the owner of a live deck,
+  checked before anything else; each has a row in `OwnerOnlyRoutesHttpIntegrationTest` (that test also pins `POST /public/decks/{code}/access-requests` as the only write below `/public`). Lists are keyset pages
+  (`AccessCursor`: time and id, opaque, 400 when malformed; `limit` 1..100).
+- **Load.** Zero decks or zero invitations: no rows, no work. H (5k public decks, a viral `INVITE` deck): a redeem is one unique-index probe, one row lock, the deck's short grants lock with a count that stops at 1000 index entries, and two writes - serialized per invitation and, for the grant itself, per deck; a request is
+  the requester's advisory lock, key and index-range reads of the requester's own rows, one upsert and (at most once a day per deck) one notification; the author's list and the counts are index ranges bounded by the
+  page or by 1000; a deck asked a million times holds one row per asker and notifies once a day. No statement scans a table and none is proportional to the number of readers or copies; `AccessSchemaIntegrationTest`
+  EXPLAINs the hot statements.
+- **Open items / deviations.** (1) The Identity login lookup shares one 60-per-minute network budget for the whole Learning instance set (the per-owner and per-instance caps keep each instance below it); if grants by login become popular, give Learning a trusted-proxy identity there or
+  a service-to-service endpoint. (2) `DECK_ACCESS_REQUESTED` is per UTC calendar day, not a rolling 24 hours. (3) Approving a request of a PRIVATE deck grants without notifying. (4) A person an owner revokes who never asked gets a `REJECTED` request row (the record of the revocation); a deck's requests table is therefore not only asks. (5) The migration is `V56`, after Share/9's `V55`; Flyway does not apply versions out of order, so it ships after `V55`.
+- Tests: `DeckAccessHttpIntegrationTest` (shapes of `access.json`, the one-time token, every failing token the same 404, downgrade keeps grants, scopes and guests, strict bodies, token never in a log, the request
+  flow, requests off, the 429, revoking a grant, grants by login for public profiles only, the stranger never reaches Identity, Identity 429/503, owner-only), `AccessServiceIntegrationTest` (moving clock: expiry, one-time,
+  revoked, **concurrent redemptions never exceed `max_uses`**, 20 active invitations and pruning, once-a-day notification and the UTC day boundary, 30-day silence, 20 open and 5 a day, grant/approve/revoke, lists),
+  `AccessSchemaIntegrationTest`, `InviteLogRedactionIntegrationTest`, `AccessCommandsTest`, `InviteTokensTest`, `AccessCursorTest`, `LoginLookupLimiterTest`, the kill-switch case of
+  `PublicDeckDisabledHttpIntegrationTest`, the owner-only table, and the notification kinds in `NotificationUnitTest` / `NotificationContractTest`.
 
 ### Link previews (Share/14, #436)
 
@@ -1509,10 +1640,10 @@ No migration. The web server asks for the card of `/d/{code}[/{slug}]` and puts 
   and carries `X-Mnema-Preview: card|generic`, for a PUBLIC deck `X-Mnema-Canonical: /d/{code}/{slug}` (the web server compares it with the requested path and redirects, so one cached answer per
   code serves both) and for the generic card `X-Robots-Tag: noindex`. `Cache-Control: public, max-age=300` on success (problems stay `no-store`). The viewer is always a guest
   (`Viewer.guest(network, coarse)` from `ClientAddresses`, `X-Forwarded-For` only from `learning.trusted-proxy-cidrs`), so the answer never depends on a token (a present token is validated by the chain, then not used).
-- **One admission.** `PublicReadAdmission` is the kill switch, guest limiter and the two-semaphore bulkhead extracted from `PublicDeckService.serve`; deck reads and previews share its
-  instance, so together they never hold more than `max-concurrent` places and `PublicRouteConnectionBudget` still describes the pool use. The place is held for the database lookup only
-  (`DeckAccess.resolve` for a guest in a 2-second read-only transaction), never across the Identity call. Metric: `mnema_public_deck_requests_total{route="meta",outcome}` with
-  `ok` (public card), `generic`, `disabled`, `rate_limited`, `busy`.
+- **One admission, one bulkhead.** `PublicReadAdmission` is the kill switch, the guest limiter and the bulkhead place of `PublicDeckService.serve`, extracted so that deck reads and previews share it; its bulkhead is the single
+  `PublicReadBulkhead` bean that the media route (`PublicMediaService`, which keeps its own limiter, switch and metrics) also uses, so deck reads, previews and media together never hold more than `max-concurrent` places and
+  `PublicRouteConnectionBudget` still describes the pool use. The place is held for the database lookup only (`DeckAccess.resolve` for a guest in a 2-second read-only transaction), never across the Identity call. Metric:
+  `mnema_public_deck_requests_total{route="meta",outcome}` with `ok` (public card), `generic`, `disabled`, `rate_limited`, `busy`.
 - **No oracle.** `Resolution` is granted at level `PUBLIC` with a published revision, or the answer is `Preview.generic(origin)`: `GENERIC`, `noindex`, `canonical: null`, `author: null`,
   the same bytes for LINK, INVITE, private, rotated, deleted, unknown, malformed and never-published codes, and for a profile without a public card. A signed-in owner gets the guest card too.
   The slug is `DeckSlug.of(published title)`; `canonical = {origin}/d/{code}/{slug}`. The origin is `learning.community.public-origin` (`MNEMA_PUBLIC_BASE_URL`, `PublicMetaService.origin`:
@@ -1565,6 +1696,8 @@ code adds.
   `NONE`, deck/session/artifact/slot null because the pipeline does not know them) in the transaction that records a
   terminal failure: a rejected asset (`VERIFICATION_REJECTED`) and exhausted retries or an interrupted asset that ran out
   of attempts (`PROCESSING_FAILED`). Retryable attempts notify nobody. There is deliberately no "media ready" kind.
+- **Deck access producers** (Share/13): `AccessRequestService` publishes `DECK_ACCESS_REQUESTED` (to the author, once per deck per UTC day) and `DECK_ACCESS_GRANTED` (to the requester) in the transaction of the
+  request or the approval; both route `DECK`, the second with `params.code` (see the section above).
 - Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
 ## AI provider layer

@@ -5,15 +5,15 @@ import app.mnema.learning.platform.api.ResourceNotFoundException;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 
 /**
  * The one admission every anonymous-capable public read passes before it asks for a connection: the kill switch (off: 404 as if the route did not exist),
- * the abuse limit (before any lookup, so a flood of unknown codes is limited too) and the bulkhead. The bulkhead is two {@link Semaphore}s tried BEFORE the
- * transaction opens: {@code max-concurrent} places in all, of which guests may hold at most one less, so excess reads fail fast with 503 and never queue for
- * a connection, and a signed-in viewer always finds a place. Deck reads ({@link PublicDeckService}) and link-preview reads ({@link PublicMetaService})
- * share this instance, so together they never take more than {@code max-concurrent} places of the pool ({@link PublicRouteConnectionBudget}).
+ * the abuse limit (before any lookup, so a flood of unknown codes is limited too) and the bulkhead, the one {@link PublicReadBulkhead} that the media route
+ * ({@link PublicMediaService}, which keeps its own limiter and metrics) shares: {@code max-concurrent} places in all, of which guests may hold at most one
+ * less, tried BEFORE the transaction opens, so excess reads fail fast with 503 and never queue for a connection, and a signed-in viewer always finds a place.
+ * Deck reads ({@link PublicDeckService}), link-preview reads ({@link PublicMetaService}) and media reads together never take more than {@code max-concurrent}
+ * places of the pool ({@link PublicRouteConnectionBudget}).
  *
  * <p>Outcomes are counted as {@code mnema_public_deck_requests_total{route,outcome}}; this class counts {@code disabled}, {@code rate_limited} and {@code busy},
  * the caller counts what its own work decides.
@@ -23,16 +23,13 @@ final class PublicReadAdmission {
     private final PublicRouteSettings settings;
     private final PublicReadLimiter limiter;
     private final MeterRegistry meters;
-    private final Semaphore bulkhead;
-    private final Semaphore guestBulkhead;
+    private final PublicReadBulkhead bulkhead;
 
-    PublicReadAdmission(PublicRouteSettings settings, PublicReadLimiter limiter, MeterRegistry meters) {
+    PublicReadAdmission(PublicRouteSettings settings, PublicReadLimiter limiter, MeterRegistry meters, PublicReadBulkhead bulkhead) {
         this.settings = settings;
         this.limiter = limiter;
         this.meters = meters;
-        this.bulkhead = new Semaphore(settings.maxConcurrent);
-        // guests may hold all but one place: the last one is always free for a signed-in viewer
-        this.guestBulkhead = new Semaphore(settings.maxConcurrent - 1);
+        this.bulkhead = bulkhead;
     }
 
     /** Runs {@code work} inside a place of the bulkhead; the place is released when it ends, however it ends. */
@@ -54,20 +51,14 @@ final class PublicReadAdmission {
         // Before a connection or a transaction is asked for: a flood of public reads is refused here, it never queues for the pool. A guest also
         // needs a place of the guest share, so guests alone can never take the last place.
         boolean guest = viewer.isGuest();
-        if (guest && !guestBulkhead.tryAcquire()) {
-            count(route, "busy");
-            throw new PublicReadBusyException();
-        }
-        if (!bulkhead.tryAcquire()) {
-            if (guest) guestBulkhead.release();
+        if (!bulkhead.tryAcquire(guest)) {
             count(route, "busy");
             throw new PublicReadBusyException();
         }
         try {
             return work.get();
         } finally {
-            bulkhead.release();
-            if (guest) guestBulkhead.release();
+            bulkhead.release(guest);
         }
     }
 

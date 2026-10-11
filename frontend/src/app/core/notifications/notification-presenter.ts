@@ -18,6 +18,8 @@ type Plural = readonly [one: string, few: string, many: string];
 
 const MATERIALS: Plural = ['материал', 'материала', 'материалов'];
 const EXERCISES: Plural = ['упражнение', 'упражнения', 'упражнений'];
+const ACCESS_REQUESTS: Plural = ['запрос', 'запроса', 'запросов'];
+const PUBLIC_CODE = /^[A-Za-z0-9_-]{4,64}$/u;
 const NBSP = ' ';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
@@ -97,6 +99,8 @@ function sentence(notification: AppNotification): string | null {
                 : `Скоро удалятся черновики ИИ (${pending}). Опубликуйте нужное до ${expires}`;
         }
         case 'MEDIA_PROCESSING_FAILED': return mediaFailed(params);
+        case 'DECK_ACCESS_REQUESTED': return accessRequested(params);
+        case 'DECK_ACCESS_GRANTED': return text(params, 'code') === null ? null : 'Автор принял ваш запрос: колода теперь доступна вам';
         default: return null;
     }
 }
@@ -117,6 +121,14 @@ function usageExhausted(params: Readonly<Record<string, unknown>>): string | nul
         (renews === null ? 'Подождать не поможет — смените тариф, чтобы продолжить' : `Он откроется снова ${renews}`);
 }
 
+/** The count is the number of open requests when the notification was published (1000 means 1000 or more); it names no one. */
+function accessRequested(params: Readonly<Record<string, unknown>>): string | null {
+    const count = integer(params, 'pendingCount');
+    if (count === null || count < 1) return null;
+    if (count >= 1000) return 'Запросов доступа к вашей колоде 1000 и больше, они ждут ответа';
+    return `${count === 1 ? 'Запрос' : `${count} ${plural(count, ACCESS_REQUESTS)}`} доступа к вашей колоде ${count % 10 === 1 && count % 100 !== 11 ? 'ждёт' : 'ждут'} ответа`;
+}
+
 function mediaFailed(params: Readonly<Record<string, unknown>>): string | null {
     const kind = MEDIA[text(params, 'mediaKind') ?? ''];
     if (kind === undefined) return null;
@@ -132,18 +144,26 @@ function mediaFailed(params: Readonly<Record<string, unknown>>): string | null {
 
 /**
  * Route key to a client destination. WORKSHOP opens the Workshop of `sessionId` (`/decks/:deckId/workshop/:sessionId`); a
- * WORKSHOP notification without a usable session falls back to the deck page. PLANS has no plans page yet (paywall:
+ * WORKSHOP notification without a usable session falls back to the deck page; DECK_ACCESS_REQUESTED opens the access section of the deck hub
+ * and DECK_ACCESS_GRANTED opens `/d/{code}`. PLANS has no plans page yet (paywall:
  * AI-19 #301), so it opens the «ИИ-бюджет» block of the profile (`/profile#ai-budget`); NONE stays a plain sentence.
  */
 function routeLink(notification: AppNotification): NotificationLink | null {
     if (notification.route === 'PLANS') return { label: 'Открыть ИИ-бюджет', commands: ['/profile'], fragment: 'ai-budget' };
     if (notification.route !== 'WORKSHOP' && notification.route !== 'DECK') return null;
+    // A reader never learns the deck id: the approval opens the deck by its public code (the public view owns the route `/d/{code}`).
+    if (notification.kind === 'DECK_ACCESS_GRANTED') {
+        const code = notification.params['code'];
+        return typeof code === 'string' && PUBLIC_CODE.test(code) ? { label: 'Открыть колоду', commands: ['/d', code] } : null;
+    }
     const deckId = notification.params['deckId'];
     if (typeof deckId !== 'string' || !UUID.test(deckId)) return null;
     const sessionId = notification.params['sessionId'];
     if (notification.route === 'WORKSHOP' && typeof sessionId === 'string' && UUID.test(sessionId)) {
         return { label: 'Открыть мастерскую', commands: ['/decks', deckId, 'workshop', sessionId] };
     }
+    // The request notification opens the deck hub on its access section, where the requests are listed.
+    if (notification.kind === 'DECK_ACCESS_REQUESTED') return { label: 'Открыть доступ', commands: ['/decks', deckId], fragment: 'access' };
     return { label: 'Открыть колоду', commands: ['/decks', deckId] };
 }
 
