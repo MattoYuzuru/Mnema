@@ -557,10 +557,11 @@ duplicated and edits never cross in either direction.
 - **`myCopy` in the public summary.** `GET /api/public/decks/{code}` for a signed-in viewer carries `myCopy`: `null` or `{deckId, preparing}` for his live copy
   of exactly this deck («Открыть мою копию»); the guest's summary is unchanged («Войдите, чтобы добавить колоду к себе»).
 - **Limits.** At most `learning.community.forks.max-preparing` (10) live copies per account may be unfinished at once: one more is 422
-  `RESOURCE_LIMIT_EXCEEDED` with the member `limit`. The job runs one copy per account at a time (`learning.jobs` per-account limit) in slices of at most 200 entries.
+  `RESOURCE_LIMIT_EXCEEDED` with the member `limit`. At most `learning.community.forks.max-per-window` (20) copies may be **created** per account in a sliding `learning.community.forks.window` (one hour), deleted copies included: one more is 429
+  `RATE_LIMITED` with `Retry-After` (and the member `retryAfter`), the time until the oldest creation leaves the window; answering an existing copy never counts. The job runs one copy per account at a time (`learning.jobs` per-account limit) in slices of at most 200 entries.
 
 ### Codes
 
 New: `DECK_PREPARING` (409) and `FORK_OWN_DECK` (409); no members. Existing codes keep their status/title/detail
-(`RESOURCE_NOT_FOUND` 404, `DECK_INVITE_ONLY` 403, `IDEMPOTENCY_CONFLICT` 409, `INVALID_REQUEST` 400, `RESOURCE_LIMIT_EXCEEDED` 422). Problem text never echoes
+(`RATE_LIMITED` 429, `RESOURCE_NOT_FOUND` 404, `DECK_INVITE_ONLY` 403, `IDEMPOTENCY_CONFLICT` 409, `INVALID_REQUEST` 400, `RESOURCE_LIMIT_EXCEEDED` 422). Problem text never echoes
 codes, titles or identifiers.

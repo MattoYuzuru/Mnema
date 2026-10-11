@@ -96,6 +96,8 @@ export class OwnDecksStore {
     private listSubscription: Subscription | null = null;
     private listRefreshSubscription: Subscription | null = null;
     private detailSubscription: Subscription | null = null;
+    private detailRefreshSubscription: Subscription | null = null;
+    private detailRefreshPromise: Promise<void> | null = null;
     private mutationSubscription: Subscription | null = null;
 
     constructor() {
@@ -103,6 +105,7 @@ export class OwnDecksStore {
             this.listSubscription?.unsubscribe();
             this.listRefreshSubscription?.unsubscribe();
             this.detailSubscription?.unsubscribe();
+            this.detailRefreshSubscription?.unsubscribe();
             this.mutationSubscription?.unsubscribe();
         });
     }
@@ -150,6 +153,35 @@ export class OwnDecksStore {
     retryDetail(): void {
         const state = this.detailSignal();
         if (state.phase === 'error' && state.deckId !== null) this.requestDetail(state.deckId);
+    }
+
+    /**
+     * Reads the open deck again without leaving the ready state: the copy that is being prepared reports its progress this way, and
+     * a detach is confirmed this way. Resolves when the request has ended, whatever its outcome (a failure keeps the last confirmed
+     * deck); an answer is dropped when another deck was opened or the deck was saved meanwhile.
+     */
+    refreshDetail(): Promise<void> {
+        const state = this.detailSignal();
+        if (state.phase !== 'ready' || state.deck === null) return Promise.resolve();
+        const { deckId } = state.deck;
+        const version = state.deck.rowVersion;
+        const epoch = this.detailEpoch;
+        // One read at a time: a caller that comes while one is on its way waits for that one.
+        if (this.detailRefreshSubscription?.closed === false && this.detailRefreshPromise !== null) return this.detailRefreshPromise;
+        this.detailRefreshPromise = new Promise<void>(resolve => {
+            this.detailRefreshSubscription = this.api.detail(deckId).subscribe({
+                next: deck => {
+                    const current = this.detailSignal();
+                    if (epoch === this.detailEpoch && current.phase === 'ready' && current.deck?.deckId === deckId && current.deck.rowVersion === version) {
+                        this.detailSignal.set({ phase: 'ready', deckId, deck, failure: null });
+                    }
+                    resolve();
+                },
+                error: () => resolve(),
+                complete: () => resolve()
+            });
+        });
+        return this.detailRefreshPromise;
     }
 
     recoverMutation(pending: PendingDeckCommand): void {

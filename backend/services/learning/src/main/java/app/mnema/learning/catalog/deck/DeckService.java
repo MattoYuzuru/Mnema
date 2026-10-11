@@ -57,7 +57,14 @@ public class DeckService {
         List<DeckRecord> rows = repository.page(actor, DeckCursor.decode(cursor), size);
         ObjectNode result = JsonNodeFactory.instance.objectNode();
         var items = result.putArray("items");
-        rows.stream().limit(size).forEach(row -> items.add(withFork(actor, row)));
+        List<DeckRecord> page = rows.stream().limit(size).toList();
+        // the sources of every copy of the page are resolved together, not one query per copy
+        List<JsonNode> forkJson = forks.describeAll(actor, page.stream().map(DeckRecord::fork).toList());
+        for (int index = 0; index < page.size(); index++) {
+            ObjectNode json = page.get(index).toJson();
+            json.set("fork", forkJson.get(index));
+            items.add(json);
+        }
         if (rows.size() > size) {
             DeckRecord last = rows.get(size - 1);
             result.put("nextCursor", new DeckCursor(last.createdAt(), last.deckId()).encode());

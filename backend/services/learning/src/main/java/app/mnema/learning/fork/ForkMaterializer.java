@@ -37,6 +37,7 @@ import java.util.UUID;
  * ({@code verification_failed}). The database refuses a head write on a preparing copy from any other transaction (trigger {@code deck_fork_preparing_guard}); this transaction names itself with
  * {@code mnema.fork_materializing}.
  *
+ * <p><b>Restart without a cursor.</b> The first slice of a job that has no cursor first deletes the copy's rows of the three head tables, so a fresh job enqueued after the previous one failed and was purged starts exact.
  * <p><b>Failure.</b> A storage or database hiccup is retried by the executor; a permanent failure ends the job {@code FAILED}, and the copy stays preparing with the flag {@code failed}
  * until its owner retries (cursor kept) or deletes it. A copy deleted meanwhile ends the job without further writes.
  */
@@ -75,6 +76,8 @@ public class ForkMaterializer implements JobHandler {
             return Slice.done(job.progressCount());
         }
         repository.allowHeadWrites(deck);
+        // No cursor: nothing of this job is committed. Heads that are there belong to an earlier job of this copy whose record was purged (retry enqueued afresh): start from empty.
+        if (job.progress() == null) repository.clearHeads(deck);
         Phase phase = phase(job.progress());
         int next = next(job.progress(), phase == Phase.MEMBERS ? copy.memberCount() : copy.exerciseCount());
         int budget = settings.sliceSize;

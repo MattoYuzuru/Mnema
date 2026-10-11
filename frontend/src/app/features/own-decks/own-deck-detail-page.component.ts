@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -11,6 +12,10 @@ import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/c
 import { DeckMetadata, DeckVisibility, OwnDeck, validateDeckMetadata } from './own-deck.models';
 import { AccessLevelComponent } from '../../shared/access-level.component';
 import { ActionMenuComponent, ActionMenuItem } from '../../shared/action-menu.component';
+import { COPY_TEXT } from '../../shared/copy-text';
+import { CopyOriginComponent } from '../../shared/copy-origin.component';
+import { CopyStatusComponent } from '../../shared/copy-status.component';
+import { sizeLine } from '../../shared/public-deck-card';
 import { PublicationBlockComponent } from './publication/publication-block.component';
 import { DeckDescriptionComponent } from './deck-description.component';
 import { OwnDecksApiService } from './own-decks-api.service';
@@ -20,6 +25,9 @@ import { DeckInsightsComponent, InsightsState } from './hub/deck-insights.compon
 import { DeckMaterialsComponent } from './hub/deck-materials.component';
 import { DeckWorkshopsComponent } from '../generation/deck-workshops.component';
 import { DeckRecoveryContext, OwnDeckRecoveryService } from './own-deck-recovery.service';
+import { ForkApiService } from './fork/fork-api.service';
+import { FORK_POLL_LIMIT, forkPollDelay } from './fork/fork-poll';
+import { ForkProgress, forkProgressOf } from './fork/fork.models';
 import {
     OwnDecksStore,
     DeckMutationState,
@@ -33,7 +41,8 @@ import {
 @Component({
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
-        DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent],
+        DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent,
+        CopyOriginComponent, CopyStatusComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',
@@ -68,8 +77,38 @@ export class OwnDeckDetailPageComponent {
     readonly publicationToken = signal(0);
     readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
     readonly publication = viewChild(PublicationBlockComponent);
+    /** The copy state of this deck (`null` for an ordinary deck, and while the first read is on its way). */
+    readonly fork = computed(() => this.store.detailState().deck?.fork ?? null);
+    /** `preparing` or `failed` while the copy is not ready: the hub then shows the state instead of the content. */
+    readonly copyState = computed<Exclude<ForkProgress, 'ready'> | null>(() => {
+        const fork = this.fork();
+        const progress = fork === null ? 'ready' : forkProgressOf(fork);
+        return progress === 'ready' ? null : progress;
+    });
+    /** «40 материалов · 12 упражнений»: what the copy will hold (the counts of the deck are those being prepared). */
+    readonly copySummary = computed(() => {
+        const deck = this.store.detailState().deck;
+        return deck === null || deck.memberCount + deck.exerciseCount === 0 ? null : sizeLine(deck.memberCount, deck.exerciseCount);
+    });
     /** The «⋯» menu of the deck: only actions that work. */
-    readonly menuItems: readonly ActionMenuItem[] = [{ id: 'access', label: 'Доступ…', glyph: 'lock' }];
+    readonly menuItems = computed<readonly ActionMenuItem[]>(() => {
+        const fork = this.fork();
+        return [
+            { id: 'access', label: 'Доступ…', glyph: 'lock' },
+            ...(fork !== null && !fork.detached ? [{ id: 'detach', label: COPY_TEXT.detach, glyph: 'copy-branch' } as const] : [])
+        ];
+    });
+    /** Said once to assistive technology when the copy changes state (a polite live region; nothing is announced by polling itself). */
+    readonly liveMessage = signal('');
+    /** The page stopped checking for the end of the preparation by itself. */
+    readonly pollStalled = signal(false);
+    readonly retrying = signal(false);
+    readonly retryError = signal<string | null>(null);
+    /** «Отвязать от автора?» is asked inline, in the page: the house pattern has no dialog for it. */
+    readonly confirmingDetach = signal(false);
+    readonly detaching = signal(false);
+    readonly detachError = signal<string | null>(null);
+    protected readonly copyText = COPY_TEXT;
     readonly materials = viewChild(DeckMaterialsComponent);
     readonly failureMessage = deckFailureMessage;
     readonly mayRetrySameCommand = mayRetrySameCommand;
@@ -82,6 +121,7 @@ export class OwnDeckDetailPageComponent {
     private readonly authoring = inject(AuthoringApiService);
     private readonly decksApi = inject(OwnDecksApiService);
     private readonly hubApi = inject(DeckHubApiService);
+    private readonly forks = inject(ForkApiService);
     private readonly capabilities = inject(CapabilitiesApiService);
     private readonly router = inject(Router);
     private readonly injector = inject(Injector);
@@ -97,6 +137,10 @@ export class OwnDeckDetailPageComponent {
     private readonly fragment = toSignal(this.route.fragment, { initialValue: null });
     /** The fragment `access` was already followed for this deck, so a later re-render does not pull the focus again. */
     private followedAccess: string | null = null;
+    private announced: { readonly deckId: string; readonly progress: ForkProgress | 'none' } | null = null;
+    private pollTimer: ReturnType<typeof setTimeout> | null = null;
+    private pollAttempt = 0;
+    private polledDeckId: string | null = null;
 
     constructor() {
         this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
@@ -104,6 +148,11 @@ export class OwnDeckDetailPageComponent {
             if (deckId === null) return;
             const normalizedDeckId = deckId.toLowerCase();
             this.captureCount.set(null);
+            this.confirmingDetach.set(false);
+            this.detachError.set(null);
+            this.retryError.set(null);
+            this.liveMessage.set('');
+            this.announced = null;
             this.publishedLevel.set(null);
             this.publicationRevisionId = null;
             this.editing.set(false);
@@ -133,6 +182,19 @@ export class OwnDeckDetailPageComponent {
             error: () => this.generationAvailable.set(CAPABILITIES_UNAVAILABLE.aiGeneration.available)
         });
 
+        this.destroyRef.onDestroy(() => this.stopPolling());
+        effect(() => {
+            const deck = this.store.detailState().deck;
+            untracked(() => this.announceCopyState(deck));
+        });
+        effect(() => {
+            // While the copy is being prepared the page asks again at a bounded backoff; a ready, failed or ordinary deck needs nothing.
+            const copyState = this.copyState();
+            const deckId = this.store.detailState().deck?.deckId ?? null;
+            untracked(() => {
+                if (copyState === 'preparing' && deckId !== null) this.startPolling(deckId); else this.stopPolling();
+            });
+        });
         effect(() => {
             // `/decks/{id}#access` (the link of «Запрошен доступ») lands on the access section once the block is on the page.
             const block = this.publication();
@@ -175,9 +237,67 @@ export class OwnDeckDetailPageComponent {
         });
     }
 
-    /** «Доступ…» of the «⋯» menu. */
+    /** «Доступ…» and «Отвязать от автора» of the «⋯» menu. */
     onMenu(id: string): void {
         if (id === 'access') this.publication()?.focusSection();
+        else if (id === 'detach') this.askDetach();
+    }
+
+    /** «Повторить» on a copy that could not be prepared. */
+    retryCopy(deck: OwnDeck): void {
+        if (this.retrying()) return;
+        this.retrying.set(true);
+        this.retryError.set(null);
+        this.forks.retry(deck.deckId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: () => {
+                this.resetPolling();
+                void this.store.refreshDetail().then(() => this.retrying.set(false));
+            },
+            error: () => {
+                this.retryError.set(COPY_TEXT.retryFailed);
+                this.retrying.set(false);
+            }
+        });
+    }
+
+    /** «Проверить снова» after the page stopped asking by itself. */
+    checkCopyAgain(): void {
+        this.resetPolling();
+        void this.poll();
+    }
+
+    askDetach(): void {
+        this.detachError.set(null);
+        this.confirmingDetach.set(true);
+        afterNextRender(() => this.element.nativeElement.querySelector<HTMLElement>('#detach-title')?.focus(), { injector: this.injector });
+    }
+
+    cancelDetach(): void {
+        if (this.detaching()) return;
+        this.confirmingDetach.set(false);
+        this.detachError.set(null);
+        // The «⋯» button it was opened from.
+        queueMicrotask(() => this.element.nativeElement.querySelector<HTMLElement>('app-action-menu button.trigger')?.focus());
+    }
+
+    confirmDetach(deck: OwnDeck): void {
+        if (this.detaching()) return;
+        this.detaching.set(true);
+        this.detachError.set(null);
+        this.forks.detach(deck.deckId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: () => {
+                void this.store.refreshDetail().then(() => {
+                    this.detaching.set(false);
+                    this.confirmingDetach.set(false);
+                    this.liveMessage.set(COPY_TEXT.detachedDone);
+                    afterNextRender(() => this.element.nativeElement.querySelector<HTMLElement>('h1')?.focus(), { injector: this.injector });
+                });
+            },
+            error: error => {
+                this.detachError.set(error instanceof HttpErrorResponse && error.status === 404 ? COPY_TEXT.deckMissing : COPY_TEXT.detachFailed);
+                this.detaching.set(false);
+            }
+        });
     }
 
     openEditor(field: 'title' | 'description' = 'title'): void {
@@ -267,6 +387,67 @@ export class OwnDeckDetailPageComponent {
     reapplyConflict(): void {
         this.store.reapplyConflict();
         this.persistRecovery();
+    }
+
+    /** Says each change of the copy's state once: first sight of a copy being prepared, a failure, and the end of the preparation. */
+    private announceCopyState(deck: OwnDeck | null): void {
+        if (deck === null) return;
+        const fork = deck.fork ?? null;
+        const progress = fork === null ? 'none' : forkProgressOf(fork);
+        const previous = this.announced?.deckId === deck.deckId ? this.announced.progress : null;
+        this.announced = { deckId: deck.deckId, progress };
+        if (progress === previous) return;
+        if (progress === 'preparing') this.liveMessage.set(COPY_TEXT.preparing);
+        else if (progress === 'failed') this.liveMessage.set(`${COPY_TEXT.failed}.`);
+        else if (progress === 'ready' && (previous === 'preparing' || previous === 'failed')) {
+            this.liveMessage.set(COPY_TEXT.ready);
+            // The statistics were read while the copy was empty.
+            this.loadInsights(deck.deckId);
+            afterNextRender(() => {
+                const active = this.element.nativeElement.ownerDocument.activeElement;
+                if (active === null || active === this.element.nativeElement.ownerDocument.body) this.element.nativeElement.querySelector<HTMLElement>('h1')?.focus();
+            }, { injector: this.injector });
+        }
+    }
+
+    private startPolling(deckId: string): void {
+        if (this.polledDeckId !== deckId) {
+            this.polledDeckId = deckId;
+            this.pollAttempt = 0;
+            this.pollStalled.set(false);
+        }
+        this.schedulePoll();
+    }
+
+    private resetPolling(): void {
+        this.pollAttempt = 0;
+        this.pollStalled.set(false);
+    }
+
+    private stopPolling(): void {
+        if (this.pollTimer !== null) clearTimeout(this.pollTimer);
+        this.pollTimer = null;
+        this.polledDeckId = null;
+    }
+
+    private schedulePoll(): void {
+        if (this.pollTimer !== null || this.pollStalled() || this.destroyRef.destroyed) return;
+        this.pollTimer = setTimeout(() => void this.poll(), forkPollDelay(this.pollAttempt));
+    }
+
+    private async poll(): Promise<void> {
+        this.pollTimer = null;
+        if (this.destroyRef.destroyed || this.copyState() !== 'preparing') return;
+        // A hidden tab does not ask; the next check comes at the same pace once it is visible again.
+        if (this.element.nativeElement.ownerDocument.visibilityState !== 'hidden') {
+            this.pollAttempt += 1;
+            if (this.pollAttempt > FORK_POLL_LIMIT) {
+                this.pollStalled.set(true);
+                return;
+            }
+            await this.store.refreshDetail();
+        }
+        if (!this.destroyRef.destroyed && this.copyState() === 'preparing') this.schedulePoll();
     }
 
     private loadForm(deck: OwnDeck): void {

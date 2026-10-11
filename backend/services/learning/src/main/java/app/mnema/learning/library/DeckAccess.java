@@ -3,7 +3,12 @@ package app.mnema.learning.library;
 import app.mnema.learning.platform.id.UuidPolicy;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -35,13 +40,38 @@ public class DeckAccess {
         Optional<DeckRef> found = repository.byCode(code);
         if (found.isEmpty()) return Resolution.denied(Denial.NOT_FOUND);
         DeckRef deck = found.orElseThrow();
+        return decide(viewer, deck, () -> granted(viewer, deck));
+    }
+
+    /**
+     * Resolves a viewer's access to several decks by their codes with the SAME decision as {@link #resolve(Viewer, String)}, but with one statement for the
+     * decks and one for the grants (a page of copies reads the state of its sources without a query per copy). Every requested code has an entry.
+     */
+    public Map<String, Resolution> resolveAll(Viewer viewer, Collection<String> codes) {
+        Map<String, DeckRef> found = new HashMap<>();
+        repository.byCodes(codes.stream().filter(PublicCodes::valid).distinct().toList()).forEach(deck -> found.put(deck.code(), deck));
+        Set<UUID> invitations = new HashSet<>();
+        found.values().forEach(deck -> {
+            if (deck.visibility() == DeckVisibility.INVITE) invitations.add(deck.deckId());
+        });
+        Set<UUID> grants = viewer.accountId() == null ? Set.of() : repository.grantedAmong(invitations, viewer.accountId());
+        Map<String, Resolution> result = new HashMap<>();
+        for (String code : codes) {
+            DeckRef deck = found.get(code);
+            result.put(code, deck == null ? Resolution.denied(Denial.NOT_FOUND) : decide(viewer, deck, () -> grants.contains(deck.deckId())));
+        }
+        return result;
+    }
+
+    /** The one decision by code: what a viewer is, given the deck, and whether he holds a grant (asked only for an invitation deck). */
+    private static Resolution decide(Viewer viewer, DeckRef deck, java.util.function.BooleanSupplier granted) {
         if (viewer.accountId() != null && viewer.accountId().equals(deck.ownerId())) return Resolution.granted(AccessLevel.OWNER, deck);
         if (deck.published() == null) return Resolution.denied(Denial.NOT_FOUND);
         return switch (deck.visibility()) {
             case PRIVATE -> Resolution.denied(Denial.NOT_FOUND);
             case LINK -> Resolution.granted(AccessLevel.LINK, deck);
             case PUBLIC -> Resolution.granted(AccessLevel.PUBLIC, deck);
-            case INVITE -> granted(viewer, deck) ? Resolution.granted(AccessLevel.GRANTEE, deck) : Resolution.denied(Denial.INVITE_ONLY);
+            case INVITE -> granted.getAsBoolean() ? Resolution.granted(AccessLevel.GRANTEE, deck) : Resolution.denied(Denial.INVITE_ONLY);
         };
     }
 

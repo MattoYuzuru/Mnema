@@ -1,5 +1,6 @@
 <section class="page narrow deck-detail-page" aria-labelledby="deck-detail-title">
   <a class="back-link" routerLink="/decks"><span aria-hidden="true">←</span> Мои колоды</a>
+  <p class="visually-hidden" role="status">{{ liveMessage() }}</p>
 
   @let detail = store.detailState();
   @if (detail.phase === 'loading' || detail.phase === 'idle') {
@@ -17,6 +18,7 @@
       <div>
         <p class="eyebrow">Личная колода</p>
         <h1 id="deck-detail-title" tabindex="-1">{{ deck.metadata.title }}</h1>
+        @if (fork(); as origin) { <app-copy-origin [fork]="origin" /> }
         @let level = publishedLevel() ?? deck.visibility;
         @if (level !== 'private') { <p class="hub-level"><app-access-level [level]="level" /></p> }
         @if (deck.metadata.description.trim()) {
@@ -71,79 +73,100 @@
       </section>
     }
 
-    <nav class="actions hub-actions" aria-label="Действия с колодой">
-      <a class="button primary" [routerLink]="['/decks', deck.deckId, 'study']">Учить</a>
-      <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Добавить материал</a>
-      <a class="button secondary capture-link" [routerLink]="['/decks', deck.deckId, 'capture']" [attr.aria-label]="captureCount() ? 'На потом, заметок: ' + captureCount() : 'На потом'">На потом@if (captureCount(); as count) { <span class="capture-badge" aria-hidden="true">{{ count > 999 ? '999+' : count }}</span> }</a>
-      <button class="button secondary" type="button" #editButton [attr.aria-controls]="editing() ? 'deck-editor' : null" [attr.aria-expanded]="editing()" (click)="toggleEditor()">Изменить</button>
-      <app-action-menu [label]="'Действия с колодой «' + deck.metadata.title + '»'" [items]="menuItems" (chosen)="onMenu($event)" />
-    </nav>
-
-    @if (editing()) {
-    <section id="deck-editor" class="editor-panel" aria-labelledby="deck-editor-title" (keydown.escape)="closeEditor()">
-      <h2 id="deck-editor-title">Изменить колоду</h2>
-    <form class="metadata-form" [formGroup]="form" (ngSubmit)="save(deck)" novalidate>
-      <div class="field">
-        <label for="detail-title">Название <span aria-hidden="true">*</span></label>
-        <textarea class="title-field" id="detail-title" rows="2" formControlName="title" maxlength="400" (input)="syncDraft()"
-          [readOnly]="mutationLocksDraft(mutation)"
-          [attr.aria-invalid]="submitted() && (validation().titleBlank || validation().titleCodePoints > 200 || validation().titleBytes > 800)"
-          aria-describedby="detail-title-help detail-title-error" autocomplete="off"></textarea>
-        <div class="field-meta" id="detail-title-help">
-          <span>До 200 символов</span>
-          <span>{{ validation().titleCodePoints }}/200</span>
-        </div>
-        @if (submitted() && validation().titleBlank) {
-          <p class="field-error" id="detail-title-error">Введите название, состоящее не только из пробелов.</p>
-        } @else if (submitted() && (validation().titleCodePoints > 200 || validation().titleBytes > 800)) {
-          <p class="field-error" id="detail-title-error">Сократите название до указанных пределов.</p>
-        }
-      </div>
-
-      <div class="field">
-        <label for="detail-description">Описание <span class="optional">необязательно</span></label>
-        <textarea id="detail-description" rows="8" maxlength="4096" formControlName="description" (input)="syncDraft()"
-          [readOnly]="mutationLocksDraft(mutation)"
-          [attr.aria-invalid]="submitted() && validation().descriptionBytes > 4096"
-          [attr.aria-describedby]="submitted() && validation().descriptionBytes > 4096 ? 'detail-description-error' : null"></textarea>
-        <p class="hint">Поддерживаются **жирный**, *курсив*, ~~зачёркивание~~ и списки.</p>
-        @if (draft().description.trim()) {
-          <div class="description-preview" aria-label="Предпросмотр описания">
-            <p class="eyebrow">Как будет выглядеть</p>
-            <app-deck-description [text]="draft().description" />
-          </div>
-        }
-        @if (submitted() && validation().descriptionBytes > 4096) {
-          <p class="field-error" id="detail-description-error">Сократите описание.</p>
-        }
-      </div>
-
-      @if (submitted() && !validation().unicodeValid) {
-        <p class="notice error" role="alert">Текст содержит неподдерживаемую последовательность Unicode.</p>
-      }
-      @if (submitted() && validation().requestBytes > 8192) {
-        <p class="notice error" role="alert">Сократите название или описание.</p>
-      }
-
-      <div class="form-actions">
-        <span class="draft-state" aria-live="polite">{{ form.dirty ? 'Есть несохранённые изменения' : 'Нет локальных изменений' }}</span>
-        <div class="actions">
-          <app-hold-to-delete-button label="Удалить колоду" [disabled]="deleting() || !canDelete(mutation)" (confirmed)="deleteDeck(deck)" />
-          <button class="button secondary" type="button" (click)="closeEditor()">Закрыть</button>
-          <button class="button primary" type="submit"
-            [disabled]="!canStartNewMutation(mutation)">
-            {{ mutation.phase === 'pending' ? 'Отправляем…' : 'Сохранить изменения' }}
-          </button>
-        </div>
-      </div>
+    @if (copyState(); as state) {
+      <app-copy-status [state]="state" [summary]="state === 'preparing' ? copySummary() : null" [stalled]="pollStalled()" [busy]="retrying()"
+        (retry)="retryCopy(deck)" (check)="checkCopyAgain()">
+        <app-hold-to-delete-button copy-actions label="Удалить колоду" [consequence]="copyText.deleteConsequence" [disabled]="deleting() || !canDelete(mutation)" (confirmed)="deleteDeck(deck)" />
+      </app-copy-status>
+      @if (retryError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
       @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
-    </form>
-    </section>
-    }
+    } @else {
+      <nav class="actions hub-actions" aria-label="Действия с колодой">
+        <a class="button primary" [routerLink]="['/decks', deck.deckId, 'study']">Учить</a>
+        <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Добавить материал</a>
+        <a class="button secondary capture-link" [routerLink]="['/decks', deck.deckId, 'capture']" [attr.aria-label]="captureCount() ? 'На потом, заметок: ' + captureCount() : 'На потом'">На потом@if (captureCount(); as count) { <span class="capture-badge" aria-hidden="true">{{ count > 999 ? '999+' : count }}</span> }</a>
+        <button class="button secondary" type="button" #editButton [attr.aria-controls]="editing() ? 'deck-editor' : null" [attr.aria-expanded]="editing()" (click)="toggleEditor()">Изменить</button>
+        <app-action-menu [label]="'Действия с колодой «' + deck.metadata.title + '»'" [items]="menuItems()" (chosen)="onMenu($event)" />
+      </nav>
 
-    <app-publication-block anchor="access" [deckId]="deck.deckId" [deckTitle]="deck.metadata.title" [reloadToken]="publicationToken()" (levelChange)="publishedLevel.set($event)" (editDescription)="openEditor('description')" />
-    <app-deck-workshops [deckId]="deck.deckId" />
-    <app-deck-insights [deckId]="deck.deckId" [state]="insights()" (retry)="loadInsights()" (showMissing)="showMaterialsWithoutExercises()" />
-    <app-deck-materials [deckId]="deck.deckId" [generationAvailable]="generationAvailable()" (changed)="loadInsights()" />
+      @if (confirmingDetach()) {
+        <section class="notice warning detach-confirm" aria-labelledby="detach-title" (keydown.escape)="cancelDetach()">
+          <h2 id="detach-title" class="subsection-heading" tabindex="-1">{{ copyText.detachTitle }}</h2>
+          <p>{{ copyText.detachBody }}</p>
+          <div class="actions">
+            <button type="button" class="button" [attr.aria-busy]="detaching() ? 'true' : null" [attr.aria-disabled]="detaching() ? 'true' : null" (click)="confirmDetach(deck)">{{ detaching() ? copyText.detaching : copyText.detach }}</button>
+            <button type="button" class="button quiet" [disabled]="detaching()" (click)="cancelDetach()">{{ copyText.cancel }}</button>
+          </div>
+          @if (detachError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
+        </section>
+      }
+
+      @if (editing()) {
+      <section id="deck-editor" class="editor-panel" aria-labelledby="deck-editor-title" (keydown.escape)="closeEditor()">
+        <h2 id="deck-editor-title">Изменить колоду</h2>
+      <form class="metadata-form" [formGroup]="form" (ngSubmit)="save(deck)" novalidate>
+        <div class="field">
+          <label for="detail-title">Название <span aria-hidden="true">*</span></label>
+          <textarea class="title-field" id="detail-title" rows="2" formControlName="title" maxlength="400" (input)="syncDraft()"
+            [readOnly]="mutationLocksDraft(mutation)"
+            [attr.aria-invalid]="submitted() && (validation().titleBlank || validation().titleCodePoints > 200 || validation().titleBytes > 800)"
+            aria-describedby="detail-title-help detail-title-error" autocomplete="off"></textarea>
+          <div class="field-meta" id="detail-title-help">
+            <span>До 200 символов</span>
+            <span>{{ validation().titleCodePoints }}/200</span>
+          </div>
+          @if (submitted() && validation().titleBlank) {
+            <p class="field-error" id="detail-title-error">Введите название, состоящее не только из пробелов.</p>
+          } @else if (submitted() && (validation().titleCodePoints > 200 || validation().titleBytes > 800)) {
+            <p class="field-error" id="detail-title-error">Сократите название до указанных пределов.</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="detail-description">Описание <span class="optional">необязательно</span></label>
+          <textarea id="detail-description" rows="8" maxlength="4096" formControlName="description" (input)="syncDraft()"
+            [readOnly]="mutationLocksDraft(mutation)"
+            [attr.aria-invalid]="submitted() && validation().descriptionBytes > 4096"
+            [attr.aria-describedby]="submitted() && validation().descriptionBytes > 4096 ? 'detail-description-error' : null"></textarea>
+          <p class="hint">Поддерживаются **жирный**, *курсив*, ~~зачёркивание~~ и списки.</p>
+          @if (draft().description.trim()) {
+            <div class="description-preview" aria-label="Предпросмотр описания">
+              <p class="eyebrow">Как будет выглядеть</p>
+              <app-deck-description [text]="draft().description" />
+            </div>
+          }
+          @if (submitted() && validation().descriptionBytes > 4096) {
+            <p class="field-error" id="detail-description-error">Сократите описание.</p>
+          }
+        </div>
+
+        @if (submitted() && !validation().unicodeValid) {
+          <p class="notice error" role="alert">Текст содержит неподдерживаемую последовательность Unicode.</p>
+        }
+        @if (submitted() && validation().requestBytes > 8192) {
+          <p class="notice error" role="alert">Сократите название или описание.</p>
+        }
+
+        <div class="form-actions">
+          <span class="draft-state" aria-live="polite">{{ form.dirty ? 'Есть несохранённые изменения' : 'Нет локальных изменений' }}</span>
+          <div class="actions">
+            <app-hold-to-delete-button label="Удалить колоду" [disabled]="deleting() || !canDelete(mutation)" (confirmed)="deleteDeck(deck)" />
+            <button class="button secondary" type="button" (click)="closeEditor()">Закрыть</button>
+            <button class="button primary" type="submit"
+              [disabled]="!canStartNewMutation(mutation)">
+              {{ mutation.phase === 'pending' ? 'Отправляем…' : 'Сохранить изменения' }}
+            </button>
+          </div>
+        </div>
+        @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
+      </form>
+      </section>
+      }
+
+      <app-publication-block anchor="access" [deckId]="deck.deckId" [deckTitle]="deck.metadata.title" [reloadToken]="publicationToken()" (levelChange)="publishedLevel.set($event)" (editDescription)="openEditor('description')" />
+      <app-deck-workshops [deckId]="deck.deckId" />
+      <app-deck-insights [deckId]="deck.deckId" [state]="insights()" (retry)="loadInsights()" (showMissing)="showMaterialsWithoutExercises()" />
+      <app-deck-materials [deckId]="deck.deckId" [generationAvailable]="generationAvailable()" (changed)="loadInsights()" />
+    }
   }
 </section>

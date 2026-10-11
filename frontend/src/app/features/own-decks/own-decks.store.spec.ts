@@ -120,6 +120,65 @@ describe('OwnDecksStore', () => {
         expect(vi.mocked(api.list).mock.calls).toEqual([[null], [null], [null]]);
     });
 
+    describe('refreshDetail (the copy being prepared, a detach)', () => {
+        const preparing = { ...fixtureDeck, fork: { upstreamCode: 'Kq7xT3mNpR', upstreamTitle: 'Источник', sourceAvailable: true, preparing: true, failed: false, detached: false } };
+        const ready = { ...preparing, fork: { ...preparing.fork, preparing: false } };
+
+        it('does nothing before a deck is open', async () => {
+            await store.refreshDetail();
+            expect(api.detail).not.toHaveBeenCalled();
+        });
+
+        it('replaces the deck in place, without a loading state, and resolves when the read ended', async () => {
+            api.detail.mockReturnValueOnce(of(preparing));
+            store.openDeck(fixtureDeck.deckId);
+            api.detail.mockReturnValueOnce(of(ready));
+            const phases: string[] = [];
+            const pending = store.refreshDetail().then(() => phases.push(store.detailState().phase));
+            expect(store.detailState().phase).toBe('ready');
+            await pending;
+            expect(store.detailState().deck).toEqual(ready);
+            expect(phases).toEqual(['ready']);
+        });
+
+        it('keeps the last confirmed deck when the read fails, and still resolves', async () => {
+            api.detail.mockReturnValueOnce(of(preparing));
+            store.openDeck(fixtureDeck.deckId);
+            api.detail.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+            await store.refreshDetail();
+            expect(store.detailState()).toEqual({ phase: 'ready', deckId: fixtureDeck.deckId, deck: preparing, failure: null });
+        });
+
+        it('lets a second caller wait for the read that is already on its way', async () => {
+            api.detail.mockReturnValueOnce(of(preparing));
+            store.openDeck(fixtureDeck.deckId);
+            const slow = new Subject<OwnDeck>();
+            api.detail.mockReturnValueOnce(slow);
+            const first = store.refreshDetail();
+            const second = store.refreshDetail();
+            expect(api.detail).toHaveBeenCalledTimes(2);
+            slow.next(ready);
+            slow.complete();
+            await Promise.all([first, second]);
+            expect(store.detailState().deck).toEqual(ready);
+        });
+
+        it('drops an answer that arrives after another deck was opened or the deck was saved', async () => {
+            api.detail.mockReturnValueOnce(of(preparing));
+            store.openDeck(fixtureDeck.deckId);
+            const late = new Subject<OwnDeck>();
+            api.detail.mockReturnValueOnce(late);
+            const refreshing = store.refreshDetail();
+            const other = { ...fixtureDeck, deckId: '33333333-3333-4333-8333-333333333333' };
+            api.detail.mockReturnValueOnce(of(other));
+            store.openDeck(other.deckId);
+            late.next(ready);
+            late.complete();
+            await refreshing;
+            expect(store.detailState().deck).toEqual(other);
+        });
+    });
+
     it('retries an unknown create outcome with the exact same command', () => {
         api.create.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 }))).mockReturnValueOnce(of(writeResult(fixtureDeck, false)));
 

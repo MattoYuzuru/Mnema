@@ -45,6 +45,17 @@ class MaterializationRepository {
         jdbc.sql("SELECT set_config('mnema.fork_materializing', :deck, true)").param("deck", deck.toString()).query().listOfRows();
     }
 
+    /**
+     * Removes whatever heads this deck already has. The first slice of a job that has no cursor runs it: a job whose record was purged by retention after it failed
+     * is enqueued again from nothing (retry), while the heads of its earlier slices are still there. Starting from empty makes the rerun exact instead of a primary-key
+     * conflict (or, worse, a half old and half new set). Runs under {@code mnema.fork_materializing}, like every other head write of the job.
+     */
+    void clearHeads(UUID deck) {
+        jdbc.sql("DELETE FROM app_learning.objective_head WHERE deck_id = :deck").param("deck", deck).update();
+        jdbc.sql("DELETE FROM app_learning.deck_head_exercise WHERE deck_id = :deck").param("deck", deck).update();
+        jdbc.sql("DELETE FROM app_learning.deck_head_item WHERE deck_id = :deck").param("deck", deck).update();
+    }
+
     /** Writes the head of each material of a manifest page; returns how many entries found their revision. */
     int insertItemHeads(UUID deck, UUID scope, List<Entry> entries) {
         Map<String, Object> params = new HashMap<>();

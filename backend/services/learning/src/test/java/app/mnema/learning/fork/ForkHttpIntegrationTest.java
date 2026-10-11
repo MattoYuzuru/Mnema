@@ -26,6 +26,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -57,6 +58,7 @@ class ForkHttpIntegrationTest extends PostgresIntegrationTest {
     @Autowired private PlatformTransactionManager transactions;
     @Autowired private ManifestPages manifests;
     @Autowired private DeckPublications publications;
+    @Autowired private app.mnema.learning.library.DeckAccess access;
     private ForkWorlds worlds;
     private final UUID reader = UUID.randomUUID();
 
@@ -433,5 +435,25 @@ class ForkHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(retry.statusCode()).isEqualTo(200);
         assertThat(json(retry).path("preparing").booleanValue(true)).isFalse();
         assertThat(names(json(retry))).isEqualTo(names(CONTRACT.path("retry").path("body")));
+    }
+
+    @Test
+    void theBatchDecisionIsTheSingleDecisionForEveryLevelViewerAndUnknownCode() {
+        Source open = worlds.source("PUBLIC", 1, 0);
+        Source link = worlds.source("LINK", 1, 0);
+        Source invite = worlds.source("INVITE", 1, 0);
+        Source gone = worlds.source("LINK", 1, 0);
+        worlds.level(gone.author(), gone.deck(), "PRIVATE");
+        UUID grantee = UUID.randomUUID();
+        publications.grant(invite.author(), invite.deck(), grantee, GrantRole.VIEWER);
+        List<String> codes = List.of(open.code(), link.code(), invite.code(), gone.code(), "zzzzzzzzzz", "short", "x".repeat(10));
+        for (app.mnema.learning.library.Viewer viewer : List.of(app.mnema.learning.library.Viewer.account(reader, null), app.mnema.learning.library.Viewer.account(grantee, null),
+                app.mnema.learning.library.Viewer.account(invite.author(), null), app.mnema.learning.library.Viewer.account(open.author(), null),
+                app.mnema.learning.library.Viewer.guest(null))) {
+            var batch = access.resolveAll(viewer, codes);
+            assertThat(batch).hasSameSizeAs(codes);
+            for (String code : codes) assertThat(batch.get(code)).as(viewer.accountId() + " " + code).isEqualTo(access.resolve(viewer, code));
+        }
+        assertThat(access.resolveAll(app.mnema.learning.library.Viewer.account(reader, null), List.of())).isEmpty();
     }
 }

@@ -12,6 +12,7 @@ import app.mnema.learning.platform.jobs.JobHandler;
 import app.mnema.learning.platform.jobs.JobState;
 import app.mnema.learning.platform.jobs.JobTestAccess;
 import app.mnema.learning.platform.jobs.LearningJobs;
+import app.mnema.learning.platform.jobs.PermanentJobException;
 import app.mnema.learning.platform.jobs.Slice;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.study.session.StudySessionService;
@@ -74,6 +75,18 @@ class ForkMaterializationJobIntegrationTest extends PostgresIntegrationTest {
         registry.add("learning.community.public-routes.enabled", () -> true);
     }
 
+    /** The thousand-material deck, built once for the class (it takes a minute): the tests only copy it. */
+    private static Source big;
+
+    private synchronized Source big(ForkWorlds worlds) {
+        if (big == null) {
+            long built = System.nanoTime();
+            big = worlds.bigSource("LINK", MATERIALS, EXERCISES);
+            System.out.printf("fork-scale: built a deck of %d materials and %d exercises in %d ms%n", MATERIALS, EXERCISES, (System.nanoTime() - built) / 1_000_000);
+        }
+        return big;
+    }
+
     private ForkWorlds worlds() {
         return new ForkWorlds(port, decks, items, exercises, sessions, media, storage, jdbc, transactions, manifests);
     }
@@ -93,9 +106,7 @@ class ForkMaterializationJobIntegrationTest extends PostgresIntegrationTest {
     @Test
     void aKilledWorkerResumesFromItsLastCursorAndACopyOfAThousandMaterialsIsCompleteExactlyOnce() {
         ForkWorlds worlds = worlds();
-        long built = System.nanoTime();
-        Source source = worlds.bigSource("LINK", MATERIALS, EXERCISES);
-        System.out.printf("fork-scale: built a deck of %d materials and %d exercises in %d ms%n", MATERIALS, EXERCISES, (System.nanoTime() - built) / 1_000_000);
+        Source source = big(worlds);
         UUID reader = UUID.randomUUID();
         // the author keeps editing after publishing: a head the copy must not see
         worlds.edit(source.author(), source.deck(), source.materials().getFirst().member(), source.materials().getFirst().itemRevision(), "после публикации");
@@ -157,6 +168,55 @@ class ForkMaterializationJobIntegrationTest extends PostgresIntegrationTest {
         assertThat(materializer.run(new Job(job, QUEUE, reader, ForkWorlds.JSON.createObjectNode().put("deckId", copy.toString()), null, 0, 1)).toString())
                 .contains("Done");
         assertThat(count("deck_head_item", copy)).isEqualTo(MATERIALS);
+    }
+
+    @Test
+    void aFailedJobWhoseRecordWasPurgedIsRestartedFromNothingAndTheCopyIsExact() {
+        ForkWorlds worlds = worlds();
+        Source source = big(worlds);
+        UUID reader = UUID.randomUUID();
+        UUID copy = worlds.forked(reader, source.code());
+        UUID job = jobOf(copy);
+
+        AtomicInteger slices = new AtomicInteger();
+        JobHandler failing = new JobHandler() {
+            @Override public String queue() { return QUEUE; }
+            @Override public Slice run(Job claimed) {
+                Slice result = materializer.run(claimed);
+                // the effects of the third slice are written, then the handler gives up for good: that slice rolls back, the first two stay
+                if (slices.incrementAndGet() == 3) throw new PermanentJobException("injected");
+                return result;
+            }
+        };
+        try (JobTestAccess worker = JobTestAccess.around(context, failing)) {
+            assertThat(worker.runOne(QUEUE)).isTrue();
+        }
+        var failed = jobs.status(job).orElseThrow();
+        assertThat(failed.state()).isEqualTo(JobState.FAILED);
+        assertThat(failed.progress().path("next").intValue()).isEqualTo(300);
+        assertThat(count("deck_head_item", copy)).as("two slices committed, the third rolled back").isEqualTo(300);
+        assertThat(materialized(copy)).isFalse();
+        assertThat(ForkWorlds.json(worlds.get("/decks/" + copy, reader)).path("fork").path("failed").booleanValue(false)).isTrue();
+
+        // retention deletes the finished job: its cursor goes with it, and the retry enqueues the same key afresh
+        assertThat(jdbc.sql("DELETE FROM app_learning.learning_job WHERE job_id = :j").param("j", job).update()).isEqualTo(1);
+        assertThat(worlds.send("POST", "/decks/" + copy + "/fork:retry", reader, null, null).statusCode()).isEqualTo(200);
+        UUID fresh = jobOf(copy);
+        assertThat(fresh).isNotEqualTo(job);
+        assertThat(jobs.status(fresh).orElseThrow().progress()).as("no cursor").isNull();
+        assertThat(count("deck_head_item", copy)).as("the heads of the dead job are still there").isEqualTo(300);
+
+        try (JobTestAccess worker = JobTestAccess.around(context, materializer)) {
+            worker.makeDue(fresh);
+            assertThat(worker.runOne(QUEUE)).isTrue();
+        }
+        assertThat(jobs.status(fresh).orElseThrow().state()).isEqualTo(JobState.SUCCEEDED);
+        assertThat(jobs.status(fresh).orElseThrow().progressCount()).isEqualTo(MATERIALS + EXERCISES);
+        assertThat(materialized(copy)).isTrue();
+        assertThat(count("deck_head_item", copy)).isEqualTo(MATERIALS);
+        assertThat(count("deck_head_exercise", copy)).isEqualTo(EXERCISES);
+        assertThat(count("objective_head", copy)).isEqualTo(EXERCISES);
+        worlds.assertHeadsEqualPublishedManifest(source.deck(), copy);
     }
 
     @Test

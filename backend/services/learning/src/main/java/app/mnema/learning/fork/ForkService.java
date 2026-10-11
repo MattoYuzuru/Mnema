@@ -8,6 +8,7 @@ import app.mnema.learning.library.Denial;
 import app.mnema.learning.library.Resolution;
 import app.mnema.learning.library.Viewer;
 import app.mnema.learning.platform.api.ProblemExtension;
+import app.mnema.learning.platform.api.RateLimitedException;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
@@ -35,7 +36,7 @@ import java.util.UUID;
  * small owner commands on a copy (retry and detach).
  *
  * <p><b>The copy command</b> runs in one transaction with the house receipt: it resolves the source by its public code through {@link DeckAccess} (the same decision as the public
- * read; the owner is {@code 409 FORK_OWN_DECK}), serializes the (owner, source) pair, returns the live copy when there already is one, and otherwise writes a deck in the source's
+ * read; the owner is {@code 409 FORK_OWN_DECK}), takes the account's advisory lock (the window and the cap are counts, so the account's creations are serialized), returns the live copy when there already is one, and otherwise writes a deck in the source's
  * lineage, its revision 0 on the roots of the published revision with durable pins of its own, the {@code deck_fork} row and the enqueued materialization job. It reads
  * <i>only</i> the published revision, and it freezes the publication row ({@code FOR SHARE}) before it resolves the second time, so a republication or a level change cannot interleave: what is
  * copied is exactly what the viewer was allowed to read at that moment. The heads of the copy are not touched here; the job writes them from the manifest ({@link ForkMaterializer}).
@@ -92,7 +93,7 @@ public class ForkService {
     private ObjectNode copy(UUID actor, ForkCommand command) {
         Viewer viewer = Viewer.account(actor, null);
         Resolution first = decide(viewer, command.sourceCode());
-        repository.lockPair(actor, first.deck().deckId());
+        repository.lockActor(actor);
         // From here the publication of the source cannot move (a publication or a level change waits for this transaction): decide again, on frozen state.
         UUID frozen = repository.lockPublished(first.deck().deckId()).orElseThrow(ResourceNotFoundException::new);
         DeckRef source = decide(viewer, command.sourceCode()).deck();
@@ -101,6 +102,11 @@ public class ForkService {
         if (live.isPresent()) {
             meters.counter("mnema_deck_forks_total", "outcome", "existing").increment();
             return acknowledgement(command, live.get().deckId(), live.get().preparing(), true);
+        }
+        ForkRepository.Window window = repository.window(actor, settings.window);
+        if (window.count() >= settings.maxPerWindow) {
+            meters.counter("mnema_deck_forks_total", "outcome", "throttled").increment();
+            throw new RateLimitedException(window.retryAfterSeconds());
         }
         if (repository.unfinished(actor) >= settings.maxPreparing) {
             meters.counter("mnema_deck_forks_total", "outcome", "limit").increment();

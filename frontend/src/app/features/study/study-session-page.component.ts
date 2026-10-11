@@ -641,7 +641,8 @@ export class StudySessionPageComponent {
     private handle(error: unknown, fallback: string): void {
         this.phase.set('error');
         const code = this.errorCode(error);
-        this.message.set(code === 'RESOURCE_NOT_FOUND' ? 'Колода или сессия недоступна этому аккаунту.' : fallback);
+        this.message.set(code === 'RESOURCE_NOT_FOUND' ? 'Колода или сессия недоступна этому аккаунту.'
+            : code === 'DECK_PREPARING' ? 'Колода ещё готовится. Загляните сюда позже.' : fallback);
     }
 
     private loadSupportingState(): void {

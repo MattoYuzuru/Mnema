@@ -12,6 +12,9 @@
     "sliceEntries": 200,
     "sliceEntriesNote": "the job copies at most this many manifest entries per transaction (learning.community.forks.slice-size, 10..1000); a small deck is one slice",
     "maxPreparingCopies": 10,
+    "maxCreationsPerWindow": 20,
+    "creationWindow": "PT1H",
+    "creationWindowNote": "learning.community.forks.max-per-window per learning.community.forks.window: copies CREATED by one account, deleted ones included (counted from forked_at); one more is 429 RATE_LIMITED with Retry-After and the member retryAfter (seconds until the oldest creation leaves the window). Answering an existing copy never counts.",
     "maxPreparingCopiesNote": "learning.community.forks.max-preparing: live copies of one account that are not yet ready (a failed one counts); one more is 422 RESOURCE_LIMIT_EXCEEDED with the member `limit`",
     "forkStates": {
       "preparing": "preparing=true, failed=false: the job is queued or running; poll the deck (GET /api/decks/{deckId}) at a bounded backoff",
@@ -25,6 +28,7 @@
   "invariants": [
     "POST /api/decks/forks needs learning.write, a strict body {commandId, sourceCode} (unknown or duplicate fields, a non-string field, bodies over 8192 bytes and invalid Unicode are 400 INVALID_REQUEST) and is idempotent by commandId (house receipts: actor, command type and the body are bound; an exact retry returns the original acknowledgement with Idempotency-Replayed: true and the original status; a used commandId with other input is 409 IDEMPOTENCY_CONFLICT)",
     "the source is resolved by its public code through DeckAccess exactly like the public read: PUBLIC and LINK decks by any signed-in account, an INVITE deck by a grantee; a private deck, an unknown, malformed or rotated code, a deleted deck and a deck that was never published are one and the same 404 RESOURCE_NOT_FOUND; an INVITE deck without a grant is 403 DECK_INVITE_ONLY; the owner of the source is 409 FORK_OWN_DECK",
+    "creations of one account are serialized by an advisory lock taken before the counts, so neither the cap of unfinished copies (422) nor the sliding window of creations (429) can be overshot by parallel requests for different sources",
     "the copy is made from the PUBLISHED revision of the source at the moment of the request, never from the source's head: title, description, counts and both manifest roots are the published revision's, and the copy's heads are written by the job only from that manifest. Anything the author did after publishing (unpublished materials, exercises, media) is invisible to the copy",
     "one live copy per (owner, source deck): a second request (any commandId) answers 200 with the existing copy and existing=true, creating nothing; a deleted copy does not count, so the owner may copy again; a copy of a copy copies the copy's own published revision (a copy is publishable once it is ready)",
     "the request is O(1): a deck row in the source's lineage, a revision 0 on the published roots with its own durable pins, a deck_fork row and one enqueued job; the heads (deck_head_item, deck_head_exercise, objective_head) are written by the job in slices and nothing else ever writes them while the copy is preparing",
@@ -34,7 +38,7 @@
     "DELETE /api/decks/{deckId} stays allowed on a preparing or failed copy so that a stuck copy can be discarded; the running job notices the deleted deck and ends without writing more. Deleting a copy frees the (owner, source) slot at once",
     "POST fork:retry is owner-only and has no body: a FAILED or CANCELLED job is requeued under the same id (its cursor is kept, so it resumes), a job whose record was purged is enqueued again, a queued, running or finished copy is left alone; every case answers 200 with the current flags. A deck that is not a copy is 404",
     "POST fork:detach is owner-only, has no body and is idempotent: it sets detached_at once and answers 200 {deckId, detached: true}; it never touches the content and is allowed while the copy is preparing. A deck that is not a copy is 404",
-    "the owner's deck JSON (GET /api/decks/{deckId} and every item of GET /api/decks) carries `fork`: null for an ordinary deck, otherwise {upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached}; acknowledgements do not carry it. sourceAvailable is computed at read for the copier through DeckAccess with the code he copied by (so it turns false when the source is deleted, made private or its link is rotated away) and nothing is written on read; upstreamCode and upstreamTitle are null exactly when sourceAvailable is false",
+    "the owner's deck JSON (GET /api/decks/{deckId} and every item of GET /api/decks) carries `fork`: null for an ordinary deck, otherwise {upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached}; acknowledgements do not carry it. sourceAvailable is computed at read for the copier through DeckAccess with the code he copied by, for a whole page at once (so it turns false when the source is deleted, made private or its link is rotated away, and stays false after a rotation until a later epic re-links the copy) and nothing is written on read; upstreamCode and upstreamTitle are null exactly when sourceAvailable is false",
     "the public summary GET /api/public/decks/{code} carries `myCopy` for a signed-in viewer: null, or {deckId, preparing} for his live copy of exactly this deck; a guest's summary has no such member, and the owner of the deck has null",
     "a copy edited later never reaches the source and the source's later edits never reach the copy (immutable lineage rows plus per-deck heads); a copy keeps working after the source is deleted or made private",
     "a copy reads media through the COPY grant (the heads of the copy decide), so an asset that only an unpublished revision of the author uses is 404 for the copier on playback, variant download and the offline manifest",
@@ -131,6 +135,11 @@
     "preparing": {
       "status": 409,
       "body": {"type": "urn:mnema:problem:deck-preparing", "title": "Deck is preparing", "status": 409, "detail": "The copy is still being prepared; try again when it is ready.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/items", "code": "DECK_PREPARING"}
+    },
+    "throttled": {
+      "status": 429,
+      "headers": {"Retry-After": "3540"},
+      "body": {"type": "urn:mnema:problem:rate-limited", "title": "Rate limited", "status": 429, "detail": "Too many requests; retry after the time in Retry-After.", "instance": "/api/decks/forks", "code": "RATE_LIMITED", "retryAfter": 3540}
     },
     "limit": {
       "status": 422,

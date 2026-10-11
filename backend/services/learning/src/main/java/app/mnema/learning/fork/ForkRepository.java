@@ -16,9 +16,24 @@ class ForkRepository {
 
     ForkRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
 
-    /** Serializes the copy commands of one (owner, source) pair; the unique index {@code deck_fork_live} is the net under it. */
-    void lockPair(UUID owner, UUID source) {
-        jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))").param("key", owner + ":" + source).query().listOfRows();
+    /**
+     * Serializes ALL the copy commands of one account (transaction-scoped): the window and the cap below are counts, and two parallel requests for different
+     * sources would otherwise both read the old count and overshoot it. Taken before either count; the unique index {@code deck_fork_live} is the net under the pair rule.
+     */
+    void lockActor(UUID owner) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))").param("key", "fork-actor:" + owner).query().listOfRows();
+    }
+
+    /** The creations of the account inside the sliding window (released copies included) and how long until the oldest of them leaves it. */
+    record Window(int count, long retryAfterSeconds) { }
+
+    Window window(UUID owner, java.time.Duration length) {
+        return jdbc.sql("""
+                SELECT count(*)::integer AS spent,
+                       COALESCE(ceil(extract(epoch FROM (min(forked_at) + (:millis * interval '1 millisecond') - statement_timestamp())))::bigint, 0) AS retry
+                  FROM app_learning.deck_fork WHERE owner_id = :owner AND forked_at > statement_timestamp() - (:millis * interval '1 millisecond')
+                """).param("owner", owner).param("millis", length.toMillis())
+                .query((row, ignored) -> new Window(row.getInt("spent"), row.getLong("retry"))).single();
     }
 
     /**

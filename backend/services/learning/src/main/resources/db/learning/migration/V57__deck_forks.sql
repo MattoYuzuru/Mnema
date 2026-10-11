@@ -122,3 +122,7 @@ CREATE TRIGGER deck_fork_preparing_guard BEFORE INSERT OR UPDATE OR DELETE ON ap
     FOR EACH ROW EXECUTE FUNCTION app_learning.deck_fork_preparing_guard();
 CREATE TRIGGER deck_fork_preparing_guard BEFORE INSERT OR UPDATE OR DELETE ON app_learning.objective_head
     FOR EACH ROW EXECUTE FUNCTION app_learning.deck_fork_preparing_guard();
+
+-- The per-account sliding window on copy creations counts deck_fork rows by forked_at INCLUDING released ones (a deleted copy still spent the
+-- account's allowance); deck_fork_live and deck_fork_unfinished are partial and cannot answer it.
+CREATE INDEX deck_fork_owner_window ON app_learning.deck_fork(owner_id, forked_at DESC);

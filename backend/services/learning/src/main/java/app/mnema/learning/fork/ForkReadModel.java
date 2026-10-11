@@ -4,9 +4,13 @@ import app.mnema.learning.library.DeckAccess;
 import app.mnema.learning.library.Resolution;
 import app.mnema.learning.library.Viewer;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -21,13 +25,31 @@ public class ForkReadModel {
     ForkReadModel(DeckAccess access) { this.access = access; }
 
     /** The JSON of a copy's link, or JSON null for an ordinary deck ({@code link == null}). */
-    public tools.jackson.databind.JsonNode describe(UUID actor, ForkLink link) {
-        if (link == null) return JsonNodeFactory.instance.nullNode();
-        Resolution resolution = access.resolve(Viewer.account(actor, null), link.upstreamCode());
-        boolean available = resolution.granted() && resolution.deck().deckId().equals(link.upstreamDeckId()) && resolution.deck().published() != null;
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        if (available) result.put("upstreamCode", link.upstreamCode()).put("upstreamTitle", resolution.deck().published().title());
-        else result.putNull("upstreamCode").putNull("upstreamTitle");
-        return result.put("sourceAvailable", available).put("preparing", link.preparing()).put("failed", link.failed()).put("detached", link.detached());
+    public JsonNode describe(UUID actor, ForkLink link) {
+        return describeAll(actor, java.util.Collections.singletonList(link)).getFirst();
+    }
+
+    /**
+     * The JSON of every link of a page, in order ({@code null} entries stay JSON null): the sources of the whole page are resolved in two statements
+     * ({@link DeckAccess#resolveAll}), not one per copy. Availability is decided by the code the copier stored, so a source whose code was rotated away reads as unavailable
+     * even though the deck exists (see the guide: re-linking is epic 2).
+     */
+    public List<JsonNode> describeAll(UUID actor, List<ForkLink> links) {
+        Map<String, Resolution> resolved = access.resolveAll(Viewer.account(actor, null),
+                links.stream().filter(java.util.Objects::nonNull).map(ForkLink::upstreamCode).distinct().toList());
+        List<JsonNode> result = new ArrayList<>(links.size());
+        for (ForkLink link : links) {
+            if (link == null) {
+                result.add(JsonNodeFactory.instance.nullNode());
+                continue;
+            }
+            Resolution resolution = resolved.get(link.upstreamCode());
+            boolean available = resolution.granted() && resolution.deck().deckId().equals(link.upstreamDeckId()) && resolution.deck().published() != null;
+            ObjectNode json = JsonNodeFactory.instance.objectNode();
+            if (available) json.put("upstreamCode", link.upstreamCode()).put("upstreamTitle", resolution.deck().published().title());
+            else json.putNull("upstreamCode").putNull("upstreamTitle");
+            result.add(json.put("sourceAvailable", available).put("preparing", link.preparing()).put("failed", link.failed()).put("detached", link.detached()));
+        }
+        return result;
     }
 }

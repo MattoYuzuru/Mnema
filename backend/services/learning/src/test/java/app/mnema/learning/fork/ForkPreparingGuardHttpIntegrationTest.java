@@ -296,4 +296,33 @@ class ForkPreparingGuardHttpIntegrationTest extends PostgresIntegrationTest {
         for (int i = 0; i < params.length; i++) query = query.param(i == 0 ? "d" : "p" + i, params[i]);
         return query.query(Long.class).single();
     }
+
+    @Test
+    void parallelRequestsForDifferentSourcesCannotOvershootTheCapOfUnfinishedCopies() throws Exception {
+        List<Source> sources = new ArrayList<>();
+        for (int i = 0; i < 8; i++) sources.add(worlds.source("LINK", 1, 0));
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(8)) {
+            var gate = new java.util.concurrent.CountDownLatch(1);
+            var tasks = new ArrayList<java.util.concurrent.Future<HttpResponse<String>>>();
+            for (Source source : sources) {
+                tasks.add(pool.submit(() -> {
+                    gate.await();
+                    return worlds.fork(owner, source.code());
+                }));
+            }
+            gate.countDown();
+            int created = 0;
+            int refused = 0;
+            for (var task : tasks) {
+                HttpResponse<String> response = task.get();
+                if (response.statusCode() == 201) created++;
+                else if (response.statusCode() == 422) refused++;
+                else throw new AssertionError(response.statusCode() + " " + response.body());
+            }
+            // the cap of this class is 3: the account lock makes the count and the insert one step
+            assertThat(created).isEqualTo(3);
+            assertThat(refused).isEqualTo(5);
+        }
+        assertThat(count("SELECT count(*) FROM app_learning.deck_fork WHERE owner_id = :d AND materialized_at IS NULL AND released_at IS NULL", owner)).isEqualTo(3);
+    }
 }
