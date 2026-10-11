@@ -10,6 +10,7 @@ import { BatchPagerComponent } from '../features/generation/batch-pager.componen
 import { ArtifactSummary } from '../features/generation/generation.models';
 import { PromoPopupComponent } from '../features/promo/promo-popup.component';
 import { PromoCampaign } from '../features/promo/promo.models';
+import { AccessScreenComponent } from '../shared/access-screen.component';
 import { ActionMenuComponent, ActionMenuItem } from '../shared/action-menu.component';
 import { PublicDeckCardComponent } from '../shared/public-deck-card.component';
 import { PublicDeckCard } from '../shared/public-deck-card';
@@ -60,7 +61,7 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
 @Component({
     selector: 'app-sg-surfaces',
     encapsulation: ViewEncapsulation.None,
-    imports: [SgSpecimenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
+    imports: [SgSpecimenComponent, AccessScreenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
         NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent, AutoLoadComponent],
     templateUrl: './sg-surfaces.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush

@@ -1,0 +1,109 @@
+<div class="page">
+  @switch (phase()) {
+    @case ('loading') {
+      <h1 class="plain-title" tabindex="-1">Колода</h1>
+      <p class="hint" role="status">Загружаем колоду…</p>
+    }
+    @case ('not-found') {
+      <app-access-screen heading="Колода не найдена" eyebrow="Колода">
+        <p>Такой колоды нет, или автор её скрыл.
+          @if (communityRoute; as community) {
+            Проверьте ссылку или поищите похожие в <a [routerLink]="community">Сообществе</a>.
+          } @else {
+            Проверьте ссылку.
+          }
+        </p>
+        <a access-actions class="button" routerLink="/">На главную</a>
+      </app-access-screen>
+    }
+    @case ('invite-only') {
+      <app-access-screen heading="Колода доступна по приглашению" eyebrow="Колода">
+        <p>Автор открыл эту колоду только приглашённым. Попросите доступ, и автор увидит ваш запрос.</p>
+        <!-- TODO(#435): the «Запросить доступ» button (Share/13) goes here; no dead button until the request route exists. -->
+        @if (!signedIn()) { <a access-actions class="button primary" routerLink="/login" [queryParams]="{ returnUrl: returnUrl() }">Войти</a> }
+        <a access-actions class="button" routerLink="/">На главную</a>
+      </app-access-screen>
+    }
+    @case ('rate-limited') {
+      <app-access-screen heading="Слишком много запросов" eyebrow="Колода">
+        <p>{{ waiting() }}</p>
+        <p class="visually-hidden" role="status">{{ retryReady() }}</p>
+        <button access-actions type="button" class="button primary" [attr.aria-disabled]="remaining() > 0 ? 'true' : null" (click)="retry()">Повторить</button>
+      </app-access-screen>
+    }
+    @case ('busy') {
+      <app-access-screen heading="Сервис занят" eyebrow="Колода">
+        <p>Сейчас много читателей. Повторите через секунду.</p>
+        <button access-actions type="button" class="button primary" (click)="retry()">Повторить</button>
+      </app-access-screen>
+    }
+    @case ('error') {
+      <app-access-screen heading="Не удалось открыть колоду" eyebrow="Колода">
+        <p>Проверьте соединение и повторите.</p>
+        <button access-actions type="button" class="button primary" (click)="retry()">Повторить</button>
+      </app-access-screen>
+    }
+    @case ('ready') {
+      @if (deck(); as current) {
+        @if (materialKey() !== null) {
+          <a class="back-link" [routerLink]="[]"><span aria-hidden="true">←</span> К колоде</a>
+        }
+        <header class="page-heading hub-heading">
+          <div class="titles">
+            <p class="eyebrow">Колода</p>
+            <h1 class="hub-title" tabindex="-1">{{ current.title }}</h1>
+            <ul class="facts" role="list">
+              <li><span class="stamp"><app-glyph [name]="levelGlyph()" /><span class="visually-hidden">Доступ: </span>{{ levelLabel() }}</span></li>
+              @if (author(); as card) { <li><app-author-chip [username]="card.username" [avatarSrc]="card.avatarSrc" /></li> }
+              @if (materialKey() === null) {
+                <li>{{ size() }}</li>
+                @if (published(); as date) { <li><time [attr.datetime]="current.publishedAt">{{ date }}</time></li> }
+              }
+            </ul>
+            @if (materialKey() === null && current.description.trim()) {
+              <div class="hub-description"><app-deck-description [text]="current.description" /></div>
+            }
+          </div>
+          <div class="share">
+            <app-share-button [url]="shareUrl()" [title]="current.title" />
+            <app-action-menu [label]="menuLabel()" [items]="menuItems" (chosen)="menuChosen($event)" />
+          </div>
+        </header>
+        @if (menuFallback(); as link) { <app-share-link-field [url]="link" [label]="'Ссылка на колоду «' + current.title + '»'" /> }
+
+        <div class="primary-slot">
+          @if (isOwner()) {
+            <a class="button primary" routerLink="/decks">Открыть в своих колодах</a>
+          } @else if (signedIn()) {
+            <!-- TODO(#432): «Добавить к себе» / «Открыть мою копию» (Share/10) takes this slot; nothing is drawn until it works. -->
+          } @else {
+            <a class="button primary" routerLink="/login" [queryParams]="{ returnUrl: returnUrl() }">Войдите, чтобы добавить колоду к себе</a>
+          }
+        </div>
+
+        @if (materialKey(); as key) {
+          <app-public-material [code]="current.code" [memberKey]="key" [total]="current.memberCount" (gone)="recheck()" />
+          @let near = neighbors();
+          @if (near.previous || near.next) {
+            <nav class="siblings" aria-label="Другие материалы колоды">
+              @if (near.previous; as previous) {
+                <a class="button" rel="prev" [routerLink]="[]" [queryParams]="{ material: previous.memberKey }"><span aria-hidden="true">←</span> Предыдущий<span class="visually-hidden"> материал: {{ titleOf(previous) }}</span></a>
+              }
+              @if (near.next; as next) {
+                <a class="button next" rel="next" [routerLink]="[]" [queryParams]="{ material: next.memberKey }">Следующий<span class="visually-hidden"> материал: {{ titleOf(next) }}</span> <span aria-hidden="true">→</span></a>
+              }
+            </nav>
+          }
+        } @else if (current.exerciseCount > 0) {
+          <app-segmented-choice legend="Что показать" [options]="tabs()" [value]="tab()" (valueChange)="setTab($event)" />
+        }
+        @if (tab() === 'exercises' && materialKey() === null && current.exerciseCount > 0) {
+          <app-public-exercises-list [code]="current.code" (gone)="recheck()" />
+        } @else {
+          <!-- Stays mounted (hidden) while a material is open: Back returns to the same rows, cursor and place. -->
+          <app-public-materials-list [code]="current.code" [openKey]="materialKey()" [hidden]="materialKey() !== null" (gone)="recheck()" />
+        }
+      }
+    }
+  }
+</div>

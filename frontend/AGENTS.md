@@ -27,7 +27,8 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
 - `src/app/app.routes.ts` is the route source of truth; feature routes are lazy. Deck authoring
   is under `/decks`; Study is `/decks/:deckId/study`. `/decks/:deckId` is the Deck hub (statistics, the material
   list with selection and bulk delete); there is no separate `/decks/:deckId/materials` list route. There is no
-  legacy `my-study`, public-deck, template or import route; do not reintroduce one.
+  legacy `my-study`, public-deck, template or import route; do not reintroduce one. The only public deck route is the
+  read-only view of someone else's deck at `/d/:code/:slug` and `/d/:code` (`features/public-deck`, guests included, no `authGuard`; one matcher route).
 - Feature ownership and product-specific boundaries (generation, goal, plans, promo, experiment):
   [frontend feature changes](../docs/engineering/repository-guide.md#frontend-feature-changes).
 - Native document/editor/renderer lives in `src/app/content`; theme values live in
