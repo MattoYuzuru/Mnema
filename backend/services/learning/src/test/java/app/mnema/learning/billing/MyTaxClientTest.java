@@ -349,10 +349,18 @@ class MyTaxClientTest {
         assertThatThrownBy(() -> client.registerIncome(NAME, 49_900, PAID)).isInstanceOf(MyTaxException.class);
         client.cancelIncome(uuid);
 
-        for (ILoggingEvent event : logs.list) {
+        // The appender sits on the root logger, so background threads of other test contexts in this JVM append to it while the test
+        // reads: snapshot under the appender's own lock (AppenderBase.doAppend is synchronized on it). Every thread's events are checked
+        // for secrets; "the client logs nothing" is judged on this thread's events, where the client runs.
+        String thread = Thread.currentThread().getName();
+        List<ILoggingEvent> events;
+        synchronized (logs) {
+            events = List.copyOf(logs.list);
+        }
+        for (ILoggingEvent event : events) {
             String line = event.getFormattedMessage() + " " + event.getThrowableProxy();
             assertThat(line).doesNotContain(FakeMyTax.INN, FakeMyTax.PASSWORD, FakeMyTax.PASSWORD_BASE64, "access-", "refresh-", "Bearer", NAME, "499");
         }
-        assertThat(logs.list.stream().filter(event -> event.getLoggerName().startsWith("app.mnema.")).toList()).as("the client logs nothing: the worker logs each failure once").isEmpty();
+        assertThat(events.stream().filter(event -> thread.equals(event.getThreadName()) && event.getLoggerName().startsWith("app.mnema.")).toList()).as("the client logs nothing: the worker logs each failure once").isEmpty();
     }
 }
