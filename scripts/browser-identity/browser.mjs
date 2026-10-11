@@ -14,6 +14,7 @@ import { runAdmin } from './admin.mjs';
 import { runWorkshop } from './workshop.mjs';
 import { runAssessment } from './assessment.mjs';
 import { runCommunity } from './community.mjs';
+import { runUpdates } from './updates.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const defaultCdpTimeout = Number.isInteger(config.cdpTimeoutMs) && config.cdpTimeoutMs >= 1000 && config.cdpTimeoutMs <= 120_000 ? config.cdpTimeoutMs : 10_000;
@@ -95,6 +96,7 @@ let step = 'startup';
 let mechanicsFailures = [];
 let mechanicsFindings = [];
 let communityOutcome = null;
+let updatesOutcome = null;
 let diagnostics = () => ({});
 async function openTab() {
   const response = await fetch(`http://127.0.0.1:${config.debugPort}/json/new?about:blank`,
@@ -180,9 +182,10 @@ try {
       const infiniteListBudget = config.mechanics ? 250 : 0;
       // Community decks (#439): two passes of ~24 full page loads each on four tabs (the invitee registers in its own browser context), every one with
       // its public reads, the author card and the shell assets.
-      const communityBudget = config.community ? 3600 : 0;
+      // The update of a copy (Updates/7, #446) is another two passes on two tabs (about 3700 requests: every full load fetches the shell assets and chunks).
+      const communityBudget = (config.communityScenario ? 3600 : 0) + (config.updates ? 4800 : 0);
       if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0) + (config.admin ? 1000 : 0) + communityBudget
-          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0) + (config.community ? 300 : 0)) {
+          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0) + (config.community ? 300 : 0) + (config.communityScenario && config.updates ? 300 : 0)) {
         asynchronousFailure = true;
         firstAsynchronousFailure ??= 'bounded browser request budget exceeded';
       }
@@ -1143,13 +1146,21 @@ try {
         setStep: value => { step = value; }, deckPath, bearer: secondBearer });
     }
   }
-  if (config.community) {
+  if (config.communityScenario) {
     // Community decks (#439): publication -> guest -> copy -> study -> by invitation, on desktop and mobile viewports, first account
     // as the owner (first tab), second account as the member (second tab) and a guest tab in a new browser context.
     step = 'community_prepare';
     communityOutcome = await runCommunity({
       config, record, SafeFailure, until, exists, navigate, fill, submit, clickText, saveScreenshot, saveFullScreenshot,
       setStep: value => { step = value; }, ownerTab: cdp, ownerBearer: firstBearer, memberTab: second, memberBearer: secondBearer, openGuestTab });
+  }
+  if (config.updates) {
+    // The update of a copy (Updates/7, #446): the author republishes, the learner reviews and decides, on desktop and mobile viewports; first account
+    // as the author (first tab) and second account as the learner (second tab). Runs after the community scenario on the same accounts when both are asked.
+    step = 'updates_prepare';
+    updatesOutcome = await runUpdates({
+      config, record, SafeFailure, until, exists, navigate, fill, clickText, saveScreenshot, saveFullScreenshot,
+      setStep: value => { step = value; }, ownerTab: cdp, ownerBearer: firstBearer, memberTab: second, memberBearer: secondBearer });
   }
   step = 'first_tab_profile';
   // The first tab stayed in the background through the authoring, notification, mechanics and hub flows; bring it back
@@ -1233,7 +1244,7 @@ try {
   const screenshot = await cdp.call('Page.captureScreenshot', { format: 'png' });
   await writeFile(join(config.output, 'login.png'), Buffer.from(screenshot.data, 'base64'));
   // A community gap (a flow the product does not complete through its own UI) is a finding like a failed stage: the run is red until it is fixed.
-  const communityFailures = [...(communityOutcome?.failures ?? []), ...(communityOutcome?.gaps ?? []).map(gap => ({ stage: 'gap:' + gap.id, reason: gap.effect }))];
+  const communityFailures = [...(communityOutcome?.failures ?? []), ...(updatesOutcome?.failures ?? []), ...(communityOutcome?.gaps ?? []).map(gap => ({ stage: 'gap:' + gap.id, reason: gap.effect }))];
   const evidence = { state: mechanicsFailures.length === 0 && communityFailures.length === 0 ? 'passed' : 'failed',
     ...(config.mechanics ? { mechanicsFailures, mechanicsFindings, syntheticMicrophone: true, realDeviceMicrophone: false } : {}),
     ...(config.community ? { communityFailures, communityGaps: communityOutcome?.gaps ?? [] } : {}),

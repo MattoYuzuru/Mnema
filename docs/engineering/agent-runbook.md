@@ -117,6 +117,8 @@ python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
 - `--community` (no `--authoring` needed): community decks end to end (publication, guest, copy, Study, a complaint, by-invitation access with a request,
   its withdrawal, an approval and an invitation link redeemed by a new account) on desktop and mobile viewports, about 50 s; turns the three
   `learning.community.*` kill switches on for that disposable run only (README, «Community decks»).
+- `--updates` (same composition as `--community`, a scenario of its own): the update of a copy (author republishes, learner reviews on `/decks/{id}/update`, accepts the
+  safe part, decides a conflict and a deletion, studies on, detaches) on desktop and mobile viewports, about 90 s (README, «Update of a copy»).
 - Chrome always runs muted (`--mute-audio`); audio is verified through media-element state.
   `--mechanics` uses Chrome's synthetic microphone, not a real device.
 - Screenshots/evidence go to a `mnema-browser-evidence-*` temp directory. `--keep-on-failure`

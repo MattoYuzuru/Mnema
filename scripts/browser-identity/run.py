@@ -529,7 +529,7 @@ class Fixture(BASE.Fixture):
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
-                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "onlyPromo": self.args.only_promo, "community": getattr(self.args, "community", False), "cdpTimeoutMs": cdp_timeout_ms(),
+                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "onlyPromo": self.args.only_promo, "community": getattr(self.args, "community", False), "communityScenario": getattr(self.args, "community_scenario", False), "updates": getattr(self.args, "updates", False), "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -544,7 +544,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs", "admin.mjs", "community.mjs", "admin_support_fixture.py")}}
+                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs", "admin.mjs", "community.mjs", "updates.mjs", "admin_support_fixture.py")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -695,6 +695,12 @@ def main():
                              "(this run only) and drives publication, a guest in a new browser context, «Добавить к себе», Study of the copy "
                              "and the invitation-only screens on a desktop and a mobile viewport; the base flow's two long polling waits are skipped like "
                              "with --media; cannot be combined with --generation, --assessment or --only-promo")
+    parser.add_argument("--updates", action="store_true",
+                        help="the update of a copy end to end (Updates/7, #446): the same disposable composition as --community (the kill switches on, the "
+                             "long polling waits skipped) with a scenario of its own: an author republishes a public deck, the learner who copied it reviews "
+                             "the plan, accepts the safe part, decides a conflict and a deletion, studies on, and detaches; desktop and mobile viewports; "
+                             "can be combined with --community (both scenarios run, on the same two accounts); not with --generation, --assessment, "
+                             "--only-promo or --admin")
     parser.add_argument("--admin", action="store_true", help="owner console against real services and a disposable real bot bridge")
     parser.add_argument("--admin-bot-source", type=Path, help="bot checkout containing mnema_bot.admin_server (required with --admin)")
     parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
@@ -731,8 +737,12 @@ def main():
         parser.error("--only-speech requires --generation and --media")
     if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_plans, args.only_promo, args.only_images, args.only_speech, args.only_voice, args.only_research) if aid) > 1:
         parser.error("--only-ask, --only-edits, --only-plan, --only-plans, --only-promo, --only-images, --only-speech, --only-voice and --only-research are separate development aids: choose one")
+    # `--updates` runs on the same composition as `--community` (the ordinary Learning with the community kill switches on): from here on `community`
+    # means that composition, `community_scenario` the scenario of the `--community` flag.
+    args.community_scenario = args.community
+    args.community = args.community or args.updates
     if args.community and (args.generation or args.assessment or args.only_promo or args.admin):
-        parser.error("--community runs on the ordinary Learning instance: it cannot be combined with --generation, --assessment, --only-promo or --admin")
+        parser.error("--community and --updates run on the ordinary Learning instance: they cannot be combined with --generation, --assessment, --only-promo or --admin")
     if args.admin:
         if args.admin_bot_source is None or not (args.admin_bot_source / "mnema_bot/admin_server.py").is_file():
             parser.error("--admin requires --admin-bot-source with the implemented private bridge")
@@ -743,6 +753,8 @@ def main():
             args.timeout = max(args.timeout, 840)
         if args.only_promo or args.admin or args.community:
             args.timeout = max(args.timeout, 600)
+        if args.community_scenario and args.updates:
+            args.timeout = 900
     if not 30 <= args.timeout <= 900:
         parser.error("--timeout must be between 30 and 900 seconds")
     args.dist = args.dist.resolve()
