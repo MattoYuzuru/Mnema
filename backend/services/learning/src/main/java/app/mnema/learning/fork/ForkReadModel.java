@@ -35,8 +35,9 @@ public class ForkReadModel {
      * even though the deck exists (see the guide: re-linking is epic 2).
      */
     public List<JsonNode> describeAll(UUID actor, List<ForkLink> links) {
-        Map<String, Resolution> resolved = access.resolveAll(Viewer.account(actor, null),
-                links.stream().filter(java.util.Objects::nonNull).map(ForkLink::upstreamCode).distinct().toList());
+        List<String> codes = links.stream().filter(java.util.Objects::nonNull).map(ForkLink::upstreamCode).distinct().toList();
+        // a page without copies (and every ordinary deck's acknowledgement) asks nothing
+        Map<String, Resolution> resolved = codes.isEmpty() ? Map.of() : access.resolveAll(Viewer.account(actor, null), codes);
         List<JsonNode> result = new ArrayList<>(links.size());
         for (ForkLink link : links) {
             if (link == null) {

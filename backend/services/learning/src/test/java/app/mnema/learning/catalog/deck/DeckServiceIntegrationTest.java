@@ -41,10 +41,10 @@ class DeckServiceIntegrationTest extends PostgresIntegrationTest {
         UUID deck = UUID.fromString(first.path("deckId").stringValue(null));
         DeckRecord before = repository.find(actor, deck).orElseThrow();
         assertThat(result.replayed()).isFalse();
-        // the owner's read adds the `fork` member (null for an ordinary deck, Share/10); acknowledgements do not carry it
+        // the owner's read and the acknowledgement both carry `fork` (null for an ordinary deck, Share/10): an acknowledgement equals the next read
         ObjectNode detail = service.read(actor, deck).deepCopy();
         assertThat(detail.path("fork").isNull()).isTrue();
-        assertThat(detail.without("fork")).isEqualTo(first);
+        assertThat(detail).isEqualTo(first);
         assertThat(first.path("visibility").stringValue(null)).isEqualTo("private");
         assertThat(first.path("rowVersion").stringValue(null)).isEqualTo("0");
         assertThat(first.toString()).doesNotContain("reuseScope", "rootId", "pinId");
@@ -58,7 +58,7 @@ class DeckServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(after.exercisesRootId()).isEqualTo(before.exercisesRootId());
         assertThat(after.createdAt()).isEqualTo(before.createdAt());
         assertThat(after.revisionId()).isNotEqualTo(before.revisionId());
-        assertThat(updated.acknowledgement().path("deck")).isEqualTo(after.toJson());
+        assertThat(updated.acknowledgement().path("deck")).isEqualTo(service.read(actor, deck));
         assertThat(count("deck_revision", "deck_id", deck)).isEqualTo(2);
         assertThat(count("storage_object", "reuse_scope_id", before.scopeId())).isEqualTo(2);
         assertThat(count("storage_pin", "reuse_scope_id", before.scopeId())).isEqualTo(4);

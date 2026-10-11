@@ -86,7 +86,7 @@ public class DeckService {
                     members.objectId(), exercises.objectId(), 0, 0, "private", null);
             repository.insertDeck(deck, actor, scope, revision, time);
             publish(row, actor, null, command, List.of(members, exercises));
-            return row.toJson();
+            return withFork(actor, row);
         });
     }
 
@@ -105,7 +105,7 @@ public class DeckService {
                     previous.createdAt(), repository.now(), previous.membersRootId(), previous.exercisesRootId(),
                     previous.memberCount(), previous.exerciseCount(), previous.visibility(), previous.fork());
             publish(row, actor, previous.revisionId(), command, List.of());
-            return row.toJson();
+            return withFork(actor, row);
         });
     }
 
