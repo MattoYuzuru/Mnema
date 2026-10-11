@@ -1,7 +1,7 @@
 import { Meta, Title } from '@angular/platform-browser';
 import { TestBed } from '@angular/core/testing';
 
-import { PublicPageMeta, SITE_REFERRER_POLICY } from './public-page-meta';
+import { PublicPageMeta, SHELL_ROBOTS, SHELL_TITLE, SITE_REFERRER_POLICY } from './public-page-meta';
 
 describe('PublicPageMeta', () => {
     const tag = (name: string) => document.head.querySelector<HTMLMetaElement>(`meta[name=${name}]`);
@@ -38,12 +38,28 @@ describe('PublicPageMeta', () => {
         expect(document.title).toBe('Mnema');
     });
 
-    it('leaves no robots tag behind when the document had none', () => {
+    it('restores the shell defaults, not the card the web server inserted for this URL', () => {
+        // /d/{code} of a link-only deck: the server put the generic noindex card and a deck-specific title into the document before the page opened
+        TestBed.inject(Meta).addTag({ name: 'robots', content: 'noindex' });
+        TestBed.inject(Title).setTitle('Колода по ссылке — Mnema');
+        const meta = TestBed.inject(PublicPageMeta);
+        meta.indexable(true);
+        expect(tag('robots')?.content).toBe(SHELL_ROBOTS);
+        meta.title(null);
+        expect(document.title).toBe(SHELL_TITLE);
+        TestBed.resetTestingModule();
+        expect(tag('robots')?.content).toBe('index,follow');
+        expect(document.title).toBe('Mnema');
+        expect(tag('referrer')).toBeNull();
+    });
+
+    it('adds the robots tag back when the document had none', () => {
         const meta = TestBed.inject(PublicPageMeta);
         expect(tag('robots')?.content).toBe('noindex');
         meta.indexable(true);
-        expect(tag('robots')).toBeNull();
+        expect(tag('robots')?.content).toBe(SHELL_ROBOTS);
         TestBed.resetTestingModule();
         expect(tag('referrer')).toBeNull();
+        expect(tag('robots')?.content).toBe(SHELL_ROBOTS);
     });
 });

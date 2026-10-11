@@ -159,7 +159,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "notificationController", "itemHubController", "deckInsightsController",
                         "usageController", "estimateController", "generationController", "speechInputController", "plansController", "learningProfileController", "promoController", "promoAdminController", "promoPopupController", "experimentController",
                         "publicEventsController", "adminEventsController", "billingController", "TBankNotificationController",
-                        "adminConsoleController", "adminSupportController", "publicDeckController", "publicationController", "deckAccessController", "inviteRedeemController", "forkController");
+                        "adminConsoleController", "adminSupportController", "publicDeckController", "publicMetaController", "publicationController", "deckAccessController", "inviteRedeemController", "forkController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {

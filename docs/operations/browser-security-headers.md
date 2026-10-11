@@ -26,6 +26,8 @@ There is no wildcard source and no `unsafe-eval`. The JSON-LD block is admitted 
 
 The policy follows the [W3C CSP report-only rollout model](https://www.w3.org/TR/CSP/#header-content-security-policy-report-only), [Cloudflare's exact Turnstile CSP origins](https://developers.cloudflare.com/turnstile/reference/content-security-policy/), and nginx's [`always` and inherited-header behavior](https://nginx.org/en/docs/http/ngx_http_headers_module.html).
 
+`/d/{code}[/{slug}]` pages are `index.html` with the head fragment of a deck inserted by nginx SSI ([link previews](link-previews.md)). They carry the same generated headers, the same `Cache-Control` and the same single JSON-LD block as every other route; the fragment holds only `title`, `meta` and `link` tags and no script, so the CSP hash and `verify_index` are unaffected. `scripts/test-link-previews.sh` checks the exact headers on every kind of answer (card, redirect, generic card, failure fallback).
+
 ## Modes
 
 | Mode | Enforced policy | Observed policy | HSTS |

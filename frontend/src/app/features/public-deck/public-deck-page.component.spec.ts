@@ -153,7 +153,8 @@ describe('PublicDeckPageComponent', () => {
             await router().navigateByUrl('/');
             await settle();
             expect(meta('referrer')).toBeNull();
-            expect(meta('robots')).toBeNull();
+            // the shell's default, whatever the web server had put into the document for the deck's address
+            expect(meta('robots')?.getAttribute('content')).toBe('index,follow');
         });
     });
 

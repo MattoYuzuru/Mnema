@@ -446,9 +446,9 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
 
     @Test
     void thePublicRoutesNeverOfferAWrite() {
-        // the only controller that serves non-owners has GET mappings only
+        // the only controllers that serve non-owners (deck reads and link-preview metadata) have GET mappings only
         mappings.getHandlerMethods().forEach((info, method) -> {
-            if (!method.getBeanType().equals(PublicDeckController.class)) return;
+            if (!method.getBeanType().equals(PublicDeckController.class) && !method.getBeanType().equals(PublicMetaController.class)) return;
             assertThat(info.getMethodsCondition().getMethods()).containsOnly(RequestMethod.GET);
         });
         // the only writes below /public (Share/13) are a signed-in account asking for access and taking the request back; the security chain admits exactly that method and path
@@ -459,6 +459,7 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(writes).containsExactly("POST /public/decks/{code}/access-requests", "POST /public/decks/{code}/access-requests:withdraw");
         ArrayNode patterns = JSON.createArrayNode();
         mappings.getHandlerMethods().keySet().forEach(info -> info.getPathPatternsCondition().getPatternValues().forEach(patterns::add));
-        assertThat(patterns.toString()).contains("/public/decks/{code}", "/public/decks/{code}/items", "/public/decks/{code}/items/{memberKey}", "/public/decks/{code}/exercises");
+        assertThat(patterns.toString()).contains("/public/decks/{code}", "/public/decks/{code}/items", "/public/decks/{code}/items/{memberKey}", "/public/decks/{code}/exercises",
+                "/public/meta/decks/{code}", "/public/meta/decks/{code}/head", "/public/meta/profiles/{username}", "/public/meta/profiles/{username}/head");
     }
 }
