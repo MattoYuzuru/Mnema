@@ -235,3 +235,6 @@ input[readonly], textarea[readonly] { background: var(--mn-soft); }
 .editor-panel { margin-block: 1.5rem; border: 1px solid var(--mn-ink); padding: 1.25rem clamp(1rem, 3vw, 1.75rem) 1.5rem; background: var(--mn-sheet); }
 .editor-panel > h2 { margin-block: 0 1rem; font-size: clamp(1.4rem, 2.5vw, 1.8rem); }
 .deck-detail-page .editor-panel .metadata-form { padding-block-start: 0; }
+
+.hub-level { margin: .75rem 0 0; }
+.deck-level { justify-self: start; }

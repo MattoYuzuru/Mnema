@@ -46,7 +46,7 @@ describe('StyleguidePageComponent', () => {
     it('renders the real app components and classes', () => {
         for (const selector of [
             'app-hold-to-delete-button', 'app-segmented-choice', 'app-toggletip', 'app-usage-meter', 'app-mnema-select', 'app-choice-list',
-            'app-batch-pager', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-mail-glyph', 'app-glyph[data-glyph=colonnade]', 'app-action-menu [role=menu][popover]', 'app-share-button button', 'app-public-deck-card article', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'app-access-screen section.access h4', 'button.generate-cta', 'button.button.primary',
+            'app-batch-pager', 'app-tag-input', 'app-access-level', 'app-publication-block', '.checklist > .checklist-item[data-state=failed]', 'app-access-screen section.access h4', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-mail-glyph', 'app-glyph[data-glyph=colonnade]', 'app-action-menu [role=menu][popover]', 'app-share-button button', 'app-public-deck-card article', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'button.generate-cta', 'button.button.primary',
             '.check-field > .check-row', '.settings-row.is-switch', '.settings-row.is-switch.is-live', 'fieldset.check-group > legend', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
         ]) {
             expect(root.querySelector(selector), selector).not.toBeNull();
@@ -67,6 +67,48 @@ describe('StyleguidePageComponent', () => {
         expect(pending.length).toBeGreaterThanOrEqual(2);
         expect(pending.every(field => !field.disabled)).toBe(true);
         expect(stage.querySelector('[role=status]')?.textContent).toBe('Сохраняем…');
+    });
+
+    it('runs the publication specimens on demo data: a private deck becomes public in place', async () => {
+        const wait = async (): Promise<void> => { await new Promise(resolve => setTimeout(resolve, 450)); await fixture.whenStable(); fixture.detectChanges(); };
+        await wait();
+        const blocks = [...root.querySelectorAll<HTMLElement>('#status app-publication-block')];
+        expect(blocks).toHaveLength(2);
+        expect(blocks[0].textContent).toContain('Колода видна только вам');
+        expect(blocks[1].textContent).toContain('Изменения для учеников не опубликованы (4)');
+        const open = [...blocks[0].querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Сделать публичной…')!;
+        open.click();
+        await wait();
+        expect(blocks[0].querySelector('app-publication-checklist')).not.toBeNull();
+        blocks[0].querySelector<HTMLButtonElement>('.suggest button')!.click();
+        fixture.detectChanges();
+        blocks[0].querySelector<HTMLButtonElement>('.checklist-actions .primary')!.click();
+        await wait();
+        expect(blocks[0].querySelector('app-access-level')!.textContent).toContain('Публичная');
+        const update = [...blocks[1].querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Опубликовать обновление')!;
+        update.click();
+        fixture.detectChanges();
+        blocks[1].querySelector('form')!.dispatchEvent(new Event('submit'));
+        await wait();
+        expect(blocks[1].textContent).toContain('Все изменения опубликованы');
+    });
+
+    it('opens the grouped select specimen with named groups and no heading among the options', () => {
+        const trigger = root.querySelector<HTMLButtonElement>('#sg-topic')!;
+        trigger.click();
+        fixture.detectChanges();
+        const groups = [...root.querySelectorAll<HTMLElement>('#fields [role=group]')];
+        expect(groups.map(group => group.querySelector('.group-label')!.textContent)).toEqual(['Языки', 'Наука']);
+        const options = [...root.querySelectorAll('#fields [role=listbox] [role=option]')].map(option => option.textContent);
+        expect(options).toEqual(['Английский', 'Японский', 'Биология', 'Физика', 'Другое']);
+    });
+
+    it('takes tags in the tag field specimen', () => {
+        const field = root.querySelector<HTMLInputElement>('#fields app-tag-input input')!;
+        field.value = 'n5,';
+        field.dispatchEvent(new Event('input'));
+        fixture.detectChanges();
+        expect([...root.querySelectorAll('#fields app-tag-input .tag-text')].map(tag => tag.textContent)).toEqual(['jlpt n5', 'n5']);
     });
 
     it('shows the author chip with a photo, with the placeholder, truncated, and hidden', () => {

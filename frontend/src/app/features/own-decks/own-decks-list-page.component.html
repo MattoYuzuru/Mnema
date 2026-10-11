@@ -31,6 +31,7 @@
           <a class="deck-row" [routerLink]="['/decks', deck.deckId]">
             <span class="deck-copy">
               <strong>{{ deck.metadata.title }}</strong>
+              @if (deck.visibility !== 'private') { <app-access-level class="deck-level" [level]="deck.visibility" /> }
               @if (deck.metadata.description) {
                 <app-deck-description class="deck-description" [text]="deck.metadata.description" />
               } @else {

@@ -5,10 +5,11 @@ import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredExcept
 
 import java.util.Enumeration;
 
-final class DeckPrecondition {
+/** The strict {@code If-Match} of every versioned owner command: one quoted canonical decimal. */
+public final class DeckPrecondition {
     private DeckPrecondition() { }
 
-    static long read(Enumeration<String> headers) {
+    public static long read(Enumeration<String> headers) {
         if (headers == null || !headers.hasMoreElements()) throw new VersionPreconditionRequiredException();
         String value = headers.nextElement();
         if (headers.hasMoreElements() || value == null || value.length() > 21

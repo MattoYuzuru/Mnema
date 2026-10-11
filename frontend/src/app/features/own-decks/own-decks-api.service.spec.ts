@@ -95,6 +95,33 @@ describe('OwnDecksApiService', () => {
         await removed;
     });
 
+    it('accepts every access level of the contract and nothing else', async () => {
+        expect(metadataFixture.visibilities.values).toEqual(['private', 'invite', 'link', 'public']);
+        for (const visibility of metadataFixture.visibilities.values) {
+            const result = firstValueFrom(api.detail(deck.deckId));
+            http.expectOne(`/api/decks/${deck.deckId}`).flush({ ...deck, visibility }, { headers: { ...privateHeaders, ETag: '"0"' } });
+            expect((await result).visibility).toBe(visibility);
+        }
+        for (const visibility of ['PUBLIC', 'unlisted', '', null, 1]) {
+            const result = firstValueFrom(api.detail(deck.deckId));
+            http.expectOne(`/api/decks/${deck.deckId}`).flush({ ...deck, visibility }, { headers: { ...privateHeaders, ETag: '"0"' } });
+            await expect(result).rejects.toThrowError(OwnDeckProtocolError);
+        }
+    });
+
+    it('reads the real level in a list page and in an acknowledgement', async () => {
+        const shared = { ...deck, visibility: 'link' };
+        const page = firstValueFrom(api.list());
+        http.expectOne(req => req.url === '/api/decks').flush({ items: [shared], nextCursor: null }, { headers: privateHeaders });
+        expect((await page).items[0].visibility).toBe('link');
+
+        const saved = firstValueFrom(api.save(deck.deckId, deck.rowVersion, command));
+        http.expectOne(`/api/decks/${deck.deckId}`).flush({ commandId: command.commandId, deck: { ...shared, visibility: 'public' } }, {
+            headers: { ...privateHeaders, ETag: '"0"' }
+        });
+        expect((await saved).acknowledgement.deck.visibility).toBe('public');
+    });
+
     it('rejects replay carrying ETag and unexpected response fields', async () => {
         const replay = firstValueFrom(api.create(command));
         http.expectOne('/api/decks').flush(acknowledgement, {

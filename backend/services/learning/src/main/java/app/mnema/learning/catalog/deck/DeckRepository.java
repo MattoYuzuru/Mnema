@@ -15,9 +15,11 @@ class DeckRepository {
     private static final String CURRENT = """
             SELECT d.deck_id, d.head_revision_id, d.reuse_scope_id, d.row_version,
                    r.title, r.description, d.created_at, r.created_at AS updated_at,
-                   r.members_root_id, r.exercises_root_id, r.member_count, r.exercise_count
+                   r.members_root_id, r.exercises_root_id, r.member_count, r.exercise_count,
+                   lower(COALESCE(p.visibility, 'PRIVATE')) AS visibility
               FROM app_learning.deck d JOIN app_learning.deck_revision r
                 ON r.deck_id = d.deck_id AND r.revision_id = d.head_revision_id
+              LEFT JOIN app_learning.deck_publication p ON p.deck_id = d.deck_id
              WHERE d.owner_id = :actor AND d.deleted_at IS NULL
             """;
     private static final RowMapper<DeckRecord> ROW = (row, number) -> new DeckRecord(
@@ -25,7 +27,8 @@ class DeckRepository {
             row.getObject("reuse_scope_id", UUID.class), row.getLong("row_version"),
             row.getString("title"), row.getString("description"), row.getTimestamp("created_at").toInstant(),
             row.getTimestamp("updated_at").toInstant(), row.getObject("members_root_id", UUID.class),
-            row.getObject("exercises_root_id", UUID.class), row.getInt("member_count"), row.getInt("exercise_count"));
+            row.getObject("exercises_root_id", UUID.class), row.getInt("member_count"), row.getInt("exercise_count"),
+            row.getString("visibility"));
     private final JdbcClient jdbc;
 
     DeckRepository(JdbcClient jdbc) { this.jdbc = jdbc; }

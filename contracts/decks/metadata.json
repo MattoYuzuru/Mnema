@@ -1,4 +1,8 @@
 {
+  "visibilities": {
+    "values": ["private", "invite", "link", "public"],
+    "note": "detail.visibility, list items and acknowledgements carry the real level of the deck's publication row (Share/8, publication.json); a deck without a row is private"
+  },
   "command": {
     "commandId": "018f1d98-5c10-7abc-8abc-0123456789ab",
     "metadata": {"title": "Японский — заметки", "description": "  Сохраняем пробелы\nи перенос строки.  "}

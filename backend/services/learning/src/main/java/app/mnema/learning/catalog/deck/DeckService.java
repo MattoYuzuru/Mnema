@@ -66,7 +66,7 @@ public class DeckService {
             NewObject exercises = emptyRoot("exercises");
             var time = repository.now();
             DeckRecord row = new DeckRecord(deck, revision, scope, 0, command.title(), command.description(), time, time,
-                    members.objectId(), exercises.objectId(), 0, 0);
+                    members.objectId(), exercises.objectId(), 0, 0, "private");
             repository.insertDeck(deck, actor, scope, revision, time);
             publish(row, actor, null, command, List.of(members, exercises));
             return row.toJson();
@@ -86,7 +86,7 @@ public class DeckService {
             long next = cas.updateOne(expected, () -> repository.advance(actor, deck, revision, expected));
             DeckRecord row = new DeckRecord(deck, revision, previous.scopeId(), next, command.title(), command.description(),
                     previous.createdAt(), repository.now(), previous.membersRootId(), previous.exercisesRootId(),
-                    previous.memberCount(), previous.exerciseCount());
+                    previous.memberCount(), previous.exerciseCount(), previous.visibility());
             publish(row, actor, previous.revisionId(), command, List.of());
             return row.toJson();
         });

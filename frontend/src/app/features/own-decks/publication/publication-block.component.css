@@ -1,0 +1,28 @@
+/* Layout only: hints, notices, buttons, fields and errors are the shared classes. */
+:host { display: block; min-inline-size: 0; }
+.publication { display: grid; gap: var(--mn-space-3); margin-block: var(--mn-space-5); border-block: 1px solid var(--mn-rule); padding-block: var(--mn-space-4); }
+.publication-head h2 { margin: 0; color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono); letter-spacing: .12em; text-transform: uppercase; }
+.publication-head h2:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+.publication-private, .publication-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--mn-space-2) var(--mn-space-4); }
+.publication-shared { display: grid; gap: var(--mn-space-3); min-inline-size: 0; }
+.publication-line { margin: 0; color: var(--mn-body); line-height: 1.5; overflow-wrap: anywhere; }
+.publication-status.has-update .publication-line { color: var(--mn-ink); font-weight: 650; }
+.publication-link { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mn-space-2) var(--mn-space-3); min-inline-size: 0; }
+.publication-link app-share-button { flex: 0 1 auto; }
+.link-text { flex: 1 1 14rem; min-inline-size: 0; overflow-wrap: anywhere; font-family: var(--mn-font-mono); font-size: .9rem; }
+input, textarea { inline-size: 100%; min-inline-size: 0; }
+textarea { resize: vertical; line-height: 1.5; }
+label { font-weight: 700; }
+.field-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--mn-space-2) var(--mn-space-4); }
+.publication-update { display: grid; gap: var(--mn-space-3); border-inline-start: 2px solid var(--mn-rule); padding-inline-start: var(--mn-space-4); }
+.publication-actions { display: flex; flex-wrap: wrap; gap: var(--mn-space-3); }
+.inline-retry { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--mn-space-3); }
+.inline-retry p { margin: 0; }
+:where(a, button, input, textarea):focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+@media (max-width: 42rem) {
+  .publication-actions .button, .publication-status .button { flex: 1 1 100%; }
+}
+@media (forced-colors: active) {
+  .publication, .publication-update { border-color: CanvasText; }
+  :where(a, button, input, textarea):focus-visible, .publication-head h2:focus-visible { outline-color: Highlight; }
+}

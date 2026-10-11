@@ -22,6 +22,10 @@ import java.util.UUID;
  * when the owner changes who can read. Lowering the level rotates the public code ({@link DeckVisibility#lowersTo}, any step to a more restrictive level); the code of a lowered deck
  * therefore never resolves again. Codes are drawn from a CSPRNG and a collision with another deck's code (about 2^-58 per draw) is retried in a
  * fresh transaction.
+ *
+ * <p>{@code setVisibility} is the low-level compare-and-set of the level (raw row version, {@link #UNPUBLISHED} for no row; it writes no outbox row, no metadata and does not
+ * check the «Публичная» checklist). It is package-private on purpose, so production code outside this package cannot bypass the checklist and the outbox: the owner's command
+ * is {@link PublicationService}.
  */
 @Service
 public class DeckPublications {
@@ -62,7 +66,7 @@ public class DeckPublications {
      * @throws ResourceNotFoundException the deck is not the owner's or is deleted
      * @throws VersionConflictException the row changed after the version was read
      */
-    public Optional<Publication> setVisibility(UUID owner, UUID deck, DeckVisibility level, long expectedRowVersion) {
+    Optional<Publication> setVisibility(UUID owner, UUID deck, DeckVisibility level, long expectedRowVersion) {
         requireIds(owner, deck);
         if (level == null || expectedRowVersion < UNPUBLISHED) throw new InvalidRequestException();
         for (int attempt = 1; ; attempt++) {

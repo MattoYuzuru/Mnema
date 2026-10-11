@@ -1,15 +1,27 @@
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, input, output, signal } from '@angular/core';
 
 export interface MnemaSelectOption {
     readonly value: string;
     readonly label: string;
     readonly disabled?: boolean;
+    /**
+     * The heading of the group this option belongs to. Consecutive options with the same `group` are drawn together under one
+     * heading (`role="group"` named by it); the heading is text, not an option, so arrows, Home, End and typeahead never land on it.
+     */
+    readonly group?: string;
+}
+
+interface SelectSection {
+    readonly key: number;
+    readonly label: string | null;
+    readonly entries: readonly { readonly option: MnemaSelectOption; readonly index: number }[];
 }
 
 /** A select-only combobox. Focus stays on the trigger while aria-activedescendant explores the popup. */
 @Component({
     selector: 'app-mnema-select',
+    imports: [NgTemplateOutlet],
     templateUrl: './mnema-select.component.html',
     styleUrl: './mnema-select.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush,
@@ -29,11 +41,24 @@ export class MnemaSelectComponent {
     readonly invalid = input(false);
     readonly compact = input(false);
     readonly answerControl = input(false);
+    /** Ids of elements that describe the control (a state, a hint); they are announced after its name. */
+    readonly describedBy = input<string | null>(null);
     readonly valueChange = output<string>();
 
     readonly open = signal(false);
     readonly activeIndex = signal(-1);
     readonly selectedLabel = computed(() => this.options().find(option => option.value === this.value())?.label ?? 'Выберите вариант');
+    /** The options in order, split into runs of the same group; an option without a group stands alone. */
+    readonly sections = computed<readonly SelectSection[]>(() => {
+        const sections: { key: number; label: string | null; entries: { option: MnemaSelectOption; index: number }[] }[] = [];
+        this.options().forEach((option, index) => {
+            const label = option.group ?? null;
+            const last = sections[sections.length - 1];
+            if (last !== undefined && last.label === label && label !== null) last.entries.push({ option, index });
+            else sections.push({ key: sections.length, label, entries: [{ option, index }] });
+        });
+        return sections;
+    });
     readonly activeOptionId = computed(() => this.open() && this.activeIndex() >= 0
         ? `${this.controlId()}-option-${this.activeIndex()}` : null);
 

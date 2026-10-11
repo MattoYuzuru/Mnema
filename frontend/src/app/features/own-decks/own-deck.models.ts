@@ -8,6 +8,14 @@ const MAX_VERSION = 9223372036854775806n;
 const COMMAND_ID_FOR_SIZE = '00000000-0000-4000-8000-000000000000';
 const encoder = new TextEncoder();
 
+/** Who may read the published revision (Share/8); the owner's deck JSON carries it lowercase, a deck without a publication row is `private`. */
+export const DECK_VISIBILITIES = ['private', 'invite', 'link', 'public'] as const;
+export type DeckVisibility = (typeof DECK_VISIBILITIES)[number];
+
+export function isDeckVisibility(value: unknown): value is DeckVisibility {
+    return typeof value === 'string' && (DECK_VISIBILITIES as readonly string[]).includes(value);
+}
+
 export interface DeckMetadata {
     readonly title: string;
     readonly description: string;
@@ -19,7 +27,7 @@ export interface OwnDeck {
     readonly rowVersion: string;
     readonly sequence: string;
     readonly metadata: DeckMetadata;
-    readonly visibility: 'private';
+    readonly visibility: DeckVisibility;
     readonly createdAt: string;
     readonly updatedAt: string;
     readonly memberCount: number;

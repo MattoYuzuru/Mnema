@@ -1,0 +1,87 @@
+<section class="publication" [attr.aria-labelledby]="uid + '-title'">
+  <header class="publication-head">
+    <h2 #heading [id]="uid + '-title'" tabindex="-1">{{ text.heading }}</h2>
+  </header>
+
+  @let current = view();
+  @if (current.phase === 'loading') {
+    <p class="hint" role="status">{{ text.loading }}</p>
+  } @else if (current.phase === 'error') {
+    <div class="notice error inline-retry" role="group" [attr.aria-label]="text.heading">
+      <p>{{ text.loadError }}</p>
+      <button type="button" class="button small" (click)="refresh()">{{ text.retry }}</button>
+    </div>
+  } @else {
+    @let state = current.state;
+    @if (state.visibility === 'PRIVATE') {
+      <div class="publication-private">
+        <p class="publication-line">{{ text.privateLine }}</p>
+        <button type="button" #makePublicButton class="button small" [attr.aria-expanded]="checklistOpen()" [attr.aria-controls]="checklistOpen() ? uid + '-checklist' : null"
+          (click)="checklistOpen() ? closeChecklist() : openChecklist()">{{ text.makePublic }}</button>
+      </div>
+    } @else {
+      <div class="publication-shared">
+        <app-access-level [level]="state.visibility === 'INVITE' ? 'invite' : state.visibility === 'LINK' ? 'link' : 'public'" />
+
+        @if (absoluteLink(state); as link) {
+          <div class="publication-link">
+            <a [href]="link" target="_blank" rel="noopener" class="link-text">{{ shownLink(state) }}<span class="visually-hidden">{{ text.opensInNewTab }}</span></a>
+            <app-share-button [url]="link" [title]="deckTitle()" />
+          </div>
+        }
+
+        @if (state.publishedAt; as at) {
+          <p class="hint">{{ text.published }} <time [attr.datetime]="at">{{ at | date:'dd.MM.y, HH:mm' }}</time></p>
+        }
+
+        <div class="publication-status" [class.has-update]="hasUpdate(state)">
+          <p class="publication-line">{{ unchangedText(state) }}</p>
+          @if (hasUpdate(state)) {
+            <button type="button" #updateButton class="button" [class.primary]="!updateOpen()" [attr.aria-expanded]="updateOpen()" [attr.aria-controls]="updateOpen() ? uid + '-update' : null"
+              (click)="updateOpen() ? closeUpdate() : openUpdate()">{{ text.publishUpdate }}</button>
+          }
+        </div>
+
+        @if (updateOpen()) {
+          <form class="publication-update" [id]="uid + '-update'" (submit)="$event.preventDefault(); publishUpdate(state)" (keydown.escape)="publishing() || closeUpdate()" novalidate>
+            <div class="field">
+              <label [for]="uid + '-note'">{{ text.releaseNote }}</label>
+              <textarea #noteField rows="3" [id]="uid + '-note'" [value]="note()" (input)="onNote($event)" autocomplete="off"
+                [attr.aria-invalid]="noteTooLong() ? 'true' : null"
+                [attr.aria-describedby]="uid + '-note-hint ' + uid + '-note-count' + (noteTooLong() ? ' ' + uid + '-note-error' : '')"></textarea>
+              <div class="field-meta">
+                <span class="hint" [id]="uid + '-note-hint'">{{ text.releaseNoteHint }}</span>
+                <span class="hint" [id]="uid + '-note-count'" aria-live="off">{{ noteLength() }}/{{ noteMax }}</span>
+              </div>
+              <p class="visually-hidden" role="status" aria-live="polite">{{ limitStatus() }}</p>
+              @if (noteTooLong()) {
+                <p class="field-error" role="alert" [id]="uid + '-note-error'">{{ text.noteTooLong }}</p>
+              }
+            </div>
+            <div class="publication-actions">
+              <button type="submit" class="button primary" [attr.aria-disabled]="publishing() || noteTooLong() ? 'true' : null"
+                [attr.aria-busy]="publishing() ? 'true' : null">{{ publishing() ? text.publishing : text.publish }}</button>
+              <button type="button" class="button" [attr.aria-disabled]="publishing() ? 'true' : null" (click)="publishing() || closeUpdate()">{{ text.cancel }}</button>
+            </div>
+          </form>
+        }
+
+        @if (canMakePublic(state)) {
+          <div>
+            <button type="button" #makePublicButton class="button small" [attr.aria-expanded]="checklistOpen()" [attr.aria-controls]="checklistOpen() ? uid + '-checklist' : null"
+              (click)="checklistOpen() ? closeChecklist() : openChecklist()">{{ text.makePublic }}</button>
+          </div>
+        }
+      </div>
+    }
+
+    @if (problem(); as message) {
+      <p class="field-error" role="alert">{{ message }}</p>
+    }
+
+    @if (checklistOpen()) {
+      <app-publication-checklist [id]="uid + '-checklist'" [deckId]="deckId()" [state]="state"
+         (published)="onChecklistPublished($event)" (cancelled)="closeChecklist()" (refresh)="refresh()" (replayed)="onChecklistReplayed()" (editDescription)="editDescription.emit()" />
+    }
+  }
+</section>

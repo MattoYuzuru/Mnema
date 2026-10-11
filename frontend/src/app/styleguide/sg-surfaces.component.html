@@ -85,6 +85,54 @@
       <p class="hint">Профиль скрыт, и чип не рисует ничего: <app-author-chip [username]="null" /></p>
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Уровень доступа" selector="<app-access-level>"
+    when="Кто может открыть колоду: «Приватная», «По приглашению», «По ссылке», «Публичная». Маленький линейный знак (замок, цепь, колоннада) повторяет слово и скрыт от скринридера; статус называет текст. В «Моих колодах» и в хабе показывается у всего, кроме приватной колоды."
+    [tokens]="['--mn-ink', '--mn-font-mono']"
+    usage='<app-access-level level="link" />'>
+    <div class="sg-stack">
+      <app-access-level level="private" />
+      <app-access-level level="invite" />
+      <app-access-level level="link" />
+      <app-access-level level="public" />
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Пункт чек-листа" selector=".checklist > .checklist-item[data-state]"
+    when="Шаги задачи списком, где у каждого шага состояние словами: «Готово», «Нужно сделать», «Не принято» (после отказа сервера), «По желанию». Знак рядом со словом — не единственный признак. Исправляющий элемент (поле, ссылка, кнопка) стоит внутри пункта; пункты не прячут то, что осталось сделать."
+    [tokens]="['--mn-rule', '--mn-positive', '--mn-danger', '--mn-muted']"
+    usage='<ol class="checklist">
+  <li class="checklist-item" data-state="done">
+    <div class="checklist-head"><h4 class="checklist-title">Описание</h4><span class="checklist-state"><span aria-hidden="true">✓</span> Готово</span></div>
+    <p class="hint">Описание у колоды есть.</p>
+  </li>
+</ol>'>
+    <ol class="checklist">
+      <li class="checklist-item" data-state="done">
+        <div class="checklist-head"><h4 class="checklist-title">Описание</h4><span class="checklist-state"><span aria-hidden="true">✓</span> Готово</span></div>
+        <p class="hint">Описание у колоды есть.</p>
+      </li>
+      <li class="checklist-item" data-state="todo">
+        <div class="checklist-head"><h4 class="checklist-title">Публичный профиль</h4><span class="checklist-state"><span aria-hidden="true">○</span> Нужно сделать</span></div>
+        <p class="hint">У публичной колоды виден ваш логин, поэтому нужен публичный профиль.</p>
+        <div><a class="button small" href="#status">Открыть профиль</a></div>
+      </li>
+      <li class="checklist-item" data-state="failed">
+        <div class="checklist-head"><h4 class="checklist-title">Тема</h4><span class="checklist-state"><span aria-hidden="true">!</span> Не принято</span></div>
+        <p class="hint">Выберите самую близкую тему.</p>
+      </li>
+      <li class="checklist-item" data-state="optional">
+        <div class="checklist-head"><h4 class="checklist-title">Уровень (необязательно)</h4><span class="checklist-state">По желанию</span></div>
+      </li>
+    </ol>
+  </app-sg-specimen>
+  <app-sg-specimen title="Блок публикации" selector="<app-publication-block>"
+    when="Хаб колоды: кто видит колоду и что видят ученики. У приватной колоды одна тихая строка и «Сделать публичной…» (чек-лист раскрывается здесь же, без перехода). У колоды с доступом: уровень, ссылка и «Поделиться», время публикации и, если колода изменилась после неё, «Изменения для учеников не опубликованы (N)» с «Опубликовать обновление» и необязательным «Что нового» до 500 символов. Блок читает своё состояние отдельным запросом: сбой даёт повтор внутри блока, хаб остаётся. Примеры работают на демо-данных без сервера."
+    [tokens]="['--mn-rule', '--mn-ink', '--mn-soft']"
+    usage='<app-publication-block [deckId]="deck.deckId" [deckTitle]="deck.metadata.title" (levelChange)="level.set($event)" (editDescription)="openEditor()" />'>
+    <div class="sg-stack">
+      <app-publication-block [deckId]="privateDeck" deckTitle="Японский для начинающих" />
+      <app-publication-block [deckId]="sharedDeck" deckTitle="Японский для начинающих" />
+    </div>
+  </app-sg-specimen>
   <app-sg-specimen title="Шкала расхода" selector="<app-usage-meter>"
     when="Расход лимита ИИ: текст под шкалой — источник истины, сама полоса скрыта от скринридера. Использовано, резерв, ещё не открытое и засечки разблокировок."
     [tokens]="['--mn-ink', '--mn-field-border', '--mn-sheet']"

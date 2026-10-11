@@ -47,6 +47,18 @@ describe('OwnDecksListPageComponent', () => {
         fixture.detectChanges();
     });
 
+    it('marks a deck that is not private with its real level, in words, and leaves a private one unmarked', () => {
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('app-access-level')).toBeNull();
+        const base = metadataFixture.detail as unknown as OwnDeck;
+        state.set({
+            phase: 'ready', nextCursor: null, operation: null, failure: null,
+            items: [{ ...base, visibility: 'link' }, { ...base, deckId: '33333333-3333-4333-8333-333333333333', visibility: 'public' }, { ...base, deckId: '44444444-4444-4444-8444-444444444444' }]
+        });
+        fixture.detectChanges();
+        expect([...root.querySelectorAll('app-access-level')].map(mark => mark.textContent!.trim())).toEqual(['По ссылке', 'Публичная']);
+    });
+
     it('loads once and exposes an exact private deck without invented actions', () => {
         const root = fixture.nativeElement as HTMLElement;
 

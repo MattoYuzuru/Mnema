@@ -166,6 +166,20 @@
 .settings-row.is-live:has(input:disabled) { color: var(--mn-muted); cursor: default; }
 .settings-row.is-live:has(input[aria-disabled='true']) { cursor: progress; }
 
+/* Checklist: the steps of a task as a list. Every item names its state in words (`data-state`: done «Готово», todo «Нужно сделать»,
+   failed «Не принято», optional «По желанию»), with a shape beside the word; the colour never carries it alone. The control that fixes
+   an item (a field, a link, a button) sits inside it. */
+.checklist { display: grid; margin: 0; padding: 0; list-style: none; }
+.checklist-item { display: grid; gap: var(--mn-space-2); min-inline-size: 0; border-block-start: 1px solid var(--mn-rule); padding-block: var(--mn-space-4); }
+.checklist-item:last-child { border-block-end: 1px solid var(--mn-rule); }
+.checklist-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--mn-space-1) var(--mn-space-3); }
+.checklist-title { margin: 0; color: var(--mn-ink); font: 700 1.05rem/1.4 var(--mn-font-body, system-ui, sans-serif); }
+.checklist-state { color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.checklist-item[data-state='done'] .checklist-state { color: var(--mn-positive); }
+.checklist-item[data-state='optional'] .checklist-state { color: var(--mn-muted); }
+.checklist-item[data-state='failed'] { border-inline-start: 4px solid var(--mn-danger); padding-inline-start: var(--mn-space-3); }
+.checklist-item[data-state='failed'] .checklist-state { color: var(--mn-danger); }
+
 /* The primary action stays in reach: pinned to the bottom of the viewport. The page publishes its height as
    --mn-bulk-bar-height on the root (scroll padding, see global_styles.css), so a focused control is never hidden under it.
    .cta-bar--inline draws it in the flow (the styleguide). */
@@ -188,5 +202,6 @@
     .cta-bar { border-color: CanvasText; background: Canvas; }
     .button, .notice, .stamp, .paper-surface { border-color: CanvasText; }
     .empty-state { border-color: CanvasText; }
+    .checklist-item { border-color: CanvasText; }
     .button.quiet { border-color: transparent; }
 }

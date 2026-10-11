@@ -1,0 +1,19 @@
+/* Layout only: the panel is `.paper-surface.ruled`, the items `.checklist`, the notice `.notice`, the hints `.hint`. */
+:host { display: block; min-inline-size: 0; }
+.checklist-panel { display: grid; gap: var(--mn-space-4); margin-block: var(--mn-space-5); }
+.checklist-panel > h3 { margin: 0; color: var(--mn-ink); font-family: var(--mn-font-display, Georgia, serif); font-size: clamp(1.4rem, 2.5vw, 1.8rem); font-weight: 500; line-height: 1.16; }
+.checklist-lede { max-inline-size: 60ch; margin: 0; color: var(--mn-muted); line-height: 1.55; }
+.suggest { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mn-space-2); }
+.blocked-list { display: grid; gap: var(--mn-space-2); margin: 0; padding: 0; list-style: none; }
+.blocked-list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mn-space-2) var(--mn-space-3); }
+.blocked-list li > span { flex: 1 1 14rem; min-inline-size: 0; overflow-wrap: anywhere; }
+.checklist-actions { display: flex; flex-wrap: wrap; gap: var(--mn-space-3); }
+.catalog-note { line-height: 1.5; }
+.checklist-summary:empty { display: none; }
+:where(a, button, h3):focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+@media (max-width: 42rem) {
+  .checklist-actions .button { flex: 1 1 100%; }
+}
+@media (forced-colors: active) {
+  :where(a, button, h3):focus-visible { outline-color: Highlight; }
+}

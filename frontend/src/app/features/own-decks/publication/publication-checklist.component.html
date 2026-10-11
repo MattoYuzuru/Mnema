@@ -1,0 +1,135 @@
+<section class="paper-surface ruled checklist-panel" [attr.aria-labelledby]="uid + '-title'" (keydown.escape)="onEscape($event)">
+  <h3 #heading [id]="uid + '-title'" tabindex="-1">{{ text.heading }}</h3>
+  <p class="checklist-lede">{{ text.lede }}</p>
+
+  <ol class="checklist">
+    <li class="checklist-item" [attr.data-state]="stateOf('description')" [attr.aria-labelledby]="uid + '-description'">
+      <div class="checklist-head">
+        <h4 class="checklist-title" [id]="uid + '-description'">{{ text.description }}</h4>
+        <ng-container *ngTemplateOutlet="stateWord; context: { state: stateOf('description'), id: stateId('description') }" />
+      </div>
+      @if (stateOf('description') === 'done') {
+        <p class="hint">{{ text.descriptionDone }}</p>
+      } @else {
+        <p class="hint">{{ text.descriptionTodo }}</p>
+        <div><button type="button" class="button small" [attr.aria-describedby]="stateId('description')" (click)="editDescription.emit()">{{ text.descriptionAction }}</button></div>
+      }
+    </li>
+
+    <li class="checklist-item" [attr.data-state]="stateOf('topic')" [attr.aria-labelledby]="uid + '-topic'">
+      <div class="checklist-head">
+        <h4 class="checklist-title" [id]="uid + '-topic'">{{ text.topic }}</h4>
+        <ng-container *ngTemplateOutlet="stateWord; context: { state: stateOf('topic'), id: stateId('topic') }" />
+      </div>
+      @let topicsState = topics();
+      @if (topicsState.phase === 'loading') {
+        <p class="hint" role="status">{{ text.topicsLoading }}</p>
+      } @else if (topicsState.phase === 'error') {
+        <p class="field-error">{{ text.topicsError }}</p>
+        <div><button type="button" class="button small" (click)="loadTopics()">{{ text.topicsRetry }}</button></div>
+      } @else {
+        @if (suggestedTopics().length > 0) {
+          <div class="suggest" role="group" [attr.aria-label]="text.topicSuggested">
+            <span class="hint" aria-hidden="true">{{ text.topicSuggested }}:</span>
+            @for (topic of suggestedTopics(); track topic.topicId) {
+              <button type="button" class="button small" (click)="pickTopic(topic.topicId)">{{ topic.nameRu }}</button>
+            }
+          </div>
+        }
+        <app-mnema-select [controlId]="uid + '-topic-select'" [label]="text.topic" [options]="topicOptions()" [value]="topicId()"
+          [describedBy]="stateId('topic')" [invalid]="stateOf('topic') === 'failed'" (valueChange)="pickTopic($event)" />
+        <p class="hint">{{ text.topicHint }}</p>
+      }
+    </li>
+
+    <li class="checklist-item" [attr.data-state]="stateOf('language')" [attr.aria-labelledby]="uid + '-language'">
+      <div class="checklist-head">
+        <h4 class="checklist-title" [id]="uid + '-language'">{{ text.language }}</h4>
+        <ng-container *ngTemplateOutlet="stateWord; context: { state: stateOf('language'), id: stateId('language') }" />
+      </div>
+      <app-mnema-select [controlId]="uid + '-language-select'" [label]="text.language" [options]="languageOptions()" [value]="language()"
+        [describedBy]="stateId('language')" [invalid]="stateOf('language') === 'failed'" (valueChange)="pickLanguage($event)" />
+      <p class="hint">{{ languageSuggested() ? text.languageHint : text.languageChoose }}</p>
+    </li>
+
+    <li class="checklist-item" data-state="optional" [attr.aria-labelledby]="uid + '-level'">
+      <div class="checklist-head">
+        <h4 class="checklist-title" [id]="uid + '-level'">{{ text.level }}</h4>
+        <ng-container *ngTemplateOutlet="stateWord; context: { state: 'optional', id: stateId('level') }" />
+      </div>
+      <app-mnema-select [controlId]="uid + '-level-select'" [label]="text.levelLabel" [options]="levelOptions" [value]="level()"
+        [describedBy]="stateId('level')" (valueChange)="level.set($event)" />
+    </li>
+
+    <li class="checklist-item" data-state="optional">
+      <div class="checklist-head">
+        <h4 class="checklist-title">{{ text.tags }}</h4>
+        <ng-container *ngTemplateOutlet="stateWord; context: { state: 'optional', id: stateId('tags') }" />
+      </div>
+      <app-tag-input [label]="text.tagsLabel" [(tags)]="tags" [hint]="text.tagsHint" />
+    </li>
+
+    <li class="checklist-item" [attr.data-state]="stateOf('publicProfile')" [attr.aria-labelledby]="uid + '-profile'">
+      <div class="checklist-head">
+        <h4 class="checklist-title" [id]="uid + '-profile'">{{ text.profile }}</h4>
+        <ng-container *ngTemplateOutlet="stateWord; context: { state: stateOf('publicProfile'), id: stateId('publicProfile') }" />
+      </div>
+      @if (stateOf('publicProfile') === 'done') {
+        <p class="hint">{{ text.profileDone }}</p>
+      } @else {
+        <p class="hint">{{ text.profileTodo }}</p>
+        <div><a class="button small" routerLink="/profile" fragment="public-profile-settings" [attr.aria-describedby]="stateId('publicProfile')">{{ text.profileAction }}</a></div>
+      }
+    </li>
+
+    <li class="checklist-item" [attr.data-state]="stateOf('blockedMedia')" [attr.aria-labelledby]="uid + '-media'">
+      <div class="checklist-head">
+        <h4 class="checklist-title" [id]="uid + '-media'">{{ text.media }}</h4>
+        <ng-container *ngTemplateOutlet="stateWord; context: { state: stateOf('blockedMedia'), id: stateId('blockedMedia') }" />
+      </div>
+      @if (state().checklist.blockedMedia.length === 0) {
+        <p class="hint">{{ text.mediaDone }}</p>
+      } @else {
+        <p class="hint">{{ text.mediaTodo }}</p>
+        <ul class="blocked-list">
+          @for (entry of state().checklist.blockedMedia; track $index) {
+            <li>
+              <span>{{ blockedLabel(entry) }}: {{ text.mediaReason }}.</span>
+              <a class="button small" [routerLink]="blockedLink(entry)" [attr.aria-label]="blockedLinkLabel(entry)"
+                [attr.aria-describedby]="stateId('blockedMedia')">{{ entry.memberKey !== null ? text.openMaterial : text.openExercise }}</a>
+            </li>
+          }
+        </ul>
+      }
+    </li>
+  </ol>
+
+  @let threshold = state().checklist.catalogThreshold;
+  <p class="notice catalog-note" role="note">
+    <strong>{{ text.catalogHeading }}.</strong>
+    {{ threshold.met ? text.catalogMet(threshold.materials, threshold.exercises) : text.catalogUnmet(threshold.materials, threshold.exercises, threshold.needMaterials) }}
+  </p>
+
+  <div class="checklist-actions">
+    <button type="button" class="button primary" [attr.aria-disabled]="!canSubmit() || submitting() ? 'true' : null"
+      [attr.aria-busy]="submitting() ? 'true' : null" [attr.aria-describedby]="uid + '-summary'" (click)="submit()">
+      {{ submitting() ? text.submitting : text.submit }}
+    </button>
+    <button type="button" class="button" [attr.aria-disabled]="submitting() ? 'true' : null" (click)="submitting() || cancelled.emit()">{{ text.cancel }}</button>
+  </div>
+  <p class="hint checklist-summary" [id]="uid + '-summary'">{{ canSubmit() ? '' : missingText() }}</p>
+  @if (problem(); as message) {
+    <p class="field-error" role="alert">{{ message }}</p>
+  }
+</section>
+
+<ng-template #stateWord let-state="state" let-id="id">
+  <span class="checklist-state" [id]="id">
+    @switch (state) {
+      @case ('done') { <span aria-hidden="true">✓</span> {{ text.ready }} }
+      @case ('failed') { <span aria-hidden="true">!</span> {{ text.failedWord }} }
+      @case ('optional') { {{ text.optionalWord }} }
+      @default { <span aria-hidden="true">○</span> {{ text.todo }} }
+    }
+  </span>
+</ng-template>

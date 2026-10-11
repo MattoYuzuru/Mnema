@@ -8,6 +8,7 @@ import app.mnema.identityaccount.federation.FederationRequests;
 import app.mnema.identityaccount.federation.FederationSuccess;
 import app.mnema.identityaccount.federation.ProviderTokenDiscarder;
 import app.mnema.identityaccount.federation.ProviderUsers;
+import app.mnema.identityaccount.profile.PublicProfiles;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +31,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.oidc.OidcUserInfo;
 import org.springframework.security.oauth2.server.authorization.oidc.authentication.OidcLogoutAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.oidc.web.authentication.OidcLogoutAuthenticationSuccessHandler;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -50,9 +52,13 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.UUID;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {
+    /** The product claim of {@code /userinfo}: the account's public profile is ready (consent on, login set). Learning's {@code IdentityClaims} reads it. */
+    public static final String PUBLIC_PROFILE_CLAIM = "mnema_public_profile";
+
     private static final Logger LOG = LoggerFactory.getLogger(SecurityConfiguration.class);
 
     /**
@@ -102,7 +108,7 @@ public class SecurityConfiguration {
     @Order(1)
     SecurityFilterChain authorization(HttpSecurity http, AccountStore accounts, BrowserSessions sessions,
                                       JdbcClient jdbcClient, TransactionTemplate transactions, Clock clock,
-                                      AccountErrors errors) throws Exception {
+                                      AccountErrors errors, PublicProfiles profiles) throws Exception {
         var oidcLogout = new OidcLogoutAuthenticationSuccessHandler();
         oidcLogout.setLogoutHandler((request, response, authentication) -> {
             var logout = (OidcLogoutAuthenticationToken) authentication;
@@ -111,7 +117,14 @@ public class SecurityConfiguration {
         });
         http.oauth2AuthorizationServer(server -> {
                     http.securityMatcher(server.getEndpointsMatcher());
-                    server.oidc(o -> o.logoutEndpoint(l -> l.logoutResponseHandler(oidcLogout)));
+                    server.oidc(o -> o.logoutEndpoint(l -> l.logoutResponseHandler(oidcLogout))
+                            .userInfoEndpoint(u -> u.userInfoMapper(context -> {
+                                // /userinfo answers the subject plus one product claim: whether the account may publish a public deck. Learning
+                                // reads this instead of Identity tables (the claim is the consent flag AND a login, see PublicProfiles.publishReady).
+                                var subject = UUID.fromString(context.getAuthorization().getPrincipalName());
+                                return OidcUserInfo.builder().subject(subject.toString())
+                                        .claim(PUBLIC_PROFILE_CLAIM, profiles.publishReady(subject)).build();
+                            })));
                 })
                 .addFilterAfter(new LegacyBrowserSessionFilter(), SecurityContextHolderFilter.class)
                 .addFilterAfter(new RecoveryAuthorizationBoundaryFilter(errors), LegacyBrowserSessionFilter.class)

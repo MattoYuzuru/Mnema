@@ -4,6 +4,7 @@ import { MnemaSelectComponent, MnemaSelectOption } from '../core/controls/mnema-
 import { ChoiceListComponent } from '../content/exercise/choice-list.component';
 import { LearnerChoiceOption } from '../content/exercise/exercise-content.models';
 import { HoldToDeleteButtonComponent } from '../shared/hold-to-delete-button.component';
+import { TagInputComponent } from '../shared/tag-input.component';
 import { SegmentedChoiceComponent, SegmentedOption } from '../shared/segmented-choice.component';
 import { ToggletipComponent } from '../shared/toggletip.component';
 import { PlanOptionComponent } from '../features/plans/plan-option.component';
@@ -25,7 +26,7 @@ const OPTION_IDS = ['d4000000-0000-4000-8000-000000000001', 'd4000000-0000-4000-
     selector: 'app-sg-controls',
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, HoldToDeleteButtonComponent, SegmentedChoiceComponent, ToggletipComponent, MnemaSelectComponent, ChoiceListComponent,
-        PlanOptionComponent, PromoRedeemComponent],
+        PlanOptionComponent, PromoRedeemComponent, TagInputComponent],
     providers: [{ provide: PromoApiService, useClass: DemoPromoApi }],
     templateUrl: './sg-controls.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -50,10 +51,19 @@ export class SgControlsComponent {
     protected readonly tier = signal<PlanId>('PLUS');
     protected readonly tierPeriod = signal<PlanPeriod>('MONTH');
 
+    protected readonly tags = signal<readonly string[]>(['jlpt n5']);
+
     protected readonly language = signal('ru');
     protected readonly languages: readonly MnemaSelectOption[] = [
         { value: 'ru', label: 'Русский' }, { value: 'en', label: 'Английский' }, { value: 'ja', label: 'Японский' },
         { value: 'de', label: 'Немецкий', disabled: true }
+    ];
+
+    protected readonly topic = signal('japanese');
+    protected readonly topics: readonly MnemaSelectOption[] = [
+        { value: 'english', label: 'Английский', group: 'Языки' }, { value: 'japanese', label: 'Японский', group: 'Языки' },
+        { value: 'biology', label: 'Биология', group: 'Наука' }, { value: 'physics', label: 'Физика', group: 'Наука' },
+        { value: 'other', label: 'Другое' }
     ];
 
     protected readonly choiceOptions: readonly LearnerChoiceOption[] = [

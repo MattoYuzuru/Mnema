@@ -55,6 +55,8 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     @Autowired
     Profiles profiles;
     @Autowired
+    app.mnema.identityaccount.profile.PublicProfiles publicProfiles;
+    @Autowired
     Moderation moderation;
     @Autowired
     FederatedAccounts federation;
@@ -331,6 +333,62 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         });
         mvc.perform(get("/userinfo").header("Authorization", bearer))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void userInfoCarriesThePublicProfileReadinessClaimOfTheCurrentConsent() throws Exception {
+        String key = UUID.randomUUID().toString();
+        var withLogin = local.register(key + "@example.test", key, password, "u" + key.substring(0, 12), key);
+        String bearer = "Bearer " + userInfoToken(withLogin, "serves-profile-claim-0123456789-abcdefghijklmnopqrstuvwxyz");
+
+        // No consent yet: the claim is present and false (Learning reads absence as false too, but the answer is explicit).
+        mvc.perform(get("/userinfo").header("Authorization", bearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.sub").value(withLogin.accountId().toString()))
+                .andExpect(jsonPath("$.mnema_public_profile").value(false));
+        var consent = new app.mnema.identityaccount.profile.PublicProfiles.Update(true, true, false, false,
+                app.mnema.identityaccount.profile.PublicProfiles.TEXT_VERSION);
+        assertThat(publicProfiles.update(withLogin, consent).publishReady()).isTrue();
+        // The claim follows the consent on the very next request: Learning caches nothing.
+        mvc.perform(get("/userinfo").header("Authorization", bearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.mnema_public_profile").value(true));
+        publicProfiles.update(withLogin, new app.mnema.identityaccount.profile.PublicProfiles.Update(false, false, false, false,
+                app.mnema.identityaccount.profile.PublicProfiles.TEXT_VERSION));
+        mvc.perform(get("/userinfo").header("Authorization", bearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.mnema_public_profile").value(false));
+
+        // An account without a login (profile username) can never be ready, and cannot even switch the consent on.
+        var withoutLogin = account();
+        String otherBearer = "Bearer " + userInfoToken(withoutLogin, "no-login-profile-claim-0123456789-abcdefghijklmnopqrstuvwxyz");
+        assertThatThrownBy(() -> publicProfiles.update(withoutLogin, consent)).isInstanceOf(AccountFailure.class);
+        mvc.perform(get("/userinfo").header("Authorization", otherBearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.sub").value(withoutLogin.accountId().toString()))
+                .andExpect(jsonPath("$.mnema_public_profile").value(false));
+        // One subject's readiness is never visible with another subject's token: A is ready while B asks, and each answer names its own subject.
+        publicProfiles.update(withLogin, consent);
+        mvc.perform(get("/userinfo").header("Authorization", otherBearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.sub").value(withoutLogin.accountId().toString()))
+                .andExpect(jsonPath("$.mnema_public_profile").value(false));
+        mvc.perform(get("/userinfo").header("Authorization", bearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.sub").value(withLogin.accountId().toString()))
+                .andExpect(jsonPath("$.mnema_public_profile").value(true));
+    }
+
+    @Test
+    void theClaimNameIsTheOneLearningReadsFromTheSharedContractFile() throws Exception {
+        java.nio.file.Path root = java.nio.file.Path.of("").toAbsolutePath();
+        while (root != null && !java.nio.file.Files.exists(root.resolve("contracts/decks/publication.json"))) root = root.getParent();
+        assertThat(root).isNotNull();
+        String contract = json.readTree(java.nio.file.Files.readString(root.resolve("contracts/decks/publication.json")))
+                .path("constants").path("identityClaim").asString();
+        assertThat(SecurityConfiguration.PUBLIC_PROFILE_CLAIM).isEqualTo(contract).isEqualTo("mnema_public_profile");
+    }
+
+    private String userInfoToken(AccountAccess account, String verifier) throws Exception {
+        String code = authorize(login(account), verifier, "mnema-web", "openid learning.read");
+        var result = mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code").param("client_id", "mnema-web")
+                        .param("redirect_uri", "https://mnema.app/auth/callback").param("code", code).param("code_verifier", verifier))
+                .andExpect(status().isOk()).andReturn();
+        return json.readTree(result.getResponse().getContentAsString()).path("access_token").asString();
     }
 
     @org.junit.jupiter.params.ParameterizedTest

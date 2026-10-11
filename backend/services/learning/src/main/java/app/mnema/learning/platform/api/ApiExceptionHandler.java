@@ -9,6 +9,8 @@ import app.mnema.learning.generation.GenerationStateConflictException;
 import app.mnema.learning.generation.SourceUnavailableException;
 import app.mnema.learning.generation.StaleArtifactsException;
 import app.mnema.learning.library.DeckInviteOnlyException;
+import app.mnema.learning.library.PublicationRequiredException;
+import app.mnema.learning.library.PublicationRequirementsException;
 import app.mnema.learning.library.PublicReadBusyException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.media.MediaStorageUnavailableException;
@@ -106,6 +108,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(DeckInviteOnlyException.class)
     ResponseEntity<Object> handleDeckInviteOnly(DeckInviteOnlyException exception, HttpServletRequest request) {
         return response(ApiErrorCode.DECK_INVITE_ONLY, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(PublicationRequiredException.class)
+    ResponseEntity<Object> handlePublicationRequired(PublicationRequiredException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.PUBLICATION_REQUIRED, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(PublicationRequirementsException.class)
+    ResponseEntity<Object> handlePublicationRequirements(PublicationRequirementsException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.PUBLICATION_REQUIREMENTS, request, exception);
     }
 
     @ExceptionHandler(PublicReadBusyException.class)

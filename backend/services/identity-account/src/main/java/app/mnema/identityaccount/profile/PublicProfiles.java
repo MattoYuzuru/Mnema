@@ -122,6 +122,16 @@ public class PublicProfiles {
         });
     }
 
+    /**
+     * Whether the account may publish a public deck: the consent is on and the account is active with a login (the card gate). It is the
+     * {@code mnema_public_profile} claim of {@code /userinfo}.
+     */
+    public boolean publishReady(UUID accountId) {
+        return jdbcClient.sql("""
+                        SELECT EXISTS(SELECT 1 FROM app_identity.public_profile_consent c JOIN app_identity.account a ON a.account_id=c.account_id
+                                      WHERE c.account_id=:id AND\s""" + CARD_GATE + ")").param("id", accountId).query(Boolean.class).single();
+    }
+
     public Optional<Card> card(UUID id) {
         return jdbcClient.sql(CARD_SELECT + " AND c.account_id=:id").param("id", id).query(PublicProfiles::card)
                 .optional();
