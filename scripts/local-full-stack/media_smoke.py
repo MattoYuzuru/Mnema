@@ -203,10 +203,12 @@ def avatar_round_trip(identity, access):
     status, _, profile = identity.request("GET", "/api/accounts/me", bearer=access)
     require(status == 200 and isinstance(profile, dict) and profile.get("avatarPresent") is True,
             "avatar profile state missing")
-    status, headers, received = identity.request(
-        "GET", f"/api/accounts/profiles/{profile['accountId']}/avatar", raw_response=True)
+    status, headers, received = identity.request("GET", "/api/accounts/me/avatar", bearer=access, raw_response=True)
     require(status == 200 and headers.get("content-type") == "image/png" and received == image,
             "avatar was not served back from object storage")
+    # Without the public-profile consent (Share/1) the public avatar route answers like an unknown account.
+    status, _, _ = identity.request("GET", f"/api/accounts/profiles/{profile['accountId']}/avatar", raw_response=True)
+    require(status == 404, f"the public avatar route served an account without public-profile consent ({status})")
     return {"avatarBytes": len(image)}
 
 
