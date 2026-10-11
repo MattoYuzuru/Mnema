@@ -38,7 +38,9 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
     private static final Set<String> ALLOWED_LEGACY_PREFIX_ROUTES = Set.of("/admin/promo-codes", "/admin/promo-codes/{codeId}",
             "/admin/events", "/admin/events/access", "/admin/events/{eventId}",
             "/admin/console/access", "/admin/console/report", "/admin/console/users/{id}", "/admin/console/audit",
-            "/admin/support/tickets", "/admin/support/tickets/{ticketId}", "/admin/support/tickets/{ticketId}/commands");
+            "/admin/support/tickets", "/admin/support/tickets/{ticketId}", "/admin/support/tickets/{ticketId}/commands",
+            "/admin/complaints", "/admin/complaints/journal", "/admin/complaints/{complaintId}", "/admin/complaints/{complaintId}/units",
+            "/admin/complaints/{complaintId}:decide", "/admin/complaints/{complaintId}:unhide");
 
     @Autowired
     private ApplicationContext applicationContext;
@@ -93,7 +95,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "43:product events:SUCCESS", "44:speech personal data slot error:SUCCESS", "45:billing orders:SUCCESS", "46:billing failed recheck:SUCCESS", "47:npd receipts:SUCCESS", "48:admin console:SUCCESS",
                         "49:media asset source blob index:SUCCESS", "50:learning jobs:SUCCESS",
                         "51:lineage items:SUCCESS", "52:lineage exercises:SUCCESS", "53:deck access:SUCCESS", "54:deck publication:SUCCESS", "55:shared media:SUCCESS",
-                        "56:deck invites and requests:SUCCESS");
+                        "56:deck invites and requests:SUCCESS", "58:complaints and takedowns:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -159,7 +161,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "notificationController", "itemHubController", "deckInsightsController",
                         "usageController", "estimateController", "generationController", "speechInputController", "plansController", "learningProfileController", "promoController", "promoAdminController", "promoPopupController", "experimentController",
                         "publicEventsController", "adminEventsController", "billingController", "TBankNotificationController",
-                        "adminConsoleController", "adminSupportController", "publicDeckController", "publicationController", "deckAccessController", "inviteRedeemController");
+                        "adminConsoleController", "adminSupportController", "publicDeckController", "publicationController", "deckAccessController", "inviteRedeemController", "complaintController", "complaintAdminController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {

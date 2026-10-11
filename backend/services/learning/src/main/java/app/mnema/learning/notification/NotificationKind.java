@@ -43,7 +43,11 @@ public enum NotificationKind {
     /** To the author of an invitation-only deck (Share/13): somebody asked for access; {@code pendingCount} is the open requests then, capped at 1000. */
     DECK_ACCESS_REQUESTED(NotificationSeverity.INFO, NotificationRoute.DECK, param("deckId", UUID), param("pendingCount", COUNT)),
     /** To the requester whose request was approved (Share/13): {@code code} is the public code of the deck, a reader never learns the deck id. */
-    DECK_ACCESS_GRANTED(NotificationSeverity.INFO, NotificationRoute.DECK, param("code", TOKEN));
+    DECK_ACCESS_GRANTED(NotificationSeverity.INFO, NotificationRoute.DECK, param("code", TOKEN)),
+    /** To the owner of a deck the console hid from the Community after a complaint (Share/15, #437): the deck is still his, readers get the answer of an unknown deck. */
+    DECK_HIDDEN(NotificationSeverity.WARNING, NotificationRoute.DECK, param("deckId", UUID)),
+    /** To the owner of a deck when a legal takedown named units of it (Share/15): the number of NEW materials and exercises taken down by that decision. */
+    DECK_CONTENT_TAKEN_DOWN(NotificationSeverity.WARNING, NotificationRoute.DECK, param("deckId", UUID), param("materialCount", COUNT), param("exerciseCount", COUNT));
 
     /** Value type of one params field. */
     enum ParamType { UUID, TOKEN, COUNT, TIMESTAMP }

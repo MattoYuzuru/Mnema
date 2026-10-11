@@ -175,6 +175,8 @@ public class InviteService {
         if (!target.published() || target.visibility() == DeckVisibility.PRIVATE || target.publicCode() == null) throw new ResourceNotFoundException();
         // Lowering the level rotated the code: an invitation of an older generation opens nothing, for anybody (old links stop working).
         if (!target.currentGeneration()) throw new ResourceNotFoundException();
+        // Hidden by a complaint decision (Share/15): nobody but the owner can open it, the grantees included.
+        if (target.hidden() && !account.equals(target.ownerId())) throw new ResourceNotFoundException();
         // Whoever is already in (the owner, a grantee) is answered with the code and consumes nothing, even when the invitation has been used up
         // since: opening the same link twice must not turn a one-time link into a "not found".
         if (account.equals(target.ownerId()) || library.hasGrant(target.deckId(), account)) return new Redeemed(target.publicCode(), false);

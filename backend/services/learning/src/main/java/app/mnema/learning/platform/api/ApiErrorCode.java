@@ -164,6 +164,16 @@ enum ApiErrorCode {
             "Resource not found",
             "The requested resource does not exist."
     ),
+    CONTENT_UNAVAILABLE(
+            HttpStatus.GONE,
+            "Content unavailable",
+            "The content was removed after a complaint."
+    ),
+    COMPLAINT_DECIDED(
+            HttpStatus.CONFLICT,
+            "Complaint decided",
+            "The complaint already has another decision."
+    ),
     SESSION_EXPIRED(
             HttpStatus.GONE,
             "Study session expired",

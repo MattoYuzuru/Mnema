@@ -128,6 +128,8 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         rows.add(Row.of("GET /decks/{deckId}/insights", w -> get("/decks/" + w.deck().id() + "/insights")));
         // publication (Share/8)
         rows.add(Row.of("GET /decks/{deckId}/publication", w -> get("/decks/" + w.deck().id() + "/publication")));
+        // moderation notice (Share/15)
+        rows.add(Row.of("GET /decks/{deckId}/moderation", w -> get("/decks/" + w.deck().id() + "/moderation")));
         rows.add(Row.of("PUT /decks/{deckId}/publication", w -> send("PUT", "/decks/" + w.deck().id() + "/publication", publication(w), q(w.version()))));
         // access: invitation links, requests and people (Share/13)
         rows.add(Row.of("POST /decks/{deckId}/invites", w -> send("POST", "/decks/" + w.deck().id() + "/invites", inviteSpec(), null)));
@@ -448,12 +450,13 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
             if (!method.getBeanType().equals(PublicDeckController.class)) return;
             assertThat(info.getMethodsCondition().getMethods()).containsOnly(RequestMethod.GET);
         });
-        // the only writes below /public (Share/13) are a signed-in account asking for access and taking the request back; the security chain admits exactly that method and path
+        // the only writes below /public are a signed-in account asking for access and taking the request back (Share/13) and filing a complaint (Share/15); the security chain admits exactly that method and path
         Set<String> writes = new TreeSet<>();
         mappings.getHandlerMethods().keySet().forEach(info -> info.getPathPatternsCondition().getPatternValues().stream()
                 .filter(pattern -> pattern.startsWith("/public/")).forEach(pattern -> info.getMethodsCondition().getMethods().stream()
                         .filter(method -> method != RequestMethod.GET).forEach(method -> writes.add(method + " " + pattern))));
-        assertThat(writes).containsExactly("POST /public/decks/{code}/access-requests", "POST /public/decks/{code}/access-requests:withdraw");
+        assertThat(writes).containsExactly("POST /public/decks/{code}/access-requests", "POST /public/decks/{code}/access-requests:withdraw",
+                "POST /public/decks/{code}/complaints", "POST /public/profiles/{username}/complaints");
         ArrayNode patterns = JSON.createArrayNode();
         mappings.getHandlerMethods().keySet().forEach(info -> info.getPathPatternsCondition().getPatternValues().forEach(patterns::add));
         assertThat(patterns.toString()).contains("/public/decks/{code}", "/public/decks/{code}/items", "/public/decks/{code}/items/{memberKey}", "/public/decks/{code}/exercises");

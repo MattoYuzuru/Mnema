@@ -131,11 +131,18 @@ public final class HttpIdentityFixture {
 
     public static int userInfoCalls() { return USER_INFO_CALLS.get(); }
 
-    public static String token(UUID actor, String scopes) {
+    public static String token(UUID actor, String scopes) { return token(actor, scopes, null); }
+
+    /** An access token of the owner console's client ({@code client_id} claim, RFC 9068), as Identity issues to {@code mnema-admin-web}. */
+    public static String adminToken(UUID actor) { return token(actor, "learning.read learning.write", "mnema-admin-web"); }
+
+    public static String token(UUID actor, String scopes, String clientId) {
         try {
-            var claims = new JWTClaimsSet.Builder().issuer(ISSUER).subject(actor.toString()).audience("mnema-api")
+            var builder = new JWTClaimsSet.Builder().issuer(ISSUER).subject(actor.toString()).audience("mnema-api")
                     .issueTime(new Date()).expirationTime(Date.from(Instant.now().plusSeconds(300)))
-                    .claim("generation", "0").claim("scope", scopes).build();
+                    .claim("generation", "0").claim("scope", scopes);
+            if (clientId != null) builder.claim("client_id", clientId);
+            var claims = builder.build();
             var token = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KEY.getKeyID()).type(new JOSEObjectType("at+jwt")).build(), claims);
             token.sign(new RSASSASigner(KEY));
             return token.serialize();
