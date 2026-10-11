@@ -1,16 +1,16 @@
 <section class="access-section" [attr.aria-labelledby]="uid + '-title'">
-  <h3 #heading [id]="uid + '-title'" tabindex="-1">{{ text.invitesHeading }}</h3>
+  <h3 #heading class="subsection-heading" [id]="uid + '-title'" tabindex="-1">{{ text.invitesHeading }}</h3>
   <p class="hint">{{ text.invitesLede }}</p>
   <p class="visually-hidden" role="status" aria-live="polite">{{ status() }}</p>
 
   @if (created(); as fresh) {
-    <div class="notice success new-link" role="group" [attr.aria-labelledby]="uid + '-new-title'">
-      <p class="new-title" #createdHeading tabindex="-1" [id]="uid + '-new-title'">{{ text.newInviteHeading }}</p>
+    <div #createdGroup class="notice warning new-link" role="group" tabindex="-1" [attr.aria-labelledby]="uid + '-new-title'" [attr.aria-describedby]="uid + '-new-once'">
+      <p class="new-title" [id]="uid + '-new-title'">{{ text.newInviteHeading }}</p>
       <p class="new-url" [id]="uid + '-new-url'"><span class="visually-hidden">{{ text.newInviteLabel }}: </span>{{ shown(fresh.url) }}</p>
-      <p class="hint" [id]="uid + '-new-once'">{{ text.newInviteOnce }}</p>
+      <p class="new-once" [id]="uid + '-new-once'"><strong>{{ text.newInviteOnceLead }}</strong>{{ text.newInviteOnceRest }}</p>
       <div class="new-actions">
         <app-share-button [url]="fresh.url" [title]="deckTitle()" />
-        <button type="button" class="button primary" [attr.aria-describedby]="uid + '-new-once'" (click)="dismissCreated()">{{ text.newInviteDone }}</button>
+        <button type="button" class="button primary" (click)="dismissCreated()">{{ text.newInviteDone }}</button>
       </div>
     </div>
   } @else {
@@ -43,31 +43,33 @@
       <button type="button" class="button small" (click)="reload()">{{ text.retry }}</button>
     </div>
   } @else {
-    <ul #rows class="roster" [attr.aria-label]="text.invitesList">
-      @for (invite of list.items(); track invite.inviteId) {
-        <li class="roster-row">
-          <div class="roster-main" [id]="rowId(invite)">
-            <span><span class="stamp" [class.solid]="invite.status === 'ACTIVE'">{{ word(invite) }}</span></span>
-            <span>{{ facts(invite) }}</span>
-            <span class="hint">
-              {{ text.expiry }} @if (invite.expiresAt; as until) { до <time [attr.datetime]="until">{{ until | date:'dd.MM.y, HH:mm' }}</time> } @else { без ограничения }
-              · {{ text.createdOn }} <time [attr.datetime]="invite.createdAt">{{ invite.createdAt | date:'dd.MM.y, HH:mm' }}</time>
-            </span>
-          </div>
-          @if (invite.status === 'ACTIVE') {
-            <div class="roster-actions">
-              <button type="button" class="button small" [attr.aria-describedby]="rowId(invite)"
-                [attr.aria-disabled]="revoking() !== null ? 'true' : null" [attr.aria-busy]="revoking() === invite.inviteId ? 'true' : null"
-                (click)="revoke(invite)">{{ revoking() === invite.inviteId ? text.revoking : text.revoke }}</button>
+    @if (list.items().length === 0) {
+      <p class="hint">{{ text.invitesEmpty }}</p>
+    } @else {
+      <ul #rows class="roster" role="list" [attr.aria-label]="text.invitesList">
+        @for (invite of list.items(); track invite.inviteId) {
+          <li class="roster-row">
+            <div class="roster-main">
+              <span><span class="stamp" [class.solid]="invite.status === 'ACTIVE'">{{ word(invite) }}</span></span>
+              <span>{{ facts(invite) }}</span>
+              <span class="hint">
+                {{ text.expiry }} @if (invite.expiresAt; as until) { до <time [attr.datetime]="until">{{ until | date:'dd.MM.y, HH:mm' }}</time> } @else { без ограничения }
+                · {{ text.createdOn }} <time [attr.datetime]="invite.createdAt">{{ invite.createdAt | date:'dd.MM.y, HH:mm' }}</time>
+              </span>
             </div>
-          }
-        </li>
-      } @empty {
-        <li class="hint">{{ text.invitesEmpty }}</li>
-      }
-    </ul>
-    <app-auto-load [content]="rows" [context]="list.context()" [continuation]="list.next()" [loading]="list.loadingMore()"
-      [error]="list.moreError()" [loadingText]="text.loadingMore" (loadNext)="list.more()" />
+            @if (invite.status === 'ACTIVE') {
+              <div class="roster-actions">
+                <button type="button" class="button small" [attr.aria-label]="revokeLabel(invite)"
+                  [attr.aria-disabled]="revoking() !== null ? 'true' : null" [attr.aria-busy]="revoking() === invite.inviteId ? 'true' : null"
+                  (click)="revoke(invite)">{{ revoking() === invite.inviteId ? text.revoking : text.revoke }}</button>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+      <app-auto-load [content]="rows" [context]="list.context()" [continuation]="list.next()" [loading]="list.loadingMore()"
+        [error]="list.moreError()" [loadingText]="text.loadingMore" (loadNext)="list.more()" />
+    }
   }
   @if (problem(); as message) {
     <p class="field-error" role="alert">{{ message }}</p>

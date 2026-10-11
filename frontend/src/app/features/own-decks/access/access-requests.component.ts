@@ -4,13 +4,12 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { AuthorCardsService } from '../../../author-cards.service';
 import { AutoLoadComponent } from '../../../shared/auto-load.component';
-import { focusNearestAction } from './access-focus';
 import { AccessIdentities } from './access-identities';
 import { AccessList } from './access-list';
 import { AccessPersonComponent } from './access-person.component';
 import { AccessApiService } from './access-api.service';
 import { AccessRequest } from './access.models';
-import { ACCESS_TEXT, accessProblemText } from './access.text';
+import { ACCESS_TEXT, accessProblemText, requestActionLabel } from './access.text';
 import { accessFailureOf } from './access.models';
 
 let nextRequests = 0;
@@ -46,7 +45,6 @@ export class AccessRequestsComponent {
     private readonly api = inject(AccessApiService);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
-    private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     protected readonly identities = new AccessIdentities(inject(AuthorCardsService));
     protected readonly list = new AccessList<AccessRequest>(
         cursor => this.api.requests(this.deckId(), cursor), request => request.requesterId, this.destroyRef, ACCESS_TEXT.moreError);
@@ -68,8 +66,6 @@ export class AccessRequestsComponent {
 
     protected decide(request: AccessRequest, decision: 'approve' | 'reject'): void {
         if (this.busy() !== null) return;
-        const rows = this.list.items();
-        const index = rows.findIndex(row => row.requesterId === request.requesterId);
         const person = this.identities.of(request.requesterId);
         this.busy.set({ requesterId: request.requesterId, decision });
         this.problem.set(null);
@@ -82,7 +78,7 @@ export class AccessRequestsComponent {
                     ? ACCESS_TEXT.approved(person.state === 'card' ? `@${person.username}` : ACCESS_TEXT.noProfile.toLowerCase())
                     : ACCESS_TEXT.rejected);
                 if (decision === 'approve') this.approved.emit();
-                this.focusNeighbour(index);
+                this.focusHeading();
             },
             error: (error: unknown) => {
                 this.busy.set(null);
@@ -99,11 +95,13 @@ export class AccessRequestsComponent {
         return busy !== null && busy.requesterId === request.requesterId && busy.decision === decision;
     }
 
-    protected rowId(request: AccessRequest): string {
-        return `${this.uid}-${request.requesterId}`;
+    /** The accessible name of a row button: the visible word, then whom it is about once the name is known. */
+    protected label(request: AccessRequest, action: 'Принять' | 'Отклонить'): string | null {
+        return requestActionLabel(action, this.identities.of(request.requesterId));
     }
 
-    private focusNeighbour(index: number): void {
-        afterNextRender(() => focusNearestAction(this.host.nativeElement, index, this.heading().nativeElement), { injector: this.injector });
+    /** A decided row is gone: the focus goes to the section heading, never to a neighbouring decision button. */
+    private focusHeading(): void {
+        afterNextRender(() => this.heading().nativeElement.focus(), { injector: this.injector });
     }
 }

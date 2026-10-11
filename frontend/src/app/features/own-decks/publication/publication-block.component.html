@@ -1,6 +1,6 @@
 <section #section class="publication" [attr.id]="anchor()" [attr.aria-labelledby]="uid + '-title'">
   <header class="publication-head">
-    <h2 #heading [id]="uid + '-title'" tabindex="-1">{{ text.heading }}</h2>
+    <h2 #heading class="section-heading" [id]="uid + '-title'" tabindex="-1">{{ text.heading }}</h2>
   </header>
 
   @let current = view();

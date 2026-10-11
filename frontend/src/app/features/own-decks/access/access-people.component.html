@@ -1,5 +1,5 @@
 <section class="access-section" [attr.aria-labelledby]="uid + '-title'">
-  <h3 #heading [id]="uid + '-title'" tabindex="-1">{{ text.peopleHeading }}</h3>
+  <h3 #heading class="subsection-heading" [id]="uid + '-title'" tabindex="-1">{{ text.peopleHeading }}</h3>
   <p class="visually-hidden" role="status" aria-live="polite">{{ status() }}</p>
 
   @if (list.phase() === 'loading') {
@@ -10,25 +10,27 @@
       <button type="button" class="button small" (click)="reload()">{{ text.retry }}</button>
     </div>
   } @else {
-    <ul #rows class="roster" [attr.aria-label]="text.peopleHeading">
-      @for (grant of list.items(); track grant.granteeId) {
-        <li class="roster-row">
-          <div class="roster-main" [id]="rowId(grant)">
-            <app-access-person [identity]="identities.of(grant.granteeId)" />
-            <span class="hint">{{ text.grantedOn }} <time [attr.datetime]="grant.grantedAt">{{ grant.grantedAt | date:'dd.MM.y' }}</time></span>
-          </div>
-          <div class="roster-actions">
-            <button type="button" class="button small" [attr.aria-describedby]="rowId(grant)"
-              [attr.aria-disabled]="closing() !== null ? 'true' : null" [attr.aria-busy]="closing() === grant.granteeId ? 'true' : null"
-              (click)="revoke(grant)">{{ closing() === grant.granteeId ? text.closing : text.closeAccess }}</button>
-          </div>
-        </li>
-      } @empty {
-        <li class="hint">{{ text.peopleEmpty }}</li>
-      }
-    </ul>
-    <app-auto-load [content]="rows" [context]="list.context()" [continuation]="list.next()" [loading]="list.loadingMore()"
-      [error]="list.moreError()" [loadingText]="text.loadingMore" (loadNext)="list.more()" />
+    @if (list.items().length === 0) {
+      <p class="hint">{{ text.peopleEmpty }}</p>
+    } @else {
+      <ul #rows class="roster" role="list" [attr.aria-label]="text.peopleHeading">
+        @for (grant of list.items(); track grant.granteeId) {
+          <li class="roster-row">
+            <div class="roster-main">
+              <app-access-person [identity]="identities.of(grant.granteeId)" (retry)="identities.resolve([grant.granteeId])" />
+              <span class="hint">{{ text.grantedOn }} <time [attr.datetime]="grant.grantedAt">{{ grant.grantedAt | date:'dd.MM.y' }}</time></span>
+            </div>
+            <div class="roster-actions">
+              <button type="button" class="button small" [attr.aria-label]="closeLabel(grant)"
+                [attr.aria-disabled]="closing() !== null ? 'true' : null" [attr.aria-busy]="closing() === grant.granteeId ? 'true' : null"
+                (click)="revoke(grant)">{{ closing() === grant.granteeId ? text.closing : text.closeAccess }}</button>
+            </div>
+          </li>
+        }
+      </ul>
+      <app-auto-load [content]="rows" [context]="list.context()" [continuation]="list.next()" [loading]="list.loadingMore()"
+        [error]="list.moreError()" [loadingText]="text.loadingMore" (loadNext)="list.more()" />
+    }
   }
   @if (problem(); as message) {
     <p class="field-error" role="alert">{{ message }}</p>

@@ -1,5 +1,5 @@
 <section class="access-section" [attr.aria-labelledby]="uid + '-title'">
-  <h3 #heading [id]="uid + '-title'" tabindex="-1">{{ text.requestsHeading }}</h3>
+  <h3 #heading class="subsection-heading" [id]="uid + '-title'" tabindex="-1">{{ text.requestsHeading }}</h3>
   @if (!requestsEnabled()) {
     <p class="hint">{{ text.requestsOffNotice }}</p>
   }
@@ -15,28 +15,30 @@
   }
 
   @if (list.phase() === 'ready') {
-    <ul #rows class="roster" [attr.aria-label]="text.requestsHeading">
-      @for (request of list.items(); track request.requesterId) {
-        <li class="roster-row">
-          <div class="roster-main" [id]="rowId(request)">
-            <app-access-person [identity]="identities.of(request.requesterId)" />
-            <span class="hint">{{ request.createdAt | date:'dd.MM.y, HH:mm' }}</span>
-          </div>
-          <div class="roster-actions">
-            <button type="button" class="button small primary" [attr.aria-describedby]="rowId(request)"
-              [attr.aria-disabled]="busy() !== null ? 'true' : null" [attr.aria-busy]="busyOn(request, 'approve') ? 'true' : null"
-              (click)="decide(request, 'approve')">{{ busyOn(request, 'approve') ? text.approving : text.approve }}</button>
-            <button type="button" class="button small" [attr.aria-describedby]="rowId(request)"
-              [attr.aria-disabled]="busy() !== null ? 'true' : null" [attr.aria-busy]="busyOn(request, 'reject') ? 'true' : null"
-              (click)="decide(request, 'reject')">{{ busyOn(request, 'reject') ? text.rejecting : text.reject }}</button>
-          </div>
-        </li>
-      } @empty {
-        <li class="hint">{{ text.requestsEmpty }}</li>
-      }
-    </ul>
-    <app-auto-load [content]="rows" [context]="list.context()" [continuation]="list.next()" [loading]="list.loadingMore()"
-      [error]="list.moreError()" [loadingText]="text.loadingMore" (loadNext)="list.more()" />
+    @if (list.items().length === 0) {
+      <p class="hint">{{ text.requestsEmpty }}</p>
+    } @else {
+      <ul #rows class="roster" role="list" [attr.aria-label]="text.requestsHeading">
+        @for (request of list.items(); track request.requesterId) {
+          <li class="roster-row">
+            <div class="roster-main">
+              <app-access-person [identity]="identities.of(request.requesterId)" (retry)="identities.resolve([request.requesterId])" />
+              <time class="hint" [attr.datetime]="request.createdAt">{{ request.createdAt | date:'dd.MM.y, HH:mm' }}</time>
+            </div>
+            <div class="roster-actions">
+              <button type="button" class="button small primary" [attr.aria-label]="label(request, 'Принять')"
+                [attr.aria-disabled]="busy() !== null ? 'true' : null" [attr.aria-busy]="busyOn(request, 'approve') ? 'true' : null"
+                (click)="decide(request, 'approve')">{{ busyOn(request, 'approve') ? text.approving : text.approve }}</button>
+              <button type="button" class="button small" [attr.aria-label]="label(request, 'Отклонить')"
+                [attr.aria-disabled]="busy() !== null ? 'true' : null" [attr.aria-busy]="busyOn(request, 'reject') ? 'true' : null"
+                (click)="decide(request, 'reject')">{{ busyOn(request, 'reject') ? text.rejecting : text.reject }}</button>
+            </div>
+          </li>
+        }
+      </ul>
+      <app-auto-load [content]="rows" [context]="list.context()" [continuation]="list.next()" [loading]="list.loadingMore()"
+        [error]="list.moreError()" [loadingText]="text.loadingMore" (loadNext)="list.more()" />
+    }
   }
 
   @if (problem(); as message) {

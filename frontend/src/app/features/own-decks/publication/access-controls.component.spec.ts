@@ -70,6 +70,21 @@ describe('AccessControlsComponent', () => {
         expect(root.querySelector('[role=switch]')).toBeNull();
     });
 
+    it('keeps one polite region for the consequences and repeats nothing the hint of the picker already says', async () => {
+        await create(link());
+        const region = root.querySelector('.change-region')!;
+        expect(region.getAttribute('aria-live')).toBe('polite');
+        expect(region.querySelector('.change')).toBeNull();
+        await pick('Приватная');
+        expect(root.querySelector('.change-region')).toBe(region);
+        expect(region.querySelector('.change')).not.toBeNull();
+        expect(region.textContent).not.toContain('Колоду увидите только вы');
+        expect(region.textContent).toContain('Ссылка изменится');
+        await pick('По приглашению');
+        expect(region.textContent).toContain('Ссылка изменится');
+        expect(region.textContent).not.toContain('Колоду откроют только те');
+    });
+
     it('only stages a pick: a panel says what will happen and nothing is sent until «Применить»', async () => {
         await create(sharedState({ visibility: 'PUBLIC' }));
         await pick('По ссылке');
@@ -145,7 +160,8 @@ describe('AccessControlsComponent', () => {
         await create(invite());
         await pick('Приватная');
         const text = root.querySelector('.change')!.textContent!;
-        expect(text).toContain('Колоду увидите только вы');
+        expect(text).not.toContain('Колоду увидите только вы');
+        expect(text).toContain('Ссылка изменится');
         expect(text).toContain('Выданные доступы сохранятся');
         expect(text).toContain('Пригласительные ссылки перестанут работать');
         api.save.mockImplementation((_deck, _version, command) => of(written(neverPublished({ rowVersion: '4' }), command.commandId)));

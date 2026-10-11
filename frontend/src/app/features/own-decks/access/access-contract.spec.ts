@@ -31,7 +31,7 @@ import {
     parseRequestPage,
     parseRequestSent
 } from './access.models';
-import { ACCESS_TEXT, accessProblemText, expiryOption, inviteStatusWord, inviteUsesText, levelChangeLines, usesOption } from './access.text';
+import { ACCESS_TEXT, accessProblemText, closeAccessLabel, requestActionLabel, expiryOption, inviteStatusWord, inviteUsesText, levelChangeLines, usesOption } from './access.text';
 
 /**
  * contracts/decks/access.json is the wire contract of invitations, access requests and grants. Every fixture must parse with the
@@ -243,6 +243,10 @@ describe('Access wire contract (contracts/decks/access.json)', () => {
         const lines = (from: Parameters<typeof levelChangeLines>[0], to: Parameters<typeof levelChangeLines>[1]): string => levelChangeLines(from, to).join(' ');
         expect(lines('PRIVATE', 'LINK')).toContain('будет опубликована сейчас');
         expect(lines('PRIVATE', 'INVITE')).toContain('будет опубликована сейчас');
+        // Only consequences: who sees the deck is the picker's own live hint.
+        for (const [from, to] of [['PRIVATE', 'LINK'], ['LINK', 'INVITE'], ['PUBLIC', 'PRIVATE'], ['INVITE', 'LINK']] as const) {
+            expect(lines(from, to)).not.toMatch(/Колоду (откроет|откроют|увидите)/);
+        }
         expect(lines('INVITE', 'LINK')).toContain('Ссылка останется прежней');
         expect(lines('PUBLIC', 'LINK')).toContain('пропадёт из каталога');
         expect(lines('PUBLIC', 'LINK')).toContain('старые ссылки перестанут работать');
@@ -254,6 +258,9 @@ describe('Access wire contract (contracts/decks/access.json)', () => {
         expect(lines('LINK', 'INVITE')).toContain('Пригласительные ссылки перестанут работать');
         expect(lines('INVITE', 'LINK')).not.toContain('Пригласительные ссылки перестанут работать');
         expect(lines('LINK', 'PUBLIC')).toContain('несколько пунктов');
+        expect(requestActionLabel('Принять', { state: 'loading' })).toBeNull();
+        expect(closeAccessLabel({ state: 'card', username: 'anna.k', avatarSrc: null })).toBe('Закрыть доступ: @anna.k');
+        expect(closeAccessLabel({ state: 'none' })).toBe('Закрыть доступ: пользователь без публичного профиля');
     });
 
     it('trims the typed login and its leading at-sign', () => {

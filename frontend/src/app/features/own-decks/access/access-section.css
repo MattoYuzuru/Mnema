@@ -1,12 +1,12 @@
 /* Layout shared by the sections of the access panel: the rows are `.roster`, the rest are the shared classes. */
 :host { display: block; min-inline-size: 0; }
 .access-section { display: grid; gap: var(--mn-space-3); min-inline-size: 0; }
-h3 { margin: 0; color: var(--mn-ink); font: 700 1.05rem/1.4 var(--mn-font-body, system-ui, sans-serif); }
 h3:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 .inline-retry { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--mn-space-3); }
 .inline-retry p { margin: 0; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: var(--mn-space-3); align-items: start; }
 .form-actions { display: flex; flex-wrap: wrap; gap: var(--mn-space-3); }
+label { color: var(--mn-ink); font-weight: 700; }
 input { inline-size: 100%; min-inline-size: 0; }
 :where(a, button, input):focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 @media (max-width: 42rem) {

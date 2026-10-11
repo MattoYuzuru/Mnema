@@ -1,3 +1,4 @@
+import type { AccessIdentity } from './access-identities';
 import { AccessFailure, DeckInvite, GRANTS_LIMIT, InviteStatus } from './access.models';
 import type { PublicationLevel } from '../publication/publication.models';
 import { plural } from '../../../core/notifications/notification-presenter';
@@ -18,10 +19,7 @@ export const ACCESS_TEXT = {
     levelChanged: (level: string): string => `Доступ изменён: ${level}`,
     changeTitle: 'Изменить доступ',
     publishesHead: 'Читатели увидят текущую версию колоды: она будет опубликована сейчас.',
-    toPrivate: 'Колоду увидите только вы.',
-    toLink: 'Колоду откроет любой, у кого есть ссылка, в том числе без аккаунта.',
-    toInvite: 'Колоду откроют только те, кого вы пригласите.',
-    toPublic: 'Публичную колоду увидят все, а рядом будет ваш логин. Для этого нужно заполнить несколько пунктов.',
+    toPublic: 'Рядом с публичной колодой виден ваш логин. Для этого нужно заполнить несколько пунктов.',
     makePublic: 'Сделать публичной…',
     rotates: 'Ссылка изменится, и старые ссылки перестанут работать.',
     keepsLink: 'Ссылка останется прежней.',
@@ -32,13 +30,10 @@ export const ACCESS_TEXT = {
     requestsOnHint: 'На экране «нет доступа» появится кнопка «Запросить доступ». Вы получите уведомление, не чаще раза в день на колоду.',
     requestsOffHint: 'Запросы не принимаются: на экране «нет доступа» кнопки нет.',
     requestsSaved: 'Настройка запросов сохранена',
-    levelSectionLabel: 'Доступ к колоде',
-    inviteOnlyHint: 'Приглашения, запросы и список людей появятся, когда колода будет доступна по приглашению.',
     heading: 'Доступ',
     requestsHeading: 'Запросы доступа',
     requestsEmpty: 'Новых запросов нет. Когда кто-то попросит доступ, запрос появится здесь.',
     requestsOffNotice: 'Запросы выключены: новые не приходят. Открытые можно решить.',
-    requestFrom: 'Запрос от',
     approve: 'Принять',
     reject: 'Отклонить',
     approving: 'Принимаем…',
@@ -52,7 +47,8 @@ export const ACCESS_TEXT = {
     createInvite: 'Создать ссылку',
     creatingInvite: 'Создаём…',
     newInviteHeading: 'Новая ссылка',
-    newInviteOnce: 'Ссылка показана один раз. После «Готово» открыть её снова будет нельзя: скопируйте её или отправьте сейчас. Потерянную ссылку отзовите и создайте новую.',
+    newInviteOnceLead: 'Ссылка показана один раз.',
+    newInviteOnceRest: ' После «Готово» открыть её снова будет нельзя: скопируйте её или отправьте сейчас. Потерянную ссылку отзовите и создайте новую.',
     newInviteLabel: 'Пригласительная ссылка',
     newInviteDone: 'Готово, я сохранил ссылку',
     newInviteCreated: 'Ссылка создана',
@@ -73,7 +69,6 @@ export const ACCESS_TEXT = {
     closing: 'Закрываем…',
     accessClosed: 'Доступ закрыт. Копии, которые человек уже сделал, остаются у него. По пригласительной ссылке он не вернётся 30 дней, а по логину вы можете пригласить его снова сразу.',
     loginHeading: 'Пригласить по логину',
-    loginLabel: 'Логин',
     loginHint: 'Только пользователи с публичным профилем.',
     loginInvite: 'Пригласить',
     loginInviting: 'Проверяем…',
@@ -88,6 +83,8 @@ export const ACCESS_TEXT = {
     loginGranted: (login: string): string => `Доступ открыт: @${login}`,
     noProfile: 'Пользователь без публичного профиля',
     nameFailed: 'Имя не загрузилось',
+    nameRetry: 'Повторить',
+    nameRetryLabel: 'Повторить загрузку имени',
     nameLoading: 'Загружаем имя…',
     loading: 'Загружаем…',
     loadError: 'Не удалось загрузить список.',
@@ -102,21 +99,39 @@ export const ACCESS_TEXT = {
 
 const RANK: Readonly<Record<PublicationLevel, number>> = { PRIVATE: 0, INVITE: 1, LINK: 2, PUBLIC: 3 };
 
-/** What the owner is told before a level change is applied: the new audience and what happens to the links. */
+/**
+ * What the owner is told before a level change is applied: only the consequences. Who sees the deck at the new level is already
+ * said by the live hint of the picker, so it is not repeated here.
+ */
 export function levelChangeLines(from: PublicationLevel, to: PublicationLevel): readonly string[] {
-    const audience = { PRIVATE: ACCESS_TEXT.toPrivate, LINK: ACCESS_TEXT.toLink, INVITE: ACCESS_TEXT.toInvite, PUBLIC: ACCESS_TEXT.toPublic }[to];
-    if (to === 'PUBLIC') return [audience];
+    if (to === 'PUBLIC') return [ACCESS_TEXT.toPublic];
     if (RANK[to] > RANK[from]) {
         // Raising the level keeps the code; leaving «Приватная» publishes the head for the first readers.
-        return from === 'PRIVATE' ? [audience, ACCESS_TEXT.publishesHead] : [audience, ACCESS_TEXT.keepsLink];
+        return [from === 'PRIVATE' ? ACCESS_TEXT.publishesHead : ACCESS_TEXT.keepsLink];
     }
     return [
-        audience,
         ...(from === 'PUBLIC' ? [ACCESS_TEXT.leavesCatalog] : []),
         ACCESS_TEXT.rotates,
         ACCESS_TEXT.invitesDie,
         ...(to === 'PRIVATE' && from === 'INVITE' ? [ACCESS_TEXT.keepsGrants] : [])
     ];
+}
+
+/** «@anna.k» or the plain phrase for a person without a public card; `null` while the name is unknown (the visible button text then stands alone). */
+function personPhrase(identity: AccessIdentity, withoutCard: string): string | null {
+    if (identity.state === 'card') return `@${identity.username}`;
+    return identity.state === 'none' ? withoutCard : null;
+}
+
+/** The accessible name of a request button: the visible word first (WCAG 2.5.3), then whom it is about. `null` until the person is known. */
+export function requestActionLabel(action: 'Принять' | 'Отклонить', identity: AccessIdentity): string | null {
+    const who = personPhrase(identity, 'пользователя без публичного профиля');
+    return who === null ? null : `${action} запрос от ${who}`;
+}
+
+export function closeAccessLabel(identity: AccessIdentity): string | null {
+    const who = personPhrase(identity, 'пользователь без публичного профиля');
+    return who === null ? null : `${ACCESS_TEXT.closeAccess}: ${who}`;
 }
 
 const USES = ['раз', 'раза', 'раз'] as const;

@@ -81,6 +81,8 @@ describe('AccessPanelComponent', () => {
         expect(flat(section('app-access-requests'))).toContain('Новых запросов нет');
         expect(flat(section('app-invite-links'))).toContain('Ссылок пока нет');
         expect(flat(section('app-access-people'))).toContain('Пока никого');
+        // The sentence stands outside any list.
+        for (const name of ['app-access-requests', 'app-invite-links', 'app-access-people']) expect(section(name).querySelector('ul')).toBeNull();
     });
 
     it('lets one failing list retry on its own without hiding the others', async () => {
@@ -122,15 +124,37 @@ describe('AccessPanelComponent', () => {
             expect(flat(rows('app-access-requests')[0])).toContain('Имя не загрузилось');
         });
 
-        it('names every row action by its row, so two «Принять» are told apart', async () => {
+        it('names every row action with its visible word first and whom it is about, once the name is known', async () => {
             await create();
-            for (const row of rows('app-access-requests')) {
-                const description = row.querySelector('.roster-main')!;
-                for (const action of row.querySelectorAll('button')) expect(action.getAttribute('aria-describedby')).toBe(description.id);
-            }
+            const [first, second] = rows('app-access-requests');
+            expect([...first.querySelectorAll('button')].map(action => action.getAttribute('aria-label')))
+                .toEqual(['Принять запрос от @anna.k', 'Отклонить запрос от @anna.k']);
+            expect([...second.querySelectorAll('button')].map(action => action.getAttribute('aria-label')))
+                .toEqual(['Принять запрос от пользователя без публичного профиля', 'Отклонить запрос от пользователя без публичного профиля']);
+            // WCAG 2.5.3: the accessible name starts with the visible text.
+            for (const action of section('app-access-requests').querySelectorAll('button')) expect(action.getAttribute('aria-label')!.startsWith(action.textContent!.trim())).toBe(true);
+            expect(first.querySelector('time')!.getAttribute('datetime')).toBe('2026-10-11T09:45:00.123456Z');
+            expect(section('app-access-requests').querySelector('ul')!.getAttribute('role')).toBe('list');
         });
 
-        it('approves: sends the decision, removes the row, speaks the result, re-reads the people and moves the focus on', async () => {
+        it('has no name while the person is unknown, and offers «Повторить» for a failed lookup', async () => {
+            cards.cards.mockReturnValueOnce(new Promise(() => undefined));
+            await create();
+            expect(rows('app-access-requests')[0].querySelector('button')!.getAttribute('aria-label')).toBeNull();
+            fixture.destroy();
+            root.remove();
+            cards.cards.mockRejectedValueOnce(new Error('offline'));
+            await create();
+            expect(flat(rows('app-access-requests')[0])).toContain('Имя не загрузилось');
+            const retry = rows('app-access-requests')[0].querySelector<HTMLButtonElement>('app-access-person button')!;
+            expect(retry.getAttribute('aria-label')).toBe('Повторить загрузку имени');
+            cards.cards.mockResolvedValueOnce(new Map([[ANNA, card(ANNA, 'anna.k')]]));
+            retry.click();
+            await settle();
+            expect(rows('app-access-requests')[0].querySelector('app-author-chip')!.textContent).toContain('anna.k');
+        });
+
+        it('approves: sends the decision, removes the row, speaks the result, re-reads the people and moves the focus to the heading', async () => {
             const decision: AccessDecision = { requesterId: ANNA, status: 'APPROVED', decidedAt: '2026-10-11T10:05:00Z' };
             api.decide.mockReturnValue(of(decision));
             await create();
@@ -141,7 +165,7 @@ describe('AccessPanelComponent', () => {
             expect(rows('app-access-requests')).toHaveLength(1);
             expect(status('app-access-requests')).toBe('Доступ открыт: @anna.k');
             expect(api.grants.mock.calls.length).toBe(grantsBefore + 1);
-            expect(document.activeElement).toBe(rows('app-access-requests')[0].querySelector('button'));
+            expect(document.activeElement).toBe(section('app-access-requests').querySelector('h3'));
         });
 
         it('keeps the request in the list and says the deck is full when approving at the cap', async () => {
@@ -255,7 +279,13 @@ describe('AccessPanelComponent', () => {
             expect(fresh.querySelector('app-share-button button')!.textContent).toContain('Поделиться');
             expect(section('app-invite-links').querySelector('form')).toBeNull();
             expect(toasts.echo).toHaveBeenCalledWith('Ссылка создана');
-            expect(document.activeElement).toBe(fresh.querySelector('.new-title'));
+            // The focused group announces its name and the one-time sentence, which is in bold.
+            expect(document.activeElement).toBe(fresh);
+            expect(document.getElementById(fresh.getAttribute('aria-labelledby')!)!.textContent).toBe('Новая ссылка');
+            const once = document.getElementById(fresh.getAttribute('aria-describedby')!)!;
+            expect(once.textContent).toContain('Ссылка показана один раз.');
+            expect(once.querySelector('strong')!.textContent).toBe('Ссылка показана один раз.');
+            expect(fresh.classList.contains('warning')).toBe(true);
             // The list is re-read; it holds no token.
             expect(api.invites).toHaveBeenCalledTimes(2);
         });
@@ -265,9 +295,8 @@ describe('AccessPanelComponent', () => {
             await create();
             button('app-invite-links', 'Создать ссылку').click();
             await settle();
-            const done = button('app-invite-links', 'Готово, я сохранил ссылку');
-            expect(document.getElementById(done.getAttribute('aria-describedby')!)!.textContent).toContain('открыть её снова будет нельзя');
-            done.click();
+            expect(flat(section('app-invite-links').querySelector('.new-link')!)).toContain('открыть её снова будет нельзя');
+            button('app-invite-links', 'Готово, я сохранил ссылку').click();
             await settle();
             expect(section('app-invite-links').querySelector('.new-link')).toBeNull();
             expect(section('app-invite-links').textContent).not.toContain(created.token);
@@ -326,17 +355,17 @@ describe('AccessPanelComponent', () => {
             expect(api.createInvite).toHaveBeenCalledTimes(1);
         });
 
-        it('revokes an active link, keeps the row as «Отозвана», says the people inside stay and moves the focus', async () => {
+        it('revokes an active link, keeps the row as «Отозвана», says the people inside stay and moves the focus to the heading', async () => {
             api.invites.mockReturnValue(of(page([invite(), invite({ inviteId: '0192f3a4-5b6c-7d8e-9f01-000000000002' })])));
             api.revokeInvite.mockImplementation((_deck, inviteId) => of(invite({ inviteId, status: 'REVOKED', revokedAt: '2026-10-11T10:00:00Z' })));
             await create();
-            expect(document.getElementById(button('app-invite-links', 'Отозвать').getAttribute('aria-describedby')!)).not.toBeNull();
+            expect(button('app-invite-links', 'Отозвать').getAttribute('aria-label')).toMatch(/^Отозвать ссылку, созданную 11\.10\.2026, \d\d:\d\d$/);
             button('app-invite-links', 'Отозвать').click();
             await settle();
             expect(api.revokeInvite).toHaveBeenCalledWith(DECK, invite().inviteId);
             expect(flat(rows('app-invite-links')[0])).toContain('Отозвана');
             expect(status('app-invite-links')).toContain('сохраняют доступ');
-            expect(document.activeElement).toBe(rows('app-invite-links')[1].querySelector('button'));
+            expect(document.activeElement).toBe(section('app-invite-links').querySelector('h3'));
             api.revokeInvite.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
             button('app-invite-links', 'Отозвать').click();
             await settle();
@@ -365,14 +394,14 @@ describe('AccessPanelComponent', () => {
             expect(flat(rows('app-access-people')[0])).toContain('с 10.10.2026');
             const close = rows('app-access-people')[0].querySelector('button')!;
             expect(close.textContent!.trim()).toBe('Закрыть доступ');
-            expect(close.getAttribute('aria-describedby')).toBe(rows('app-access-people')[0].querySelector('.roster-main')!.id);
+            expect(close.getAttribute('aria-label')).toBe('Закрыть доступ: @anna.k');
             close.click();
             await settle();
             expect(api.revokeGrant).toHaveBeenCalledWith(DECK, ANNA);
             expect(rows('app-access-people')).toHaveLength(1);
             expect(status('app-access-people')).toContain('Копии, которые человек уже сделал, остаются у него');
             expect(status('app-access-people')).toContain('по пригласительной ссылке он не вернётся 30 дней'.replace('по', 'По'));
-            expect(document.activeElement).toBe(rows('app-access-people')[0].querySelector('button'));
+            expect(document.activeElement).toBe(section('app-access-people').querySelector('h3'));
             api.revokeGrant.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
             button('app-access-people', 'Закрыть доступ').click();
             await settle();

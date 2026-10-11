@@ -2,24 +2,27 @@
   <app-segmented-choice [legend]="text.levelLegend" [options]="options" [value]="staged()" [name]="uid + '-level'"
     [disabled]="busy()" (valueChange)="pick($event)" />
 
-  @if (changing(); as target) {
-    <div class="change notice" role="group" [attr.aria-labelledby]="uid + '-change-title'">
-      <p class="change-title" [id]="uid + '-change-title'">{{ text.changeTitle }}: {{ text.levelNames[target] }}</p>
-      <div [id]="uid + '-lines'">
-        @for (line of lines(); track line) { <p class="change-line">{{ line }}</p> }
+  <!-- A persistent polite region: the consequences are announced when a pick changes them, also while the arrows move through the levels. -->
+  <div class="change-region" aria-live="polite">
+    @if (changing(); as target) {
+      <div class="change notice" role="group" [attr.aria-labelledby]="uid + '-change-title'">
+        <p class="change-title" [id]="uid + '-change-title'">{{ text.changeTitle }}: {{ text.levelNames[target] }}</p>
+        <div [id]="uid + '-lines'">
+          @for (line of lines(); track line) { <p class="change-line">{{ line }}</p> }
+        </div>
+        <div class="change-actions">
+          @if (target === 'PUBLIC') {
+            <button type="button" #publicButton class="button primary" [attr.aria-describedby]="uid + '-lines'"
+              [attr.aria-expanded]="checklistOpen()" [attr.aria-controls]="checklistOpen() ? checklistId() : null" (click)="apply()">{{ text.makePublic }}</button>
+          } @else {
+            <button type="button" class="button primary" [attr.aria-describedby]="uid + '-lines'"
+              [attr.aria-disabled]="busy() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null" (click)="apply()">{{ busy() ? text.applying : text.apply }}</button>
+          }
+          <button type="button" class="button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="cancel()">{{ text.cancel }}</button>
+        </div>
       </div>
-      <div class="change-actions">
-        @if (target === 'PUBLIC') {
-          <button type="button" #publicButton class="button primary" [attr.aria-describedby]="uid + '-lines'"
-            [attr.aria-expanded]="checklistOpen()" [attr.aria-controls]="checklistOpen() ? checklistId() : null" (click)="apply()">{{ text.makePublic }}</button>
-        } @else {
-          <button type="button" class="button primary" [attr.aria-describedby]="uid + '-lines'"
-            [attr.aria-disabled]="busy() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null" (click)="apply()">{{ busy() ? text.applying : text.apply }}</button>
-        }
-        <button type="button" class="button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="cancel()">{{ text.cancel }}</button>
-      </div>
-    </div>
-  }
+    }
+  </div>
 
   @if (state().visibility === 'INVITE') {
     <div class="requests-switch">

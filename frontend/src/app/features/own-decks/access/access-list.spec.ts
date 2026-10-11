@@ -3,7 +3,6 @@ import { TestBed } from '@angular/core/testing';
 import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { AccessIdentities } from './access-identities';
-import { focusNearestAction } from './access-focus';
 import { AccessList } from './access-list';
 import { KeysetPage } from './access.models';
 
@@ -112,25 +111,5 @@ describe('AccessIdentities', () => {
         cards.cards.mockResolvedValueOnce(new Map());
         identities.resolve(['0192f3a4-5b6c-7d8e-9f01-23456789abcf']);
         expect(cards.cards).toHaveBeenCalledTimes(3);
-    });
-});
-
-describe('focusNearestAction', () => {
-    function host(html: string): HTMLElement {
-        const element = document.createElement('div');
-        element.innerHTML = html;
-        document.body.append(element);
-        return element;
-    }
-
-    it('focuses the action of the row that took the place, else the closest before, else the fallback', () => {
-        const element = host('<ul><li class="roster-row"><button id="a">a</button></li><li class="roster-row"><button id="b" aria-disabled="true">b</button></li><li class="roster-row">none</li></ul><h3 tabindex="-1" id="h">h</h3>');
-        const fallback = element.querySelector<HTMLElement>('#h')!;
-        focusNearestAction(element, 1, fallback);
-        expect(document.activeElement?.id).toBe('a');
-        element.querySelector('#a')!.remove();
-        focusNearestAction(element, 0, fallback);
-        expect(document.activeElement).toBe(fallback);
-        element.remove();
     });
 });

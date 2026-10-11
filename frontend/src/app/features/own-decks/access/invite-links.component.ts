@@ -1,5 +1,5 @@
-import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { DatePipe, formatDate } from '@angular/common';
+import { ChangeDetectionStrategy, Component, DestroyRef, LOCALE_ID, ElementRef, Injector, afterNextRender, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { MnemaSelectComponent, MnemaSelectOption } from '../../../core/controls/mnema-select.component';
@@ -7,7 +7,6 @@ import { ToastService } from '../../../core/notifications/toast.service';
 import { AutoLoadComponent } from '../../../shared/auto-load.component';
 import { ShareButtonComponent } from '../../../shared/share-button.component';
 import { AccessApiService } from './access-api.service';
-import { focusNearestAction } from './access-focus';
 import { AccessList } from './access-list';
 import { ACTIVE_INVITES_LIMIT, CreatedInvite, DeckInvite, absoluteInviteLink, accessFailureOf } from './access.models';
 import { ACCESS_TEXT, accessProblemText, expiryOption, inviteStatusWord, inviteUsesText, usesOption } from './access.text';
@@ -51,14 +50,14 @@ export class InviteLinksComponent {
     protected readonly problem = signal<string | null>(null);
     protected readonly status = signal('');
     protected readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
-    protected readonly createdHeading = viewChild<ElementRef<HTMLElement>>('createdHeading');
+    protected readonly createdGroup = viewChild<ElementRef<HTMLElement>>('createdGroup');
     protected readonly createButton = viewChild<ElementRef<HTMLButtonElement>>('createButton');
 
+    private readonly locale = inject(LOCALE_ID);
     private readonly api = inject(AccessApiService);
     private readonly toasts = inject(ToastService);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
-    private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     protected readonly list = new AccessList<DeckInvite>(
         cursor => this.api.invites(this.deckId(), cursor), invite => invite.inviteId, this.destroyRef, ACCESS_TEXT.moreError);
 
@@ -85,7 +84,7 @@ export class InviteLinksComponent {
                     this.created.set({ invite: answer.invite, url: absoluteInviteLink(answer.link, window.location.origin) });
                     this.toasts.echo(ACCESS_TEXT.newInviteCreated);
                     this.list.reload();
-                    afterNextRender(() => this.createdHeading()?.nativeElement.focus(), { injector: this.injector });
+                    afterNextRender(() => this.createdGroup()?.nativeElement.focus(), { injector: this.injector });
                 },
                 error: (error: unknown) => {
                     this.creating.set(false);
@@ -108,7 +107,6 @@ export class InviteLinksComponent {
 
     protected revoke(invite: DeckInvite): void {
         if (this.revoking() !== null) return;
-        const index = this.list.items().findIndex(row => row.inviteId === invite.inviteId);
         this.revoking.set(invite.inviteId);
         this.problem.set(null);
         this.status.set('');
@@ -117,7 +115,8 @@ export class InviteLinksComponent {
                 this.revoking.set(null);
                 this.list.replace(revoked);
                 this.status.set(ACCESS_TEXT.revoked);
-                afterNextRender(() => focusNearestAction(this.host.nativeElement, index, this.heading().nativeElement), { injector: this.injector });
+                // The revoked row has no action left: the focus goes to the section heading, never to a neighbouring «Отозвать».
+                afterNextRender(() => this.heading().nativeElement.focus(), { injector: this.injector });
             },
             error: (error: unknown) => {
                 this.revoking.set(null);
@@ -126,8 +125,9 @@ export class InviteLinksComponent {
         });
     }
 
-    protected rowId(invite: DeckInvite): string {
-        return `${this.uid}-${invite.inviteId}`;
+    /** «Отозвать» with the link it is about, named by its creation time (the list has no other identity to read). */
+    protected revokeLabel(invite: DeckInvite): string {
+        return `${ACCESS_TEXT.revoke} ссылку, созданную ${formatDate(invite.createdAt, 'dd.MM.y, HH:mm', this.locale)}`;
     }
 
     protected facts(invite: DeckInvite): string {

@@ -5,12 +5,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AuthorCardsService } from '../../../author-cards.service';
 import { AutoLoadComponent } from '../../../shared/auto-load.component';
 import { AccessApiService } from './access-api.service';
-import { focusNearestAction } from './access-focus';
 import { AccessIdentities } from './access-identities';
 import { AccessList } from './access-list';
 import { AccessPersonComponent } from './access-person.component';
 import { AccessGrant, LOGIN_PATTERN, accessFailureOf, normalizeLogin } from './access.models';
-import { ACCESS_TEXT, accessProblemText } from './access.text';
+import { ACCESS_TEXT, accessProblemText, closeAccessLabel } from './access.text';
 
 let nextPeople = 0;
 
@@ -45,7 +44,6 @@ export class AccessPeopleComponent {
     private readonly api = inject(AccessApiService);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
-    private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     protected readonly identities = new AccessIdentities(inject(AuthorCardsService));
     protected readonly list = new AccessList<AccessGrant>(
         cursor => this.api.grants(this.deckId(), cursor), grant => grant.granteeId, this.destroyRef, ACCESS_TEXT.moreError);
@@ -104,7 +102,6 @@ export class AccessPeopleComponent {
 
     protected revoke(grant: AccessGrant): void {
         if (this.closing() !== null) return;
-        const index = this.list.items().findIndex(row => row.granteeId === grant.granteeId);
         this.closing.set(grant.granteeId);
         this.problem.set(null);
         this.status.set('');
@@ -113,7 +110,7 @@ export class AccessPeopleComponent {
                 this.closing.set(null);
                 this.list.remove(grant.granteeId);
                 this.status.set(ACCESS_TEXT.accessClosed);
-                this.focusNeighbour(index);
+                this.focusHeading();
             },
             error: (error: unknown) => {
                 this.closing.set(null);
@@ -122,11 +119,12 @@ export class AccessPeopleComponent {
         });
     }
 
-    protected rowId(grant: AccessGrant): string {
-        return `${this.uid}-${grant.granteeId}`;
+    protected closeLabel(grant: AccessGrant): string | null {
+        return closeAccessLabel(this.identities.of(grant.granteeId));
     }
 
-    private focusNeighbour(index: number): void {
-        afterNextRender(() => focusNearestAction(this.host.nativeElement, index, this.heading().nativeElement), { injector: this.injector });
+    /** A closed row is gone: the focus goes to the section heading, never to a neighbouring destructive button. */
+    private focusHeading(): void {
+        afterNextRender(() => this.heading().nativeElement.focus(), { injector: this.injector });
     }
 }
