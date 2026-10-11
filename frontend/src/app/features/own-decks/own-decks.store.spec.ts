@@ -120,8 +120,8 @@ describe('OwnDecksStore', () => {
         expect(vi.mocked(api.list).mock.calls).toEqual([[null], [null], [null]]);
     });
 
-    describe('applyFork (the answer of fork:retry)', () => {
-        const failed = { ...fixtureDeck, fork: { upstreamCode: 'Kq7xT3mNpR', upstreamTitle: 'Источник', sourceAvailable: true, preparing: true, failed: true, detached: false } };
+    describe('applyFork (the answer of fork:retry, the stored auto-update setting)', () => {
+        const failed = { ...fixtureDeck, fork: { upstreamCode: 'Kq7xT3mNpR', upstreamTitle: 'Источник', sourceAvailable: true, preparing: true, failed: true, detached: false, updateAvailable: false, autoUpdate: false } };
 
         it('shows the new state of the open copy at once, and ignores another deck, an ordinary deck and a closed hub', () => {
             store.applyFork(failed.deckId, { preparing: true, failed: false });
@@ -137,10 +137,17 @@ describe('OwnDecksStore', () => {
             store.applyFork(fixtureDeck.deckId, { preparing: true, failed: false });
             expect(store.detailState().deck?.fork ?? null).toBeNull();
         });
+
+        it('changes only the named members: the stored setting leaves the state of the copy as it is', () => {
+            api.detail.mockReturnValueOnce(of(failed));
+            store.openDeck(failed.deckId);
+            store.applyFork(failed.deckId, { autoUpdate: true });
+            expect(store.detailState().deck?.fork).toEqual({ ...failed.fork, autoUpdate: true });
+        });
     });
 
     describe('refreshDetail (the copy being prepared, a detach)', () => {
-        const preparing = { ...fixtureDeck, fork: { upstreamCode: 'Kq7xT3mNpR', upstreamTitle: 'Источник', sourceAvailable: true, preparing: true, failed: false, detached: false } };
+        const preparing = { ...fixtureDeck, fork: { upstreamCode: 'Kq7xT3mNpR', upstreamTitle: 'Источник', sourceAvailable: true, preparing: true, failed: false, detached: false, updateAvailable: false, autoUpdate: false } };
         const ready = { ...preparing, fork: { ...preparing.fork, preparing: false } };
 
         it('does nothing before a deck is open', async () => {

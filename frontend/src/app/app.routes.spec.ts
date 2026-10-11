@@ -3,6 +3,7 @@ import { ManageEventsPageComponent } from './features/events/manage-events-page.
 import { authGuard } from './core/guards/auth.guard';
 import { OwnDeckCreatePageComponent } from './features/own-decks/own-deck-create-page.component';
 import { OwnDeckDetailPageComponent } from './features/own-decks/own-deck-detail-page.component';
+import { UpdateReviewPageComponent } from './features/own-decks/update/update-review-page.component';
 import { PaymentReturnComponent } from './features/billing/payment-return.component';
 import { OwnDecksListPageComponent } from './features/own-decks/own-decks-list-page.component';
 import { BrowsePageComponent } from './features/authoring/browse-page.component';
@@ -37,7 +38,7 @@ describe('appRoutes', () => {
             'decks', 'decks/new', 'decks/:deckId/study', 'decks/:deckId/materials/new', 'decks/:deckId/exercises/generate',
             'decks/:deckId/materials/:memberKey/exercises/new', 'decks/:deckId/exercises/:exerciseId/edit',
             'decks/:deckId/materials/:memberKey/edit',
-            'decks/:deckId/materials/:memberKey', 'decks/:deckId/capture', 'decks/:deckId/workshop/:sessionId', 'decks/:deckId'
+            'decks/:deckId/materials/:memberKey', 'decks/:deckId/capture', 'decks/:deckId/workshop/:sessionId', 'decks/:deckId/update', 'decks/:deckId'
         ]);
         // The material list lives in the Deck hub; no separate list route may come back (greenfield: no redirect either).
         expect(paths).not.toContain('decks/:deckId/materials');
@@ -99,6 +100,7 @@ describe('appRoutes', () => {
         expect(await load('decks/:deckId/exercises/:exerciseId/edit')).toBe(ExerciseAuthoringPageComponent);
         expect(await load('decks/:deckId/materials/:memberKey')).toBe(BrowsePageComponent);
         expect(await load('decks/:deckId/capture')).toBe(CapturePageComponent);
+        expect(await load('decks/:deckId/update')).toBe(UpdateReviewPageComponent);
         expect(await load('decks/:deckId')).toBe(OwnDeckDetailPageComponent);
     });
 

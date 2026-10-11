@@ -1,0 +1,118 @@
+<section class="page narrow update-page" aria-labelledby="update-title">
+  <a class="back-link" [routerLink]="['/decks', deckId()]"><span aria-hidden="true">←</span> {{ text.backToDeck }}</a>
+  <p class="visually-hidden" role="status">{{ liveMessage() }}</p>
+
+  <header class="page-heading update-heading">
+    <div>
+      @if (deckTitle(); as title) { <p class="eyebrow">{{ title }}</p> }
+      <h1 id="update-title" tabindex="-1">{{ text.pageTitle }}</h1>
+      @if (sourceTitle(); as title) { <p class="lede">{{ text.sourceLine(title) }}</p> }
+    </div>
+  </header>
+
+  @switch (view()) {
+    @case ('loading') {
+      <p class="status">{{ text.loading }}</p>
+    }
+    @case ('error') {
+      <section class="notice error" aria-labelledby="update-error-title">
+        <h2 id="update-error-title" class="section-heading" data-focus-target tabindex="-1">{{ text.loadFailedTitle }}</h2>
+        <p>{{ loadFailure() === 'not-found' ? text.notFound : loadFailure() === 'busy' ? text.busy : text.loadFailed }}</p>
+        @if (loadFailure() !== 'not-found') {
+          <div class="actions"><button type="button" class="button secondary" (click)="reload()">{{ text.retry }}</button></div>
+        }
+      </section>
+    }
+    @case ('preparing') {
+      <section class="notice" aria-labelledby="update-state-title">
+        <h2 id="update-state-title" class="section-heading" data-focus-target tabindex="-1">{{ copyText.preparing }}</h2>
+        <p>{{ text.preparingNote }}</p>
+        <div class="actions"><button type="button" class="button secondary" (click)="reload({ focus: true })">{{ text.check }}</button></div>
+      </section>
+    }
+    @case ('detached') {
+      <section class="notice" aria-labelledby="update-state-title">
+        <h2 id="update-state-title" class="section-heading" data-focus-target tabindex="-1">{{ text.detachedState }}</h2>
+        <p>{{ text.detachedNote }}</p>
+      </section>
+    }
+    @case ('source-unavailable') {
+      <section class="notice">
+        <app-unavailable-note subject="source" audience="owner" />
+      </section>
+    }
+    @case ('up-to-date') {
+      <section class="notice" aria-labelledby="update-state-title">
+        <h2 id="update-state-title" class="section-heading" data-focus-target tabindex="-1">{{ text.upToDate }}</h2>
+        <p>{{ text.upToDateNote }}</p>
+        @if (appliedLine(); as line) { <p class="applied-line">{{ line }}</p> }
+        @if (head()?.lastApplyFailed) { <p class="notice error">{{ text.applyJobFailed }}</p> }
+      </section>
+    }
+    @case ('applying') {
+      <section class="notice" aria-labelledby="update-state-title">
+        <h2 id="update-state-title" class="section-heading" data-focus-target tabindex="-1">{{ text.applying }}</h2>
+        <p>{{ pollStalled() ? text.applyingStalled : text.applyingNote }}</p>
+        @if (pollStalled()) {
+          <div class="actions"><button type="button" class="button secondary" (click)="checkApplyAgain()">{{ text.check }}</button></div>
+        }
+      </section>
+    }
+    @case ('ready') {
+      @if (staleNotice(); as message) { <p class="notice compact">{{ message }}</p> }
+      @if (appliedLine(); as line) { <p class="notice compact applied-line">{{ line }}</p> }
+      @if (head()?.lastApplyFailed) { <p class="notice error">{{ text.applyJobFailed }}</p> }
+
+      <app-update-summary [counts]="counts()" [note]="head()?.releaseNote ?? null" [busy]="applying() === 'safe'" [pendingNote]="pendingPicks() > 0" (acceptSafe)="apply('safe')" />
+
+      <div class="selected-action">
+        <button type="button" class="button secondary" aria-describedby="update-selected-note" [attr.aria-busy]="applying() === 'selected' ? 'true' : null"
+          [attr.aria-disabled]="applying() !== null || pickCount() === 0 ? 'true' : null" (click)="apply('selected')">{{ applying() === 'selected' ? text.applyingSelected : text.applySelected }}</button>
+        <p id="update-selected-note" class="hint">{{ pickCount() === 0 ? text.applySelectedNone : text.applySelectedNote(pickCount()) }}</p>
+      </div>
+
+      @if (dependencyProblem(); as message) { <p class="notice error" role="alert">{{ message }}</p> }
+      @if (applyProblem(); as message) {
+        <div class="notice error" role="alert">
+          <p>{{ message }}</p>
+          @if (canRetryApply()) {
+            <div class="actions"><button type="button" class="button secondary" [attr.aria-disabled]="applying() !== null ? 'true' : null" (click)="retryApply()">{{ text.retry }}</button></div>
+          }
+        </div>
+      }
+
+      <h2 class="section-heading changes-heading">{{ text.changesTitle }}</h2>
+      <app-count-tabs #tabs [tabs]="tabList()" [label]="text.tabsLabel" [(value)]="tab" />
+      <div class="panel" role="tabpanel" [id]="tabs.panelId(tab())" [attr.aria-labelledby]="tabs.tabId(tab())" [attr.tabindex]="rows().length === 0 && !moreError() ? 0 : null">
+        @if (tab() === 'conflict') {
+          <div class="tab-note"><p class="hint">{{ text.conflictNote }}</p><p class="hint">{{ text.againNote }}</p></div>
+        }
+        <ol class="rows" #list [hidden]="rows().length === 0">
+          @for (row of rows(); track row.unit.id) {
+            <li>
+              <app-update-unit-row [unit]="row.view" [choice]="choiceOf(row.unit)" (choiceChange)="pick(row.unit, $event)" [locked]="locks().has(row.unit.id)" [lockNote]="lockNote(row.unit)"
+                [expanded]="isOpen(row.unit.id)" (expandedChange)="setOpen(row.unit, $event)" [headingLevel]="3">
+                @if (isOpen(row.unit.id)) {
+                  @let side = sideState(row.unit.id);
+                  @if (side?.phase === 'ready') {
+                    <app-update-unit-sides [sides]="side.sides" [upstreamCode]="upstreamCode()" />
+                  } @else if (side?.phase === 'error') {
+                    <div class="notice error" role="alert">
+                      <p>{{ side.busy ? text.busy : text.sidesFailed }}</p>
+                      <div class="actions"><button type="button" class="button secondary" (click)="fetchSides(row.unit)">{{ text.retry }}</button></div>
+                    </div>
+                  } @else {
+                    <p class="hint">{{ text.sidesLoading }}</p>
+                  }
+                }
+              </app-update-unit-row>
+            </li>
+          }
+        </ol>
+        @if (rows().length === 0 && tabComplete()) { <p class="hint empty">{{ text.tabEmpty }}</p> }
+        <app-auto-load [content]="list" [context]="generation()" [continuation]="continuation()" [loading]="moreLoading()" [error]="moreError()"
+          [loadingText]="rows().length === 0 ? text.tabSearching : text.loadingMore" (loadNext)="loadMore()" />
+      </div>
+    }
+  }
+</section>

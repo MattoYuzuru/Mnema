@@ -23,10 +23,13 @@ describe('GenerationSettingsComponent', () => {
         const radios = [...root().querySelectorAll<HTMLInputElement>('input[type=radio]')];
         expect(radios.map(radio => radio.labels?.[0]?.textContent?.trim())).toEqual(['Авто', 'Кратко', 'Средне', 'Подробно']);
         expect(radios[0]!.checked).toBe(true);
-        const hint = root().querySelector<HTMLElement>('[aria-live=polite]')!;
-        expect(hint.textContent).toContain('Авто: Мнема выберет объём');
+        const live = root().querySelector<HTMLElement>('app-segmented-choice [aria-live=polite]')!;
+        expect(live.textContent).toBe('');
+        expect(root().querySelector('app-segmented-choice .hint:not([aria-live])')!.textContent).toContain('Авто: Мнема выберет объём');
         radios[3]!.click();
         fixture.detectChanges();
+        const hint = root().querySelector<HTMLElement>('app-segmented-choice [aria-live=polite]')!;
+        expect(hint).toBe(live);
         expect(value().effort).toBe('DETAILED');
         expect(hint.textContent).toContain('Подробно:');
     });

@@ -99,6 +99,8 @@ export class SgUpdateComponent {
     protected readonly newExerciseUnit: UpdateUnitView = {
         id: 'u5', kind: 'exercise', title: 'Превратите в приказ: tú hablas', class: 'new', dependency: 'Повелительное наклонение'
     };
+    protected readonly lockedUnit: UpdateUnitView = { id: 'u-locked', kind: 'material', title: 'Спряжение глагола hablar', class: 'new' };
+    protected readonly lockedNote = UPDATE_TEXT.lockedFor('Что значит hablar?');
     protected readonly againUnit: UpdateUnitView = { id: 'u6', kind: 'material', title: 'Неправильные глаголы с корнем на -o-', class: 'changed-again' };
     protected readonly orderUnit: UpdateUnitView = { id: 'u7', kind: 'order', title: 'Порядок материалов', class: 'fix' };
     protected readonly descriptionUnit: UpdateUnitView = { id: 'u8', kind: 'description', title: 'Описание колоды', class: 'fix' };

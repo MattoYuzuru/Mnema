@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -12,9 +12,13 @@ import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/c
 import { DeckMetadata, DeckVisibility, OwnDeck, validateDeckMetadata } from './own-deck.models';
 import { AccessLevelComponent } from '../../shared/access-level.component';
 import { ActionMenuComponent, ActionMenuItem } from '../../shared/action-menu.component';
-import { COPY_TEXT } from '../../shared/copy-text';
+import { ToastService } from '../../core/notifications/toast.service';
+import { COPY_TEXT, UPDATE_TEXT } from '../../shared/copy-text';
 import { CopyOriginComponent } from '../../shared/copy-origin.component';
 import { CopyStatusComponent } from '../../shared/copy-status.component';
+import { ToggletipComponent } from '../../shared/toggletip.component';
+import { UnavailableNoteComponent } from '../../shared/unavailable-note.component';
+import { UpdateBadgeComponent } from '../../shared/update-badge.component';
 import { sizeLine } from '../../shared/public-deck-card';
 import { PublicationBlockComponent } from './publication/publication-block.component';
 import { DeckDescriptionComponent } from './deck-description.component';
@@ -28,7 +32,7 @@ import { DeckModerationComponent } from './moderation/deck-moderation.component'
 import { DeckRecoveryContext, OwnDeckRecoveryService } from './own-deck-recovery.service';
 import { ForkApiService } from './fork/fork-api.service';
 import { FORK_POLL_LIMIT, FORK_POLL_MIN_GAP_MS, forkPollDelay } from './fork/fork-poll';
-import { ForkProgress, forkProgressOf } from './fork/fork.models';
+import { ForkProgress, forkFailureOf, forkProgressOf } from './fork/fork.models';
 import {
     OwnDecksStore,
     DeckMutationState,
@@ -43,7 +47,7 @@ import {
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
         DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent, DeckModerationComponent,
-        CopyOriginComponent, CopyStatusComponent],
+        CopyOriginComponent, CopyStatusComponent, ToggletipComponent, UnavailableNoteComponent, UpdateBadgeComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',
@@ -91,6 +95,30 @@ export class OwnDeckDetailPageComponent {
         const deck = this.store.detailState().deck;
         return deck === null || deck.memberCount + deck.exerciseCount === 0 ? null : sizeLine(deck.memberCount, deck.exerciseCount);
     });
+    /** «Есть обновление»: the copy is ready and attached, its source opens, and the author published something (all of it decided by the server). */
+    readonly updateOffer = computed(() => {
+        const fork = this.fork();
+        return fork !== null && fork.updateAvailable && !fork.detached && !fork.preparing && fork.sourceAvailable;
+    });
+    /** «Проверить обновления»: a quiet link for a ready, attached copy whose source opens and that has no update waiting. */
+    readonly updateCheck = computed(() => {
+        const fork = this.fork();
+        return fork !== null && !fork.detached && !fork.preparing && fork.sourceAvailable && !fork.updateAvailable;
+    });
+    /** The source is closed for the owner of an attached copy: the hub says so (`app-unavailable-note`) and offers no update link. */
+    readonly sourceClosed = computed(() => {
+        const fork = this.fork();
+        return fork !== null && !fork.detached && !fork.sourceAvailable;
+    });
+    /** «Принимать безопасное автоматически» is offered for an attached, ready copy whose source opens (a closed source sends no updates to take). */
+    readonly autoUpdateShown = computed(() => {
+        const fork = this.fork();
+        return fork !== null && !fork.detached && !fork.preparing && fork.sourceAvailable;
+    });
+    /** The setting as the page shows it: the stored value, replaced at once when the owner flips it (and put back if the save fails). */
+    readonly autoUpdate = linkedSignal(() => this.fork()?.autoUpdate ?? false);
+    readonly autoSaving = signal(false);
+    readonly autoError = signal<string | null>(null);
     /** The «⋯» menu of the deck: only actions that work. */
     readonly menuItems = computed<readonly ActionMenuItem[]>(() => {
         const fork = this.fork();
@@ -110,6 +138,7 @@ export class OwnDeckDetailPageComponent {
     readonly detaching = signal(false);
     readonly detachError = signal<string | null>(null);
     protected readonly copyText = COPY_TEXT;
+    protected readonly updateText = UPDATE_TEXT;
     readonly materials = viewChild(DeckMaterialsComponent);
     readonly failureMessage = deckFailureMessage;
     readonly mayRetrySameCommand = mayRetrySameCommand;
@@ -123,6 +152,7 @@ export class OwnDeckDetailPageComponent {
     private readonly decksApi = inject(OwnDecksApiService);
     private readonly hubApi = inject(DeckHubApiService);
     private readonly forks = inject(ForkApiService);
+    private readonly toasts = inject(ToastService);
     private readonly capabilities = inject(CapabilitiesApiService);
     private readonly router = inject(Router);
     private readonly injector = inject(Injector);
@@ -152,6 +182,7 @@ export class OwnDeckDetailPageComponent {
             this.captureCount.set(null);
             this.confirmingDetach.set(false);
             this.detachError.set(null);
+            this.autoError.set(null);
             this.retryError.set(null);
             this.liveMessage.set('');
             this.announced = null;
@@ -307,13 +338,56 @@ export class OwnDeckDetailPageComponent {
                 void this.store.refreshDetail().then(() => {
                     this.detaching.set(false);
                     this.confirmingDetach.set(false);
-                    this.liveMessage.set(COPY_TEXT.detachedDone);
+                    this.toasts.echo(COPY_TEXT.detachedDone);
                     afterNextRender(() => this.element.nativeElement.querySelector<HTMLElement>('h1')?.focus(), { injector: this.injector });
                 });
             },
             error: error => {
                 this.detachError.set(error instanceof HttpErrorResponse && error.status === 404 ? COPY_TEXT.deckMissing : COPY_TEXT.detachFailed);
                 this.detaching.set(false);
+            }
+        });
+    }
+
+    /** A click on the setting while a save is on its way changes nothing (the group keeps its place in the focus order). */
+    holdAutoUpdate(event: Event): void {
+        if (this.autoSaving()) event.preventDefault();
+    }
+
+    /**
+     * «Принимать безопасное автоматически»: the new value is shown at once and saved; a failure puts the old value back, says why in
+     * words and, when the copy turned out to be preparing or detached, reads the deck again so the page shows its real state.
+     */
+    toggleAutoUpdate(deck: OwnDeck, event: Event): void {
+        const input = event.target as HTMLInputElement;
+        const wanted = input.checked;
+        const previous = this.autoUpdate();
+        if (this.autoSaving()) {
+            input.checked = previous;
+            return;
+        }
+        this.autoSaving.set(true);
+        this.autoError.set(null);
+        this.autoUpdate.set(wanted);
+        this.forks.setAutoUpdate(deck.deckId, wanted).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: answer => {
+                this.autoSaving.set(false);
+                this.autoUpdate.set(answer.autoUpdate);
+                input.checked = answer.autoUpdate;
+                this.store.applyFork(deck.deckId, { autoUpdate: answer.autoUpdate });
+                this.liveMessage.set(answer.autoUpdate ? UPDATE_TEXT.autoOn : UPDATE_TEXT.autoOff);
+            },
+            error: error => {
+                this.autoSaving.set(false);
+                this.autoUpdate.set(previous);
+                input.checked = previous;
+                const kind = forkFailureOf(error).kind;
+                const reason = kind === 'preparing' ? UPDATE_TEXT.autoPreparing : kind === 'detached' ? UPDATE_TEXT.autoDetached
+                    : kind === 'not-found' ? COPY_TEXT.deckMissing : UPDATE_TEXT.autoFailed;
+                // The reason first, then what the setting is now: the reader never has to guess which way it stayed.
+                this.autoError.set(`${reason} ${previous ? UPDATE_TEXT.autoStayedOn : UPDATE_TEXT.autoStayedOff}`);
+                // The copy is not in the state the page thought: read it again, the real state replaces this block.
+                if (kind === 'preparing' || kind === 'detached') void this.store.refreshDetail();
             }
         });
     }

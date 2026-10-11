@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, model } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, model, signal } from '@angular/core';
 
 /** One choice of a {@link SegmentedChoiceComponent}. `hint` is the live explanation shown under the group while selected. */
 export interface SegmentedOption<T extends string = string> {
@@ -13,14 +13,16 @@ let nextGroup = 0;
 /**
  * A single choice among a few short options, drawn as joined segments. It is a native radio group
  * (`fieldset` + `legend` + `input[type=radio]`), so arrow keys, Space, Tab and the accessible name come from the
- * platform. The explanation of the selected option sits in a polite live region under the group and is announced
- * on every change; the fieldset is described by it. Long explanations belong in a `Toggletip` projected after the
+ * platform. The explanation of the selected option sits under the group and describes the fieldset. Until the reader changes the
+ * choice it is a plain paragraph (visible, and the fieldset's description); a separate polite live region is there from the first
+ * render but empty, and after the first change it carries the explanation and the plain paragraph goes. Nothing is read out when a
+ * page draws many groups (the rows of a list), and the first change is announced reliably because the region already existed. Long explanations belong in a `Toggletip` projected after the
  * segments, never in a hover-only tooltip.
  */
 @Component({
     selector: 'app-segmented-choice',
     template: `
-      <fieldset class="segmented" [disabled]="disabled()" [attr.aria-describedby]="describedBy() === null ? hintId : hintId + ' ' + describedBy()"
+      <fieldset class="segmented" [disabled]="disabled()" [attr.aria-describedby]="describedBy() === null ? describingId() : describingId() + ' ' + describedBy()"
         [attr.aria-invalid]="invalid() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null">
         <legend [class.visually-hidden]="legendHidden()">{{ legend() }}</legend>
         <div class="row">
@@ -36,7 +38,8 @@ let nextGroup = 0;
           </div>
           <ng-content />
         </div>
-        <p class="hint" [id]="hintId" aria-live="polite">{{ hint() }}</p>
+        @if (!changed()) { <p class="hint" [id]="staticHintId">{{ hint() }}</p> }
+        <p class="hint" [id]="hintId" aria-live="polite">{{ changed() ? hint() : '' }}</p>
       </fieldset>
     `,
     styleUrl: './segmented-choice.component.css',
@@ -61,10 +64,19 @@ export class SegmentedChoiceComponent<T extends string = string> {
 
     private readonly uid = `mn-segmented-${nextGroup++}`;
     protected readonly hintId = `${this.uid}-hint`;
+    protected readonly staticHintId = `${this.uid}-static-hint`;
     protected readonly groupName = computed(() => this.name() ?? this.uid);
+    /** The reader has changed the choice at least once: from then on the live region carries the explanation. */
+    protected readonly changed = signal(false);
+    /** What describes the group: the static explanation until the reader changes the choice, the live one after. */
+    protected readonly describingId = computed(() => this.changed() ? this.hintId : this.staticHintId);
     protected readonly hint = computed(() => this.options().find(option => option.value === this.value())?.hint ?? '');
 
-    protected select(value: T): void { if (!this.busy()) this.value.set(value); }
+    protected select(value: T): void {
+        if (this.busy()) return;
+        this.changed.set(true);
+        this.value.set(value);
+    }
 
     /** A radio cannot be refused with `disabled` without losing the focus; cancelling the click keeps the old choice. */
     protected guard(event: Event): void { if (this.busy()) event.preventDefault(); }

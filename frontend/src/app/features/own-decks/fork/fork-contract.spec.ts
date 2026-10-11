@@ -16,6 +16,7 @@ import {
     forkProgressOf,
     newForkCommandId,
     parseDeckFork,
+    parseForkAutoUpdated,
     parseForkCreated,
     parseForkDetached,
     parseForkRetried
@@ -50,7 +51,9 @@ describe('Fork wire contract (contracts/decks/forks.json)', () => {
             expect(forkProgressOf(parseDeckFork(states.ready)!)).toBe('ready');
             expect(forkProgressOf(parseDeckFork(states.detached)!)).toBe('ready');
             expect(parseDeckFork(states.detached)!.detached).toBe(true);
-            expect(parseDeckFork(states.sourceClosed)).toEqual({ upstreamCode: null, upstreamTitle: null, sourceAvailable: false, preparing: false, failed: false, detached: false });
+            expect(parseDeckFork(states.updateAvailable)).toMatchObject({ updateAvailable: true, autoUpdate: true, preparing: false, detached: false, sourceAvailable: true });
+            expect(parseDeckFork(states.ready)).toMatchObject({ updateAvailable: false, autoUpdate: false });
+            expect(parseDeckFork(states.sourceClosed)).toEqual({ upstreamCode: null, upstreamTitle: null, sourceAvailable: false, preparing: false, failed: false, detached: false, updateAvailable: false, autoUpdate: false });
             expect(parseDeckFork(undefined)).toBeNull();
         });
 
@@ -65,6 +68,13 @@ describe('Fork wire contract (contracts/decks/forks.json)', () => {
                 { ...ready, preparing: 'yes' },
                 { ...ready, extra: 1 },
                 { upstreamCode: ready.upstreamCode },
+                { ...ready, updateAvailable: 'yes' },
+                { ...ready, autoUpdate: null },
+                { ...ready, updateAvailable: true, preparing: true },
+                { ...ready, updateAvailable: true, detached: true },
+                { ...forks.fork.sourceClosed, updateAvailable: true },
+                (({ autoUpdate: _autoUpdate, ...rest }) => rest)(ready),
+                (({ updateAvailable: _updateAvailable, ...rest }) => rest)(ready),
                 'fork', 7, []
             ]) expect(() => parseDeckFork(broken), JSON.stringify(broken)).toThrowError(OwnDeckProtocolError);
         });
@@ -164,6 +174,41 @@ describe('Fork wire contract (contracts/decks/forks.json)', () => {
             expect(await detaching).toEqual(forks.detach.body);
         });
 
+        it('puts the setting with a strict body to the contract path and parses the stored value', async () => {
+            const saving = firstValueFrom(api.setAutoUpdate(copyId.toUpperCase(), true));
+            const request = http.expectOne(forks.constants.autoUpdatePath.replace('{deckId}', copyId));
+            expect(request.request.method).toBe('PUT');
+            expect(request.request.body).toEqual(forks.autoUpdate.requestBody);
+            expect(Object.keys(request.request.body)).toEqual(['autoUpdate']);
+            request.flush(forks.autoUpdate.body, { headers });
+            expect(await saving).toEqual(forks.autoUpdate.body);
+            expect(forks.routes.map(route => `${route.method} ${route.path}`)).toContain(`PUT ${forks.constants.autoUpdatePath}`);
+
+            const off = firstValueFrom(api.setAutoUpdate(copyId, false));
+            const second = http.expectOne(forks.constants.autoUpdatePath.replace('{deckId}', copyId));
+            expect(second.request.body).toEqual({ autoUpdate: false });
+            second.flush({ deckId: copyId, autoUpdate: false }, { headers });
+            expect(await off).toEqual({ deckId: copyId, autoUpdate: false });
+        });
+
+        it('refuses a setting answer that is cacheable, about another deck or of another shape', async () => {
+            const bodies: readonly (readonly [object, Record<string, string>])[] = [
+                [forks.autoUpdate.body, {}],
+                [{ ...forks.autoUpdate.body, deckId: forks.deckDetail.body.revisionId }, headers],
+                [{ ...forks.autoUpdate.body, autoUpdate: 'true' }, headers],
+                [{ ...forks.autoUpdate.body, extra: 1 }, headers],
+                [{ deckId: copyId }, headers]
+            ];
+            for (const [body, answerHeaders] of bodies) {
+                const saving = firstValueFrom(api.setAutoUpdate(copyId, true));
+                http.expectOne(forks.constants.autoUpdatePath.replace('{deckId}', copyId)).flush(body, { headers: answerHeaders });
+                await expect(saving, JSON.stringify(body)).rejects.toThrowError(OwnDeckProtocolError);
+            }
+            expect(() => parseForkAutoUpdated(forks.autoUpdate.body, copyId)).not.toThrow();
+            await expect(firstValueFrom(api.setAutoUpdate('nope', true))).rejects.toThrowError(OwnDeckProtocolError);
+            http.expectNone(() => true);
+        });
+
         it('refuses a retry or detach answer about another deck, a failed copy that is not preparing, or an uncached promise', () => {
             expect(() => parseForkRetried({ ...forks.retry.body, deckId: forks.deckDetail.body.revisionId }, copyId)).toThrowError(OwnDeckProtocolError);
             expect(() => parseForkRetried({ deckId: copyId, preparing: false, failed: true }, copyId)).toThrowError(OwnDeckProtocolError);
@@ -188,6 +233,7 @@ describe('Fork wire contract (contracts/decks/forks.json)', () => {
             expect(failure(forks.problems.inviteOnly).kind).toBe('invite-only');
             expect(failure(forks.problems.ownDeck).kind).toBe('own-deck');
             expect(failure(forks.problems.preparing).kind).toBe('preparing');
+            expect(failure(forks.autoUpdate.refusedWhileDetached).kind).toBe('detached');
             expect(failure(forks.problems.limit)).toEqual({ kind: 'limit', limit: forks.problems.limit.body.limit, retryAfter: null });
             expect(failure(forks.problems.busy, forks.problems.busy.headers)).toEqual({ kind: 'queue-busy', limit: null, retryAfter: 30 });
         });
@@ -196,6 +242,8 @@ describe('Fork wire contract (contracts/decks/forks.json)', () => {
             expect(forkFailureOf(new HttpErrorResponse({ status: 403, error: { code: 'ACCESS_DENIED' } })).kind).toBe('other');
             expect(forkFailureOf(new HttpErrorResponse({ status: 429, error: { code: 'RATE_LIMITED' }, headers: new HttpHeaders({ 'Retry-After': '37' }) }))).toEqual({ kind: 'rate-limited', limit: null, retryAfter: 37 });
             expect(forkFailureOf(new HttpErrorResponse({ status: 503, error: { code: 'PUBLIC_READ_BUSY' } })).kind).toBe('busy');
+            expect(forkFailureOf(new HttpErrorResponse({ status: 409, error: { code: 'CAPABILITY_UNAVAILABLE', reason: 'SOMETHING_ELSE' } })).kind).toBe('other');
+            expect(forkFailureOf(new HttpErrorResponse({ status: 409, error: { code: 'CAPABILITY_UNAVAILABLE' } })).kind).toBe('other');
             expect(forkFailureOf(new HttpErrorResponse({ status: 502 })).kind).toBe('unknown');
             expect(forkFailureOf(new HttpErrorResponse({ status: 0 })).kind).toBe('unknown');
             expect(forkFailureOf(new OwnDeckProtocolError('x')).kind).toBe('unknown');

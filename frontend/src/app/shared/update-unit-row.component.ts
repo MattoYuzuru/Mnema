@@ -20,10 +20,15 @@ const KIND_GLYPHS: Readonly<Record<UpdateUnitKind, GlyphName>> = {
     material: 'book-open', exercise: 'exercise', goal: 'goal', description: 'scroll-seal', order: 'order'
 };
 
-/** What the reader can decide for a class of unit, in the order shown; the first of a conflict and of a deletion is the default. */
+/**
+ * What the reader can decide for a class of unit, in the order shown; the first of a conflict, of a unit changed again and of a
+ * deletion is the default. These are the contract's `choicesPerClass`: a unit changed again after a decision is answered with
+ * «Оставить моё» or «Взять вариант автора» like a conflict, never with «Не брать».
+ */
 export function choicesFor(unitClass: UpdateUnitClass): readonly SegmentedOption<UpdateChoice>[] {
     switch (unitClass) {
-        case 'conflict': return [
+        case 'conflict':
+        case 'changed-again': return [
             { value: 'keep-mine', label: UPDATE_TEXT.choiceKeepMine, hint: UPDATE_TEXT.hintKeepMine },
             { value: 'take-author', label: UPDATE_TEXT.choiceTakeAuthor, hint: UPDATE_TEXT.hintTakeAuthor }
         ];
@@ -48,7 +53,7 @@ let nextRow = 0;
  * The decision is an `app-segmented-choice` for every class, not a checkbox: each class has two answers that both name an action
  * («Принять» / «Не брать», «Оставить моё» / «Взять вариант автора», «Оставить у себя» / «Удалить и у меня»), and a lone checkbox
  * would hide one of them behind «unchecked». Its legend names the unit for assistive technology and is not drawn, except for a
- * deletion, where the legend is the visible question «Удалить «…» и у меня?». A conflict starts on «Оставить моё» and a deletion on
+ * deletion, where the legend is the visible question «Удалить «…» и у меня?». A conflict and a unit changed again start on «Оставить моё» and a deletion on
  * «Оставить у себя» (the model is `null` until the reader picks; `null` on new and corrected units means «not decided»).
  *
  * The disclosure is a button with `aria-expanded` and, while open, `aria-controls` of the body. The body is whatever
@@ -73,7 +78,10 @@ let nextRow = 0;
         @if (unit().dependency; as needed) { <p class="hint dependency">{{ text.dependency(needed) }}</p> }
         <div class="decision">
           <app-segmented-choice [legend]="legend()" [legendHidden]="unit().class !== 'deleted'" [options]="options()" [value]="shown()"
-            (valueChange)="pick($event)" />
+            [busy]="locked()" [describedBy]="lockNote() ? lockId : null" (valueChange)="pick($event)" />
+          @if (lockNote(); as reason) {
+            <p class="lock-reason" [id]="lockId"><span class="stamp"><app-glyph name="lock" />{{ text.required }}</span> {{ reason }}</p>
+          }
         </div>
         <div class="disclosure">
           <button type="button" class="button small" [attr.aria-expanded]="expanded() ? 'true' : 'false'" [attr.aria-controls]="expanded() ? bodyId : null"
@@ -93,6 +101,9 @@ let nextRow = 0;
       .title { margin: 0; min-inline-size: 0; color: var(--mn-ink); font: 700 1.05rem/1.4 var(--mn-font-body, system-ui, sans-serif); overflow-wrap: anywhere; }
       .dependency { margin: 0; max-inline-size: 62ch; }
       .decision, .disclosure { min-inline-size: 0; }
+      .lock-reason { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; max-inline-size: 62ch; margin: .5rem 0 0; color: var(--mn-body); font-size: .9rem; line-height: 1.45; }
+      .lock-reason .stamp { gap: .3rem; }
+      .lock-reason app-glyph { --mn-glyph-size: .9rem; }
       .body { grid-column: 1 / -1; min-inline-size: 0; margin-block-start: .75rem; }
       @container (width >= 40rem) {
         /* Clamped only where the row is wide; an open row and any narrower container show the whole title. */
@@ -111,6 +122,14 @@ export class UpdateUnitRowComponent {
     readonly choice = model<UpdateChoice | null>(null);
     /** The comparison is open. */
     readonly expanded = model(false);
+    /** The decision is fixed by the page (the unit is needed by one the reader accepts): the group keeps its place in the focus order, `aria-disabled`, and refuses every change. */
+    readonly locked = input(false);
+    /**
+     * Why the decision is fixed (a unit the reader accepts needs this one), in words. Drawn directly under the decision after the
+     * stamp «Обязательно» with a small lock glyph, so a locked row never rests on colour or on `aria-busy` alone, and described to
+     * assistive technology as part of the group (`aria-describedby`). `null` when the row is free.
+     */
+    readonly lockNote = input<string | null>(null);
     /** The level of the title: 3 below a section heading, 4 below a tab panel with its own heading. */
     readonly headingLevel = input<3 | 4>(3);
 
@@ -118,6 +137,7 @@ export class UpdateUnitRowComponent {
     private readonly uid = `mn-update-unit-${nextRow++}`;
     protected readonly titleId = `${this.uid}-title`;
     protected readonly bodyId = `${this.uid}-body`;
+    protected readonly lockId = `${this.uid}-lock`;
     protected readonly glyph = computed(() => KIND_GLYPHS[this.unit().kind]);
     protected readonly kindLabel = computed(() => UPDATE_TEXT.kinds[this.unit().kind]);
     protected readonly classLabel = computed(() => UPDATE_TEXT.classes[this.unit().class]);
@@ -129,7 +149,7 @@ export class UpdateUnitRowComponent {
         const picked = this.choice();
         if (picked !== null) return picked;
         const unitClass = this.unit().class;
-        return unitClass === 'conflict' || unitClass === 'deleted' ? this.options()[0]!.value : null;
+        return unitClass === 'conflict' || unitClass === 'changed-again' || unitClass === 'deleted' ? this.options()[0]!.value : null;
     });
 
     protected pick(value: UpdateChoice | null): void { if (value !== null) this.choice.set(value); }

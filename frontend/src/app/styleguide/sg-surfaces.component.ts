@@ -74,7 +74,7 @@ const CARD_SAMPLES: readonly PublicDeckCard[] = [
 ];
 
 /** Образцы состояний копии (форма — `fork` из contracts/decks/forks.json). */
-const FORK_BASE: DeckFork = { upstreamCode: 'Kq7xT3mNpR', upstreamTitle: 'Испанский язык: базовые глаголы', sourceAvailable: true, preparing: false, failed: false, detached: false };
+const FORK_BASE: DeckFork = { upstreamCode: 'Kq7xT3mNpR', upstreamTitle: 'Испанский язык: базовые глаголы', sourceAvailable: true, preparing: false, failed: false, detached: false, updateAvailable: false, autoUpdate: false };
 const FORK_SAMPLES: readonly { readonly title: string; readonly fork: DeckFork }[] = [
     { title: 'готова', fork: FORK_BASE },
     { title: 'готовится', fork: { ...FORK_BASE, preparing: true } },
