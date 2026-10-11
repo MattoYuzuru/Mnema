@@ -3,8 +3,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { OwnDeckProtocolError, isCanonicalCommandId, isCanonicalEntityId } from '../own-deck.models';
 
 /**
- * Wire shapes of «Добавить к себе» (`contracts/decks/forks.json`, Share/10): the copy command, the retry and detach answers and
- * the `fork` member of the owner's deck JSON. Parsing is strict. An absent `fork` is `null` (an ordinary deck); the contract
+ * Wire shapes of «Добавить к себе» (`contracts/decks/forks.json`, Share/10 and Updates/6): the copy command, the retry, detach and
+ * auto-update answers and the `fork` member of the owner's deck JSON. Parsing is strict. An absent `fork` is `null` (an ordinary deck); the contract
  * words are mirrored here once, and the texts are owned by `shared/copy-text.ts`.
  */
 
@@ -23,6 +23,13 @@ export interface DeckFork {
     readonly failed: boolean;
     /** The owner pressed «Отвязать от автора»: updates never arrive, the content stays. */
     readonly detached: boolean;
+    /**
+     * «Есть обновление»: the copy is ready, attached, its source opens, and the author published something the copy does not have yet
+     * (or a unit left for later is still on offer). Computed by the server at read; false in every other state.
+     */
+    readonly updateAvailable: boolean;
+    /** The owner's setting «Принимать безопасное автоматически», as stored (false by default), whatever the state of the copy. */
+    readonly autoUpdate: boolean;
 }
 
 export type ForkProgress = 'preparing' | 'failed' | 'ready';
@@ -46,6 +53,12 @@ export interface ForkRetried {
     readonly failed: boolean;
 }
 
+/** `PUT /api/decks/{id}/fork:auto-update`: the stored value. */
+export interface ForkAutoUpdated {
+    readonly deckId: string;
+    readonly autoUpdate: boolean;
+}
+
 /** `POST /api/decks/{id}/fork:detach`. */
 export interface ForkDetached {
     readonly deckId: string;
@@ -61,13 +74,15 @@ export function newForkCommandId(): string {
 
 export function parseDeckFork(value: unknown): DeckFork | null {
     if (value === null || value === undefined) return null;
-    const object = exactObject(value, ['upstreamCode', 'upstreamTitle', 'sourceAvailable', 'preparing', 'failed', 'detached']);
+    const object = exactObject(value, ['upstreamCode', 'upstreamTitle', 'sourceAvailable', 'preparing', 'failed', 'detached', 'updateAvailable', 'autoUpdate']);
     const upstreamCode = object['upstreamCode'];
     const upstreamTitle = object['upstreamTitle'];
     const sourceAvailable = flag(object['sourceAvailable']);
     const preparing = flag(object['preparing']);
     const failed = flag(object['failed']);
     const detached = flag(object['detached']);
+    const updateAvailable = flag(object['updateAvailable']);
+    const autoUpdate = flag(object['autoUpdate']);
     if (upstreamCode !== null && (typeof upstreamCode !== 'string' || !SOURCE_CODE.test(upstreamCode))) throw new OwnDeckProtocolError('Invalid fork source code.');
     if (upstreamTitle !== null && (typeof upstreamTitle !== 'string' || upstreamTitle.length === 0 || Array.from(upstreamTitle).length > 400)) {
         throw new OwnDeckProtocolError('Invalid fork source title.');
@@ -77,7 +92,9 @@ export function parseDeckFork(value: unknown): DeckFork | null {
         throw new OwnDeckProtocolError('Fork source availability disagrees with its identity.');
     }
     if (failed && !preparing) throw new OwnDeckProtocolError('A failed copy is a preparing copy.');
-    return { upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached };
+    // The badge is only ever on for a ready, attached copy whose source opens.
+    if (updateAvailable && (preparing || detached || !sourceAvailable)) throw new OwnDeckProtocolError('An update is available only to a ready, attached copy with a readable source.');
+    return { upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached, updateAvailable, autoUpdate };
 }
 
 export function parseForkCreated(value: unknown, status: number, commandId: string): ForkCreated {
@@ -103,6 +120,12 @@ export function parseForkRetried(value: unknown, deckId: string): ForkRetried {
     return { deckId: deckId.toLowerCase(), preparing, failed };
 }
 
+export function parseForkAutoUpdated(value: unknown, deckId: string): ForkAutoUpdated {
+    const object = exactObject(value, ['deckId', 'autoUpdate']);
+    sameDeck(object['deckId'], deckId);
+    return { deckId: deckId.toLowerCase(), autoUpdate: flag(object['autoUpdate']) };
+}
+
 export function parseForkDetached(value: unknown, deckId: string): ForkDetached {
     const object = exactObject(value, ['deckId', 'detached']);
     sameDeck(object['deckId'], deckId);
@@ -120,6 +143,8 @@ export type ForkFailureKind =
     | 'own-deck'
     /** 409 `DECK_PREPARING`: the copy is not ready for this action yet. */
     | 'preparing'
+    /** 409 `CAPABILITY_UNAVAILABLE` with reason `DETACHED`: a detached copy gets no updates, so its update setting cannot change. */
+    | 'detached'
     /** 422 `RESOURCE_LIMIT_EXCEEDED`: too many copies are being prepared at once. */
     | 'limit'
     | 'rate-limited'
@@ -149,7 +174,9 @@ export function forkFailureOf(error: unknown): ForkFailure {
         case 0: return failure('unknown');
         case 403: return failure(code === 'DECK_INVITE_ONLY' ? 'invite-only' : 'other');
         case 404: return failure('not-found');
-        case 409: return failure(code === 'FORK_OWN_DECK' ? 'own-deck' : code === 'DECK_PREPARING' ? 'preparing' : 'other');
+        case 409:
+            return failure(code === 'FORK_OWN_DECK' ? 'own-deck' : code === 'DECK_PREPARING' ? 'preparing'
+                : code === 'CAPABILITY_UNAVAILABLE' && body['reason'] === 'DETACHED' ? 'detached' : 'other');
         case 422: return failure(code === 'RESOURCE_LIMIT_EXCEEDED' ? 'limit' : 'other');
         case 429: return failure('rate-limited');
         case 503: return failure(code === 'PUBLIC_READ_BUSY' ? 'busy' : code === 'FORKS_BUSY' ? 'queue-busy' : 'unknown');

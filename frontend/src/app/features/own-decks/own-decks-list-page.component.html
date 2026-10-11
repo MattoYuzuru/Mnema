@@ -32,7 +32,10 @@
             <span class="deck-copy">
               <strong>{{ deck.metadata.title }}</strong>
               @if (deck.visibility !== 'private') { <app-access-level class="deck-level" [level]="deck.visibility" /> }
-              @if (deck.fork; as fork) { <app-copy-mark class="deck-copy-mark" [fork]="fork" /> }
+              @if (deck.fork; as fork) {
+                <app-copy-mark class="deck-copy-mark" [fork]="fork" />
+                @if (fork.updateAvailable) { <app-update-badge class="deck-update" /> }
+              }
               @if (deck.metadata.description) {
                 <app-deck-description class="deck-description" [text]="deck.metadata.description" />
               } @else {

@@ -237,5 +237,20 @@ input[readonly], textarea[readonly] { background: var(--mn-soft); }
 .deck-detail-page .editor-panel .metadata-form { padding-block-start: 0; }
 
 .hub-level { margin: .75rem 0 0; }
-.deck-level, .deck-copy-mark { justify-self: start; }
+.deck-level, .deck-copy-mark, .deck-update { justify-self: start; }
 .detach-confirm { display: grid; gap: .6rem; margin-block: 0 1.5rem; }
+
+/* A copy with an update waiting: the badge is the heading, one primary action. */
+.update-offer { display: grid; gap: .6rem; justify-items: start; margin-block: 0 1.25rem; border: 1px solid var(--mn-ink); padding: 1rem clamp(1rem, 3vw, 1.5rem); background: var(--mn-sheet); }
+.update-offer h2, .update-offer p { margin: 0; }
+.update-offer p { max-inline-size: 62ch; color: var(--mn-body); line-height: 1.5; }
+.hub-source-note { max-inline-size: 62ch; margin-block-start: .75rem; }
+/* The setting of a copy: a checkbox row with its short explanation beside it. */
+.auto-update { display: grid; gap: .4rem; margin-block: 1.5rem; }
+.auto-update h2 { margin: 0; }
+.auto-update-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0 .5rem; min-inline-size: 0; }
+.auto-update-row .check-row { min-inline-size: 0; overflow-wrap: anywhere; }
+/* The page-wide `input` rule (full width, padded, a field's border) is for fields; a checkbox is a small box. */
+.auto-update .check-row input { inline-size: 1.25rem; block-size: 1.25rem; min-inline-size: 0; margin: 0; padding: 0; flex: none; }
+.auto-update .field-error { margin: 0; }
+@media (forced-colors: active) { .update-offer { border-color: CanvasText; } }

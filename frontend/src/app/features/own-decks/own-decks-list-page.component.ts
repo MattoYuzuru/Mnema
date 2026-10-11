@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, effec
 import { DatePipe } from '@angular/common';
 import { AccessLevelComponent } from '../../shared/access-level.component';
 import { CopyMarkComponent } from '../../shared/copy-mark.component';
+import { UpdateBadgeComponent } from '../../shared/update-badge.component';
 import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { RouterLink } from '@angular/router';
 import { copyFor } from '../goal/goal-copy';
@@ -16,7 +17,7 @@ const VISIBLE_RECHECK_MS = 10_000;
 
 @Component({
     selector: 'app-own-decks-list-page',
-    imports: [DatePipe, RouterLink, DeckDescriptionComponent, AutoLoadComponent, AccessLevelComponent, CopyMarkComponent],
+    imports: [DatePipe, RouterLink, DeckDescriptionComponent, AutoLoadComponent, AccessLevelComponent, CopyMarkComponent, UpdateBadgeComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-decks-list-page.component.html',
     styleUrl: './own-decks-page.css',

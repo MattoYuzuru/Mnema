@@ -7,6 +7,7 @@ import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
 import hubFixture from '../../../../../contracts/decks/hub.json';
 import forksFixture from '../../../../../contracts/decks/forks.json';
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
+import { ToastService } from '../../core/notifications/toast.service';
 import { OwnDeck } from './own-deck.models';
 import { DeckDetailState, DeckMutationState, OwnDecksStore } from './own-decks.store';
 import { OwnDeckDetailPageComponent } from './own-deck-detail-page.component';
@@ -40,6 +41,7 @@ describe('OwnDeckDetailPageComponent', () => {
     let publication: SpyObj<PublicationApiService>;
     let moderation: SpyObj<ModerationApiService>;
     let forkApi: SpyObj<ForkApiService>;
+    let toasts: SpyObj<ToastService>;
     const insights = hubFixture.insights.response as unknown as DeckInsights;
     const orderedPage = { ...hubFixture.items.orderedPageWithCounts.response, items: hubFixture.items.sortedPage.items } as unknown as ItemPage;
     const deck = metadataFixture.detail as unknown as OwnDeck;
@@ -64,7 +66,8 @@ describe('OwnDeckDetailPageComponent', () => {
             refreshDetail: vi.fn().mockName('OwnDecksStore.refreshDetail').mockResolvedValue(undefined),
             applyFork: vi.fn().mockName('OwnDecksStore.applyFork')
         });
-        forkApi = spyObj<ForkApiService>({ retry: vi.fn().mockName('ForkApiService.retry'), detach: vi.fn().mockName('ForkApiService.detach') });
+        forkApi = spyObj<ForkApiService>({ retry: vi.fn().mockName('ForkApiService.retry'), detach: vi.fn().mockName('ForkApiService.detach'), setAutoUpdate: vi.fn().mockName('ForkApiService.setAutoUpdate') });
+        toasts = spyObj<ToastService>({ echo: vi.fn().mockName('ToastService.echo') });
         recovery = spyObj<OwnDeckRecoveryService>({
             restore: vi.fn().mockName("OwnDeckRecoveryService.restore"),
             save: vi.fn().mockName("OwnDeckRecoveryService.save"),
@@ -106,6 +109,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 { provide: PublicationApiService, useValue: publication },
                 { provide: ModerationApiService, useValue: moderation },
                 { provide: ForkApiService, useValue: forkApi },
+                { provide: ToastService, useValue: toasts },
                 { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })), fragment } }
             ]
         }).overrideComponent(OwnDeckDetailPageComponent, {
@@ -388,7 +392,7 @@ describe('OwnDeckDetailPageComponent', () => {
     });
 
     describe('a copy of somebody else\'s deck', () => {
-        const states = forksFixture.fork as unknown as Record<'preparing' | 'failed' | 'ready' | 'sourceClosed' | 'detached', DeckFork>;
+        const states = forksFixture.fork as unknown as Record<'preparing' | 'failed' | 'ready' | 'sourceClosed' | 'detached' | 'updateAvailable', DeckFork>;
         const root = () => fixture.nativeElement as HTMLElement;
         const live = () => root().querySelector('.deck-detail-page > p.visually-hidden[role=status]')!.textContent;
         const actions = () => [...root().querySelectorAll('nav.hub-actions > a, nav.hub-actions > button')].map(element => element.getAttribute('aria-label') ?? element.textContent?.trim());
@@ -424,12 +428,202 @@ describe('OwnDeckDetailPageComponent', () => {
             expect(actions()).toContain('Учить');
         });
 
+        it('links a ready, attached copy to the update review, and leaves it out for an ordinary deck, a detached copy and a copy being prepared', async () => {
+            await show(states.ready);
+            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Проверить обновления', 'Изменить']);
+            const link = [...root().querySelectorAll<HTMLAnchorElement>('nav.hub-actions > a')].find(anchor => anchor.textContent?.trim() === 'Проверить обновления')!;
+            expect(link.getAttribute('href')).toBe(`/decks/${deck.deckId}/update`);
+            await show(states.detached);
+            expect(actions()).not.toContain('Проверить обновления');
+            await show(null);
+            expect(actions()).not.toContain('Проверить обновления');
+            await show(states.preparing);
+            expect(root().querySelector('nav.hub-actions')).toBeNull();
+        });
+
         it('says the approved sentence when the source is closed, and drops the menu item once the copy is detached', async () => {
             await show(states.sourceClosed);
-            expect(root().querySelector('app-copy-origin')!.textContent).toContain(forksFixture.texts.sourceClosed);
+            expect(root().querySelector('app-unavailable-note .title')!.textContent).toBe('Источник больше недоступен');
+            expect(root().querySelector('app-unavailable-note .hint')!.textContent).toBe(forksFixture.texts.sourceClosed);
+            expect(root().querySelector('app-copy-origin')).toBeNull();
             await show(states.detached);
             expect(menu()).toEqual(['Доступ…']);
             expect(root().querySelector('app-copy-origin .stamp')!.textContent).toBe('Отвязана от автора');
+        });
+
+        describe('an update from the author', () => {
+            const link = () => root().querySelector<HTMLAnchorElement>('a[href$="/update"]');
+
+            it('offers the update under the badge as its heading with one secondary link («Учить» stays the only primary), and has no second link to it', async () => {
+                await show(states.updateAvailable);
+                const offer = root().querySelector('section.update-offer')!;
+                expect(offer.getAttribute('aria-labelledby')).toBe('update-offer-title');
+                expect(offer.querySelector('h2 app-update-badge')!.textContent!.trim()).toBe('Есть обновление');
+                expect(offer.querySelector('p')!.textContent).toBe('Автор опубликовал новое. Вы сами решаете, что взять, а ваши правки останутся.');
+                const links = root().querySelectorAll<HTMLAnchorElement>('a[href$="/update"]');
+                expect(links).toHaveLength(1);
+                expect(links[0]!.textContent!.trim()).toBe('Посмотреть обновление');
+                expect(links[0]!.classList.contains('secondary')).toBe(true);
+                expect(links[0]!.classList.contains('primary')).toBe(false);
+                expect([...root().querySelectorAll('.button.primary')].map(item => item.textContent!.trim())).toEqual(['Учить']);
+                expect(links[0]!.getAttribute('href')).toBe(`/decks/${deck.deckId}/update`);
+                expect(offer.contains(links[0]!)).toBe(true);
+                expect(actions()).not.toContain('Проверить обновления');
+            });
+
+            it('keeps «Проверить обновления» as a quiet link while nothing is waiting, and shows no badge', async () => {
+                await show(states.ready);
+                expect(root().querySelector('app-update-badge, section.update-offer')).toBeNull();
+                expect(link()!.textContent!.trim()).toBe('Проверить обновления');
+                expect(link()!.classList.contains('quiet')).toBe(true);
+                expect(link()!.classList.contains('primary')).toBe(false);
+            });
+
+            it('shows neither the badge nor a link to the update for a detached copy, a closed source and a copy being prepared', async () => {
+                for (const fork of [states.detached, states.sourceClosed, states.preparing]) {
+                    await show({ ...fork, updateAvailable: false });
+                    expect(root().querySelector('app-update-badge, section.update-offer'), JSON.stringify(fork)).toBeNull();
+                    expect(link(), JSON.stringify(fork)).toBeNull();
+                }
+                // Whatever the flag says, a state that cannot receive an update does not offer one.
+                await show({ ...states.detached, updateAvailable: true });
+                expect(root().querySelector('app-update-badge')).toBeNull();
+                expect(link()).toBeNull();
+            });
+
+            it('says «Источник больше недоступен» with app-unavailable-note and offers no update link and no setting', async () => {
+                await show(states.sourceClosed);
+                expect(root().querySelector('.hub-heading app-unavailable-note')).not.toBeNull();
+                expect(link()).toBeNull();
+                expect(root().querySelector('.auto-update')).toBeNull();
+            });
+        });
+
+        describe('«Принимать безопасное автоматически»', () => {
+            const box = () => root().querySelector<HTMLInputElement>('.auto-update input[type=checkbox]')!;
+            const alert = () => root().querySelector('.auto-update [role=alert]')?.textContent ?? null;
+            const answer = (autoUpdate: boolean) => ({ deckId: deck.deckId, autoUpdate });
+
+            it('is a labelled check row with a short explanation, off by default and on when the copy stores it', async () => {
+                await show(states.ready);
+                expect(root().querySelector('.auto-update h2')!.textContent).toBe('Обновления от автора');
+                expect(box().labels![0]!.classList.contains('check-row')).toBe(true);
+                expect(box().labels![0]!.textContent!.trim()).toBe('Принимать безопасное автоматически');
+                expect(box().checked).toBe(false);
+                const tip = root().querySelector('.auto-update app-toggletip')!;
+                expect(tip.querySelector('button')!.getAttribute('aria-label')).toBe('Подробнее: автоматический приём обновлений');
+                expect(tip.querySelector('.bubble')!.textContent).toBe('Берём новое и исправления того, что вы не меняли. Конфликты и удаления ждут вашего решения.');
+                await show(states.updateAvailable);
+                expect(box().checked).toBe(true);
+            });
+
+            it('is offered to an attached, ready copy only', async () => {
+                await show(null);
+                expect(root().querySelector('.auto-update')).toBeNull();
+                await show(states.detached);
+                expect(root().querySelector('.auto-update')).toBeNull();
+                await show(states.preparing);
+                expect(root().querySelector('.auto-update')).toBeNull();
+                await show(states.ready);
+                expect(root().querySelector('.auto-update')).not.toBeNull();
+            });
+
+            it('switches on at once, saves, keeps the stored answer in the store and says it politely', async () => {
+                const saved = new Subject<{ deckId: string; autoUpdate: boolean }>();
+                forkApi.setAutoUpdate.mockReturnValue(saved);
+                await show(states.ready);
+                box().click();
+                fixture.detectChanges();
+                expect(forkApi.setAutoUpdate).toHaveBeenCalledWith(deck.deckId, true);
+                expect(box().checked).toBe(true);
+                expect(box().getAttribute('aria-disabled')).toBe('true');
+                expect(box().getAttribute('aria-busy')).toBe('true');
+                saved.next(answer(true));
+                saved.complete();
+                fixture.detectChanges();
+                expect(store.applyFork).toHaveBeenCalledWith(deck.deckId, { autoUpdate: true });
+                expect(box().checked).toBe(true);
+                expect(box().getAttribute('aria-disabled')).toBeNull();
+                expect(box().getAttribute('aria-busy')).toBeNull();
+                expect(live()).toBe('Безопасное будет приниматься автоматически.');
+                expect(alert()).toBeNull();
+            });
+
+            it('switches off again and says the updates are manual again', async () => {
+                forkApi.setAutoUpdate.mockReturnValue(of(answer(false)));
+                await show(states.updateAvailable);
+                box().click();
+                fixture.detectChanges();
+                expect(forkApi.setAutoUpdate).toHaveBeenCalledWith(deck.deckId, false);
+                expect(box().checked).toBe(false);
+                expect(live()).toBe('Обновления снова принимаются только вручную.');
+            });
+
+            it('ignores a second click while the save is on its way', async () => {
+                forkApi.setAutoUpdate.mockReturnValue(new Subject());
+                await show(states.ready);
+                box().click();
+                fixture.detectChanges();
+                box().click();
+                fixture.detectChanges();
+                expect(forkApi.setAutoUpdate).toHaveBeenCalledTimes(1);
+                expect(box().checked).toBe(true);
+            });
+
+            it('puts the old value back and says why when the save fails', async () => {
+                forkApi.setAutoUpdate.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+                await show(states.ready);
+                box().click();
+                fixture.detectChanges();
+                expect(box().checked).toBe(false);
+                expect(alert()).toBe('Не удалось сохранить настройку. Проверьте соединение и повторите. Настройка осталась выключенной.');
+                expect(store.applyFork).not.toHaveBeenCalled();
+                expect(store.refreshDetail).not.toHaveBeenCalled();
+                // The next try starts clean and may succeed.
+                forkApi.setAutoUpdate.mockReturnValue(of(answer(true)));
+                box().click();
+                fixture.detectChanges();
+                expect(box().checked).toBe(true);
+                expect(alert()).toBeNull();
+            });
+
+            it('rolls back a switch-off the same way', async () => {
+                forkApi.setAutoUpdate.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+                await show(states.updateAvailable);
+                box().click();
+                fixture.detectChanges();
+                expect(box().checked).toBe(true);
+                expect(alert()).toBe('Не удалось сохранить настройку. Проверьте соединение и повторите. Настройка осталась включённой.');
+            });
+
+            it('on 409 DECK_PREPARING rolls back, says the copy is still preparing and reads the deck again', async () => {
+                forkApi.setAutoUpdate.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'DECK_PREPARING' } })));
+                await show(states.ready);
+                box().click();
+                fixture.detectChanges();
+                expect(box().checked).toBe(false);
+                expect(alert()).toBe('Копия ещё готовится. Настройку можно изменить, когда она будет готова. Настройка осталась выключенной.');
+                expect(store.refreshDetail).toHaveBeenCalledTimes(1);
+            });
+
+            it('on 409 CAPABILITY_UNAVAILABLE DETACHED rolls back, says the copy is detached and reads the deck again', async () => {
+                forkApi.setAutoUpdate.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'CAPABILITY_UNAVAILABLE', capability: 'forkAutoUpdate', reason: 'DETACHED' } })));
+                await show(states.ready);
+                box().click();
+                fixture.detectChanges();
+                expect(box().checked).toBe(false);
+                expect(alert()).toBe('Копия отвязана от автора, поэтому настройка не действует. Настройка осталась выключенной.');
+                expect(store.refreshDetail).toHaveBeenCalledTimes(1);
+            });
+
+            it('says a missing copy in words and does not read the deck again', async () => {
+                forkApi.setAutoUpdate.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+                await show(states.ready);
+                box().click();
+                fixture.detectChanges();
+                expect(alert()).toBe('Колода не найдена или больше недоступна. Настройка осталась выключенной.');
+                expect(store.refreshDetail).not.toHaveBeenCalled();
+            });
         });
 
         describe('while it is being prepared', () => {
@@ -681,7 +875,8 @@ describe('OwnDeckDetailPageComponent', () => {
                 fixture.detectChanges();
                 expect(store.refreshDetail).toHaveBeenCalledTimes(1);
                 expect(panel()).toBeNull();
-                expect(live()).toBe('Копия отвязана от автора.');
+                expect(toasts.echo).toHaveBeenCalledWith('Копия отвязана от автора.');
+                expect(toasts.echo).toHaveBeenCalledTimes(1);
                 expect(document.activeElement).toBe(root().querySelector('h1'));
                 expect(menu()).toEqual(['Доступ…']);
             });

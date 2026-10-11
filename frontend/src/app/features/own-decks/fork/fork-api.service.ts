@@ -5,9 +5,11 @@ import { Observable, defer, map } from 'rxjs';
 import { appConfig } from '../../../app.config';
 import { OwnDeckProtocolError, isCanonicalCommandId, isCanonicalEntityId } from '../own-deck.models';
 import {
+    ForkAutoUpdated,
     ForkCreated,
     ForkDetached,
     ForkRetried,
+    parseForkAutoUpdated,
     parseForkCreated,
     parseForkDetached,
     parseForkRetried
@@ -17,7 +19,7 @@ import {
 const SOURCE_CODE = /^[1-9A-HJ-NP-Za-km-z]{10}$/u;
 
 /**
- * The three commands of a copy (`contracts/decks/forks.json`): «Добавить к себе», «Повторить» and «Отвязать от автора». The state of
+ * The commands of a copy (`contracts/decks/forks.json`): «Добавить к себе», «Повторить», «Отвязать от автора» and the setting «Принимать безопасное автоматически». The state of
  * a copy is not read here: it is the `fork` member of the owner's deck JSON. A failure is the raw `HttpErrorResponse` (see
  * `forkFailureOf`); an answer that does not match the contract is an `OwnDeckProtocolError`. Nothing here is logged.
  */
@@ -46,6 +48,16 @@ export class ForkApiService {
     detach(deckId: string): Observable<ForkDetached> {
         return defer(() => this.http.post<unknown>(`${this.copyPath(deckId)}:detach`, null, { observe: 'response' }))
             .pipe(map(response => parseForkDetached(privateBody(response), deckId)));
+    }
+
+    /**
+     * «Принимать безопасное автоматически»: stores the owner's setting and answers the stored value. A state, not a command: the same
+     * value again changes nothing, so a retry needs no command id. A preparing copy is 409 `DECK_PREPARING`, a detached one 409
+     * `CAPABILITY_UNAVAILABLE` (see `forkFailureOf`).
+     */
+    setAutoUpdate(deckId: string, autoUpdate: boolean): Observable<ForkAutoUpdated> {
+        return defer(() => this.http.put<unknown>(`${this.copyPath(deckId)}:auto-update`, { autoUpdate }, { observe: 'response' }))
+            .pipe(map(response => parseForkAutoUpdated(privateBody(response), deckId)));
     }
 
     private copyPath(deckId: string): string {
