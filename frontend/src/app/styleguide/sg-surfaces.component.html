@@ -125,12 +125,12 @@
     </ol>
   </app-sg-specimen>
   <app-sg-specimen title="Блок публикации" selector="<app-publication-block>"
-    when="Хаб колоды: кто видит колоду и что видят ученики. У приватной колоды одна тихая строка и «Сделать публичной…» (чек-лист раскрывается здесь же, без перехода). У колоды с доступом: уровень, ссылка и «Скопировать ссылку», время публикации и, если колода изменилась после неё, «Изменения для учеников не опубликованы (N)» с «Опубликовать обновление» и необязательным «Что нового» до 500 символов. Блок читает своё состояние отдельным запросом: сбой даёт повтор внутри блока, хаб остаётся. Примеры работают на демо-данных без сервера."
+    when="Хаб колоды: кто видит колоду и что видят ученики. У приватной колоды одна тихая строка и «Сделать публичной…» (чек-лист раскрывается здесь же, без перехода). У колоды с доступом: уровень, ссылка и «Поделиться», время публикации и, если колода изменилась после неё, «Изменения для учеников не опубликованы (N)» с «Опубликовать обновление» и необязательным «Что нового» до 500 символов. Блок читает своё состояние отдельным запросом: сбой даёт повтор внутри блока, хаб остаётся. Примеры работают на демо-данных без сервера."
     [tokens]="['--mn-rule', '--mn-ink', '--mn-soft']"
-    usage='<app-publication-block [deckId]="deck.deckId" (levelChange)="level.set($event)" (editDescription)="openEditor()" />'>
+    usage='<app-publication-block [deckId]="deck.deckId" [deckTitle]="deck.metadata.title" (levelChange)="level.set($event)" (editDescription)="openEditor()" />'>
     <div class="sg-stack">
-      <app-publication-block [deckId]="privateDeck" />
-      <app-publication-block [deckId]="sharedDeck" />
+      <app-publication-block [deckId]="privateDeck" deckTitle="Японский для начинающих" />
+      <app-publication-block [deckId]="sharedDeck" deckTitle="Японский для начинающих" />
     </div>
   </app-sg-specimen>
   <app-sg-specimen title="Шкала расхода" selector="<app-usage-meter>"

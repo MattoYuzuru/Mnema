@@ -140,7 +140,7 @@
     </section>
     }
 
-    <app-publication-block [deckId]="deck.deckId" [reloadToken]="publicationToken()" (levelChange)="publishedLevel.set($event)" (editDescription)="openEditor('description')" />
+    <app-publication-block [deckId]="deck.deckId" [deckTitle]="deck.metadata.title" [reloadToken]="publicationToken()" (levelChange)="publishedLevel.set($event)" (editDescription)="openEditor('description')" />
     <app-deck-workshops [deckId]="deck.deckId" />
     <app-deck-insights [deckId]="deck.deckId" [state]="insights()" (retry)="loadInsights()" (showMissing)="showMaterialsWithoutExercises()" />
     <app-deck-materials [deckId]="deck.deckId" [generationAvailable]="generationAvailable()" (changed)="loadInsights()" />

@@ -23,10 +23,6 @@ export const PUBLICATION_TEXT = {
     network: 'Не удалось связаться с сервером. Проверьте соединение и повторите.',
     unknown: 'Не удалось опубликовать. Повторите чуть позже.',
     requirements: 'Условия не выполнены',
-    copyLink: 'Скопировать ссылку',
-    linkCopied: 'Ссылка скопирована',
-    linkNotCopied: 'Не удалось скопировать. Выделите ссылку и скопируйте её.',
-    linkLabel: 'Ссылка на колоду',
     opensInNewTab: ' (откроется в новой вкладке)',
     noteTooLong: `Сократите текст до ${RELEASE_NOTE_MAX_CODE_POINTS} символов.`,
     overBy: (count: number): string => `Лишних символов: ${count}`

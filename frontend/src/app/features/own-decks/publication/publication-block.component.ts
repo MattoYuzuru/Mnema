@@ -5,6 +5,7 @@ import { Subscription } from 'rxjs';
 
 import { ToastService } from '../../../core/notifications/toast.service';
 import { AccessLevelComponent } from '../../../shared/access-level.component';
+import { ShareButtonComponent } from '../../../shared/share-button.component';
 import type { DeckVisibility } from '../own-deck.models';
 import { PublicationApiService } from './publication-api.service';
 import { PublicationChecklistComponent } from './publication-checklist.component';
@@ -34,13 +35,15 @@ let nextBlock = 0;
  */
 @Component({
     selector: 'app-publication-block',
-    imports: [DatePipe, AccessLevelComponent, PublicationChecklistComponent],
+    imports: [DatePipe, AccessLevelComponent, ShareButtonComponent, PublicationChecklistComponent],
     templateUrl: './publication-block.component.html',
     styleUrl: './publication-block.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PublicationBlockComponent {
     readonly deckId = input.required<string>();
+    /** The deck's title: it goes to the system share sheet and names the link field when copying is refused. */
+    readonly deckTitle = input('Колода');
     /** The deck's real access level, as soon as it is known. */
     readonly levelChange = output<DeckVisibility>();
     /** The checklist asks for the deck editor to add a description. */
@@ -57,7 +60,6 @@ export class PublicationBlockComponent {
     protected readonly note = signal('');
     protected readonly publishing = signal(false);
     protected readonly problem = signal<string | null>(null);
-    protected readonly copyFailed = signal(false);
     /** Spoken once when the note crosses the limit («Лишних символов: N»); empty again when it fits. */
     protected readonly limitStatus = signal('');
 
@@ -65,7 +67,6 @@ export class PublicationBlockComponent {
     protected readonly noteTooLong = computed(() => this.noteLength() > RELEASE_NOTE_MAX_CODE_POINTS);
     protected readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
     protected readonly noteField = viewChild<ElementRef<HTMLTextAreaElement>>('noteField');
-    protected readonly linkField = viewChild<ElementRef<HTMLInputElement>>('linkField');
     protected readonly updateButton = viewChild<ElementRef<HTMLButtonElement>>('updateButton');
     protected readonly makePublicButton = viewChild<ElementRef<HTMLButtonElement>>('makePublicButton');
 
@@ -182,24 +183,6 @@ export class PublicationBlockComponent {
             },
             error: (error: unknown) => this.failUpdate(error)
         });
-    }
-
-    // TODO(#434): replace this local copy button with `app-share-button` (Share/12) once it is merged into this branch.
-    protected async copyLink(state: PublicationState): Promise<void> {
-        const link = this.absoluteLink(state);
-        if (link === null) return;
-        this.copyFailed.set(false);
-        try {
-            await navigator.clipboard.writeText(link);
-            this.toasts.echo(PUBLICATION_TEXT.linkCopied);
-        } catch {
-            this.copyFailed.set(true);
-            afterNextRender(() => {
-                const field = this.linkField()?.nativeElement;
-                field?.focus();
-                field?.setSelectionRange(0, field.value.length);
-            }, { injector: this.injector });
-        }
     }
 
     private failUpdate(error: unknown): void {

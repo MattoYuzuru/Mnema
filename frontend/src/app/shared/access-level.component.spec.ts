@@ -12,21 +12,19 @@ describe('AccessLevelComponent', () => {
             fixture.detectChanges();
             const root = fixture.nativeElement as HTMLElement;
             expect(root.querySelector('.label')!.textContent).toBe(ACCESS_LEVEL_LABELS[level]);
-            expect(root.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+            expect(root.querySelector('app-glyph')!.getAttribute('aria-hidden')).toBe('true');
             words.push(root.textContent!.trim());
         }
         expect(words).toEqual(['Приватная', 'По приглашению', 'По ссылке', 'Публичная']);
     });
 
-    it('draws a lock, a chain and a colonnade', () => {
-        const drawing = (level: 'private' | 'link' | 'public'): Element => {
+    it('draws a lock, a chain and a colonnade with the shared glyphs', () => {
+        const glyph = (level: 'private' | 'invite' | 'link' | 'public'): string | undefined => {
             const fixture = TestBed.createComponent(AccessLevelComponent);
             fixture.componentRef.setInput('level', level);
             fixture.detectChanges();
-            return (fixture.nativeElement as HTMLElement).querySelector('svg')!;
+            return (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('app-glyph')!.dataset['glyph'];
         };
-        expect(drawing('private').querySelector('rect[x="5"][y="10.5"]')).not.toBeNull();
-        expect(drawing('link').querySelector('g[transform^="rotate(-45"]')).not.toBeNull();
-        expect(drawing('public').querySelector('path[d^="M3.5 9 12 4"]')).not.toBeNull();
+        expect([glyph('private'), glyph('invite'), glyph('link'), glyph('public')]).toEqual(['lock', 'lock', 'link', 'colonnade']);
     });
 });

@@ -197,26 +197,29 @@ describe('PublicationBlockComponent', () => {
             expect(levels).toEqual(['link']);
         });
 
-        it('copies the link and confirms it', async () => {
+        it('shares the link through the shared «Поделиться» button, with the deck title', async () => {
+            await create(sharedState());
+            const share = fixture.debugElement.query(el => el.name === 'app-share-button').componentInstance;
+            expect(share.url()).toBe(`${window.location.origin}/d/Kq7xT3mNpR/yaponskiy-zametki`);
+            expect(root.querySelector('app-share-button button')!.textContent).toContain('Поделиться');
+            expect(root.textContent).not.toContain('Скопировать ссылку');
+        });
+
+        it('copies with «Ссылка скопирована» and falls back to the selectable field when the clipboard refuses', async () => {
             const writeText = vi.fn().mockResolvedValue(undefined);
             vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
             await create(sharedState());
-            button('Скопировать ссылку').click();
+            fixture.componentRef.setInput('deckTitle', 'Японский');
+            await settle();
+            root.querySelector<HTMLButtonElement>('app-share-button button')!.click();
             await settle();
             expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/d/Kq7xT3mNpR/yaponskiy-zametki`);
             expect(toasts.echo).toHaveBeenCalledWith('Ссылка скопирована');
-        });
-
-        it('shows the link as selectable text when the browser refuses to copy', async () => {
-            vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
-            await create(sharedState());
-            button('Скопировать ссылку').click();
+            writeText.mockRejectedValue(new Error('denied'));
+            root.querySelector<HTMLButtonElement>('app-share-button button')!.click();
             await settle();
-            const field = root.querySelector<HTMLInputElement>('input[type=url]')!;
-            expect(field.readOnly).toBe(true);
-            expect(field.value).toContain('/d/Kq7xT3mNpR');
-            expect(root.querySelector('label[for]')!.textContent).toContain('Ссылка на колоду');
-            expect(text()).toContain('Не удалось скопировать');
+            expect(root.querySelector<HTMLInputElement>('app-share-link-field input')!.value).toContain('/d/Kq7xT3mNpR');
+            expect(root.querySelector('app-share-link-field label')!.textContent).toContain('Японский');
         });
     });
 

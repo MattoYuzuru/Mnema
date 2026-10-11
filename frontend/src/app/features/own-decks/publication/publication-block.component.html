@@ -26,16 +26,8 @@
         @if (absoluteLink(state); as link) {
           <div class="publication-link">
             <a [href]="link" target="_blank" rel="noopener" class="link-text">{{ shownLink(state) }}<span class="visually-hidden">{{ text.opensInNewTab }}</span></a>
-            <button type="button" class="button small" (click)="copyLink(state)">{{ text.copyLink }}</button>
+            <app-share-button [url]="link" [title]="deckTitle()" />
           </div>
-          @if (copyFailed()) {
-            <div class="field">
-              <label [for]="uid + '-link'">{{ text.linkLabel }}</label>
-              <input #linkField type="url" readonly spellcheck="false" autocomplete="off" [id]="uid + '-link'" [value]="link"
-                [attr.aria-describedby]="uid + '-link-hint'" />
-              <p class="hint" [id]="uid + '-link-hint'">{{ text.linkNotCopied }}</p>
-            </div>
-          }
         }
 
         @if (state.publishedAt; as at) {

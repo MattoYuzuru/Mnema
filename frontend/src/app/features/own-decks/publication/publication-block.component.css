@@ -8,6 +8,7 @@
 .publication-line { margin: 0; color: var(--mn-body); line-height: 1.5; overflow-wrap: anywhere; }
 .publication-status.has-update .publication-line { color: var(--mn-ink); font-weight: 650; }
 .publication-link { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mn-space-2) var(--mn-space-3); min-inline-size: 0; }
+.publication-link app-share-button { flex: 0 1 auto; }
 .link-text { flex: 1 1 14rem; min-inline-size: 0; overflow-wrap: anywhere; font-family: var(--mn-font-mono); font-size: .9rem; }
 input, textarea { inline-size: 100%; min-inline-size: 0; }
 textarea { resize: vertical; line-height: 1.5; }
