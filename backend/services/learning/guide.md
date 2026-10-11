@@ -1559,6 +1559,74 @@ deck, as derived variants only; a guest gets the media of the published MATERIAL
   metrics), `PublicMediaRateLimitHttpIntegrationTest` (network, /48, deck), `PublicMediaDisabledHttpIntegrationTest`, `SharedMediaCopyOwnerIntegrationTest` (playback, heads decide, manifest, Study of an
   inherited sound, attach/draft rules, plans), `PublicMediaLimiterTest`, `PublicReadBulkheadTest`, and the worker's metadata tests.
 
+### Invitation links, access requests and grants (Share/13, #435, migration `V56__deck_invites_and_requests.sql`)
+
+Package `app.mnema.learning.library` (`InviteService`, `AccessRequestService`, `GrantService`, `AccessRepository`, `DeckAccessController`, `InviteRedeemController`), wire contract
+[`contracts/decks/access.json`](../../../contracts/decks/access.json) and its README section; architecture [community decks §3, §6, §9](../../../docs/architecture/community-decks.md#6-доступ-и-публикация-cd-3-cd-4).
+**The level of a deck is changed only by the Share/8 publication `PUT`** (no second writer); this is what lets people **in** to an `INVITE` deck. Nothing touches `deck.row_version`.
+
+- **Data.** `deck_invite (invite_id uuidv7, deck_id, token_hash BYTEA UNIQUE, max_uses NULL|1..1000, uses, expires_at, revoked_at, last_used_at, created_at, code_rotated_at)`: the token is 32 CSPRNG bytes in base64url (43 characters),
+  returned **once** by the creation answer; only the SHA-256 digest is stored (`InviteTokens`), so lists never contain it and a lost link is revoked and replaced. `CHECK (uses <= max_uses)` is the
+  backstop of the redeem lock, `(uses = 0) = (last_used_at IS NULL)`, and a guard trigger freezes everything but `uses` (only grows, with `last_used_at`) and the first `revoked_at`.
+  **`code_rotated_at` is the generation of the link**: it is copied from `deck_publication.code_rotated_at` at creation, and any lowering of the level (which rotates the code) makes every older
+  invitation `STALE` for good (`Invite.Status`), for the owner and the grantees too. `deck_access_request (deck_id, requester_id) PK, status PENDING|APPROVED|REJECTED|WITHDRAWN,
+  created_at, decided_at, revoked_at)`: one row per pair, rewritten (not appended) when a rejected request is repeated after the waiting period; `WITHDRAWN` is the requester's own `:withdraw`; `revoked_at` marks a `REJECTED` row that an owner's revocation of a grant left (CHECK: only on `REJECTED`). Indexes: the owner's newest-first lists
+  (`deck_invite_deck`, partial `deck_access_request_pending`), the requester's limits (partial `deck_access_request_open`, `deck_access_request_requester`) and the unique digest.
+- **Time** is the service's `Clock` (`Clock.systemUTC()`, injected in the tests), not the database clock, because the 30-day silence, the 24-hour window, the expiry and the notification day are decisions the tests must be able to move.
+- **Invitation links.** `create` (owner; `maxUses` and `expiresInDays`, both required, null = unlimited): an advisory lock of the deck serializes the counts (20 active, 200 stored; dead ones older than 30 days are
+  pruned in the same transaction: dead means revoked, expired, used up or stale, by the TIME OF DEATH - `revoked_at`, `expires_at`, `last_used_at`, the last rotation - not by creation), a deck that is private or has never been shared is `400 PUBLICATION_REQUIRED`. There is no `commandId` on purpose: a receipt would have to store the secret answer. `revoke` stops new
+  redemptions only (the grants stay), twice is the same 200. **`redeem`** (`POST /api/invites:redeem {token}`, any signed-in account, the token only in the body) is one transaction that locks the invitation
+  row (`FOR UPDATE OF i`), in this order: a deck that is private or unpublished is a 404; an invitation of an older code generation is a 404 for everybody; the owner and an account that already holds the
+  grant are answered with the code and consume nothing, even if the invitation has been used up or revoked since (opening the same link twice must not turn a one-time link into a 404); anybody else needs
+  an unrevoked, unexpired invitation with uses left; on a `LINK`/`PUBLIC` deck that is a no-op answer with the code (no grant, no use); on an `INVITE` deck the deck's grants lock is taken, the person's request row
+  is locked (a revocation within 30 days is a 404, so a live link cannot undo a revoke), the grant is written FIRST and the use is consumed only when a grant was created, and a waiting request of the
+  account is closed as `APPROVED`. **Every failure is the same `404 RESOURCE_NOT_FOUND`** (unknown, malformed, revoked, expired, exhausted, stale, deleted deck, revoked person); the only other answer is
+  `422` for a valid token of a deck that already holds 1000 people. The answer is the CURRENT code of the deck. The private chain's blanket rule gives `learning.write`; the token is read from the body by
+  `AccessCommands` (strict, bounded to 1 KiB, never echoed in an error) and appears in no log (`InviteService.Created.toString()` redacts it too): `InviteLogRedactionIntegrationTest` forces a 500 and reads
+  every log line, `DeckAccessHttpIntegrationTest.noLogLineCarriesAnInvitationToken` reads the lines of the failure paths.
+- **Access requests.** `POST /api/public/decks/{code}/access-requests` lives on the **public chain** (the code is redacted from its logs by the same `loggablePath` as the reads) and is its only write: the chain admits
+  exactly `POST /public/decks/*/access-requests` and `…:withdraw` with `SCOPE_learning.write` (a guest is 401, a read-only token 403; `PublicAccountLimitFilter` and the per-request Identity check run first). It follows the kill switch
+  `learning.community.public-routes.enabled` (off: 404, nothing written). One transaction under an advisory lock of the requester: `DeckAccess.resolve` (a readable deck, the owner or a grantee is `400`; unknown, private,
+  rotated or never published is the opaque 404), then the author's switch (`requests_enabled` off: `403 DECK_INVITE_ONLY`, the body of the «по приглашению» screen), then the existing row (open, or decided less than 30
+  days ago: the same `202 {status: PENDING}` and nothing is written), then the limits (20 open: `422 RESOURCE_LIMIT_EXCEEDED` with `limit`; 5 new in a rolling 24 hours: `429 RATE_LIMITED`, `Retry-After` = the
+  time the oldest one leaves the window), then the upsert and the notification. The owner side (`list`, `approve`, `reject`) locks the request row; `approve` writes the grant, the status and `DECK_ACCESS_GRANTED`
+  in one transaction (not for a PRIVATE deck, which has no link to open), `reject` is silent; the same decision twice is the same answer, the opposite decision is a 404; `approve` is `422` when the deck holds 1000 people (the request stays open). **`withdraw`** (`POST …/access-requests:withdraw`)
+  is the requester's way to free one of the 20 open slots: `PENDING` becomes `WITHDRAWN`, the answer is a uniform 204 (idempotent, no state is revealed), an unknown/private/rotated code is the opaque 404, and the
+  request can be made again at once (the daily limit still counts it).
+- **Notifications** (`NotificationKind`, [`contracts/notifications`](../../../contracts/notifications/README.md)): `DECK_ACCESS_REQUESTED` to the author with params `{deckId, pendingCount}`, dedupe key
+  `deck-access:{deckId}:requested:{yyyyMMdd UTC}` (at most one per deck per UTC calendar day; the count is the open requests when it was published, capped at 1000 by a limited index scan, and the first of the day stands),
+  and `DECK_ACCESS_GRANTED` to the requester with params `{code}`, key `deck-access:{deckId}:granted:{decision millis}`. Both are INFO and route `DECK`; the granted kind carries the public CODE and not the deck id
+  (a reader never learns it) and no names anywhere. Both are published as the last write of the transaction, after the requester's advisory lock and the request-row lock, so the lock order is requester,
+  request, recipient's notification cursor and no flow takes them the other way. The **frontend `notification-presenter` needs a sentence for each new kind**, or `notifications-contract.spec.ts` fails.
+- **Grants by login** (`GrantService`). The owner predicate first (a stranger never makes Learning call Identity), then **the deck must be a published INVITE deck** (a grant means nothing at another level:
+  `400 PUBLICATION_REQUIRED`, no lookup), then the shape of the login and the two budgets of `LoginLookupLimiter` - 10 a minute per owner and 40 a minute per instance
+  (`learning.community.grants.owner-lookups-per-minute` / `instance-lookups-per-minute`; both fixed windows in memory) - then **`ProfileDirectory.accountOf`** OUTSIDE any transaction (the Identity public-profile
+  lookup `GET /api/accounts/profiles/by-username/{u}` over the bounded `IdentityHttp`, no credential sent, nothing cached, the answer trusted only when it names the asked login), then a short write
+  transaction. Unknown, malformed and hidden are one `404`; the owner's own login is 400; Identity `429` is `429 RATE_LIMITED` with its `Retry-After`, any other failure `503 IDENTITY_UNAVAILABLE` and nothing is
+  granted. **Shared budget:** Identity limits this lookup per NETWORK (60 a minute) and all Learning instances call from one address, so every owner of every instance shares that budget; the instance cap keeps
+  one instance below it, and with N instances behind one address it should be set to about 40 / N. The grant is idempotent, closes a waiting request as `APPROVED` without a notification and, being the owner's
+  deliberate act, lifts the revocation block. `DELETE …/grants/{id}`: the request row is taken first (an upsert of a `REJECTED` row with `revoked_at`, only when the grant existed - for a person who never
+  asked it is created, but not counted in the 24-hour window), then the grant is deleted, so the next read is refused at once and a live invitation link cannot undo it for 30 days; copies stay (Share/10);
+  idempotent. A deck holds at most 1000 grants (`AccessRepository.GRANT_LIMIT`, `422` with `limit`), counted under the deck's grants advisory lock by every way in.
+- **Lock order** (outermost first; no path takes them the other way): the invitation row (redeem), the deck's grants advisory lock (redeem, approve, grant by login), the request row (redeem, approve, grant by login,
+  revoke), the grant row. The requester's advisory lock (request, withdraw) is taken before its request row and never together with the others. `AccessServiceIntegrationTest.approveRevokeRedeemAndLoginGrantOnOnePersonNeverDeadlock`
+  runs the four paths against one person 25 times.
+- **Metrics** `mnema_deck_access_total{op,outcome}` (`AccessMetrics`, fixed labels, never an id): see the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
+- **Owner routes** (`GET`/`POST …/invites`, `…/invites/{id}:revoke`, `GET …/access-requests`, `…:approve`, `…:reject`, `GET`/`POST …/grants`, `DELETE …/grants/{id}`) answer the opaque 404 to everybody but the owner of a live deck,
+  checked before anything else; each has a row in `OwnerOnlyRoutesHttpIntegrationTest` (that test also pins `POST /public/decks/{code}/access-requests` as the only write below `/public`). Lists are keyset pages
+  (`AccessCursor`: time and id, opaque, 400 when malformed; `limit` 1..100).
+- **Load.** Zero decks or zero invitations: no rows, no work. H (5k public decks, a viral `INVITE` deck): a redeem is one unique-index probe, one row lock, the deck's short grants lock with a count that stops at 1000 index entries, and two writes - serialized per invitation and, for the grant itself, per deck; a request is
+  the requester's advisory lock, key and index-range reads of the requester's own rows, one upsert and (at most once a day per deck) one notification; the author's list and the counts are index ranges bounded by the
+  page or by 1000; a deck asked a million times holds one row per asker and notifies once a day. No statement scans a table and none is proportional to the number of readers or copies; `AccessSchemaIntegrationTest`
+  EXPLAINs the hot statements.
+- **Open items / deviations.** (1) The Identity login lookup shares one 60-per-minute network budget for the whole Learning instance set (the per-owner and per-instance caps keep each instance below it); if grants by login become popular, give Learning a trusted-proxy identity there or
+  a service-to-service endpoint. (2) `DECK_ACCESS_REQUESTED` is per UTC calendar day, not a rolling 24 hours. (3) Approving a request of a PRIVATE deck grants without notifying. (4) A person an owner revokes who never asked gets a `REJECTED` request row (the record of the revocation); a deck's requests table is therefore not only asks. (5) The migration is `V56`, after Share/9's `V55`; Flyway does not apply versions out of order, so it ships after `V55`.
+- Tests: `DeckAccessHttpIntegrationTest` (shapes of `access.json`, the one-time token, every failing token the same 404, downgrade keeps grants, scopes and guests, strict bodies, token never in a log, the request
+  flow, requests off, the 429, revoking a grant, grants by login for public profiles only, the stranger never reaches Identity, Identity 429/503, owner-only), `AccessServiceIntegrationTest` (moving clock: expiry, one-time,
+  revoked, **concurrent redemptions never exceed `max_uses`**, 20 active invitations and pruning, once-a-day notification and the UTC day boundary, 30-day silence, 20 open and 5 a day, grant/approve/revoke, lists),
+  `AccessSchemaIntegrationTest`, `InviteLogRedactionIntegrationTest`, `AccessCommandsTest`, `InviteTokensTest`, `AccessCursorTest`, `LoginLookupLimiterTest`, the kill-switch case of
+  `PublicDeckDisabledHttpIntegrationTest`, the owner-only table, and the notification kinds in `NotificationUnitTest` / `NotificationContractTest`.
+
 ## Notification center
 
 `app.mnema.learning.notification` implements [`contracts/notifications`](../../../contracts/notifications/README.md)
@@ -1595,6 +1663,8 @@ code adds.
   `NONE`, deck/session/artifact/slot null because the pipeline does not know them) in the transaction that records a
   terminal failure: a rejected asset (`VERIFICATION_REJECTED`) and exhausted retries or an interrupted asset that ran out
   of attempts (`PROCESSING_FAILED`). Retryable attempts notify nobody. There is deliberately no "media ready" kind.
+- **Deck access producers** (Share/13): `AccessRequestService` publishes `DECK_ACCESS_REQUESTED` (to the author, once per deck per UTC day) and `DECK_ACCESS_GRANTED` (to the requester) in the transaction of the
+  request or the approval; both route `DECK`, the second with `params.code` (see the section above).
 - Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
 ## AI provider layer

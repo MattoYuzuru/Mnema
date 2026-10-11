@@ -1,0 +1,265 @@
+{
+  "contract": "access-v1",
+  "description": "Shared frontend/backend fixtures for who may read an «По приглашению» deck and how they get in (Share/13, #435): invitation links (one-time or multi-use, with an expiry, revocable), access requests from the «нет доступа» screen, and grants by login. The level itself is changed only by the Share/8 publication PUT (contracts/decks/publication.json); this contract adds the invitation machinery around it. Owner routes are owner-only (a foreign, absent or deleted deck is the same opaque 404 RESOURCE_NOT_FOUND as everywhere); redeeming a link and asking for access are done by any signed-in account. `invariants` are executable: the integration tests compare real answers with the property sets of these examples.",
+  "constants": {
+    "ownerRoutesBase": "/api/decks/{deckId}",
+    "redeemPath": "/api/invites:redeem",
+    "requestPath": "/api/public/decks/{code}/access-requests",
+    "inviteStatuses": ["ACTIVE", "EXPIRED", "EXHAUSTED", "REVOKED", "STALE"],
+    "inviteStatusOrder": "REVOKED, then STALE (the code was rotated after the invitation was created: the level was lowered), then EXPIRED, then EXHAUSTED, else ACTIVE",
+    "requestStatuses": ["PENDING", "APPROVED", "REJECTED", "WITHDRAWN"],
+    "grantRoles": ["VIEWER"],
+    "inviteShape": "/d/{code}?invite={token}",
+    "token": {
+      "entropy": "32 random bytes from a CSPRNG",
+      "encoding": "base64url without padding: 43 characters of [A-Za-z0-9_-]",
+      "storage": "only the SHA-256 digest is stored; the token is returned ONCE, in the creation answer, and can never be read again",
+      "logging": "never logged, never in a URL path of the API: it travels in the body of the redeem call"
+    },
+    "maxUses": {"min": 1, "max": 1000, "null": "unlimited uses"},
+    "expiresInDays": {"min": 1, "max": 365, "null": "never expires"},
+    "limits": {
+      "activeInvitesPerDeck": 20,
+      "invitesPerDeck": 200,
+      "invitesPerDeckNote": "invitations that DIED more than 30 days ago (revoked, expired, used up, or of an older code generation) are deleted when a new one is created; the cap counts what is left. Stale invitations are not active",
+      "grantsPerDeck": 1000,
+      "grantsPerDeckNote": "people with access to one deck; every way in (redeem, approve, grant by login) is refused with 422 RESOURCE_LIMIT_EXCEEDED and `limit` 1000 when the deck is full; somebody already in is unaffected",
+      "revocationBlockDays": 30,
+      "revocationBlockNote": "after the owner revokes a person, a live invitation link cannot let them back in for 30 days (404 like any dead link); the owner can add them again by login at once",
+      "openRequestsPerRequester": 20,
+      "requestsPerRequesterPerDay": 5,
+      "requestsPerRequesterPerDayNote": "rolling 24 hours, counted by the creation time of the requests; a silent repeat creates nothing and counts nothing, and neither does the record an owner's revocation leaves",
+      "rejectedRequestRetryDays": 30,
+      "ownerNotificationsPerDeckPerDay": 1,
+      "ownerNotificationsNote": "one DECK_ACCESS_REQUESTED per deck per UTC calendar day; later requests of that day add no notification",
+      "pendingCountCap": 1000,
+      "loginLookupsPerOwnerPerMinute": 10,
+      "loginLookupsPerInstancePerMinute": 40,
+      "loginLookupsNote": "both per instance (learning.community.grants.owner-lookups-per-minute / instance-lookups-per-minute). Identity limits this public lookup per NETWORK (60 a minute) and every Learning call comes from one address, so all owners of all instances behind it share that budget: the instance cap keeps one instance below it (with N instances behind one address set it to about 40 / N). Over either cap: 429 RATE_LIMITED with the rest of that window",
+      "page": {"default": 20, "max": 100}
+    },
+    "requestBodyMaxBytes": 1024,
+    "usernamePattern": "^[A-Za-z0-9_.-]{3,50}$ (the Identity profile username; case-insensitive on the Identity side)"
+  },
+  "invariants": [
+    "owner routes (invites, grants, access-requests under /api/decks/{deckId}) answer the opaque 404 RESOURCE_NOT_FOUND to everybody but the owner of a live deck, at every level and for every grantee, BEFORE anything else is read (a stranger cannot make Learning ask Identity); GET needs learning.read, everything else learning.write; every answer is Cache-Control: private, no-store",
+    "the invitation token is returned once, in the 201 answer of the creation; lists and revocation never contain it; only its SHA-256 digest is stored; it is never written to a log",
+    "creating an invitation needs a shared deck: a deck without a publication row, or at the level PRIVATE, answers 400 PUBLICATION_REQUIRED; an invitation is created under the CURRENT code generation of the deck (the code_rotated_at of its publication row); more than 20 active invitations, or 200 invitations in all, answer 422 RESOURCE_LIMIT_EXCEEDED with `limit`",
+    "redeem is one transaction under a lock of the invitation row. In this order: a deck that is deleted, private or never published is 404; an invitation of an OLDER code generation (the code was rotated by any lowering of the level, whatever the level is now) is 404 for everybody, the owner and the grantees included; the owner and an account that already holds the grant are answered with the code and consume nothing, even when the invitation was used up, expired or revoked since (opening the same link twice must not turn a one-time link into a 404); every other account needs an invitation that is not revoked, not expired and has uses left, otherwise 404; on a LINK or PUBLIC deck a valid invitation is answered with the code as a no-op (nothing to grant, no use consumed); on an INVITE deck the grant is written first and a use is consumed only when a grant was actually created; a person the owner revoked within 30 days is 404 (below); a deck that already holds 1000 people answers a valid token with 422 RESOURCE_LIMIT_EXCEEDED. Unknown, malformed, revoked, expired, exhausted, stale, a deleted/private deck and a revoked person are the SAME 404 RESOURCE_NOT_FOUND; concurrent redemptions never exceed maxUses",
+    "redeem answers {code}: the CURRENT public code of the deck; the client opens /d/{code}",
+    "an invitation does not survive a downgrade: any move to a more restrictive level (PUBLIC to LINK included) rotates the code and every invitation created before it is STALE for good, including after the level is raised again; the owner creates new ones under the new code. Raising the level keeps the code and the generation",
+    "revoking an invitation stops new redemptions only; the grants it already created stay (the owner revokes a person in «Кто имеет доступ»); revoking twice is the same 200",
+    "a downgrade from INVITE keeps the grants, but the old code stops working (Share/7 rotation) and so do the invitations (above); raising the level back keeps the rotated code",
+    "asking for access (POST /api/public/decks/{code}/access-requests) is for a signed-in account that cannot read an INVITE deck: an unknown, private or rotated code is 404, the owner, a grantee, and the readers of a LINK or PUBLIC deck have nothing to ask for (400 INVALID_REQUEST), an author who turned requests off answers 403 DECK_INVITE_ONLY (the same body as the «по приглашению» screen, nothing about the deck)",
+    "the answer to a request is always 202 {status: PENDING}: a first request, a repeat while PENDING and a repeat within 30 days of a rejection are indistinguishable (a rejection is silent); only the first creates a row, counts against the limits and may notify the author",
+    "limits of a requester: at most 20 PENDING requests (422 RESOURCE_LIMIT_EXCEEDED, `limit` 20) and at most 5 new requests in a rolling 24 hours (429 RATE_LIMITED with Retry-After); a request that is a silent repeat is answered before the limits",
+    "the author is notified (DECK_ACCESS_REQUESTED, notifications-v1) at most once per deck per UTC day, in the transaction of the request; the notification carries only the deck id and the number of open requests (capped at 1000), never who asked",
+    "approve creates the VIEWER grant, marks the request APPROVED and notifies the requester (DECK_ACCESS_GRANTED, carrying the public code) in one transaction; reject marks it REJECTED and tells nobody; repeating the same decision is the same 200 (no second grant, no second notification); the opposite decision of a decided request, an unknown requester and a request of another deck are 404",
+    "revoking a grant closes access at once (the next read is 403 for an INVITE deck) and records a REJECTED request of that person marked as a revocation (created if they never asked), decided now: it makes a live invitation link refuse them for 30 days and applies the 30-day silence to asking again; copies the person already made stay (Share/10); revoking a grant that does not exist is the same 204 and records nothing",
+    "granting by login (POST /grants {username}) needs a published INVITE deck (any other level, or a private deck, is 400 PUBLICATION_REQUIRED and costs no lookup) and resolves the login through Identity (public profiles only): an unknown login, a malformed login and a profile without consent or hidden are the SAME 404; the owner's own login is 400; the grant is idempotent, closes a PENDING request of that person as APPROVED without a notification, lifts a revocation block on that person (the owner's deliberate act), and is 422 RESOURCE_LIMIT_EXCEEDED when the deck holds 1000 people; over the owner's or the instance's lookup budget it is 429 before Identity is asked",
+    "the requester can take an open request back (POST /api/public/decks/{code}/access-requests:withdraw): PENDING becomes WITHDRAWN and frees one of the 20 open slots; the answer is 204 whatever the state (a request that is not open, or none at all, is the same success), an unknown, private or rotated code is the opaque 404; a withdrawn request can be asked again at once (the daily limit still counts it)",
+    "lists (invites, requests, grants) are keyset pages: limit 1..100 (default 20), an opaque cursor, nextCursor null on the last page; requests are PENDING only; a malformed cursor is 400",
+    "requester and grantee identities are opaque account ids; the owner's panel shows them through Identity author cards, which are consent-gated (no consent: «Пользователь без публичного профиля»)"
+  ],
+  "routes": [
+    {"method": "POST", "path": "/api/decks/{deckId}/invites", "answers": "inviteCreated", "status": 201},
+    {"method": "GET", "path": "/api/decks/{deckId}/invites", "answers": "inviteList"},
+    {"method": "POST", "path": "/api/decks/{deckId}/invites/{inviteId}:revoke", "answers": "invite"},
+    {"method": "POST", "path": "/api/invites:redeem", "answers": "redeemed"},
+    {"method": "POST", "path": "/api/public/decks/{code}/access-requests", "answers": "requestSent", "status": 202},
+    {"method": "POST", "path": "/api/public/decks/{code}/access-requests:withdraw", "answers": "noContent", "status": 204},
+    {"method": "GET", "path": "/api/decks/{deckId}/access-requests", "answers": "requestList"},
+    {"method": "POST", "path": "/api/decks/{deckId}/access-requests/{requesterId}:approve", "answers": "decision"},
+    {"method": "POST", "path": "/api/decks/{deckId}/access-requests/{requesterId}:reject", "answers": "decision"},
+    {"method": "GET", "path": "/api/decks/{deckId}/grants", "answers": "grantList"},
+    {"method": "POST", "path": "/api/decks/{deckId}/grants", "answers": "grant"},
+    {"method": "DELETE", "path": "/api/decks/{deckId}/grants/{granteeId}", "answers": "noContent", "status": 204}
+  ],
+  "invites": {
+    "create": {
+      "request": {
+        "method": "POST",
+        "path": "/api/decks/11111111-1111-4111-8111-111111111111/invites",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"maxUses": 1, "expiresInDays": 7},
+        "note": "both fields are required; null means unlimited uses / no expiry; there is no commandId: the token is shown once, so an answer cannot be replayed (a retry creates another invitation that the owner can revoke)"
+      },
+      "answer": {
+        "status": 201,
+        "headers": {"Cache-Control": "private, no-store"},
+        "body": {
+          "invite": {
+            "inviteId": "018f1d98-5c10-7abc-8abc-0123456789ab",
+            "status": "ACTIVE",
+            "maxUses": 1,
+            "uses": 0,
+            "expiresAt": "2026-10-18T09:30:00.123456Z",
+            "revokedAt": null,
+            "createdAt": "2026-10-11T09:30:00.123456Z"
+          },
+          "token": "q3Jx0u5QmW8bYk2LzTn7VdPaE1sGcH4rFiOe6NhA9Ug",
+          "link": "/d/Kq7xT3mNpR?invite=q3Jx0u5QmW8bYk2LzTn7VdPaE1sGcH4rFiOe6NhA9Ug"
+        }
+      }
+    },
+    "list": {
+      "request": "GET /api/decks/11111111-1111-4111-8111-111111111111/invites?limit=20&cursor=...",
+      "answer": {
+        "items": [
+          {
+            "inviteId": "018f1d98-5c10-7abc-8abc-0123456789ab",
+            "status": "ACTIVE",
+            "maxUses": null,
+            "uses": 3,
+            "expiresAt": null,
+            "revokedAt": null,
+            "createdAt": "2026-10-11T09:30:00.123456Z"
+          }
+        ],
+        "nextCursor": null
+      },
+      "note": "newest first; the token and the link are not part of a list (they cannot be recovered); `status` STALE means the level was lowered after the invitation was created (its code is gone)"
+    },
+    "revoke": {
+      "request": "POST /api/decks/11111111-1111-4111-8111-111111111111/invites/018f1d98-5c10-7abc-8abc-0123456789ab:revoke",
+      "answer": {
+        "inviteId": "018f1d98-5c10-7abc-8abc-0123456789ab",
+        "status": "REVOKED",
+        "maxUses": 1,
+        "uses": 0,
+        "expiresAt": "2026-10-18T09:30:00.123456Z",
+        "revokedAt": "2026-10-11T10:00:00.123456Z",
+        "createdAt": "2026-10-11T09:30:00.123456Z"
+      }
+    },
+    "redeem": {
+      "request": {
+        "method": "POST",
+        "path": "/api/invites:redeem",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"token": "q3Jx0u5QmW8bYk2LzTn7VdPaE1sGcH4rFiOe6NhA9Ug"}
+      },
+      "answer": {"status": 200, "headers": {"Cache-Control": "private, no-store"}, "body": {"code": "Kq7xT3mNpR"}}
+    }
+  },
+  "requests": {
+    "send": {
+      "request": "POST /api/public/decks/Kq7xT3mNpR/access-requests (no body; a bearer with learning.write is required)",
+      "answer": {"status": 202, "headers": {"Cache-Control": "private, no-store"}, "body": {"status": "PENDING"}},
+      "note": "the same answer for a new request, a repeat while open and a repeat within 30 days of a silent rejection. Served only while learning.community.public-routes.enabled is on (otherwise 404 like every public route)"
+    },
+    "withdraw": {
+      "request": "POST /api/public/decks/Kq7xT3mNpR/access-requests:withdraw (no body; a bearer with learning.write is required)",
+      "answer": {"status": 204, "headers": {"Cache-Control": "private, no-store"}, "body": null}
+    },
+    "list": {
+      "request": "GET /api/decks/11111111-1111-4111-8111-111111111111/access-requests?limit=20&cursor=...",
+      "answer": {
+        "items": [{"requesterId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd", "createdAt": "2026-10-11T09:45:00.123456Z"}],
+        "nextCursor": null
+      },
+      "note": "PENDING requests, newest first"
+    },
+    "approve": {
+      "request": "POST /api/decks/11111111-1111-4111-8111-111111111111/access-requests/0192f3a4-5b6c-7d8e-9f01-23456789abcd:approve",
+      "answer": {"requesterId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd", "status": "APPROVED", "decidedAt": "2026-10-11T10:05:00.123456Z"}
+    },
+    "reject": {
+      "request": "POST /api/decks/11111111-1111-4111-8111-111111111111/access-requests/0192f3a4-5b6c-7d8e-9f01-23456789abcd:reject",
+      "answer": {"requesterId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd", "status": "REJECTED", "decidedAt": "2026-10-11T10:05:00.123456Z"}
+    }
+  },
+  "grants": {
+    "list": {
+      "request": "GET /api/decks/11111111-1111-4111-8111-111111111111/grants?limit=20&cursor=...",
+      "answer": {
+        "items": [{"granteeId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd", "role": "VIEWER", "grantedAt": "2026-10-11T10:05:00.123456Z"}],
+        "nextCursor": null
+      },
+      "note": "newest first; granteeId is shown through the Identity author card (consent-gated)"
+    },
+    "add": {
+      "request": {
+        "method": "POST",
+        "path": "/api/decks/11111111-1111-4111-8111-111111111111/grants",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"username": "anna.k"}
+      },
+      "answer": {"granteeId": "0192f3a4-5b6c-7d8e-9f01-23456789abcd", "role": "VIEWER", "grantedAt": "2026-10-11T10:05:00.123456Z"},
+      "note": "idempotent: an existing grant is returned as it is. The login is resolved server-side through Identity GET /api/accounts/profiles/by-username/{u}; only profiles with consent resolve"
+    },
+    "revoke": {"request": "DELETE /api/decks/11111111-1111-4111-8111-111111111111/grants/0192f3a4-5b6c-7d8e-9f01-23456789abcd", "answer": {"status": 204}}
+  },
+  "problems": {
+    "notFound": {
+      "type": "urn:mnema:problem:resource-not-found",
+      "title": "Resource not found",
+      "status": 404,
+      "detail": "The requested resource does not exist.",
+      "instance": "/api/invites:redeem",
+      "code": "RESOURCE_NOT_FOUND",
+      "note": "the single answer for an unknown, malformed, revoked, expired or exhausted invitation, for an unknown or hidden login, and for every owner route of a deck that is not yours"
+    },
+    "requestsOff": {
+      "type": "urn:mnema:problem:deck-invite-only",
+      "title": "Deck is invite only",
+      "status": 403,
+      "detail": "The deck is shared by invitation.",
+      "instance": "/api/public/decks/{code}/access-requests",
+      "code": "DECK_INVITE_ONLY"
+    },
+    "openRequestLimit": {
+      "type": "urn:mnema:problem:resource-limit-exceeded",
+      "title": "Resource limit exceeded",
+      "status": 422,
+      "detail": "The account or resource limit would be exceeded.",
+      "instance": "/api/public/decks/{code}/access-requests",
+      "code": "RESOURCE_LIMIT_EXCEEDED",
+      "limit": 20
+    },
+    "grantLimit": {
+      "type": "urn:mnema:problem:resource-limit-exceeded",
+      "title": "Resource limit exceeded",
+      "status": 422,
+      "detail": "The account or resource limit would be exceeded.",
+      "instance": "/api/invites:redeem",
+      "code": "RESOURCE_LIMIT_EXCEEDED",
+      "limit": 1000,
+      "note": "the deck already holds 1000 people with access: a valid invitation, an approval or a grant by login is refused; also `limit` 20 for active invitations, 200 for stored ones"
+    },
+    "dailyRequestLimit": {
+      "type": "urn:mnema:problem:rate-limited",
+      "title": "Rate limited",
+      "status": 429,
+      "detail": "Too many requests; retry after the time in Retry-After.",
+      "instance": "/api/public/decks/{code}/access-requests",
+      "code": "RATE_LIMITED",
+      "retryAfter": 3600,
+      "note": "Retry-After (seconds) is the time until the oldest of the five requests leaves the 24-hour window"
+    },
+    "publicationRequired": {
+      "type": "urn:mnema:problem:publication-required",
+      "title": "Publication required",
+      "status": 400,
+      "detail": "The deck must publish its current head: for its first publication and for becoming public.",
+      "instance": "/api/decks/11111111-1111-4111-8111-111111111111/invites",
+      "code": "PUBLICATION_REQUIRED",
+      "note": "an invitation needs a shared (non-private) deck"
+    }
+  },
+  "notifications": {
+    "note": "two kinds of notifications-v1 (contracts/notifications). Both are INFO and route DECK. The client builds the sentence from kind and params; params never carry names, titles or who asked",
+    "DECK_ACCESS_REQUESTED": {
+      "recipient": "the author (deck owner)",
+      "params": {"deckId": "uuid", "pendingCount": "integer 1..1000: open requests of the deck when it was published (1000 means 1000 or more); not refreshed during the day, the panel shows the live list"},
+      "dedupeKey": "deck-access:{deckId}:requested:{yyyyMMdd UTC}",
+      "route": "DECK (params.deckId): the client opens the deck hub on the «Доступ» section"
+    },
+    "DECK_ACCESS_GRANTED": {
+      "recipient": "the requester",
+      "params": {"code": "the public code of the deck (a reader never learns the deck id)"},
+      "dedupeKey": "deck-access:{deckId}:granted:{decision time in epoch milliseconds}",
+      "route": "DECK (params.code): the client opens /d/{code}"
+    }
+  }
+}

@@ -121,7 +121,7 @@ class NotificationContractTest extends PostgresIntegrationTest {
 
         JsonNode catchUp = JSON.readTree(mvc(owner).perform(get("/notifications").queryParam("after", "6"))
                 .andReturn().getResponse().getContentAsString());
-        assertThat(catchUp.path("items")).extracting(item -> item.path("seq").stringValue(null)).containsExactly("7", "8");
+        assertThat(catchUp.path("items")).extracting(item -> item.path("seq").stringValue(null)).containsExactly("7", "8", "9", "10");
         assertThat(propertyNames(catchUp)).isEqualTo(propertyNames(CONTRACT.path("listResponseAfter")).stream()
                 .filter(name -> !name.equals("note")).collect(java.util.stream.Collectors.toCollection(TreeSet::new)));
 

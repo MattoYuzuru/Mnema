@@ -180,6 +180,20 @@
 .checklist-item[data-state='failed'] { border-inline-start: 4px solid var(--mn-danger); padding-inline-start: var(--mn-space-3); }
 .checklist-item[data-state='failed'] .checklist-state { color: var(--mn-danger); }
 
+/* Section headings of a screen block: `.section-heading` is the h2 of an in-page section (the hub's «Доступ и публикация»), `.subsection-heading`
+   the h3 of a part inside it (requests, links, people). The h2 is always the larger of the two, so the order of the levels can be seen. */
+.section-heading { margin: 0; color: var(--mn-ink); font: 500 clamp(1.3rem, 2.5vw, 1.6rem)/1.25 var(--mn-font-display); }
+.subsection-heading { margin: 0; color: var(--mn-ink); font: 700 1.05rem/1.4 var(--mn-font-body); }
+
+/* Roster: a list of people, requests or links, one row each. The row is the name and its facts (`.roster-main`) and the actions that
+   belong to this row only (`.roster-actions`); it wraps instead of squeezing on a narrow screen. A row action keeps its visible word as the start of its accessible name and adds whom it is about
+   (`aria-label="Принять запрос от @anna.k"`, WCAG 2.5.3), never a position; the list is `role="list"` and an empty list shows its sentence outside the list. */
+.roster { display: grid; margin: 0; padding: 0; list-style: none; }
+.roster-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--mn-space-2) var(--mn-space-4); min-inline-size: 0; border-block-start: 1px solid var(--mn-rule); padding-block: var(--mn-space-3); }
+.roster-row:last-child { border-block-end: 1px solid var(--mn-rule); }
+.roster-main { display: grid; flex: 1 1 14rem; gap: var(--mn-space-1); min-inline-size: 0; overflow-wrap: anywhere; }
+.roster-actions { display: flex; flex-wrap: wrap; gap: var(--mn-space-2); }
+
 /* The primary action stays in reach: pinned to the bottom of the viewport. The page publishes its height as
    --mn-bulk-bar-height on the root (scroll padding, see global_styles.css), so a focused control is never hidden under it.
    .cta-bar--inline draws it in the flow (the styleguide). */
@@ -202,6 +216,6 @@
     .cta-bar { border-color: CanvasText; background: Canvas; }
     .button, .notice, .stamp, .paper-surface { border-color: CanvasText; }
     .empty-state { border-color: CanvasText; }
-    .checklist-item { border-color: CanvasText; }
+    .checklist-item, .roster-row { border-color: CanvasText; }
     .button.quiet { border-color: transparent; }
 }

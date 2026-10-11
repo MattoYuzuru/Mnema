@@ -45,6 +45,8 @@ expires_at)` with `UNIQUE(owner_id, dedupe_key)` and `UNIQUE(owner_id, seq)`, an
 | `USAGE_EXHAUSTED` | WARNING | PLANS | `bucket`, `window`, `renewsAt`, `plan` | usage |
 | `GENERATION_SESSION_EXPIRING` | WARNING | WORKSHOP | `deckId`, `sessionId`, `expiresAt`, `pendingCount` | generation retention |
 | `MEDIA_PROCESSING_FAILED` | ERROR | DYNAMIC | `assetId`, `mediaKind`, `deckId`, `sessionId`, `artifactId`, `slotKey`, `reason` | media processing and generation media steps |
+| `DECK_ACCESS_REQUESTED` | INFO | DECK | `deckId`, `pendingCount` | deck access requests (Share/13, #435) |
+| `DECK_ACCESS_GRANTED` | INFO | DECK | `code` | deck access requests (Share/13, #435) |
 
 Semantics (details and dedupe keys per kind in `notifications.json`):
 
@@ -58,6 +60,12 @@ Semantics (details and dedupe keys per kind in `notifications.json`):
 - `USAGE_LOW` fires when a bucket's used share crosses 80, 90 and 100 percent (`percent` is the integer floor), once per bucket,
   period and threshold. `USAGE_EXHAUSTED` is keyed by bucket, window kind and **window instance** (its start), so the weekly Free credit
   window fires every week, including the last window that opens with the final portion. `GENERATION_SESSION_EXPIRING` fires three days before expiry and its key includes the `expiresAt` date.
+- `DECK_ACCESS_REQUESTED` goes to the author of an invitation-only deck when somebody asks for access: at most **one per deck per UTC day**
+  (the dedupe key carries the date, so later requests that day publish nothing and `pendingCount`, the open requests capped at 1000, is not
+  refreshed). It carries no names; the author's panel shows who asked through consent-gated Identity author cards. `DECK_ACCESS_GRANTED`
+  goes to the requester when the author approves (a rejection is silent). Its route is `DECK` with `params.code`, the **public code** of the
+  deck, because a reader never learns the deck id: the client opens `/d/{code}`. For the author's kind the route is `DECK` with `params.deckId`
+  (the hub, section «Доступ»). Contract of the feature: [`contracts/decks/access.json`](../decks/access.json).
 - `MEDIA_PROCESSING_FAILED` is also produced for provider-step media failures of a generation slot; the route is `WORKSHOP` when
   `sessionId` is set, `DECK` when only `deckId` is set, else `NONE`.
 
