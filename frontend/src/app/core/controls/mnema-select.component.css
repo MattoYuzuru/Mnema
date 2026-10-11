@@ -10,6 +10,11 @@
 .options { position: absolute; inset-block-start: calc(100% + .25rem); inset-inline: 0; max-block-size: min(18rem, 45vh); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius); padding: .25rem; background: var(--mn-sheet); box-shadow: 0 .75rem 1.5rem rgb(31 19 87 / 15%); }
 .option { padding: .6rem .7rem; border-radius: var(--mn-radius); overflow-wrap: anywhere; cursor: pointer; }
 .option:is(:hover, .is-active) { background: var(--mn-soft); color: var(--mn-ink); }
+.group + .group, .option + .group, .group + .option { margin-block-start: .25rem; }
+.group { border-block-start: 1px solid var(--mn-rule); padding-block-start: .25rem; }
+.group:first-child { border-block-start: 0; padding-block-start: 0; }
+/* The heading is text for the eye and the group's name; ink on the sheet, not the muted disabled look. */
+.group-label { padding: .45rem .7rem .2rem; color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono); letter-spacing: .08em; text-transform: uppercase; overflow-wrap: anywhere; }
 .option[aria-disabled='true'] { color: var(--mn-muted); opacity: .55; cursor: not-allowed; }
 /* Compact: at least 5.5rem wide, but never wider than its container (WCAG 1.4.10): the zero-height floor yields, the value wraps. */
 :host(.is-compact) { inline-size: auto; max-inline-size: 100%; }

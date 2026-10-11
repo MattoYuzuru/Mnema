@@ -4,7 +4,7 @@ artifact:
   type: production-frontend-guide
   status: current
   created_at: "2026-10-05"
-  updated_at: "2026-10-09"
+  updated_at: "2026-10-11"
   scope: "Angular web UI; living styleguide /styleguide and rules for shared elements"
 ---
 
@@ -148,9 +148,9 @@ npx ng build --configuration development && node scripts/verify-no-styleguide.mj
 | Движение, Иконки | Волна кнопок, чернильное появление, набор знаков | `sg-foundations` |
 | Фирменные приёмы | `.generate-cta`, удаление удержанием | `sg-controls` |
 | Кнопки | `.button` (primary, quiet, small, mono), недоступные | `sg-controls`, `components.css` |
-| Поля ввода, Выбор | `.field`, `.hint`, `.field-error`, `app-mnema-select`, радио/флажки, флажок с пояснением `.check-field`, недоступная настройка `.settings-row` рабочий переключатель согласия `.settings-row.is-switch.is-live` с группой флажков `fieldset.check-group` + `legend` (профиль, «Публичный профиль»; во время сохранения `aria-disabled`, не `disabled`), `app-segmented-choice` (в том числе вопрос о цели), карточка тарифа `app-plan-option`, поле с кнопкой `.field-row` и поле промокода `app-promo-redeem`, `app-choice-list` | `sg-controls`, `components.css` |
+| Поля ввода, Выбор | `.field`, `.hint`, `.field-error`, `app-mnema-select` (в том числе группы вариантов через `option.group`: `role=group` с заголовком-текстом, не вариантом), радио/флажки, флажок с пояснением `.check-field`, недоступная настройка `.settings-row` рабочий переключатель согласия `.settings-row.is-switch.is-live` с группой флажков `fieldset.check-group` + `legend` (профиль, «Публичный профиль»; во время сохранения `aria-disabled`, не `disabled`), `app-segmented-choice` (в том числе вопрос о цели), карточка тарифа `app-plan-option`, поле с кнопкой `.field-row` и поле промокода `app-promo-redeem`, поле тегов `app-tag-input` (Enter или запятая добавляют, Backspace в пустом поле убирает последний, у тега подписанная кнопка «Убрать тег …», предел виден как `aria-disabled`, без потери фокуса), `app-choice-list` | `sg-controls`, `components.css` |
 | Меню и окна, Вкладки и пейджер | `app-toggletip`, `app-ai-prompt-window`, промо-окно `app-promo-popup`, `app-batch-pager` | `sg-surfaces` |
-| Статусы и ход | `.stamp`, `app-new-badge`, чип автора `app-author-chip` (фото 20 px и `@логин`; без фото кружок с буквой, без логина ничего не рисует), `app-usage-meter`, плейсхолдер медиа | `sg-surfaces`, `shared/` |
+| Статусы и ход | `.stamp`, `app-new-badge`, чип автора `app-author-chip` (фото 20 px и `@логин`; без фото кружок с буквой, без логина ничего не рисует), уровень доступа `app-access-level` (знак и слово: «Приватная», «По приглашению», «По ссылке», «Публичная»), пункт чек-листа `.checklist > .checklist-item[data-state]` (состояние словами: «Готово», «Нужно сделать», «Не принято», «По желанию»), блок публикации хаба `app-publication-block` (на демо-данных без сервера: у приватной колоды тихая строка и чек-лист «Сделать публичной», у открытой уровень, ссылка и «Опубликовать обновление» с «Что нового»), `app-usage-meter`, плейсхолдер медиа | `sg-surfaces`, `shared/`, `features/own-decks/publication/` |
 | Обратная связь | `app-auto-load` (опережающая подгрузка списка и повтор ошибки), `.notice`, тосты `ToastService`, `.empty-state`, `app-support-contact`, `app-mail-contact` | `sg-surfaces`, `shared/` |
 | Юридический документ | `app-legal-operator-block` (реквизиты из `shared/legal-operator.ts`), содержание `.toc`, строки сведений `.facts`, стили `shared/legal-page.css` | `sg-surfaces`, `shared/` |
 | Публичный футер | `app-public-footer`: реквизиты проекта, разделы, правовые документы и контакт; четыре, две или одна колонка | `sg-surfaces`, `shared/` |
@@ -183,7 +183,7 @@ npx ng build --configuration development && node scripts/verify-no-styleguide.mj
 
 `.button` (`.primary`, `.quiet`, `.small`, `.mono`), `.notice` (`.success`, `.warning`, `.error`), `.hint`, `.field`, `.field-error`,
 `.stamp` (`.solid`), `.eyebrow`, `.empty-state`, `.paper-surface` (`.ruled`), `.data-table`, `.check-field` + `.check-row`, `.check-group`,
-`.settings-row` (`.is-switch`, `.is-live`), `.visually-hidden`, `.cta-bar` (`.cta-bar--inline`), `.field-row`, `.report-facts`, `.table-scroll`. Классы глобальны: инкапсуляция Angular не мешает написать
+`.settings-row` (`.is-switch`, `.is-live`), `.checklist` + `.checklist-item[data-state]`, `.visually-hidden`, `.cta-bar` (`.cta-bar--inline`), `.field-row`, `.report-facts`, `.table-scroll`. Классы глобальны: инкапсуляция Angular не мешает написать
 `class="button primary"` в любом шаблоне. Заливка волной и фокус заданы в `global_styles.css`; `.generate-cta` — там же.
 
 Осторожно с локальными селекторами элементов (`p { font: … }`): в компоненте со scoped-стилями они по специфичности сильнее глобального

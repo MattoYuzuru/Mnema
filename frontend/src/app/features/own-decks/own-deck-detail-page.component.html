@@ -17,6 +17,8 @@
       <div>
         <p class="eyebrow">Личная колода</p>
         <h1 id="deck-detail-title" tabindex="-1">{{ deck.metadata.title }}</h1>
+        @let level = publishedLevel() ?? deck.visibility;
+        @if (level !== 'private') { <p class="hub-level"><app-access-level [level]="level" /></p> }
         @if (deck.metadata.description.trim()) {
           <div class="hub-description"><app-deck-description [text]="deck.metadata.description" /></div>
         }
@@ -138,6 +140,7 @@
     </section>
     }
 
+    <app-publication-block [deckId]="deck.deckId" [reloadToken]="publicationToken()" (levelChange)="publishedLevel.set($event)" (editDescription)="openEditor('description')" />
     <app-deck-workshops [deckId]="deck.deckId" />
     <app-deck-insights [deckId]="deck.deckId" [state]="insights()" (retry)="loadInsights()" (showMissing)="showMaterialsWithoutExercises()" />
     <app-deck-materials [deckId]="deck.deckId" [generationAvailable]="generationAvailable()" (changed)="loadInsights()" />

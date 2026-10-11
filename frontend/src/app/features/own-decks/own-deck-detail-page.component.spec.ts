@@ -17,6 +17,8 @@ import { GenerationApiService } from '../generation/generation-api.service';
 import { DeckHubApiService } from './hub/deck-hub-api.service';
 import { DeckInsights } from './hub/deck-hub.models';
 import { OwnDecksApiService } from './own-decks-api.service';
+import { PublicationApiService } from './publication/publication-api.service';
+import { neverPublished, sharedState } from './publication/publication-test-data';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 
 describe('OwnDeckDetailPageComponent', () => {
@@ -28,6 +30,7 @@ describe('OwnDeckDetailPageComponent', () => {
     let items: SpyObj<ItemApiService>;
     let capabilities: SpyObj<CapabilitiesApiService>;
     let generation: SpyObj<GenerationApiService>;
+    let publication: SpyObj<PublicationApiService>;
     const insights = hubFixture.insights.response as unknown as DeckInsights;
     const orderedPage = { ...hubFixture.items.orderedPageWithCounts.response, items: hubFixture.items.sortedPage.items } as unknown as ItemPage;
     const deck = metadataFixture.detail as unknown as OwnDeck;
@@ -69,6 +72,8 @@ describe('OwnDeckDetailPageComponent', () => {
         capabilities.read.mockReturnValue(of(CAPABILITIES_UNAVAILABLE));
         generation = spyObj<GenerationApiService>({ listSessions: vi.fn().mockName('GenerationApiService.listSessions') });
         generation.listSessions.mockReturnValue(of({ items: [], nextCursor: null }));
+        publication = spyObj<PublicationApiService>({ read: vi.fn().mockName('PublicationApiService.read'), save: vi.fn().mockName('PublicationApiService.save'), topics: vi.fn().mockName('PublicationApiService.topics') });
+        publication.read.mockReturnValue(of(neverPublished({ deckId: deck.deckId })));
         Object.defineProperty(store, 'detailState', { value: detail.asReadonly() });
         Object.defineProperty(store, 'mutationState', { value: mutation.asReadonly() });
         await TestBed.configureTestingModule({
@@ -82,6 +87,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 { provide: ItemApiService, useValue: items },
                 { provide: CapabilitiesApiService, useValue: capabilities },
                 { provide: GenerationApiService, useValue: generation },
+                { provide: PublicationApiService, useValue: publication },
                 { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })) } }
             ]
         }).overrideComponent(OwnDeckDetailPageComponent, {
@@ -94,6 +100,53 @@ describe('OwnDeckDetailPageComponent', () => {
     it('asks for the active Workshops of the deck and keeps the block out of the page while there are none', () => {
         expect(generation.listSessions).toHaveBeenCalledWith(deck.deckId, { active: true });
         expect((fixture.nativeElement as HTMLElement).querySelector('app-deck-workshops section')).toBeNull();
+    });
+
+    it('reads the publication as its own request: a private deck gets one quiet line and no level mark', () => {
+        const root = fixture.nativeElement as HTMLElement;
+        expect(publication.read).toHaveBeenCalledWith(deck.deckId);
+        expect(root.querySelector('app-publication-block')!.textContent).toContain('Колода видна только вам');
+        expect(root.querySelector('.hub-level')).toBeNull();
+    });
+
+    it('shows the real access level in the header once the publication says so', async () => {
+        publication.read.mockReturnValue(of(sharedState({ deckId: deck.deckId })));
+        const shared = TestBed.createComponent(OwnDeckDetailPageComponent);
+        shared.detectChanges();
+        await shared.whenStable();
+        shared.detectChanges();
+        const root = shared.nativeElement as HTMLElement;
+        expect(root.querySelector('.hub-level')!.textContent).toContain('Публичная');
+        // The level follows the h1 (the title is read first).
+        expect(root.querySelector('h1')!.compareDocumentPosition(root.querySelector('.hub-level')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(root.querySelector('app-publication-block')!.textContent).toContain('Изменения для учеников не опубликованы (4)');
+    });
+
+    it('a failing publication read degrades only its block', async () => {
+        publication.read.mockReturnValue(throwError(() => new Error('offline')));
+        const broken = TestBed.createComponent(OwnDeckDetailPageComponent);
+        broken.detectChanges();
+        await broken.whenStable();
+        broken.detectChanges();
+        const root = broken.nativeElement as HTMLElement;
+        expect(root.querySelector('app-publication-block')!.textContent).toContain('Не удалось загрузить сведения о доступе.');
+        expect(root.querySelector('app-deck-insights')).not.toBeNull();
+        expect(root.querySelector('h1')!.textContent).toBe(deck.metadata.title);
+    });
+
+    it('opens the editor on the description field for the checklist, and re-reads the publication after a saved revision', async () => {
+        document.body.append(fixture.nativeElement);
+        fixture.componentInstance.openEditor('description');
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(document.activeElement).toBe((fixture.nativeElement as HTMLElement).querySelector('#detail-description'));
+        (fixture.nativeElement as HTMLElement).remove();
+        expect(publication.read).toHaveBeenCalledTimes(1);
+        detail.set({ phase: 'ready', deckId: deck.deckId, deck: { ...deck, revisionId: '33333333-3333-4333-8333-333333333333' }, failure: null });
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(publication.read).toHaveBeenCalledTimes(2);
     });
 
     it('opens the route identity and saves exact edited metadata against the loaded deck', () => {

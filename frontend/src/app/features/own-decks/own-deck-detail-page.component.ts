@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -7,7 +7,9 @@ import { Subscription } from 'rxjs';
 import { AuthoringApiService } from '../authoring/authoring-api.service';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/capabilities-api.service';
 
-import { DeckMetadata, OwnDeck, validateDeckMetadata } from './own-deck.models';
+import { DeckMetadata, DeckVisibility, OwnDeck, validateDeckMetadata } from './own-deck.models';
+import { AccessLevelComponent } from '../../shared/access-level.component';
+import { PublicationBlockComponent } from './publication/publication-block.component';
 import { DeckDescriptionComponent } from './deck-description.component';
 import { OwnDecksApiService } from './own-decks-api.service';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
@@ -29,7 +31,7 @@ import {
 @Component({
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
-        DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent],
+        DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',
@@ -58,6 +60,10 @@ export class OwnDeckDetailPageComponent {
     readonly insights = signal<InsightsState>({ phase: 'loading' });
     /** The server offers AI exercise generation; false until it says so (fail closed). */
     readonly generationAvailable = signal(false);
+    /** The real access level once the publication block has read it; until then the deck's own `visibility`. */
+    readonly publishedLevel = signal<DeckVisibility | null>(null);
+    /** Bumped when the deck's head revision changes (a saved description), so the publication block re-reads. */
+    readonly publicationToken = signal(0);
     readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
     readonly materials = viewChild(DeckMaterialsComponent);
     readonly failureMessage = deckFailureMessage;
@@ -73,6 +79,7 @@ export class OwnDeckDetailPageComponent {
     private readonly hubApi = inject(DeckHubApiService);
     private readonly capabilities = inject(CapabilitiesApiService);
     private readonly router = inject(Router);
+    private readonly injector = inject(Injector);
     private readonly destroyRef = inject(DestroyRef);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
     private readonly recovery = inject(OwnDeckRecoveryService);
@@ -81,6 +88,7 @@ export class OwnDeckDetailPageComponent {
     private loadedRevisionId: string | null = null;
     private insightsLoad: Subscription | null = null;
     private insightsDeckId: string | null = null;
+    private publicationRevisionId: string | null = null;
 
     constructor() {
         this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
@@ -88,6 +96,8 @@ export class OwnDeckDetailPageComponent {
             if (deckId === null) return;
             const normalizedDeckId = deckId.toLowerCase();
             this.captureCount.set(null);
+            this.publishedLevel.set(null);
+            this.publicationRevisionId = null;
             this.editing.set(false);
             this.loadInsights(normalizedDeckId);
             this.authoring.listDeckCaptures(normalizedDeckId, null, 1)
@@ -135,6 +145,12 @@ export class OwnDeckDetailPageComponent {
                     this.persistRecovery();
                 }
             }
+            if (detail.phase === 'ready' && detail.deck !== null) {
+                if (this.publicationRevisionId !== null && this.publicationRevisionId !== detail.deck.revisionId) {
+                    this.publicationToken.update(token => token + 1);
+                }
+                this.publicationRevisionId = detail.deck.revisionId;
+            }
             if (detail.phase !== 'ready' || detail.deck === null || mutation.phase === 'conflict') return;
             if (this.recoveredDeckId === detail.deck.deckId && mutation.phase !== 'completed') return;
             if (detail.deck.revisionId === this.loadedRevisionId) return;
@@ -142,9 +158,9 @@ export class OwnDeckDetailPageComponent {
         });
     }
 
-    openEditor(): void {
+    openEditor(field: 'title' | 'description' = 'title'): void {
         this.editing.set(true);
-        queueMicrotask(() => this.element.nativeElement.querySelector<HTMLElement>('#detail-title')?.focus());
+        afterNextRender(() => this.element.nativeElement.querySelector<HTMLElement>(`#detail-${field}`)?.focus(), { injector: this.injector });
     }
 
     /** Closing keeps the draft: it stays in the form and in the recovery store until saved or discarded. */
