@@ -132,10 +132,11 @@ class StudySessionRepository {
                 """).param("actor", actor).param("deck", deck).query(DECK).optional();
     }
 
+    /** Share-locked: the retention (V59) evicts a generation only after taking its row lock, so a start that reads it keeps it until it commits. */
     Optional<Generation> generation(UUID deck, UUID exercisesRoot) {
         return jdbc.sql("""
                 SELECT * FROM app_learning.study_candidate_generation
-                 WHERE deck_id=:deck AND exercises_root_id=:root
+                 WHERE deck_id=:deck AND exercises_root_id=:root FOR SHARE
                 """).param("deck", deck).param("root", exercisesRoot).query(GENERATION).optional();
     }
 

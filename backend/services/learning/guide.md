@@ -1221,10 +1221,9 @@ capacity evidence.
 - `/api/decks/{deckId}/study-progress` returns a cursor-bounded current-material
   projection with `NOT_STARTED`, `LEARNING`, `DUE` or `ON_TRACK`, exact objective
   coverage and relevant timestamps. It deliberately exposes no mastery percentage.
-- The scheduled retention worker deletes expired raw scheduled responses in locked
-  batches of 500 and clears expired replay/practice outcomes while preserving their
-  global attempt-ID tombstones. `mnema.study.retention.initial-delay` and
-  `mnema.study.retention.fixed-delay` default to `PT1H`.
+- The Study retention worker deletes expired raw scheduled responses, clears expired replay/practice outcomes (their attempt-ID
+  tombstones stay), expires pair checks, and, past `learning.study.retention.snapshot-horizon` (P7D), purges the per-session snapshot.
+  Details, keys and numbers: [Study snapshot retention](#study-snapshot-retention-460-migration-v59studysnapshotretentionsql).
 - `/api/editing-drafts` owns bounded acknowledged server drafts; autosave never
   publishes.
 - `/api/capture-notes` owns durable quick notes and idempotent conversion while
@@ -1715,6 +1714,51 @@ Package `app.mnema.learning.fork` (`ForkController`, `ForkService`, `ForkReposit
   `ForkPreparingGuardHttpIntegrationTest` (every route, the strangers, reads, delete/detach/retry while preparing, the database net, failed/retry/purged job, the cap), `ForkMaterializationJobIntegrationTest` (a 1 000-material deck copied with a worker killed in the middle of the third slice and resumed; one account at a time; a copy deleted while queued; a broken manifest),
   `ForkUnpublishedContentIntegrationTest` (security acceptance of the Share/9 review; NC for a real copy), `ForkSchemaIntegrationTest` (V57 guards and indexes), `ForkThrottleHttpIntegrationTest` (the window: 429 and `Retry-After`, deleted copies count, an existing copy still answered, parallel requests for different sources do not overshoot), the cap race in `ForkPreparingGuardHttpIntegrationTest`, `ForkDisabledHttpIntegrationTest`, `ForkPublicRoutesOffHttpIntegrationTest` (forks on, public routes off: the same 404), `ForkQueueCapHttpIntegrationTest` (the global cap, in a database of its own), `ForkCommandTest`, `ForkSettingsTest`, `ForkLinkTest`, `OwnerOnlyRoutesHttpIntegrationTest` (two rows), `JobTestAccess` (the public hand of the package-private executor for the tests).
 
+### Frontier diff of published manifests (Updates/1, #440)
+
+Packages `app.mnema.learning.catalog.content.pages` (`CountedPageDiff`, `CountedPageCodec`, the diff records of `CountedPageTypes`), `app.mnema.learning.storage` (`ImmutableStorage.readMany`) and `app.mnema.learning.library` (`ManifestDiff`);
+architecture [community decks §7](../../../docs/architecture/community-decks.md#7-обновления-cd-5). Pure and read-only: Updates/3 (the plan) calls it; no table, route, job or timer was added.
+
+- **What it answers.** For two roots of ONE reuse scope (a copy's base revision, its head and the source's published revision are all in the source's scope and share pages): which keys (`member_key` / `exercise_id`) were ADDED, REMOVED or CHANGED (same key, different leaf target = a different per-revision
+  descriptor object), with both ordinals (-1 where absent), and whether the order of the keys both sides keep changed (`OrderChange(changed, movedKeys)`). `ManifestDiff.members/exercises(scope, rootA, countA, rootB, countB)` reads the two root pages in one call (their `role` and `treeHeight`, like `ManifestPages`)
+  and walks. It compares descriptor ids, not content: whether a CHANGED descriptor is a real content change (the fingerprint rule of §7) is the plan's decision.
+- **Why ids are enough.** A page is immutable and its id random and issued once, so an id in both trees is the same subtree. Path-copy edits keep the id of every page they do not touch, but an insert shifts ordinals, so the walk is over ids and each page carries only the ordinal of its first entry (parent start + preceding counts, known from the parent without reading the page).
+- **Algorithm** (level-synchronous frontier). Each side keeps unexpanded pages grouped by height (id -> expected height, count, start). Loop: take the highest non-empty level of either side `h`; ids present in both level maps are **shared**: dropped UNREAD, remembered as an order token `(pageId, startBefore, startAfter)`, nothing below is visited; read every remaining page of the level with ONE `BatchSource.readAll` call (so ≤ height + 1 calls), parse and validate it with
+  the same `CountedPageCodec` as `CountedPages` (role, encoding, rank, `treeHeight == expected`, `count == expected`, child counts, MIN/MAX and root rules; an extracted helper, `CountedPages` behaves as before), and expand it: height 0 contributes entries `(key, target, ordinal)`, higher pages contribute children. Completeness: a page of height `h` equals only a page of height `h`, trees are
+  height-balanced, so a height-`h` page is a root or the child of a height-`h+1` page; every higher page was expanded earlier, hence when level `h` is processed it holds ALL height-`h` pages reachable through unshared ancestors of both trees. Pages read = the pages of either tree missing from the other (an ancestor of an unshared page is unshared) = O(changes · height); identical roots read nothing (`Result.unchanged()`); heights 1→2 or a subtree
+  that became the other side's root fall out of the same rule (levels are compared by height, not by depth). Iterative, no recursion.
+- **Entries.** Key only before: REMOVED; only after: ADDED; both, different target: CHANGED; both, same target: unchanged (only an order candidate). `changes` are sorted by after-ordinal, the removed ones after them by before-ordinal. A key inside a shared page is in the same page on the other side, so it is never reported.
+- **Order rule.** Per side the token sequence is the expanded keys present on BOTH sides plus one token per shared page (at its first ordinal; its entries are contiguous and identical), sorted by ordinal. The order changed iff the two sequences differ. A key that was the last entry of leaf L1 and is now the first of a non-adjacent leaf L2 has no expanded neighbour that moved, only the untouched pages it crossed: those shared tokens are
+  what catches it (fixture `keyThatLeavesTheEndOfOneLeaf…`; without the tokens the test fails). `movedKeys` = the keys outside a **weighted** longest increasing subsequence of after-positions in before-order (Fenwick tree, O(n log n)); a shared token outweighs all keys together, so it always stays in the chain and only keys are reported as moved. Untouched pages never trade places in a path-copied tree, so shared tokens are
+  consistent; if they are not, the pair cannot come from one lineage and the diff fails (`INVALID_PAGE`). Applying `movedKeys` at their after-positions to the before order of the common keys gives the after order of the common keys (property-tested). `movedKeys` is a valid explanation, not the author's intent (moving 5 keys one step past 1 key may report that 1 key).
+- **Guards.** Both roots in one scope, heights ≤ `32 - leafRank`, `TreeRoot.height/count` equal to the root page, a missing/foreign/mismatched object, wrong role, wrong child height or count, the same page twice in one tree, a duplicate key on one side, `before - removed + added != after` and inconsistent shared order are all `CountedPageFailure(INVALID_PAGE)` (no new code, no payload or id in the message). Shared pages are not re-read: their height and count come from the parent that was validated, and they were validated when published. The diff needs a keyed profile.
+- **Batched read.** `ImmutableStorage.readMany(scope, ids)` = `readBatch` for up to `MAX_READ_MANY = 128` ids of one scope in TWO data statements (`object_id = ANY(CAST(:ids AS uuid[]))` headers, sealed only, `ORDER BY object_id FOR KEY SHARE`; then edges `parent_id = ANY(...) ORDER BY parent_id, ordinal`; the row locks follow PostgreSQL's bytewise `ORDER BY object_id`, deterministic but not `readBatch`'s Java `UUID` order) plus the lock-timeout setting that `readBatch` also issues; result in request order; a missing, unsealed or other-scope id is `OBJECT_MISSING`, an invalid id is `IllegalArgumentException` as in `readBatch`, duplicates, more than 128 ids or a result over the 1 MiB batch budget
+  are `BUDGET_EXCEEDED` (128 full pages of 32 edges are about 0.75 MB; 256 could cross the budget, which is why the cap is 128). `ManifestDiff` chunks a level above 128 and serves the two roots it already read from memory.
+- **No rebuild.** `CountedPages.build` re-issues every page id, so after one bulk build nothing is shared and the next diff reads both trees whole (test `sameContentUnderNewPageIdsHasNoChanges…`). `Profile` has `bulkBuild` (`nativeNodes()` true, `members(..)` / `exercises(..)` false; the canonical constructor is the only one, so every profile states the flag, and the native record-fragment profile of `NativeStructuralEditor` says `true`); `build` refuses a profile without it with `CountedPageFailure(BULK_BUILD_FORBIDDEN)` before it reads anything. Manifests change only by the path-copy operations
+  `insert/delete/move/replace`. Tests that need a large tree construct the same role and rank with `bulkBuild = true` (pages store role and rank, not the flag), in test code only.
+- **Cost (measured).** In-memory source, seeded random edits, one nested history per N (the tree for k = 1, 10, 100, 1 000 is a prefix of the next), best of 5; "pages in tree" is one tree. Pages read are far below a tree walk and depend on k and on the height, not on N: one edit costs 4 pages at N = 10³ (H = 1), 7 at 10⁴ and 8 at 10⁵ (H = 3), that is two root-to-leaf paths:
+
+  | N | k | tallest H | pages read | pages in tree | ms |
+  |---|---|---|---|---|---|
+  | 1 000 | 1 / 10 / 100 / 1 000 | 1 / 1 / 2 / 2 | 4 / 24 / 76 / 86 | 33 | 0.18 / 0.59 / 1.17 / 0.83 |
+  | 10 000 | 1 / 10 / 100 / 1 000 | 2 / 2 / 2 / 2 | 7 / 47 / 286 / 799 | 324 | 0.05 / 0.48 / 2.51 / 6.25 |
+  | 100 000 | 1 / 10 / 100 / 1 000 | 3 / 3 / 3 / 3 | 8 / 72 / 501 / 2 778 | 3 228 | 0.05 / 0.39 / 3.10 / 17.07 |
+
+  Asserted in `CountedPageDiffBenchmarkTest`: pages ≤ `12 k (H + 2)` (an edit creates ≤ `6 (H + 2)` pages, asserted by `CountedPagesTest`, and destroys at most as many; the bound has no N), levels ≤ H + 1, ≥ k pages for k ≤ 100 at N = 10⁵ (each edit rewrites its own leaf), 10 k edits ≤ 10 × the pages of k edits + one path, and
+  at N = 10⁵ with k = 1 / 10 the pages stay within 3 × the pages at N = 10³ scaled by the height ratio. At k = 1 000 of N = 10⁵ the diff reads nearly the whole tree, as 1 000 random edits touch a quarter of its leaves. PostgreSQL (`ManifestDiffIntegrationTest`, a published tree stored as sealed objects, `ManifestDiff` equals the in-memory diff and the full comparison; "data statements" = `readMany` calls × 2, the lock-timeout setting
+  comes on top; ms = best of 3 incl. JSON decoding):
+
+  | N | k | tallest H | pages read | readMany calls | data statements | ms |
+  |---|---|---|---|---|---|---|
+  | 10 000 | 1 / 10 / 100 | 2 / 2 / 2 | 7 / 52 / 299 | 3 / 3 / 5 | 6 / 6 / 10 | 5.1 / 7.8 / 24.6 |
+  | 100 000 | 1 / 10 / 100 | 3 / 3 / 3 | 8 / 76 / 506 | 4 / 4 / 7 | 8 / 8 / 14 | 18.0 / 23.6 / 57.2 |
+
+  The statements follow the height (one call per level while a level has ≤ 128 pages), not N. The old way, one `readBatch` id at a time (2 statements each), would have cost 14 / 104 / 598 and 16 / 152 / 1 012 statements for the same diffs.
+- **Load.** Zero: no data and nothing runs (no table, job or timer; the diff is computed only when a plan asks for it). Scenario H (§12): the viral source has ~300 materials, a tree of ≈ 11 pages (10 leaves and a root), so even a diff of one pair of its published revisions against a copy's base reads at most ≈ 22 pages in 2 level calls (4 data statements); 20k copies are 20k independent pairs, each on demand or at the auto-update throttle of
+  50 copies a minute (§7), that is a few statements a second and no shared state; the source's own pages are the same rows for all of them (`FOR KEY SHARE`, no write). A 100k-entry manifest, the ceiling, costs ≈ 8 pages for one changed entry.
+- Tests: `CountedPageDiffTest` (identical roots read nothing, a rebuilt tree shares nothing, empty → N / N → empty, insert at start / middle / end with and without a split, delete with borrow / merge / root collapse, move within a leaf, **a key crossing shared pages**, replace, height 1 → 2 and 0 → 1 both ways, other scope, tampered root, missing / wrong / null objects, duplicate key, shared pages that changed places; every pair also in reverse),
+  `CountedPageDiffPropertyTest` (320 seeded cases of 0-5 000 entries and 1-200 real edits per sibling, diffs of base ↔ sibling A, base ↔ sibling B and A ↔ B against a full comparison incl. applying `movedKeys`; the failing seed is printed; it also asserts the generator reached every kind of difference), `CountedPageDiffBenchmarkTest`, `ManifestDiffIntegrationTest` (10k and 100k against PostgreSQL, `readMany` equal to `readBatch` and its rejections, wrong role, identical roots),
+  `CountedPagesTest.manifestProfilesCannotBeBulkBuilt…` (the `bulkBuild` guard).
 ### Combined publication (Updates/2, #441, migration `V60__combined_publication.sql`)
 
 Package `app.mnema.learning.update` (`CombinedPublication`, `CombinedUnits`, `CombinedPublicationJob`, `ManifestEditor`, `OrdinalTracker`, `CombinedPublicationRepository`, `FinalWriter`/`FinalWrites`, `UpdateSettings`); architecture [community decks §4 and §7](../../../docs/architecture/community-decks.md).
@@ -1865,6 +1909,145 @@ Fixes of the integrated security re-review before public decks are switched on i
 5. **Media limits.** (a) The per-deck window (`learning.community.public-media.deck-per-minute`, 3000, all guests together for one deck) is one shared pool: a few guest networks can spend it for every other guest of a popular deck until the per-network and /48 windows bind them, and the cap is per instance, not per deck over time; it needs a fairer split (per-network share of the deck window) or a per-deck cap that signed-in readers never meet. (b) Guest limits
    are per client network (IPv4 address, IPv6 /64, /48 together), so many real guests behind one NAT or carrier-grade NAT share one budget and can lock each other out; a proportionate NAT-aware limit (or a signed-in-only fallback for media) is wanted before a school-sized audience.
 6. **`PublicRouteConnectionBudget` has zero slack.** At the defaults (pool 10, `max-concurrent` 3, job concurrency 4) it leaves exactly the 3 reserved connections: raising `learning.community.public-routes.max-concurrent` (or `learning.jobs.max-concurrency`) without a bigger `spring.datasource.hikari.maximum-pool-size` fails the start. That is the intended guard, but the pool must be raised first.
+
+### Study snapshot retention (#460, migration `V59__study_snapshot_retention.sql`)
+
+Study used to keep every issued presentation, every candidate generation and every `study.start` receipt (with the presentations it carried)
+for ever; at scenario H (architecture §12) that is the main growth. This is the cleanup. Canon for what is promised to the learner:
+[`contracts/study`](../../../contracts/study/README.md#progress-and-retention).
+
+**Policy.** A session older than `learning.study.retention.snapshot-horizon` (default `P7D`, validated 5-90 days) loses its **snapshot**:
+- the session's `study_presentation` rows and what hangs from them: `study_exposure` (write-only analytics, goes with the presentation),
+  `study_hint_reveal`, `study_transcript_accommodation`, `study_pair_interaction`, `study_assessment` (the AI answer state row);
+- the presentations carried by the session's `study.start` receipt in `command_receipt` (the result becomes a stub
+  `{sessionId, deckId, mode, status, compacted: true}`; the command id, actor and payload hash stay, so a retry still conflicts or replays);
+- candidate generations nothing reads any more (below).
+
+**Kept for ever** (the contract keeps them until account deletion): the attempt tombstone with its outcome (scheduled outcomes are not compacted),
+`study_evidence`, `study_transition`, `study_state`, `study_policy_assignment`, `study_restart_audit`, `study_assessment_dispute`,
+`scheduler_config`, and **the session row itself** (`presentations_purged_at` marks it; the admin reports count `study_session` and the
+tombstones by time). Raw responses keep their own 30 days. The floor of the horizon is **five days**: the replay window is the same **local date**
+(`replaySource`, `replaySources`) and `ZoneId` accepts offsets up to ±18:00, so a source started in UTC+18 and replayed from UTC-18 can be 60 hours apart, and
+the replay session then lives 24 hours more (84 hours); the rest is margin. On top of the floor a session is **never purged while an unpurged REPLAY child
+(`source_session_id`) still reads it**: the child copies its presentations batch by batch (`issueReplay`, `StudySessionRepository.presentations`) for as long as it lives.
+
+**Mechanism** (`study.retention`):
+- `StudyRetentionWorker` (roles `worker`/`all` only, like `StorageGcSchedule`; kill switch `learning.study.retention.enabled`) runs
+  `StudyRetentionPass` every `interval` (PT5M). A pass loops **while some step used its whole batch** and `max-run` (PT30S) is not spent: the old
+  expiry steps (`StudyRetentionService.purgeBatch`: raw responses, replay/practice outcomes, pair checks, new marks, AI answers; batch `row-batch`,
+  500) and the snapshot purge run in the same loop, so they keep up with H (the previous worker did one batch of 500 per hour: 12 000 rows a day per step).
+- `StudySnapshotRetention.purgeSessions`: one transaction per `session-batch` (100) sessions, oldest first, `FOR UPDATE SKIP LOCKED` (two passes or
+  two processes never take the same session; a session a submit, a reveal or a **dispute** holds is skipped, because they all take the session row lock
+  and `AssessmentService.dispute` takes it like `submit`; a session a REPLAY child still reads is not selected). Order: delete the children by the
+  `(account_id, session_id)` primary-key prefix, delete the presentations, compact the start receipt (found by `study_session.command_id`), set
+  `presentations_purged_at`. Deletes pass the guards through `set_config('mnema.study_retention','on',true)` (below).
+- **Generations (E1).** After a batch, the generations of the touched decks are examined: one with **no session that still has its snapshot** and that the
+  deck's head **does not use** (a different `exercises_root_id`, or the deck is deleted) is made unreachable (root replaced by a random id,
+  `evicting_since` set) and `StudySnapshotRetention.evictChunk` deletes its candidates in chunks of `generation-chunk` (2000) across passes, then the
+  row. A generation another transaction holds (`StudySessionRepository.generation` reads it `FOR SHARE`) is skipped and looked at again with the deck's next purged session.
+  **Sweep.** Because that examination only follows a purged session of the deck, every pass also does a bounded sweep (`StudySnapshotRetention.sweepGenerations`,
+  `generation-sweep` generations, 100): the least recently looked-at generations older than the horizon (`swept_at NULLS FIRST, created_at`) are examined by the same rule,
+  so a deck edited or deleted after its last session was purged does not keep its old generation for ever, and a generation the deck still uses does not hold the front of
+  the line (it is put behind the others by `swept_at`).
+  Current generations of idle decks are **not** evicted; an idle-deck eviction (E2) is a possible later option left to an owner decision (the cost is the rebuild:
+  0.5 s for 350 exercises and 6.7 s for 5 095 on the local stack, against a client that gives up after about 10 s). No key exists for it.
+
+**Schema (V59).** The file is ordered so that nothing slow runs after a lock: part A is additive (the anchor table and its backfill, the index on the biggest table, the
+guard function), part B is short metadata work (a plain nullable `study_session.presentations_purged_at` with no default or CHECK, so no scan; three partial indexes on the
+small session table, `(created_at, session_id)`, `(deck_id, exercise_generation_id)` and `(account_id, source_session_id)` for the REPLAY children; `evicting_since`,
+`swept_at` and their indexes on the generation table; the foreign key and trigger changes; the dropped index; a `COMMENT` on `study_session.exercise_generation_id` saying that
+the missing foreign key is intentional). The pieces: `study_exercise_attempt(account_id, deck_id,
+exercise_id, learning_epoch, attempts)` (below); the foreign keys `study_attempt_tombstone` -> `study_presentation` and `study_session` ->
+`study_candidate_generation` are **dropped** (a receipt must outlive its presentation; a purged session is provenance and must not pin its generation; both
+tables keep their unique keys); the guard of exactly `study_presentation`, `study_exposure`, `study_hint_reveal`, `study_transcript_accommodation` and
+`study_candidate` becomes `study_snapshot_retention_guard` (DELETE only when `mnema.study_retention` is `on` in the transaction, UPDATE never; the
+`mnema.fork_materializing` pattern); `evidence`, `transition`, `policy_assignment`, `restart_audit` and `scheduler_config` keep `study_snapshot_immutable_guard`.
+`study_presentation(deck_id, generation_id, candidate_ordinal)` is new: the foreign key to the candidate had no index, so deleting a candidate scanned every
+presentation (measured 148 ms for 30 candidates among 252 000 presentations, 0.8 ms with the index). `study_presentation_exercise` is dropped (grep and
+`EXPLAIN`: only the join of `attemptedExercise` used it). The migration ends with a V52-style check that every guard exists, is enabled and uses the expected function.
+
+**The first-attempt fact.** `AssessmentRepository.attemptedExercise` ("the learner already has an assessed attempt at this exercise in this epoch": the cap of
+`SemanticStrictness` that keeps S3 from being the first grade of an exercise) read tombstones joined to presentations of any age. It now reads
+`study_exercise_attempt`, a counter per (account, deck, exercise, epoch) written with the receipt (`AttemptRepository.insertReceipt`, status `ASSESSED`, any
+mode) and lowered by a dispute exactly as the tombstone status used to (`markDisputed`, which takes the deck, exercise and epoch from the presentation `dispute` already loaded
+under the session lock, so it does not depend on a presentation that may be gone); V59 backfilled it from the assessed tombstones and every later write goes through
+`insertReceipt`. `StudySnapshotRetentionAssessmentIntegrationTest` proves the third attempt is graded S3 identically with and without a purge between.
+
+**Known API-level changes** (the UI is not affected: it offers a dispute only on the feedback screen right after the answer, and a session lives 24 h):
+- A dispute, a submit of a new attempt, a reveal or a pair check on a presentation older than the horizon answers the existing opaque `404`, where it used to
+  work (a dispute until the next transition of the objective). An **exact retry** of a submit still answers the stored outcome (the receipt is read first).
+- A retry of an old `study.start` command id replays the stub above (no presentations). The session itself answers `SESSION_EXPIRED`, as it did after 24 h.
+- `PRESENTATION_EXPIRED` is no longer reachable for a presentation older than the horizon (it is `404`).
+- Nothing about replay changes: its sources are the sessions of the current local date, far inside the floor.
+
+**Metrics** (worker/all only): `mnema_study_retention_rows_total{table}`, `mnema_study_retention_sessions_total{outcome=purged|generation_evicting}`,
+`mnema_study_retention_pass_seconds`, `mnema_study_retention_passes_total{outcome=completed|capped|failed}`, `mnema_study_retention_errors_total`, gauges
+`mnema_study_retention_backlog_sessions` (past the horizon, counted to 100 000) and `mnema_study_retention_oldest_unpurged_age_seconds` (alert when it exceeds the horizon plus a day).
+The gauges are registered with a strong reference (`Gauge.Builder.strongReference(true)`) by the pass bean, which exists in the `worker`/`all` roles whether or not the switch is on:
+the backlog is visible **before** the switch is turned on. The first production release ships with `LEARNING_STUDY_RETENTION_ENABLED=false` (the relaxed-binding name of
+`learning.study.retention.enabled`; the code default stays `true`); the owner enables it after reading the backlog.
+Keys: [runtime policy index](../../../docs/engineering/runtime-policy-index.md). The old `mnema.study.retention.initial-delay`/`fixed-delay` were set nowhere
+(deploy, compose, properties) and are renamed `learning.study.retention.initial-delay`/`interval` (PT2M / PT5M).
+
+**Measurements** (phase 1 on a disposable PostgreSQL; bytes per row include heap, TOAST and indexes, the index share from a 50 000-row copy of each table):
+
+| Table | Bytes/row | Note |
+|---|---|---|
+| `study_presentation` | 1 945 (fixture, column avg 1 471) / about 1 650 (real local rows, column avg 1 177) | 324 B of it indexes |
+| `study_exposure` | 256 | |
+| `study_attempt_tombstone` | 1 690 scheduled (outcome 1.2-1.3 KB), 390 after the outcome is nulled | kept |
+| `study_evidence` / `study_transition` / `study_raw_response` | 505 / 535 / 444 | kept (raw 30 days) |
+| `study_session` | 563 | kept |
+| `study_candidate` | 608 (amplified) to 874 (local) per exercise per generation | a deck of 100 000 exercises: 61-87 MB per generation |
+| `command_receipt` `study.start` | about 8.7 KB for a first batch of 15 presentations | |
+
+Per completed session: standard 20/5 writes 1 session + 20 each of presentation, exposure, tombstone, evidence, transition, raw response + 1 receipt (122 rows); quick 10/2 62
+rows; practice and replay 42 rows (no exposure, evidence, transition or raw). One generation per exercise edit that is followed by a study start (two edits in a row are one generation).
+
+Before/after on that fixture (30 exercises, 14 learners, 119 sessions, 1 876 presentations; every session aged past the horizon; `VACUUM FULL` so that the freed space shows):
+
+| | Before | After |
+|---|---|---|
+| `study_presentation` | 1 876 rows, 3.62 MB | 0 rows, 0.05 MB |
+| `study_exposure` | 1 316 rows, 0.34 MB | 0 rows, 0.02 MB |
+| `command_receipt` | 180 rows, 1.27 MB | 180 rows, 0.10 MB |
+| all Study tables + receipts | 10.81 MB | 5.73 MB (-47%) |
+
+One pass: 2 rounds, 119 sessions, 3 311 rows in 79 ms (about 17 000 deleted rows per second with the six foreign-key checks and the guard).
+`study_exercise_attempt` costs 90 KB for these 1 876 attempts (about 48 B per attempt) and one upsert per assessed attempt.
+
+**V59 on a large database** (throwaway harness, Testcontainers PostgreSQL 18 on a laptop SSD, deleted afterwards): 1 000 000 presentations (1.6 GB), 100 000 sessions, 1 000 000
+tombstones (0.85 GB, 45 % scheduled with a 1.2 KB outcome), 50 000 generations. **The whole migration took 2.8 s** (Flyway `execution_time` 2 806 ms). Per statement:
+the backfill `INSERT` 1.95 s (200 000 anchor rows, 37 MB), the `study_presentation_candidate` index 0.49 s (SHARE lock: writes to `study_presentation` wait, reads do not), the three
+session partial indexes 0.06 + 0.20 + 0.03 s, everything else (column, foreign-key drops, triggers, generation columns and indexes, `DROP INDEX`) under 20 ms each. Plan of the
+backfill (`EXPLAIN ANALYZE`, 0.96 s as a SELECT): a Parallel Hash Join of two Parallel Seq Scans (tombstones filtered by `status = 'ASSESSED'`, 1 000 000 rows; presentations, 1 000 000 rows,
+16 batches), an external-merge Sort (about 22 MB per worker) and a GroupAggregate to 200 000 groups; 255 000 buffers read. It is linear: a database ten times larger is about half a minute, and
+only the `study_presentation` index build holds writers, for a few seconds. Slower storage scales the same way; run it off-peak.
+
+**Load: zero and H** (H: 600 000 presentations a day, 45 % scheduled as on the local stack, 40 000 sessions a day; row sizes above).
+Zero: empty tables; a pass is one partial-index probe (`study_session_unpurged_age`) and one on `study_candidate_generation_evicting`, every 5 minutes.
+H: before, about 2.36 M rows and 2.4 GB a day (the 30-day raw window is 3.6 GB of it, the rest never leaves); after, a rolling 7-day window of about 9.9 GB
+(presentations 6.9, exposures 0.5, uncompacted start receipts 2.4) and a permanent growth of about **1.2 M rows and 0.9 GB a day** (330 GB a year;
+1.7 GB a day if every presentation were scheduled). The job needs about 40 000 sessions a day, 100 per transaction: 400 transactions of about 0.1-0.3 s.
+
+**Open risks.**
+- **The permanent tier is now the growth:** about 0.9 GB a day at H (scheduled tombstones with their 1.2 KB outcome 0.46, other tombstones 0.13, evidence 0.14, transitions 0.14,
+  sessions 0.02). The contract keeps scheduled outcomes until account deletion; compacting them after N days would save about 0.32 GB a day and needs a contract change (owner decision).
+  Together with the 30-day raw window, V59 alone does not make H fit on one VPS for ever.
+- **Candidates of active decks are not reduced:** a current generation costs 0.6-0.9 KB per exercise per studied deck (60 000 decks of 300 exercises: 11-16 GB). Sharing a generation
+  among decks of one lineage with the same `exercises_root_id` would remove the multiplication by copies; that is a design change, not part of this issue.
+- A deck edited or deleted **after** its last session was purged is found by the bounded sweep, not at once: a full round over all generations takes `generations / generation-sweep` passes
+  (with 100 per five minutes, 500 000 generations are a round of about 17 days); the eviction after a purge is immediate for the common case.
+- Disk does not shrink: the freed pages are reused after (auto)vacuum; the first run on an existing database deletes a large backlog and writes WAL accordingly.
+  Backups, PITR and WAL are outside the claim (as in the contract).
+- Account purge (#409) must cover tombstones, evidence, transitions, sessions, `study_exercise_attempt` and compacted receipts.
+- The guard bypass is a transaction-local setting any code with SQL access could set; the same trust as `mnema.fork_materializing`.
+
+**Tests.** `StudySnapshotRetentionIntegrationTest` (purge only past the horizon and byte-identical kept tables, replay and resume unaffected, the 72 h and
+time-zone boundary, generations unreferenced and current, chunked eviction, a start holding a generation, concurrent passes, looping, gauges, guards, index probes),
+`StudySnapshotRetentionAssessmentIntegrationTest` (S3 before and after a purge, dispute fresh and purged, counter semantics, a purge that skips a session a dispute holds, the bookkeeping without a presentation, the backlog gauge with the switch off), `StudySnapshotRetentionMigrationIntegrationTest`
+(backfill, exact constraint, index and guard inventory, guard behaviour), `StudyRetentionWorkerTest` (kill switch, role gate, settings validation, the environment-variable name of the switch). The replay tests cover the 60-hour offset case, the 120-hour boundary, and a replay
+whose second batch refills after its source is past the horizon.
 
 ## Notification center
 

@@ -1,26 +1,34 @@
 package app.mnema.learning.study.retention;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+/**
+ * The schedule of the Study retention. Like the other workers it exists only for the {@code worker} and {@code all} roles
+ * ({@code learning.runtime.roles}); an {@code api} process never purges on a timer. {@code learning.study.retention.enabled=false} is the
+ * kill switch. Passes that overlap across processes are safe ({@link StudySnapshotRetention}).
+ */
 @Component
+@ConditionalOnExpression("'${learning.runtime.roles:all}'.trim().toLowerCase() == 'worker' or "
+        + "'${learning.runtime.roles:all}'.trim().toLowerCase() == 'all'")
 class StudyRetentionWorker {
-    private static final Logger LOG = LoggerFactory.getLogger(StudyRetentionWorker.class);
-    private final StudyRetentionService service;
+    private final StudyRetentionPass pass;
+    private final StudyRetentionSettings settings;
 
-    StudyRetentionWorker(StudyRetentionService service) { this.service = service; }
+    StudyRetentionWorker(StudyRetentionPass pass, StudyRetentionSettings settings) {
+        this.pass = pass;
+        this.settings = settings;
+    }
 
-    @Scheduled(initialDelayString = "${mnema.study.retention.initial-delay:PT1H}",
-            fixedDelayString = "${mnema.study.retention.fixed-delay:PT1H}")
+    @Scheduled(initialDelayString = "${learning.study.retention.initial-delay:PT2M}",
+            fixedDelayString = "${learning.study.retention.interval:PT5M}")
     void purge() {
-        StudyRetentionService.PurgeResult result = service.purgeBatch();
-        if (result.rawResponses() != 0 || result.compactOutcomes() != 0 || result.pairInteractions() != 0 || result.newMarks() != 0
-                || result.assessmentAnswers() != 0) {
-            LOG.info("Study retention batch completed rawResponses={} compactOutcomes={} pairInteractions={} newMarks={} assessmentAnswers={}",
-                    result.rawResponses(), result.compactOutcomes(), result.pairInteractions(), result.newMarks(),
-                    result.assessmentAnswers());
+        if (!settings.enabled()) return;
+        try {
+            pass.run();
+        } catch (RuntimeException failure) {
+            pass.failed(failure);
         }
     }
 }

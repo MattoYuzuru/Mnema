@@ -172,6 +172,9 @@ services:
       LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED: "true"
       LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED: "true"
       LEARNING_COMMUNITY_FORKS_ENABLED: "true"
+      # Study snapshot retention (#460): shipped off for the first release so the backlog gauge and a read-only count can be checked
+      # against a fresh offsite backup before the first purge; enabling is a later one-line change.
+      LEARNING_STUDY_RETENTION_ENABLED: "false"
     volumes:
       # Learning's job spool: a subdirectory (owner 10001, mode 0700) of the root-owned, bounded media-work filesystem (loopback ext4 behind
       # a systemd mount unit). Media jobs run in per-job containers started by the root service mnema-media-runner, which reads these

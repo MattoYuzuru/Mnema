@@ -267,7 +267,7 @@ public final class NativeStructuralEditor {
                 }
                 return new Entry(null, new ObjectRef(scope, fragment.objectId()));
             }).toList();
-            CountedPages pages = new CountedPages(new Profile("fragments", 1, MAX_RECORD_BYTES / MIN_FRAGMENT_BYTES, false, false), source);
+            CountedPages pages = new CountedPages(new Profile("fragments", 1, MAX_RECORD_BYTES / MIN_FRAGMENT_BYTES, false, false, true), source);
             PageEdit tree = pages.build(scope, entries);
             Map<UUID, ObjectRef> reused = new HashMap<>();
             for (NewObject page : tree.additions()) {
