@@ -8,6 +8,7 @@ import app.mnema.learning.platform.api.ResourceLimitExceededException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.security.ProfileDirectory;
+import app.mnema.learning.platform.security.ProfileLookupBudget;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -25,7 +26,8 @@ import java.util.UUID;
  * <p><b>By login.</b> Learning cannot read Identity, so the login is resolved server-side through {@link ProfileDirectory} (the public-profile lookup, only
  * profiles with consent). The order is the point: the owner predicate first (a stranger never makes Learning call Identity), then the deck must be a
  * published INVITE deck (a grant means nothing at another level, so it costs no lookup), then the shape of the login and the two budgets of
- * {@link LoginLookupLimiter} (per owner and per instance, because Identity's lookup limit is shared by every caller behind one address), then the Identity call
+ * {@link ProfileLookupBudget} (pool {@code GRANTS}: per owner, and the instance total shared with profile complaints, because Identity's lookup limit is a 15-minute
+ * window shared by every caller behind one address; a refusal, and an Identity 429, answer 429 with the rest of that window), then the Identity call
  * OUTSIDE any transaction (no connection is held across a network call), then the write in a short transaction. An unknown login, a malformed one and a hidden
  * profile are the same {@link ResourceNotFoundException}. The grant is idempotent, closes a pending request of that person as approved without a notification,
  * and, being the owner's deliberate act, lifts the 30-day block that a revocation puts on the person's invitation links.
@@ -43,24 +45,24 @@ public class GrantService {
     private final AccessRepository repository;
     private final LibraryRepository library;
     private final ProfileDirectory profiles;
-    private final LoginLookupLimiter limiter;
+    private final ProfileLookupBudget budget;
     private final AccessMetrics metrics;
     private final Clock clock;
     private final TransactionTemplate transaction;
     private final TransactionTemplate readOnly;
 
     @Autowired
-    GrantService(AccessRepository repository, LibraryRepository library, ProfileDirectory profiles, LoginLookupLimiter limiter, AccessMetrics metrics,
+    GrantService(AccessRepository repository, LibraryRepository library, ProfileDirectory profiles, ProfileLookupBudget budget, AccessMetrics metrics,
                  PlatformTransactionManager transactions) {
-        this(repository, library, profiles, limiter, metrics, transactions, Clock.systemUTC());
+        this(repository, library, profiles, budget, metrics, transactions, Clock.systemUTC());
     }
 
-    GrantService(AccessRepository repository, LibraryRepository library, ProfileDirectory profiles, LoginLookupLimiter limiter, AccessMetrics metrics,
+    GrantService(AccessRepository repository, LibraryRepository library, ProfileDirectory profiles, ProfileLookupBudget budget, AccessMetrics metrics,
                  PlatformTransactionManager transactions, Clock clock) {
         this.repository = repository;
         this.library = library;
         this.profiles = profiles;
-        this.limiter = limiter;
+        this.budget = budget;
         this.metrics = metrics;
         this.clock = clock;
         this.transaction = new TransactionTemplate(transactions);
@@ -88,7 +90,7 @@ public class GrantService {
      * @throws ResourceNotFoundException the deck is not the owner's, or no public profile has this login
      * @throws PublicationRequiredException the deck is not a published invitation-only deck
      * @throws InvalidRequestException the login is the owner's own
-     * @throws RateLimitedException the owner or the instance used its lookups this minute, or Identity limits lookups
+     * @throws RateLimitedException the owner or the instance used its lookups of this 15-minute window, or Identity limits lookups; {@code Retry-After} is the rest of the window
      * @throws IdentityUnavailableException Identity did not answer
      * @throws ResourceLimitExceededException the deck already has 1000 people with access
      */
@@ -117,8 +119,7 @@ public class GrantService {
             if (publication.visibility() != DeckVisibility.INVITE || publication.publishedRevisionId() == null) throw new PublicationRequiredException();
         });
         if (!ProfileDirectory.validUsername(username)) throw new ResourceNotFoundException();
-        limiter.admit(owner);
-        UUID grantee = profiles.accountOf(username).orElseThrow(ResourceNotFoundException::new);
+        UUID grantee = budget.lookup(ProfileLookupBudget.Pool.GRANTS, owner, () -> profiles.accountOf(username)).orElseThrow(ResourceNotFoundException::new);
         if (grantee.equals(owner)) throw new InvalidRequestException();
         return transaction.execute(status -> {
             requireOwned(owner, deck);

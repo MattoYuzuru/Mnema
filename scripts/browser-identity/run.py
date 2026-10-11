@@ -53,6 +53,17 @@ def static_path(dist, request_path):
     return candidate if candidate.suffix else dist / "index.html"
 
 
+def community_switches(frontend_origin):
+    """`--community` only (#439): the three kill switches of community decks that ship OFF, for the ordinary Learning of this disposable run.
+
+    Public read routes (`/api/public/**`, also required by the media route, the access requests and the link-preview cards), the public
+    media route and the copy command. `learning.community.public-origin` is the origin of the canonical address in the previews; it is the
+    harness's own loopback HTTPS origin. Nothing here reaches another process: the second (Stub) and promo instances never receive it.
+    """
+    return {"LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED": "true", "LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED": "true",
+            "LEARNING_COMMUNITY_FORKS_ENABLED": "true", "MNEMA_PUBLIC_BASE_URL": frontend_origin}
+
+
 def chrome_arguments(chrome, profile, spki, mechanics, microphone=False):
     """Headless Chrome flags. Chrome is always muted: audio is verified through media element state, not sound.
     Only the mechanics baseline and the voice input scenario (`--generation`, #298) add Chrome's SYNTHETIC media-stream devices.
@@ -447,6 +458,8 @@ class Fixture(BASE.Fixture):
                 # The ordinary instance of a `--generation` or `--assessment` run has the AI features off; as an `api` process it has no step
                 # dispatcher, so it can never claim a step of the second (Stub) instance that shares the database.
                 environment["MNEMA_RUNTIME_ROLES"] = "api"
+            if getattr(self.args, "community", False) and not generation and not promo:
+                environment.update(community_switches(self.frontend_origin))
             if generation and self.args.assessment:
                 # Stub-only fault fixture: let one capped call reach the unchanged 20 s delivery deadline. The real route's 8 s
                 # attempt cap/defaults stay unchanged; this override cannot reach the ordinary or promo instance or any live provider.
@@ -516,7 +529,7 @@ class Fixture(BASE.Fixture):
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
-                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "onlyPromo": self.args.only_promo, "cdpTimeoutMs": cdp_timeout_ms(),
+                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "onlyPromo": self.args.only_promo, "community": getattr(self.args, "community", False), "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -531,7 +544,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs", "admin.mjs", "admin_support_fixture.py")}}
+                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs", "admin.mjs", "community.mjs", "admin_support_fixture.py")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -677,6 +690,11 @@ def main():
                         help="development aid: after the base flow run only the promo codes, A/B assignment and promo popup scenario "
                              "(requires --authoring); boots a second Learning with the popup campaign on, verifies and promotes the scenario's "
                              "second account on the disposable database, skips every other scenario; never a substitute for the full run")
+    parser.add_argument("--community", action="store_true",
+                        help="community decks end to end (#439): boots the ordinary Learning with the public-routes, public-media and forks kill switches on "
+                             "(this run only) and drives publication, a guest in a new browser context, «Добавить к себе», Study of the copy "
+                             "and the invitation-only screens on a desktop and a mobile viewport; the base flow's two long polling waits are skipped like "
+                             "with --media; cannot be combined with --generation, --assessment or --only-promo")
     parser.add_argument("--admin", action="store_true", help="owner console against real services and a disposable real bot bridge")
     parser.add_argument("--admin-bot-source", type=Path, help="bot checkout containing mnema_bot.admin_server (required with --admin)")
     parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
@@ -713,6 +731,8 @@ def main():
         parser.error("--only-speech requires --generation and --media")
     if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_plans, args.only_promo, args.only_images, args.only_speech, args.only_voice, args.only_research) if aid) > 1:
         parser.error("--only-ask, --only-edits, --only-plan, --only-plans, --only-promo, --only-images, --only-speech, --only-voice and --only-research are separate development aids: choose one")
+    if args.community and (args.generation or args.assessment or args.only_promo or args.admin):
+        parser.error("--community runs on the ordinary Learning instance: it cannot be combined with --generation, --assessment, --only-promo or --admin")
     if args.admin:
         if args.admin_bot_source is None or not (args.admin_bot_source / "mnema_bot/admin_server.py").is_file():
             parser.error("--admin requires --admin-bot-source with the implemented private bridge")
@@ -721,7 +741,7 @@ def main():
         args.timeout = 600 if args.mechanics else 180
         if args.generation or args.assessment:
             args.timeout = max(args.timeout, 840)
-        if args.only_promo or args.admin:
+        if args.only_promo or args.admin or args.community:
             args.timeout = max(args.timeout, 600)
     if not 30 <= args.timeout <= 900:
         parser.error("--timeout must be between 30 and 900 seconds")

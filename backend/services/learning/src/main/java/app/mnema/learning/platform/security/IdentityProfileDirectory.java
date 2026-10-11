@@ -14,11 +14,12 @@ import java.util.UUID;
 /**
  * {@link ProfileDirectory} over the bounded Identity transport. No bearer is sent (the endpoint is public), nothing is cached (Identity already
  * caches public reads for a minute and a withdrawn consent must hide the profile at once), and the answer is trusted only when it names the login that was asked.
+ * Identity's 429 carries no {@code Retry-After}, so none is invented here: the {@link RateLimitedException} carries Identity's header when there is one (else the minimum), and
+ * the real wait (the rest of Identity's 15-minute window) is put on it by {@link ProfileLookupBudget#lookup}, the only caller.
  */
 @Component
 final class IdentityProfileDirectory implements ProfileDirectory {
     private static final int MAX_BODY_BYTES = 8_192;
-    private static final long DEFAULT_RETRY_SECONDS = 30;
 
     private final IdentityHttp http;
     private final IdentityEndpoints endpoints;
@@ -38,7 +39,7 @@ final class IdentityProfileDirectory implements ProfileDirectory {
             return switch (response.statusCode()) {
                 case 200 -> card(username, json.read(response.body()));
                 case 404 -> Optional.empty();
-                case 429 -> throw new RateLimitedException(response.headers().firstValueAsLong("Retry-After").orElse(DEFAULT_RETRY_SECONDS));
+                case 429 -> throw new RateLimitedException(response.headers().firstValueAsLong("Retry-After").orElse(0));
                 default -> throw new IdentityUnavailableException();
             };
         } catch (IOException | RuntimeException failure) {

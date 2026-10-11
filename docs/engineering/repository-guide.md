@@ -5,7 +5,7 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-10-07"
+  updated_at: "2026-10-11"
   owners: ["project-owner"]
 ---
 
@@ -106,6 +106,13 @@ lifecycle, the unified exercise mechanics (V21, V23), AI work queues and usage,
 plans and promo data (V26–V42 at this audit). API paths are canonical
 under `/api`; there is no `/v2` or v1 alias.
 
+Community decks (epic [#419](https://github.com/MattoYuzuru/Mnema/issues/419), V49–V58): packages
+`app.mnema.learning.library` (access, publication, grants and invitations, public reads and previews),
+`fork` (copies and materialization), `moderation` (complaints and takedown) and `platform.jobs` (durable executor),
+with the storage lineage in `catalog`/`study`; all public routes are off by default. Canon:
+[product](../product/community-decks.md), [architecture](../architecture/community-decks.md); state and
+evidence: [epic 1 evidence](./evidence/community-decks/epic-1/README.md).
+
 The important #75 inputs already implemented are UUID identity, canonical JSON,
 global command receipts, CAS, RFC 9457 errors, owner ACL, immutable revisions,
 deck-local item identity, counted pages, native content, stable objectives,
@@ -126,7 +133,8 @@ node projections, strict exercise envelopes, recoverable conflict/retry state an
 interactive preview served by `POST /api/exercise-previews` (no attempt, evidence or
 progress), without loading Study.
 Old `my-study`, public-deck, template, review/import/media/AI services and routes
-were removed in #146; account profile uses native Identity API.
+were removed in #146; account profile uses native Identity API. The read-only view of someone
+else's deck at `/d/:code` is a new greenfield feature of the community decks epic, not that old route.
 For frontend changes, use the current
 [brand and UI contract](../frontend/mnema-brand-and-ui-contract.md). Its visual
 source is the accepted
@@ -248,6 +256,7 @@ protected squash; merge alone is not live verification.
 | `generation` | AI composer, Workshop, exercise builder, edits and planner; [generation contract](../../contracts/generation/README.md) and [brand UI](../frontend/mnema-brand-and-ui-contract.md#composer-и-мастерская) |
 | `usage`, `plans`, `promo`, `experiment` | AI budget, paywall/profile tier, explicit code field/popup, server-assigned experiments; [usage contract](../../contracts/usage/README.md) |
 | `billing` | Checkout call from `/plans`, trusted T-Bank redirect, return page `/plans/payment/:orderId` that only reads the server order; [billing contract](../../contracts/billing/README.md) |
+| `public-deck`, `own-decks/{publication,access,fork,moderation}`, `public-profile` | Community decks epic 1: read-only `/d/:code[/:slug]` (guests included), publication/access blocks of the hub, copy state, moderation notice, consent switch in the profile; [product](../product/community-decks.md), [styleguide](../frontend/styleguide.md), [decks contracts](../../contracts/decks/README.md), [moderation](../../contracts/moderation/README.md) |
 | `goal`, `ai-info` | Once-asked learning goal (`LearningGoalStore`, `goal-copy.ts`) and public `/ai`; the goal changes copy/recommendations and never reaches a provider |
 
 - `/plans` is authenticated; `/ai` is public. The goal prompt is allowlisted only on

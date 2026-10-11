@@ -265,7 +265,8 @@ export class PublicDeckPageComponent {
                     : failure.kind === 'own-deck' ? PUBLIC_ACTION_TEXT.copyOwn
                     : failure.kind === 'limit' ? PUBLIC_ACTION_TEXT.copyLimit(failure.limit)
                     : failure.kind === 'rate-limited' ? `Слишком много запросов. ${waitText(failure.retryAfter)}`
-                    : failure.kind === 'busy' ? PUBLIC_ACTION_TEXT.copyBusy : PUBLIC_ACTION_TEXT.copyFailed);
+                    : failure.kind === 'busy' ? PUBLIC_ACTION_TEXT.copyBusy
+                    : failure.kind === 'queue-busy' ? PUBLIC_ACTION_TEXT.copyQueueBusy : PUBLIC_ACTION_TEXT.copyFailed);
                 // The deck may have just become private, rotated or ours: the summary says which screen is true now.
                 if (failure.kind === 'not-found' || failure.kind === 'invite-only' || failure.kind === 'own-deck') this.recheck();
             }

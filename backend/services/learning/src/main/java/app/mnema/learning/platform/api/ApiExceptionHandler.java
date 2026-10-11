@@ -10,6 +10,7 @@ import app.mnema.learning.generation.SourceUnavailableException;
 import app.mnema.learning.generation.StaleArtifactsException;
 import app.mnema.learning.fork.DeckPreparingException;
 import app.mnema.learning.fork.ForkOwnDeckException;
+import app.mnema.learning.fork.ForkQueueBusyException;
 import app.mnema.learning.library.DeckInviteOnlyException;
 import app.mnema.learning.library.PublicationRequiredException;
 import app.mnema.learning.library.PublicationRequirementsException;
@@ -137,6 +138,13 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
         return response(ApiErrorCode.PUBLIC_READ_BUSY, ApiErrorCode.PUBLIC_READ_BUSY.status(), request.getRequestURI(), headers, exception.extension());
+    }
+
+    @ExceptionHandler(ForkQueueBusyException.class)
+    ResponseEntity<Object> handleForkQueueBusy(ForkQueueBusyException exception, HttpServletRequest request) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
+        return response(ApiErrorCode.FORKS_BUSY, ApiErrorCode.FORKS_BUSY.status(), request.getRequestURI(), headers, exception.extension());
     }
 
     @ExceptionHandler(IdentityUnavailableException.class)

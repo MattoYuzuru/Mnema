@@ -9,7 +9,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.net.URI;
 import java.util.Locale;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 /**
  * Link previews without SSR (Share/14, architecture section 9, CD-10): what the web server puts into {@code index.html} for {@code /d/{code}/{slug}} so
@@ -22,7 +21,7 @@ import java.util.regex.Pattern;
  *   <li>Everything else (a link-only or invitation-only deck, a private one, a rotated, deleted, unknown or malformed code, a deck without a published
  *       revision) gives <b>the same generic card</b>, {@code noindex}, no canonical and no slug, so the answer is not an oracle for anything
  *       {@link DeckAccess} hides. The costs differ by one Identity call only for PUBLIC decks, which are public anyway.</li>
- *   <li>A profile gives a card only when Identity publishes one for the login (the owner's consent); otherwise the generic card.</li>
+ *   <li>A profile gives the generic card, always and without calling Identity, until the author page exists (epic 3, see {@link #profile}).</li>
  * </ul>
  * The kill switch, the abuse limit and the bulkhead are the ones of the public reads ({@link PublicReadAdmission}); the bulkhead place is held for the
  * database lookup only, never across the Identity call. Outcomes are counted as {@code mnema_public_deck_requests_total{route="meta"}}: {@code ok} (a
@@ -35,8 +34,6 @@ public class PublicMetaService {
     private static final int MAX_DESCRIPTION = 200;
     private static final String DECK_DESCRIPTION_FALLBACK = "Колода на Mnema.";
     private static final String DECK_TITLE_FALLBACK = "Колода";
-    private static final String PROFILE_DESCRIPTION_FALLBACK = "Профиль автора на Mnema.";
-    private static final Pattern USERNAME = Pattern.compile("[A-Za-z0-9_.-]{3,50}");
     static final String DEFAULT_ORIGIN = "https://mnema.app";
 
     /** The preview of a deck and, for a public one, its canonical path ({@code /d/{code}/{slug}}); the path is absent for the generic card. */
@@ -85,23 +82,23 @@ public class PublicMetaService {
         return new DeckMeta(preview, path);
     }
 
-    /** The preview behind a login: the author's card when Identity has one, otherwise the generic card. */
+    /**
+     * The preview behind a login: today always the generic card, byte for byte the one of an unknown or hidden profile, and WITHOUT any call to Identity.
+     * The author page {@code /u/{username}} does not exist yet (the web server does not wire this route either, see {@code docs/operations/link-previews.md}), so
+     * there is nothing to preview, and a guest-reachable route must not spend Identity's by-username allowance (60 per 15 minutes per caller address, shared with
+     * the grants by login and the profile complaints, {@link app.mnema.learning.platform.security.ProfileLookupBudget}). The admission (kill switch, abuse limit)
+     * still applies to every request, found or not.
+     *
+     * <p>TODO(epic 3, author page {@code /u/}): answer {@link Preview.Kind#PROFILE} here (title: display name or {@code @login}; description: the bio or
+     * "Профиль автора на Mnema."; canonical {@code {origin}/u/{login}}; {@code index,follow}; the {@code author} of the card) from an author card by login, and only
+     * through a budget of its own that is NOT Identity's per-address allowance of the lookups above (for example a cache or an Identity endpoint with a limit
+     * for this caller); {@code contracts/decks/public-meta.json} then gets its profile case back. Until then the card is not read.
+     */
     Preview profile(Viewer viewer, String username) {
         // Admission first, like a deck: the kill switch and the limit apply to every lookup, found or not.
-        boolean admitted = admission.within(ROUTE, viewer, () -> true);
-        if (!admitted || !USERNAME.matcher(username).matches()) return generic();
-        return authors.byUsername(username).map(card -> {
-            admission.count(ROUTE, "ok");
-            Preview.Author author = author(card);
-            String name = author.displayName() == null ? "@" + author.username() : author.displayName();
-            String bio = PreviewText.limit(PreviewText.plain(card.bio()), MAX_DESCRIPTION);
-            return new Preview(Preview.Kind.PROFILE, PreviewText.limit(PreviewText.plain(name), MAX_TITLE),
-                    bio.isEmpty() ? PROFILE_DESCRIPTION_FALLBACK : bio, origin + "/u/" + card.username(), "index,follow",
-                    origin + Preview.IMAGE_PATH, author);
-        }).orElseGet(() -> {
-            admission.count(ROUTE, "generic");
-            return generic();
-        });
+        admission.within(ROUTE, viewer, () -> true);
+        admission.count(ROUTE, "generic");
+        return generic();
     }
 
     /** The author as the preview may show it: the texts are made plain once more here, whatever the Identity client did, and a blank name is absent. */

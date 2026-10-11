@@ -6,7 +6,7 @@
     "retryPath": "/api/decks/{deckId}/fork:retry",
     "detachPath": "/api/decks/{deckId}/fork:detach",
     "queue": "deck.copy.materialize",
-    "killSwitch": "learning.community.forks.enabled (default false: POST /api/decks/forks answers 404 as if the route did not exist; copies that already exist keep materializing, retrying and detaching)",
+    "killSwitch": "learning.community.forks.enabled (default false) AND learning.community.public-routes.enabled (default false): POST /api/decks/forks answers 404 as if the route did not exist unless BOTH are on (a copy is made from a deck found by its public code, and the public-routes switch is the parent of every route that takes one); forks on with public routes off is the same 404; copies that already exist keep materializing, retrying and detaching",
     "sourceCodePattern": "^[1-9A-HJ-NP-Za-km-z]{10}$",
     "requestBodyMaxBytes": 8192,
     "sliceEntries": 200,
@@ -15,6 +15,8 @@
     "maxCreationsPerWindow": 20,
     "creationWindow": "PT1H",
     "creationWindowNote": "learning.community.forks.max-per-window per learning.community.forks.window: copies CREATED by one account, deleted ones included (counted from forked_at); one more is 429 RATE_LIMITED with Retry-After and the member retryAfter (seconds until the oldest creation leaves the window). Answering an existing copy never counts.",
+    "maxUnfinishedCopiesTotal": 200,
+    "maxUnfinishedCopiesTotalNote": "learning.community.forks.max-unfinished-total (1..100000): copies of ALL accounts together that are not yet ready (the queue of the materialization job; a failed copy counts until its owner retries or deletes it). With that many unfinished, a NEW copy is 503 FORKS_BUSY with Retry-After: 30 and the member retryAfter (a fixed hint, not a measurement); nothing is written and the command is not recorded, so the same command may be sent again. Answering an existing copy never counts. A soft cap: copies of different accounts are created concurrently, so it can be overshot by the requests in flight. The count is an index scan of at most the cap over the partial index deck_fork_unfinished",
     "maxPreparingCopiesNote": "learning.community.forks.max-preparing: live copies of one account that are not yet ready (a failed one counts); one more is 422 RESOURCE_LIMIT_EXCEEDED with the member `limit`",
     "forkStates": {
       "preparing": "preparing=true, failed=false: the job is queued or running; poll the deck (GET /api/decks/{deckId}) at a bounded backoff",
@@ -42,7 +44,8 @@
     "the public summary GET /api/public/decks/{code} carries `myCopy` for a signed-in viewer: null, or {deckId, preparing} for his live copy of exactly this deck; a guest's summary has no such member, and the owner of the deck has null",
     "a copy edited later never reaches the source and the source's later edits never reach the copy (immutable lineage rows plus per-deck heads); a copy keeps working after the source is deleted or made private",
     "a copy reads media through the COPY grant (the heads of the copy decide), so an asset that only an unpublished revision of the author uses is 404 for the copier on playback, variant download and the offline manifest",
-    "learning.community.forks.enabled switches off creation only (404 as if absent, nothing is read or written); a copy that exists keeps materializing, can be retried, detached, edited, studied and deleted. The jobs have their own switch, learning.jobs.deck.copy.materialize.enabled"
+    "creations are bounded in three layers, checked in this order after an existing live copy was answered: the account's sliding window (429), the account's unfinished copies (422), the global unfinished copies (503 FORKS_BUSY)",
+    "learning.community.forks.enabled together with learning.community.public-routes.enabled switches off creation only (404 as if absent, nothing is read or written); a copy that exists keeps materializing, can be retried, detached, edited, studied and deleted. The jobs have their own switch, learning.jobs.deck.copy.materialize.enabled"
   ],
   "routes": [
     {"method": "POST", "path": "/api/decks/forks", "scope": "learning.write", "answers": "created | existing"},
@@ -140,6 +143,11 @@
       "status": 429,
       "headers": {"Retry-After": "3540"},
       "body": {"type": "urn:mnema:problem:rate-limited", "title": "Rate limited", "status": 429, "detail": "Too many requests; retry after the time in Retry-After.", "instance": "/api/decks/forks", "code": "RATE_LIMITED", "retryAfter": 3540}
+    },
+    "busy": {
+      "status": 503,
+      "headers": {"Retry-After": "30"},
+      "body": {"type": "urn:mnema:problem:forks-busy", "title": "Copies busy", "status": 503, "detail": "Too many copies are being prepared right now; retry after the time in Retry-After.", "instance": "/api/decks/forks", "code": "FORKS_BUSY", "retryAfter": 30}
     },
     "limit": {
       "status": 422,

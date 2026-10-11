@@ -124,6 +124,8 @@ export type ForkFailureKind =
     | 'limit'
     | 'rate-limited'
     | 'busy'
+    /** 503 `FORKS_BUSY`: too many copies are being prepared across the service; the same command may be sent again later. */
+    | 'queue-busy'
     /** No answer from the server, or a 5xx: the outcome is unknown and the same command may be sent again. */
     | 'unknown'
     | 'other';
@@ -150,7 +152,7 @@ export function forkFailureOf(error: unknown): ForkFailure {
         case 409: return failure(code === 'FORK_OWN_DECK' ? 'own-deck' : code === 'DECK_PREPARING' ? 'preparing' : 'other');
         case 422: return failure(code === 'RESOURCE_LIMIT_EXCEEDED' ? 'limit' : 'other');
         case 429: return failure('rate-limited');
-        case 503: return failure(code === 'PUBLIC_READ_BUSY' ? 'busy' : 'unknown');
+        case 503: return failure(code === 'PUBLIC_READ_BUSY' ? 'busy' : code === 'FORKS_BUSY' ? 'queue-busy' : 'unknown');
         default: return failure(error.status >= 500 ? 'unknown' : 'other');
     }
 }

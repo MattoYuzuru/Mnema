@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Share/14 on the real stack: the card of a public deck and the one generic card of everything else (byte for byte, the answer is not an oracle), the author
- * only when Identity has the card and never at the price of the preview, hostile and oversized texts, the slug redirect hint, caching and the profile card.
+ * only when Identity has the card and never at the price of the preview, hostile and oversized texts, the slug redirect hint, caching, and the profile route that is the generic card without any Identity call.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class PublicMetaHttpIntegrationTest extends PostgresIntegrationTest {
@@ -275,28 +275,33 @@ class PublicMetaHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void aProfileHasACardOnlyWhereIdentityPublishesOne() {
+    void aProfileIsTheGenericCardWhateverIdentityKnowsAndNeverCallsIdentity() {
+        // Identity HAS a public card and a public by-username profile for this login, and still the answer is the generic card: the author page does not exist yet
+        // (epic 3) and a guest-reachable route must not spend Identity's by-username allowance, which the grants and the profile complaints share.
         HttpIdentityFixture.authorCard(UUID.randomUUID(), "profile.anna", "Анна", "Люблю языки <b>и</b> книги");
-        HttpResponse<String> response = get("/public/meta/profiles/Profile.Anna");
-        assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.headers().firstValue("cache-control")).hasValue("public, max-age=300");
-        JsonNode body = json(response);
-        assertThat(body.path("kind").stringValue(null)).isEqualTo("PROFILE");
-        assertThat(body.path("title").stringValue(null)).isEqualTo("Анна");
-        assertThat(body.path("description").stringValue(null)).isEqualTo("Люблю языки <b>и</b> книги");
-        assertThat(body.path("canonical").stringValue(null)).isEqualTo(ORIGIN + "/u/profile.anna");
-        assertThat(body.path("robots").stringValue(null)).isEqualTo("index,follow");
-        assertThat(get("/public/meta/profiles/Profile.Anna/head").body()).contains("<title>Анна — Mnema</title>", "&lt;b&gt;и&lt;/b&gt;").doesNotContain("<b>");
+        HttpIdentityFixture.publicLogin("profile.anna", UUID.randomUUID());
+        String unknownCode = PublicCodes.next(new java.security.SecureRandom());
+        String genericJson = get("/public/meta/decks/" + unknownCode).body();
+        HttpResponse<String> genericHead = get("/public/meta/decks/" + unknownCode + "/head");
+        int identityCalls = HttpIdentityFixture.authorCardCalls();
+        int lookups = HttpIdentityFixture.profileLookups();
 
-        String genericJson = get("/public/meta/decks/" + PublicCodes.next(new java.security.SecureRandom())).body();
-        for (String login : List.of("nobody.here", "ab", "bad%20name")) {
-            HttpResponse<String> generic = get("/public/meta/profiles/" + login);
-            assertThat(generic.statusCode()).as(login).isEqualTo(200);
-            assertThat(generic.body()).as(login).isEqualTo(genericJson);
+        for (String login : List.of("Profile.Anna", "profile.anna", "nobody.here", "ab", "bad%20name", HttpIdentityFixture.LIMITED_LOGIN, HttpIdentityFixture.BROKEN_LOGIN)) {
+            HttpResponse<String> card = get("/public/meta/profiles/" + login);
+            assertThat(card.statusCode()).as(login).isEqualTo(200);
+            assertThat(card.headers().firstValue("cache-control")).as(login).hasValue("public, max-age=300");
+            assertThat(card.body()).as(login).isEqualTo(genericJson);
+            HttpResponse<String> head = get("/public/meta/profiles/" + login + "/head");
+            assertThat(head.statusCode()).as(login).isEqualTo(200);
+            assertThat(head.body()).as(login).isEqualTo(genericHead.body()).doesNotContain("Анна");
+            assertThat(head.headers().firstValue("x-mnema-preview")).as(login).hasValue("generic");
+            assertThat(head.headers().firstValue("x-robots-tag")).as(login).hasValue("noindex");
+            assertThat(head.headers().firstValue("x-mnema-canonical")).as(login).isEmpty();
         }
-        // Identity down: the generic card, not an error
-        HttpIdentityFixture.authorCardFailure(503, 0);
-        assertThat(get("/public/meta/profiles/other.name").body()).isEqualTo(genericJson);
+        assertThat(json(get("/public/meta/profiles/Profile.Anna")).path("kind").stringValue(null)).isEqualTo("GENERIC");
+        // not one call, whatever the login: not for the card, not for the by-username lookup
+        assertThat(HttpIdentityFixture.authorCardCalls()).isEqualTo(identityCalls);
+        assertThat(HttpIdentityFixture.profileLookups()).isEqualTo(lookups);
     }
 
     @Test
