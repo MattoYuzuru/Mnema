@@ -96,7 +96,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "49:media asset source blob index:SUCCESS", "50:learning jobs:SUCCESS",
                         "51:lineage items:SUCCESS", "52:lineage exercises:SUCCESS", "53:deck access:SUCCESS", "54:deck publication:SUCCESS", "55:shared media:SUCCESS",
                         "56:deck invites and requests:SUCCESS", "57:deck forks:SUCCESS", "58:complaints and takedowns:SUCCESS",
-                        "59:study snapshot retention:SUCCESS");
+                        "59:study snapshot retention:SUCCESS", "60:combined publication:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
