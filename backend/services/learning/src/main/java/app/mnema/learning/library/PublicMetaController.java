@@ -38,6 +38,8 @@ public class PublicMetaController {
     static final String PREVIEW_HEADER = "X-Mnema-Preview";
     static final String ROBOTS_HEADER = "X-Robots-Tag";
     static final String FRAGMENT_POLICY = "default-src 'none'; sandbox";
+    /** Declared on the mapping too, so the fragment is plain text by contract and never content-negotiated into HTML. */
+    static final String FRAGMENT_TYPE = "text/plain;charset=UTF-8";
     private static final MediaType FRAGMENT = new MediaType("text", "plain", StandardCharsets.UTF_8);
 
     private final PublicMetaService service;
@@ -53,7 +55,7 @@ public class PublicMetaController {
         return cached().contentType(MediaType.APPLICATION_JSON).body(service.deck(viewer(request), code).preview().toJson());
     }
 
-    @GetMapping("/decks/{code}/head")
+    @GetMapping(value = "/decks/{code}/head", produces = FRAGMENT_TYPE)
     ResponseEntity<String> deckHead(@PathVariable String code, HttpServletRequest request) {
         PublicMetaService.DeckMeta meta = service.deck(viewer(request), code);
         ResponseEntity.BodyBuilder response = fragment(meta.preview());
@@ -67,7 +69,7 @@ public class PublicMetaController {
         return cached().contentType(MediaType.APPLICATION_JSON).body(service.profile(viewer(request), username).toJson());
     }
 
-    @GetMapping("/profiles/{username}/head")
+    @GetMapping(value = "/profiles/{username}/head", produces = FRAGMENT_TYPE)
     ResponseEntity<String> profileHead(@PathVariable String username, HttpServletRequest request) {
         Preview preview = service.profile(viewer(request), username);
         return fragment(preview).body(PreviewHead.render(preview));
