@@ -1,4 +1,4 @@
-<section class="publication" [attr.aria-labelledby]="uid + '-title'">
+<section #section class="publication" [attr.id]="anchor()" [attr.aria-labelledby]="uid + '-title'">
   <header class="publication-head">
     <h2 #heading [id]="uid + '-title'" tabindex="-1">{{ text.heading }}</h2>
   </header>
@@ -13,16 +13,11 @@
     </div>
   } @else {
     @let state = current.state;
-    @if (state.visibility === 'PRIVATE') {
-      <div class="publication-private">
-        <p class="publication-line">{{ text.privateLine }}</p>
-        <button type="button" #makePublicButton class="button small" [attr.aria-expanded]="checklistOpen()" [attr.aria-controls]="checklistOpen() ? uid + '-checklist' : null"
-          (click)="checklistOpen() ? closeChecklist() : openChecklist()">{{ text.makePublic }}</button>
-      </div>
-    } @else {
-      <div class="publication-shared">
-        <app-access-level [level]="state.visibility === 'INVITE' ? 'invite' : state.visibility === 'LINK' ? 'link' : 'public'" />
+    <app-access-controls [state]="state" [checklistOpen]="checklistOpen()" [checklistId]="uid + '-checklist'"
+      (saved)="onLevelSaved($event)" (replayed)="refresh()" (refresh)="refresh()" (openChecklist)="openChecklist()" (closeChecklist)="closeChecklist()" />
 
+    @if (state.visibility !== 'PRIVATE') {
+      <div class="publication-shared">
         @if (absoluteLink(state); as link) {
           <div class="publication-link">
             <a [href]="link" target="_blank" rel="noopener" class="link-text">{{ shownLink(state) }}<span class="visually-hidden">{{ text.opensInNewTab }}</span></a>
@@ -65,14 +60,11 @@
             </div>
           </form>
         }
-
-        @if (canMakePublic(state)) {
-          <div>
-            <button type="button" #makePublicButton class="button small" [attr.aria-expanded]="checklistOpen()" [attr.aria-controls]="checklistOpen() ? uid + '-checklist' : null"
-              (click)="checklistOpen() ? closeChecklist() : openChecklist()">{{ text.makePublic }}</button>
-          </div>
-        }
       </div>
+    }
+
+    @if (state.visibility === 'INVITE') {
+      <app-access-panel [deckId]="state.deckId" [deckTitle]="deckTitle()" [requestsEnabled]="state.requestsEnabled" />
     }
 
     @if (problem(); as message) {

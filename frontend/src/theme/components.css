@@ -180,6 +180,15 @@
 .checklist-item[data-state='failed'] { border-inline-start: 4px solid var(--mn-danger); padding-inline-start: var(--mn-space-3); }
 .checklist-item[data-state='failed'] .checklist-state { color: var(--mn-danger); }
 
+/* Roster: a list of people, requests or links, one row each. The row is the name and its facts (`.roster-main`) and the actions that
+   belong to this row only (`.roster-actions`); it wraps instead of squeezing on a narrow screen. A row action is named by the row
+   it sits in (`aria-describedby` on the main part), never by position. */
+.roster { display: grid; margin: 0; padding: 0; list-style: none; }
+.roster-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--mn-space-2) var(--mn-space-4); min-inline-size: 0; border-block-start: 1px solid var(--mn-rule); padding-block: var(--mn-space-3); }
+.roster-row:last-child { border-block-end: 1px solid var(--mn-rule); }
+.roster-main { display: grid; flex: 1 1 14rem; gap: var(--mn-space-1); min-inline-size: 0; overflow-wrap: anywhere; }
+.roster-actions { display: flex; flex-wrap: wrap; gap: var(--mn-space-2); }
+
 /* The primary action stays in reach: pinned to the bottom of the viewport. The page publishes its height as
    --mn-bulk-bar-height on the root (scroll padding, see global_styles.css), so a focused control is never hidden under it.
    .cta-bar--inline draws it in the flow (the styleguide). */
@@ -202,6 +211,6 @@
     .cta-bar { border-color: CanvasText; background: Canvas; }
     .button, .notice, .stamp, .paper-surface { border-color: CanvasText; }
     .empty-state { border-color: CanvasText; }
-    .checklist-item { border-color: CanvasText; }
+    .checklist-item, .roster-row { border-color: CanvasText; }
     .button.quiet { border-color: transparent; }
 }

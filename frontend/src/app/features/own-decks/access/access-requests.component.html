@@ -1,0 +1,45 @@
+<section class="access-section" [attr.aria-labelledby]="uid + '-title'">
+  <h3 #heading [id]="uid + '-title'" tabindex="-1">{{ text.requestsHeading }}</h3>
+  @if (!requestsEnabled()) {
+    <p class="hint">{{ text.requestsOffNotice }}</p>
+  }
+  <p class="visually-hidden" role="status" aria-live="polite">{{ status() }}</p>
+
+  @if (list.phase() === 'loading') {
+    <p class="hint" role="status">{{ text.loading }}</p>
+  } @else if (list.phase() === 'error') {
+    <div class="notice error inline-retry" role="group" [attr.aria-label]="text.requestsHeading">
+      <p>{{ text.loadError }}</p>
+      <button type="button" class="button small" (click)="reload()">{{ text.retry }}</button>
+    </div>
+  }
+
+  @if (list.phase() === 'ready') {
+    <ul #rows class="roster" [attr.aria-label]="text.requestsHeading">
+      @for (request of list.items(); track request.requesterId) {
+        <li class="roster-row">
+          <div class="roster-main" [id]="rowId(request)">
+            <app-access-person [identity]="identities.of(request.requesterId)" />
+            <span class="hint">{{ request.createdAt | date:'dd.MM.y, HH:mm' }}</span>
+          </div>
+          <div class="roster-actions">
+            <button type="button" class="button small primary" [attr.aria-describedby]="rowId(request)"
+              [attr.aria-disabled]="busy() !== null ? 'true' : null" [attr.aria-busy]="busyOn(request, 'approve') ? 'true' : null"
+              (click)="decide(request, 'approve')">{{ busyOn(request, 'approve') ? text.approving : text.approve }}</button>
+            <button type="button" class="button small" [attr.aria-describedby]="rowId(request)"
+              [attr.aria-disabled]="busy() !== null ? 'true' : null" [attr.aria-busy]="busyOn(request, 'reject') ? 'true' : null"
+              (click)="decide(request, 'reject')">{{ busyOn(request, 'reject') ? text.rejecting : text.reject }}</button>
+          </div>
+        </li>
+      } @empty {
+        <li class="hint">{{ text.requestsEmpty }}</li>
+      }
+    </ul>
+    <app-auto-load [content]="rows" [context]="list.context()" [continuation]="list.next()" [loading]="list.loadingMore()"
+      [error]="list.moreError()" [loadingText]="text.loadingMore" (loadNext)="list.more()" />
+  }
+
+  @if (problem(); as message) {
+    <p class="field-error" role="alert">{{ message }}</p>
+  }
+</section>

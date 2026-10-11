@@ -1,0 +1,14 @@
+/* Layout only: the notice, the stamp, the buttons and the rows are the shared classes. */
+.field-label { color: var(--mn-ink); font-weight: 700; }
+.invite-form { display: grid; gap: var(--mn-space-3); }
+.new-link { display: grid; gap: var(--mn-space-3); }
+.new-title { margin: 0; color: var(--mn-ink); font-weight: 700; }
+.new-title:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+.new-url { margin: 0; font-family: var(--mn-font-mono); font-size: .9rem; overflow-wrap: anywhere; user-select: all; }
+.new-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--mn-space-3); }
+@media (max-width: 42rem) {
+  .new-actions > .button { flex: 1 1 100%; }
+}
+@media (forced-colors: active) {
+  .new-title:focus-visible { outline-color: Highlight; }
+}

@@ -1,0 +1,75 @@
+<section class="access-section" [attr.aria-labelledby]="uid + '-title'">
+  <h3 #heading [id]="uid + '-title'" tabindex="-1">{{ text.invitesHeading }}</h3>
+  <p class="hint">{{ text.invitesLede }}</p>
+  <p class="visually-hidden" role="status" aria-live="polite">{{ status() }}</p>
+
+  @if (created(); as fresh) {
+    <div class="notice success new-link" role="group" [attr.aria-labelledby]="uid + '-new-title'">
+      <p class="new-title" #createdHeading tabindex="-1" [id]="uid + '-new-title'">{{ text.newInviteHeading }}</p>
+      <p class="new-url" [id]="uid + '-new-url'"><span class="visually-hidden">{{ text.newInviteLabel }}: </span>{{ shown(fresh.url) }}</p>
+      <p class="hint" [id]="uid + '-new-once'">{{ text.newInviteOnce }}</p>
+      <div class="new-actions">
+        <app-share-button [url]="fresh.url" [title]="deckTitle()" />
+        <button type="button" class="button primary" [attr.aria-describedby]="uid + '-new-once'" (click)="dismissCreated()">{{ text.newInviteDone }}</button>
+      </div>
+    </div>
+  } @else {
+    <form class="invite-form" (submit)="$event.preventDefault(); create()" novalidate>
+      <div class="form-grid">
+        <div class="field">
+          <span class="field-label" aria-hidden="true">{{ text.usesLabel }}</span>
+          <app-mnema-select [controlId]="uid + '-uses'" [label]="text.usesLabel" [options]="usesOptions" [value]="uses()" (valueChange)="uses.set($event)" />
+        </div>
+        <div class="field">
+          <span class="field-label" aria-hidden="true">{{ text.expiryLabel }}</span>
+          <app-mnema-select [controlId]="uid + '-expiry'" [label]="text.expiryLabel" [options]="expiryOptions" [value]="expiry()" (valueChange)="expiry.set($event)" />
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" #createButton class="button primary" [attr.aria-disabled]="creating() ? 'true' : null"
+          [attr.aria-busy]="creating() ? 'true' : null">{{ creating() ? text.creatingInvite : text.createInvite }}</button>
+      </div>
+      @if (createProblem(); as message) {
+        <p class="field-error" role="alert">{{ message }}</p>
+      }
+    </form>
+  }
+
+  @if (list.phase() === 'loading') {
+    <p class="hint" role="status">{{ text.loading }}</p>
+  } @else if (list.phase() === 'error') {
+    <div class="notice error inline-retry" role="group" [attr.aria-label]="text.invitesHeading">
+      <p>{{ text.loadError }}</p>
+      <button type="button" class="button small" (click)="reload()">{{ text.retry }}</button>
+    </div>
+  } @else {
+    <ul #rows class="roster" [attr.aria-label]="text.invitesList">
+      @for (invite of list.items(); track invite.inviteId) {
+        <li class="roster-row">
+          <div class="roster-main" [id]="rowId(invite)">
+            <span><span class="stamp" [class.solid]="invite.status === 'ACTIVE'">{{ word(invite) }}</span></span>
+            <span>{{ facts(invite) }}</span>
+            <span class="hint">
+              {{ text.expiry }} @if (invite.expiresAt; as until) { до <time [attr.datetime]="until">{{ until | date:'dd.MM.y, HH:mm' }}</time> } @else { без ограничения }
+              · {{ text.createdOn }} <time [attr.datetime]="invite.createdAt">{{ invite.createdAt | date:'dd.MM.y, HH:mm' }}</time>
+            </span>
+          </div>
+          @if (invite.status === 'ACTIVE') {
+            <div class="roster-actions">
+              <button type="button" class="button small" [attr.aria-describedby]="rowId(invite)"
+                [attr.aria-disabled]="revoking() !== null ? 'true' : null" [attr.aria-busy]="revoking() === invite.inviteId ? 'true' : null"
+                (click)="revoke(invite)">{{ revoking() === invite.inviteId ? text.revoking : text.revoke }}</button>
+            </div>
+          }
+        </li>
+      } @empty {
+        <li class="hint">{{ text.invitesEmpty }}</li>
+      }
+    </ul>
+    <app-auto-load [content]="rows" [context]="list.context()" [continuation]="list.next()" [loading]="list.loadingMore()"
+      [error]="list.moreError()" [loadingText]="text.loadingMore" (loadNext)="list.more()" />
+  }
+  @if (problem(); as message) {
+    <p class="field-error" role="alert">{{ message }}</p>
+  }
+</section>

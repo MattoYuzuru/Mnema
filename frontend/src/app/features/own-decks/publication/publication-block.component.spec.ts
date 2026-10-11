@@ -5,7 +5,9 @@ import { Subject, of, throwError } from 'rxjs';
 
 import { ToastService } from '../../../core/notifications/toast.service';
 import { lastCall, spyObj, type SpyObj } from '../../../../testing/mocks';
+import { AuthorCardsService } from '../../../author-cards.service';
 import { ItemApiService } from '../../authoring/item-api.service';
+import { AccessApiService } from '../access/access-api.service';
 import { PublicationApiService } from './publication-api.service';
 import { PublicationBlockComponent } from './publication-block.component';
 import { PublicationCommand, PublicationState, PublicationWriteResult } from './publication.models';
@@ -23,6 +25,12 @@ describe('PublicationBlockComponent', () => {
     const button = (label: string): HTMLButtonElement =>
         [...root.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent!.trim() === label)!;
     const settle = async (): Promise<void> => { await fixture.whenStable(); fixture.detectChanges(); };
+    /** The label of the selected segment of the level picker. */
+    const level = (): string => root.querySelector<HTMLInputElement>('app-segmented-choice input:checked')!.closest('label')!.textContent!.trim();
+    const pick = async (label: string): Promise<void> => {
+        [...root.querySelectorAll<HTMLInputElement>('app-segmented-choice input')].find(radio => radio.closest('label')!.textContent!.trim() === label)!.click();
+        await settle();
+    };
 
     async function create(state: PublicationState | Subject<PublicationState> = neverPublished()): Promise<void> {
         api.read.mockReturnValue(state instanceof Subject ? state : of(state));
@@ -43,21 +51,29 @@ describe('PublicationBlockComponent', () => {
         });
         api.topics.mockReturnValue(of(topicDirectory()));
         const items = spyObj<ItemApiService>({ list: vi.fn().mockName('ItemApiService.list') });
+        // The access panel of an invitation deck loads its three lists; this spec is about the block around it.
+        const empty = of({ items: [], nextCursor: null });
+        const access = spyObj<AccessApiService>({
+            invites: vi.fn().mockReturnValue(empty), requests: vi.fn().mockReturnValue(empty), grants: vi.fn().mockReturnValue(empty)
+        });
+        const cards = spyObj<AuthorCardsService>({ cards: vi.fn().mockResolvedValue(new Map()), avatarUrl: vi.fn().mockReturnValue(null) });
         await TestBed.configureTestingModule({
-            providers: [provideRouter([]), { provide: PublicationApiService, useValue: api }, { provide: ItemApiService, useValue: items }]
+            providers: [provideRouter([]), { provide: PublicationApiService, useValue: api }, { provide: ItemApiService, useValue: items },
+                { provide: AccessApiService, useValue: access }, { provide: AuthorCardsService, useValue: cards }]
         }).compileComponents();
         toasts = TestBed.inject(ToastService);
         vi.spyOn(toasts, 'echo');
     });
 
     describe('loading', () => {
-        it('says it is loading, then shows the private line', async () => {
+        it('says it is loading, then shows the picker on «Приватная»', async () => {
             const pending = new Subject<PublicationState>();
             await create(pending);
             expect(text()).toContain('Загружаем сведения о доступе…');
             pending.next(neverPublished());
             await settle();
-            expect(text()).toContain('Колода видна только вам');
+            expect(level()).toBe('Приватная');
+            expect(text()).toContain('Только вы.');
             expect(levels).toEqual(['private']);
             expect(api.read).toHaveBeenCalledWith(deckId);
         });
@@ -88,17 +104,20 @@ describe('PublicationBlockComponent', () => {
     });
 
     describe('a private deck', () => {
-        it('is quiet: one line and one action, no link, no publish controls', async () => {
+        it('is quiet: the picker only, no link, no publish controls, no access panel', async () => {
             await create();
-            expect(text()).toContain('Колода видна только вам');
-            expect(button('Сделать публичной…')).toBeDefined();
-            expect(root.querySelector('app-access-level')).toBeNull();
+            expect(level()).toBe('Приватная');
+            expect([...root.querySelectorAll('app-segmented-choice label')].map(label => label.textContent!.trim()))
+                .toEqual(['Приватная', 'По ссылке', 'По приглашению', 'Публичная']);
+            expect(root.querySelector('.change')).toBeNull();
+            expect(root.querySelector('app-access-panel')).toBeNull();
             expect(root.querySelector('.publication-link')).toBeNull();
             expect(text()).not.toContain('Опубликовать обновление');
         });
 
         it('opens the checklist in place and closes it again, keeping the button state in aria-expanded', async () => {
             await create();
+            await pick('Публичная');
             const open = button('Сделать публичной…');
             expect(open.getAttribute('aria-expanded')).toBe('false');
             open.click();
@@ -109,18 +128,21 @@ describe('PublicationBlockComponent', () => {
             button('Отмена').click();
             await settle();
             expect(root.querySelector('app-publication-checklist')).toBeNull();
-            expect(open.getAttribute('aria-expanded')).toBe('false');
+            expect(level()).toBe('Приватная');
+            expect(root.querySelector('.change')).toBeNull();
         });
 
         it('becomes public in place when the checklist publishes', async () => {
             await create();
+            await pick('Публичная');
             button('Сделать публичной…').click();
             await settle();
             const checklist = fixture.debugElement.query(el => el.name === 'app-publication-checklist');
             checklist.componentInstance.published.emit(sharedState({ unpublishedChanges: 0, publishedRevisionId: '44444444-4444-4444-8444-444444444444' }));
             await settle();
             expect(root.querySelector('app-publication-checklist')).toBeNull();
-            expect(root.querySelector('app-access-level')!.textContent).toContain('Публичная');
+            expect(level()).toBe('Публичная');
+            expect(root.querySelector('.change')).toBeNull();
             expect(levels).toEqual(['private', 'public']);
         });
 
@@ -128,6 +150,7 @@ describe('PublicationBlockComponent', () => {
             await create(neverPublished({ checklist: { ...neverPublished().checklist, description: false } }));
             const edit = vi.fn();
             fixture.componentInstance.editDescription.subscribe(edit);
+            await pick('Публичная');
             button('Сделать публичной…').click();
             await settle();
             button('Добавить описание').click();
@@ -138,6 +161,7 @@ describe('PublicationBlockComponent', () => {
     describe('a replayed first publication', () => {
         it('closes the checklist and focuses the heading once the re-read state is public', async () => {
             await create();
+            await pick('Публичная');
             button('Сделать публичной…').click();
             await settle();
             const checklist = fixture.debugElement.query(el => el.name === 'app-publication-checklist').componentInstance;
@@ -146,11 +170,12 @@ describe('PublicationBlockComponent', () => {
             checklist.refresh.emit();
             await settle();
             expect(root.querySelector('app-publication-checklist')).toBeNull();
-            expect(root.querySelector('app-access-level')!.textContent).toContain('Публичная');
+            expect(level()).toBe('Публичная');
         });
 
         it('keeps the checklist open when the re-read state is not public', async () => {
             await create();
+            await pick('Публичная');
             button('Сделать публичной…').click();
             await settle();
             const checklist = fixture.debugElement.query(el => el.name === 'app-publication-checklist').componentInstance;
@@ -164,7 +189,7 @@ describe('PublicationBlockComponent', () => {
     describe('a shared deck', () => {
         it('shows the level, the link, the time of publication and the unpublished changes', async () => {
             await create(sharedState());
-            expect(root.querySelector('app-access-level')!.textContent).toContain('Публичная');
+            expect(level()).toBe('Публичная');
             const link = root.querySelector<HTMLAnchorElement>('.publication-link a')!;
             expect(link.href).toBe(`${window.location.origin}/d/Kq7xT3mNpR/yaponskiy-zametki`);
             expect(link.textContent).toContain('откроется в новой вкладке');
@@ -191,7 +216,8 @@ describe('PublicationBlockComponent', () => {
 
         it('names each other level and offers to make a link deck public', async () => {
             await create(sharedState({ visibility: 'LINK', link: '/d/Kq7xT3mNpR', unpublishedChanges: 0, headRevisionId: sharedState().publishedRevisionId! }));
-            expect(root.querySelector('app-access-level')!.textContent).toContain('По ссылке');
+            expect(level()).toBe('По ссылке');
+            await pick('Публичная');
             expect(button('Сделать публичной…')).toBeDefined();
             expect(root.querySelector<HTMLAnchorElement>('.publication-link a')!.href).toBe(`${window.location.origin}/d/Kq7xT3mNpR`);
             expect(levels).toEqual(['link']);
@@ -245,7 +271,6 @@ describe('PublicationBlockComponent', () => {
             const field = await openForm();
             const update = button('Опубликовать обновление');
             expect(update.getAttribute('aria-expanded')).toBe('true');
-            expect(root.querySelector('label')!.textContent).toBe('Что нового');
             expect(field.labels![0].textContent).toBe('Что нового');
             expect(text()).toContain('0/500');
             await typeNote(field, 'Добавлены слова');
