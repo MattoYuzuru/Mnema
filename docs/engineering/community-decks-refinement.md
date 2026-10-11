@@ -21,14 +21,13 @@ artifact:
 
 ## Статус выполнения (2026-10-11)
 
-Эпик 1 ([#419](https://github.com/MattoYuzuru/Mnema/issues/419)): Share/1–15 и
-попутная [#461](https://github.com/MattoYuzuru/Mnema/issues/461) смержены. Share/16 смержен
-частично, Share/17 идёт. Коммиты, миграции (V49–V58) и состояние production по задачам:
-[evidence эпика 1](./evidence/community-decks/epic-1/README.md). Эпики 2–4 не начаты.
+Эпик 1 ([#419](https://github.com/MattoYuzuru/Mnema/issues/419)) закрыт: Share/1–17 и
+попутная [#461](https://github.com/MattoYuzuru/Mnema/issues/461) смержены и выкачены.
+Коммиты, миграции (V49–V58) и состояние production по задачам:
+[evidence эпика 1](./evidence/community-decks/epic-1/README.md). Эпики 2 и 3 идут.
 
-В production всё выкачено **выключенным**, включена только подача жалоб (выключатели —
-[runtime policy index](./runtime-policy-index.md)). Включение публичных функций — отдельный
-релиз после Share/16 (тексты) и Share/17 (проверка).
+В production функции эпика 1 включены релизом #481 вместе с текстами политики 1.4 и
+соглашения (выключатели — [runtime policy index](./runtime-policy-index.md)).
 
 ### Уточнено реализацией
 
