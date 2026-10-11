@@ -1,6 +1,7 @@
 package app.mnema.learning.catalog.authoring;
 
 import app.mnema.learning.catalog.content.NativeMediaReferences;
+import app.mnema.learning.fork.ForkGuard;
 import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
@@ -25,14 +26,16 @@ public class DraftService {
     private final CompareAndSetExecutor cas;
     private final MediaCatalog mediaCatalog;
     private final AuthoringSettings settings;
+    private final ForkGuard forkGuard;
 
     public DraftService(AuthoringRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                        MediaCatalog mediaCatalog, AuthoringSettings settings) {
+                        MediaCatalog mediaCatalog, AuthoringSettings settings, ForkGuard forkGuard) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
         this.mediaCatalog = mediaCatalog;
         this.settings = settings;
+        this.forkGuard = forkGuard;
     }
 
     @Transactional(readOnly = true, timeout = 10)
@@ -59,6 +62,8 @@ public class DraftService {
     public WriteResult create(UUID actor, AuthoringCommands.DraftCreate command) {
         actor(actor);
         ownDeck(actor, command.deckId());
+        // a draft in a copy that is still being prepared would be built on heads that are not there yet
+        forkGuard.requireReady(actor, command.deckId());
         if (command.memberKey() != null
                 && !repository.ownsBase(actor, command.deckId(), command.memberKey(), command.baseRevisionId())) {
             throw new ResourceNotFoundException();

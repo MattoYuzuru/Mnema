@@ -1,5 +1,6 @@
 package app.mnema.learning.catalog.deck;
 
+import app.mnema.learning.fork.ForkReadModel;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
@@ -26,18 +27,27 @@ public class DeckService {
     private final CommandReceiptService receipts;
     private final CompareAndSetExecutor cas;
     private final ImmutableStorage storage;
+    private final ForkReadModel forks;
 
     public DeckService(DeckRepository repository, CommandReceiptService receipts,
-                       CompareAndSetExecutor cas, ImmutableStorage storage) {
+                       CompareAndSetExecutor cas, ImmutableStorage storage, ForkReadModel forks) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
         this.storage = storage;
+        this.forks = forks;
     }
 
     @Transactional(readOnly = true, timeout = 10)
     public ObjectNode read(UUID actor, UUID deckId) {
-        return own(actor, deckId).toJson();
+        return withFork(actor, own(actor, deckId));
+    }
+
+    /** The deck JSON plus the {@code fork} member of the owner's reads: null for an ordinary deck, the copy's flags and what he may still know of the source otherwise. */
+    private ObjectNode withFork(UUID actor, DeckRecord row) {
+        ObjectNode json = row.toJson();
+        json.set("fork", forks.describe(actor, row.fork()));
+        return json;
     }
 
     @Transactional(readOnly = true, timeout = 10)
@@ -47,7 +57,7 @@ public class DeckService {
         List<DeckRecord> rows = repository.page(actor, DeckCursor.decode(cursor), size);
         ObjectNode result = JsonNodeFactory.instance.objectNode();
         var items = result.putArray("items");
-        rows.stream().limit(size).forEach(row -> items.add(row.toJson()));
+        rows.stream().limit(size).forEach(row -> items.add(withFork(actor, row)));
         if (rows.size() > size) {
             DeckRecord last = rows.get(size - 1);
             result.put("nextCursor", new DeckCursor(last.createdAt(), last.deckId()).encode());
@@ -66,7 +76,7 @@ public class DeckService {
             NewObject exercises = emptyRoot("exercises");
             var time = repository.now();
             DeckRecord row = new DeckRecord(deck, revision, scope, 0, command.title(), command.description(), time, time,
-                    members.objectId(), exercises.objectId(), 0, 0, "private");
+                    members.objectId(), exercises.objectId(), 0, 0, "private", null);
             repository.insertDeck(deck, actor, scope, revision, time);
             publish(row, actor, null, command, List.of(members, exercises));
             return row.toJson();
@@ -86,7 +96,7 @@ public class DeckService {
             long next = cas.updateOne(expected, () -> repository.advance(actor, deck, revision, expected));
             DeckRecord row = new DeckRecord(deck, revision, previous.scopeId(), next, command.title(), command.description(),
                     previous.createdAt(), repository.now(), previous.membersRootId(), previous.exercisesRootId(),
-                    previous.memberCount(), previous.exerciseCount(), previous.visibility());
+                    previous.memberCount(), previous.exerciseCount(), previous.visibility(), previous.fork());
             publish(row, actor, previous.revisionId(), command, List.of());
             return row.toJson();
         });

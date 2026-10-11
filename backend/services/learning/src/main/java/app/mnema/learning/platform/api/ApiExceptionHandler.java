@@ -8,6 +8,8 @@ import app.mnema.learning.generation.EditInProgressException;
 import app.mnema.learning.generation.GenerationStateConflictException;
 import app.mnema.learning.generation.SourceUnavailableException;
 import app.mnema.learning.generation.StaleArtifactsException;
+import app.mnema.learning.fork.DeckPreparingException;
+import app.mnema.learning.fork.ForkOwnDeckException;
 import app.mnema.learning.library.DeckInviteOnlyException;
 import app.mnema.learning.library.PublicationRequiredException;
 import app.mnema.learning.library.PublicationRequirementsException;
@@ -108,6 +110,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(DeckInviteOnlyException.class)
     ResponseEntity<Object> handleDeckInviteOnly(DeckInviteOnlyException exception, HttpServletRequest request) {
         return response(ApiErrorCode.DECK_INVITE_ONLY, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(DeckPreparingException.class)
+    ResponseEntity<Object> handleDeckPreparing(DeckPreparingException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.DECK_PREPARING, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(ForkOwnDeckException.class)
+    ResponseEntity<Object> handleForkOwnDeck(ForkOwnDeckException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.FORK_OWN_DECK, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(PublicationRequiredException.class)

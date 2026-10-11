@@ -6,6 +6,7 @@ import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -40,7 +41,10 @@ class DeckServiceIntegrationTest extends PostgresIntegrationTest {
         UUID deck = UUID.fromString(first.path("deckId").stringValue(null));
         DeckRecord before = repository.find(actor, deck).orElseThrow();
         assertThat(result.replayed()).isFalse();
-        assertThat(service.read(actor, deck)).isEqualTo(first);
+        // the owner's read adds the `fork` member (null for an ordinary deck, Share/10); acknowledgements do not carry it
+        ObjectNode detail = service.read(actor, deck).deepCopy();
+        assertThat(detail.path("fork").isNull()).isTrue();
+        assertThat(detail.without("fork")).isEqualTo(first);
         assertThat(first.path("visibility").stringValue(null)).isEqualTo("private");
         assertThat(first.path("rowVersion").stringValue(null)).isEqualTo("0");
         assertThat(first.toString()).doesNotContain("reuseScope", "rootId", "pinId");
