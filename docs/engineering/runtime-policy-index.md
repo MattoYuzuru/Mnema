@@ -227,18 +227,17 @@ Manifest и GC contracts описаны в
 
 ## Колоды сообщества: состояние в production
 
-Эпик [#419](https://github.com/MattoYuzuru/Mnema/issues/419). Все публичные функции выходят выключенными;
-включение — отдельный релиз после Share/16 (тексты) и Share/17 (проверка). В файлах production в репозитории
-эти ключи не заданы, действуют значения по умолчанию из `application.properties` (секреты окружения `prod`
-здесь не читались). Подробности каждого ключа — в таблице выше, поведение — в
+Эпик [#419](https://github.com/MattoYuzuru/Mnema/issues/419). Публичные функции выходили выключенными;
+релиз включения после Share/16 (тексты) и Share/17 (проверка) задаёт три выключателя в
+`deploy/production/compose.yaml`. Остальные ключи берут значения по умолчанию из `application.properties`. Подробности каждого ключа — в таблице выше, поведение — в
 [guide Learning](../../backend/services/learning/guide.md), состояние по задачам —
 [evidence эпика 1](./evidence/community-decks/epic-1/README.md).
 
 | Выключатель из §14 архитектуры | Ключ | Production | Что произойдёт при `true` |
 |---|---|---|---|
-| Публичные маршруты | `learning.community.public-routes.enabled` | `false` | Открываются `GET /api/public/decks/{code}…`, запросы доступа, превью ссылок и подача жалобы на колоду; без них `/d/{код}` показывает «Колода не найдена». |
-| Публичные медиа | `learning.community.public-media.enabled` | `false` | Выдача подписанных ссылок на медиа материалов (нужен и `public-routes`). |
-| Создание копий | `learning.community.forks.enabled` | `false` | Работает «Добавить к себе». Существующие копии работают при любом значении. |
+| Публичные маршруты | `learning.community.public-routes.enabled` | `true` (compose) | Открываются `GET /api/public/decks/{code}…`, запросы доступа, превью ссылок и подача жалобы на колоду; без них `/d/{код}` показывает «Колода не найдена». |
+| Публичные медиа | `learning.community.public-media.enabled` | `true` (compose) | Выдача подписанных ссылок на медиа материалов (нужен и `public-routes`). |
+| Создание копий | `learning.community.forks.enabled` | `true` (compose) | Работает «Добавить к себе». Существующие копии работают при любом значении. |
 | Жалобы | `learning.community.complaints.enabled` | `true` | Включена заранее; жалоба на колоду достижима, только когда включены `public-routes`. |
 | Очередь копий | `learning.jobs.deck.copy.materialize.enabled` | `true` (по умолчанию) | Выключенная очередь копии не готовит. |
 | Фоновые задачи Learning | `learning.jobs.enabled` | `true` | Общий выключатель исполнителя. |
