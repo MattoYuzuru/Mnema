@@ -4,6 +4,10 @@ import { Observable, catchError, map, throwError, timeout } from 'rxjs';
 import { AuthService } from '../../auth.service';
 import { appConfig } from '../../app.config';
 import {
+    ComplaintDetail, ComplaintPage, ComplaintStatus, DecideRequest, JournalPage, UnitKind, UnitsPage, parseComplaintDetail,
+    parseComplaintPage, parseJournalPage, parseUnitsPage
+} from './admin-complaints.models';
+import {
     AdminAccess, AdminPromo, AdminReport, AuditPage, CommandReceipt, Conversation, DirectoryDetail, DirectoryPage,
     PromoCreate, PromoPage, SupportPage, TicketCommand, UserReport, object, parseAccess, parseAuditPage,
     parseConversation, parseDetail, parseDirectory, parsePromo, parsePromoPage, parseReceipt, parseReport,
@@ -119,6 +123,38 @@ export class AdminApiService {
     }
     ticketCommand(id: string, command: TicketCommand): Observable<CommandReceipt> {
         return this.protect(this.http.post<unknown>(`${this.learning}/support/tickets/${id}/commands`, command).pipe(timeout(15000), map(parseReceipt)));
+    }
+    /** The complaint queue: OPEN oldest due date first, DECIDED newest decision first (Share/15). */
+    complaints(status: ComplaintStatus, cursor: string | null): Observable<ComplaintPage> {
+        return this.get(`${this.learning}/complaints`, {
+            status,
+            limit: '50',
+            cursor
+        }, parseComplaintPage);
+    }
+    complaint(id: string): Observable<ComplaintDetail> {
+        return this.get(`${this.learning}/complaints/${id}`, {}, parseComplaintDetail);
+    }
+    /** The materials or exercises of the reported deck's published revision, for the legal takedown picker. */
+    complaintUnits(id: string, kind: UnitKind, cursor: string | null): Observable<UnitsPage> {
+        return this.get(`${this.learning}/complaints/${id}/units`, {
+            kind,
+            limit: '50',
+            cursor
+        }, parseUnitsPage);
+    }
+    /** One decision per complaint; the API acts at once, so the confirmation is the caller's. */
+    decideComplaint(id: string, request: DecideRequest): Observable<ComplaintDetail> {
+        return this.protect(this.http.post<unknown>(`${this.learning}/complaints/${id}:decide`, request).pipe(timeout(15000), map(parseComplaintDetail)));
+    }
+    unhideComplaint(id: string): Observable<ComplaintDetail> {
+        return this.protect(this.http.post<unknown>(`${this.learning}/complaints/${id}:unhide`, null).pipe(timeout(15000), map(parseComplaintDetail)));
+    }
+    complaintJournal(cursor: string | null): Observable<JournalPage> {
+        return this.get(`${this.learning}/complaints/journal`, {
+            limit: '50',
+            cursor
+        }, parseJournalPage);
     }
     /** A response from an ended authorization generation must never repopulate a private screen. */
     private protect<T>(request: Observable<T>): Observable<T> {

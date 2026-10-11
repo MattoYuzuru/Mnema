@@ -58,7 +58,7 @@ describe('ItemApiService', () => {
             items: [{ ...summary, title: 'Первый текст материала', exemplar: true }], nextCursor: null
         }, { headers: { ...headers, ETag: '"8"' } });
         const first = await page;
-        expect(first.items).toEqual([{ ...summary, title: 'Первый текст материала', exemplar: true, exerciseCount: null }]);
+        expect(first.items).toEqual([{ ...summary, title: 'Первый текст материала', exemplar: true, exerciseCount: null, unavailable: false }]);
         expect(first.exemplars).toEqual(exemplars);
 
         const detail = firstValueFrom(api.read(deckId, memberKey));
@@ -155,7 +155,7 @@ describe('ItemApiService', () => {
         http.expectOne(`/api/decks/${deckId}/items?limit=20&sort=exerciseCount&include=exerciseCount&cursor=opaque`).flush({
             deckId, deckRevisionId, deckVersion: '8', total: 5, exemplars, items: [counted], nextCursor: null
         }, { headers: { ...headers, ETag: '"8"' } });
-        expect((await sorted).items).toEqual([counted]);
+        expect((await sorted).items).toEqual([{ ...counted, unavailable: false }]);
 
         const ordered = firstValueFrom(api.list(deckId, { exerciseCount: true }));
         http.expectOne(`/api/decks/${deckId}/items?limit=20&include=exerciseCount`).flush({
@@ -187,5 +187,35 @@ describe('ItemApiService', () => {
             deckId, deckRevisionId, deckVersion: '8', total: 1, exemplars, items: [{ ...summary, title: 'x', exemplar: 'yes' }], nextCursor: null
         }, { headers: { ...headers, ETag: '"8"' } });
         await expect(flag).rejects.toThrowError(AuthoringProtocolError);
+    });
+
+    describe('taken down after a complaint (Share/15)', () => {
+        const list = async (items: unknown[]) => {
+            const page = firstValueFrom(api.list(deckId));
+            http.expectOne(`/api/decks/${deckId}/items?limit=20`).flush({ deckId, deckRevisionId, deckVersion: '8', total: items.length, exemplars, items, nextCursor: null },
+                { headers: { ...headers, ETag: '"8"' } });
+            return page;
+        };
+
+        it('keeps a blocked row with its identity and an empty title, and marks it unavailable', async () => {
+            const blocked = { ...summary, title: '', exemplar: false, unavailable: true };
+            const ordinary = { ...summary, memberKey: id('79'), ordinal: 5, title: 'Обычный', exemplar: false };
+            const result = await list([blocked, ordinary]);
+            expect(result.items[0]).toMatchObject({ memberKey, itemRevisionId: revisionId, ordinal: 4, title: '', unavailable: true });
+            expect(result.items[1].unavailable).toBe(false);
+        });
+
+        it('refuses a marker that is not exactly true and a blocked row that still carries a title', async () => {
+            await expect(list([{ ...summary, title: '', exemplar: false, unavailable: false }])).rejects.toThrowError(AuthoringProtocolError);
+            await expect(list([{ ...summary, title: '', exemplar: false, unavailable: 'yes' }])).rejects.toThrowError(AuthoringProtocolError);
+            await expect(list([{ ...summary, title: 'Спорный текст', exemplar: false, unavailable: true }])).rejects.toThrowError(AuthoringProtocolError);
+            await expect(list([{ ...summary, title: 'x', exemplar: false, extra: 1 }])).rejects.toThrowError(AuthoringProtocolError);
+        });
+
+        it('lets the 410 of a blocked read through as the HTTP error the pages recognise', async () => {
+            const read = firstValueFrom(api.read(deckId, memberKey));
+            http.expectOne(`/api/decks/${deckId}/items/${memberKey}`).flush({ code: 'CONTENT_UNAVAILABLE' }, { status: 410, statusText: 'Gone' });
+            await expect(read).rejects.toMatchObject({ status: 410 });
+        });
     });
 });

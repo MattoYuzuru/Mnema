@@ -13,14 +13,14 @@ const CODE = 'Kq7xT3mNpR';
 const key = (index: number) => `7f1c2d3e-4a5b-4c6d-8e7f-${String(index).padStart(12, '0')}`;
 
 function material(index: number, title = `Материал ${index + 1} о глаголах`): PublicMaterial {
-    return { memberKey: key(index), itemRevisionId: key(index + 500), ordinal: index, title };
+    return { memberKey: key(index), itemRevisionId: key(index + 500), ordinal: index, title, unavailable: false };
 }
 function materialPage(from: number, count: number, nextCursor: string | null, total = 5): PublicMaterialPage {
     return { code: CODE, total, items: Array.from({ length: count }, (_, offset) => material(from + offset)), nextCursor };
 }
 function exercise(index: number, patch: Partial<PublicExercise> = {}): PublicExercise {
     return { exerciseId: key(index + 100), exerciseRevisionId: key(index + 200), ordinal: index, type: 'FREE_RESPONSE', enabled: true,
-        prompt: `Как сказать «я дома»? ${index}`, ...patch };
+        prompt: `Как сказать «я дома»? ${index}`, unavailable: false, ...patch };
 }
 function exercisePage(items: readonly PublicExercise[], nextCursor: string | null = null): PublicExercisePage {
     return { code: CODE, total: items.length, exercises: items, nextCursor };
@@ -203,6 +203,58 @@ describe('public deck lists', () => {
             root(fixture).querySelector<HTMLButtonElement>('[role=alert] button')!.click();
             fixture.detectChanges();
             expect(root(fixture).querySelectorAll('li')).toHaveLength(1);
+        });
+    });
+
+    describe('entries taken down after a complaint (Share/15)', () => {
+        const blocked = (index: number): PublicMaterial => ({ ...material(index, ''), unavailable: true });
+
+        it('keeps a blocked material in its place with its number, as text and not as a link', () => {
+            api.materials.mockReturnValue(of({ code: CODE, total: 3, items: [material(0), blocked(1), material(2)], nextCursor: null }));
+            const fixture = mount(PublicMaterialsListComponent);
+            const rows = [...root(fixture).querySelectorAll('li')];
+            expect(rows).toHaveLength(3);
+            expect(rows[1].querySelector('.folio')?.textContent).toBe('2');
+            expect(rows[1].querySelector('a')).toBeNull();
+            expect(rows[1].querySelector('app-unavailable-note .title')?.textContent).toBe('Материал недоступен');
+            expect(rows[1].querySelector('app-unavailable-note .hint')?.textContent).toBe('Материал снят по жалобе.');
+            expect(rows[1].querySelector('app-unavailable-note button, app-unavailable-note a')).toBeNull();
+            expect(titles(fixture)).toEqual(['Материал 1 о глаголах', 'Материал 3 о глаголах']);
+        });
+
+        it('never offers a blocked material as the one before or after the open one', () => {
+            api.materials.mockReturnValue(of({ code: CODE, total: 5, items: [material(0), blocked(1), material(2), blocked(3), material(4)], nextCursor: null }));
+            const fixture = mount(PublicMaterialsListComponent);
+            fixture.componentRef.setInput('openKey', key(2));
+            fixture.detectChanges();
+            expect(fixture.componentInstance.neighbors()).toEqual({ previous: material(0), next: material(4) });
+            fixture.componentRef.setInput('openKey', key(4));
+            fixture.detectChanges();
+            expect(fixture.componentInstance.neighbors().next).toBeNull();
+            expect(fixture.componentInstance.neighbors().previous).toEqual(material(2));
+        });
+
+        it('reads on for a readable neighbour when only blocked materials follow the open one', () => {
+            api.materials.mockReturnValueOnce(of({ code: CODE, total: 4, items: [material(0), blocked(1)], nextCursor: 'c1' }))
+                .mockReturnValueOnce(of({ code: CODE, total: 4, items: [material(2), material(3)], nextCursor: null }));
+            const fixture = TestBed.createComponent(PublicMaterialsListComponent);
+            fixture.componentRef.setInput('code', CODE);
+            fixture.componentRef.setInput('openKey', key(0));
+            fixture.detectChanges();
+            fixture.detectChanges();
+            expect(api.materials).toHaveBeenLastCalledWith(CODE, 'c1');
+            expect(fixture.componentInstance.neighbors().next).toEqual(material(2));
+        });
+
+        it('keeps a blocked exercise in its place without its question, type label or answer', () => {
+            api.exercises.mockReturnValue(of(exercisePage([exercise(0), exercise(1, { prompt: '', unavailable: true }), exercise(2)])));
+            const fixture = mount(PublicExercisesListComponent);
+            const rows = [...root(fixture).querySelectorAll('li')];
+            expect(rows).toHaveLength(3);
+            expect(rows[1].querySelector('.folio')?.textContent).toBe('2');
+            expect(rows[1].querySelector('app-unavailable-note .title')?.textContent).toBe('Упражнение недоступно');
+            expect(rows[1].querySelector('.prompt, .stamp')).toBeNull();
+            expect(rows[0].querySelector('.prompt')?.textContent).toBe('Как сказать «я дома»? 0');
         });
     });
 });

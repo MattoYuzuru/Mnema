@@ -28,6 +28,7 @@ h2 { margin: 0 0 .75rem; font-size: clamp(1.4rem, 3vw, 1.9rem); line-height: 1.2
     --mn-wave-fill: var(--mn-soft);
 }
 .item-row:has(.row-link:focus-visible) { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+.item-row.is-unavailable { padding-block: .75rem; }
 .folio { color: var(--mn-ink); font: 1.4rem/1 var(--mn-font-display, Georgia, serif); text-align: end; }
 .row-link { min-inline-size: 0; color: var(--mn-ink); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
 /* Stretched link: the whole row opens the material. */

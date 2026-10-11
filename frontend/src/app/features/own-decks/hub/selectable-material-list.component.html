@@ -24,30 +24,43 @@
 
 <ul #materialRows class="item-list">
   @for (item of items(); track item.memberKey) {
-    <li class="item-row" [class.selected]="selection().isSelected(item.memberKey)">
+    <li class="item-row" [class.selected]="selection().isSelected(item.memberKey)" [class.is-unavailable]="item.unavailable">
       <label class="check">
         <input type="checkbox" [checked]="selection().isSelected(item.memberKey)" [attr.aria-label]="'Выбрать «' + titleOf(item) + '»'"
           (click)="pick(item, $event)" />
       </label>
       <span class="folio" aria-hidden="true">{{ item.ordinal + 1 }}</span>
       <div class="copy">
-        <a class="row-link" [routerLink]="['/decks', deckId(), 'materials', item.memberKey]">{{ titleOf(item) }}</a>
-        @if (item.exerciseCount === 0) {
-          <span class="count missing">
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 1.5 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /><path d="M8 6v4M8 11.7v.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-            нет упражнений
-          </span>
-        } @else if (item.exerciseCount !== null) {
-          <span class="count">{{ exercisesText(item.exerciseCount) }}</span>
+        @if (item.unavailable) {
+          <!-- Taken down after a complaint (Share/15): it cannot be opened; the owner may replace or delete it without reading it. -->
+          <app-unavailable-note audience="owner">
+            <a class="button small" [routerLink]="['/decks', deckId(), 'materials', item.memberKey, 'edit']"
+              [queryParams]="{ ordinal: item.ordinal, replace: item.itemRevisionId }" [attr.aria-label]="'Заменить материал ' + (item.ordinal + 1)">Заменить</a>
+            <button class="button small" type="button" [attr.aria-label]="'Удалить материал ' + (item.ordinal + 1)" (click)="removeUnavailable.emit(item)">Удалить…</button>
+          </app-unavailable-note>
+        } @else {
+          <a class="row-link" [routerLink]="['/decks', deckId(), 'materials', item.memberKey]">{{ titleOf(item) }}</a>
+          @if (item.exerciseCount === 0) {
+            <span class="count missing">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 1.5 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /><path d="M8 6v4M8 11.7v.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+              нет упражнений
+            </span>
+          } @else if (item.exerciseCount !== null) {
+            <span class="count">{{ exercisesText(item.exerciseCount) }}</span>
+          }
         }
       </div>
-      <button class="star" type="button" [attr.aria-pressed]="item.exemplar" [attr.aria-label]="'Эталон: ' + titleOf(item)"
-        [attr.aria-disabled]="starBlocked(item) ? 'true' : null" [attr.aria-describedby]="starBlocked(item) ? uid + '-budget' : null"
-        [attr.aria-busy]="starPending().has(item.memberKey) ? 'true' : null" (click)="star(item)">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
-          <path d="m12 2.8 2.7 5.8 6.3.8-4.6 4.4 1.2 6.3L12 17.1l-5.6 3 1.2-6.3L3 9.4l6.3-.8z" [attr.fill]="item.exemplar ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-        </svg>
-      </button>
+      @if (item.unavailable) {
+        <span aria-hidden="true"></span>
+      } @else {
+        <button class="star" type="button" [attr.aria-pressed]="item.exemplar" [attr.aria-label]="'Эталон: ' + titleOf(item)"
+          [attr.aria-disabled]="starBlocked(item) ? 'true' : null" [attr.aria-describedby]="starBlocked(item) ? uid + '-budget' : null"
+          [attr.aria-busy]="starPending().has(item.memberKey) ? 'true' : null" (click)="star(item)">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+            <path d="m12 2.8 2.7 5.8 6.3.8-4.6 4.4 1.2 6.3L12 17.1l-5.6 3 1.2-6.3L3 9.4l6.3-.8z" [attr.fill]="item.exemplar ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+          </svg>
+        </button>
+      }
       <time class="date" [attr.datetime]="item.updatedAt">{{ item.updatedAt | date:'dd.MM.y' }}</time>
     </li>
   }

@@ -120,6 +120,8 @@ export class DeckMaterialsComponent {
     private moreLoad: Subscription | null = null;
     private loadSequence = 0;
     private pendingDelete: { readonly key: string; readonly commandId: string } | null = null;
+    /** What the next selection announcement adds (a row action says where the delete button is). */
+    private announceTail = '';
 
     constructor() {
         effect(() => {
@@ -130,7 +132,10 @@ export class DeckMaterialsComponent {
         effect(onCleanup => this.watchPreview(onCleanup));
         effect(onCleanup => {
             const count = this.selectionCount();
-            const timer = setTimeout(() => this.announcement.set(count > 0 ? `Выбрано ${materialsText(count)}.` : ''), ANNOUNCE_DELAY_MS);
+            const timer = setTimeout(() => {
+                this.announcement.set(count > 0 ? `Выбрано ${materialsText(count)}.${this.announceTail}` : '');
+                this.announceTail = '';
+            }, ANNOUNCE_DELAY_MS);
             onCleanup(() => clearTimeout(timer));
         });
         effect(onCleanup => this.reserveBarSpace(onCleanup));
@@ -257,6 +262,15 @@ export class DeckMaterialsComponent {
                 },
                 error: (error: unknown) => this.deletionFailed(error)
             });
+    }
+
+    /**
+     * «Удалить…» on a material taken down after a complaint: selects exactly that row, so the shared hold-to-delete bar (with its server
+     * preview and the long hold) deletes it. Nothing is deleted here and no `confirm()` is used.
+     */
+    protected removeUnavailable(item: ItemSummary): void {
+        this.announceTail = ' Удалите его кнопкой «Удалить выбранные» внизу страницы.';
+        this.selection.replace([item.memberKey]);
     }
 
     protected selectRemainder(): void {

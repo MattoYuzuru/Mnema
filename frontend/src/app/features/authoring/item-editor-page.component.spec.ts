@@ -21,7 +21,7 @@ describe('ItemEditorPageComponent recovery', () => {
         memberCount: 0, exerciseCount: 0
     };
 
-    function configure(memberKey: string | null = null, ordinal: string | null = null, draftParam: string | null = null): {
+    function configure(memberKey: string | null = null, ordinal: string | null = null, draftParam: string | null = null, replace: string | null = null): {
         readonly decks: SpyObj<OwnDecksApiService>;
         readonly items: SpyObj<ItemApiService>;
         readonly authoring: SpyObj<AuthoringApiService>;
@@ -51,7 +51,7 @@ describe('ItemEditorPageComponent recovery', () => {
                         snapshot: {
                             paramMap: convertToParamMap(memberKey === null
                                 ? { deckId: deck.deckId } : { deckId: deck.deckId, memberKey }),
-                            queryParamMap: convertToParamMap({ ...(ordinal === null ? {} : { ordinal }), ...(draftParam === null ? {} : { draft: draftParam }) })
+                            queryParamMap: convertToParamMap({ ...(ordinal === null ? {} : { ordinal }), ...(draftParam === null ? {} : { draft: draftParam }), ...(replace === null ? {} : { replace }) })
                         }
                     } },
                 { provide: Router, useValue: router },
@@ -189,6 +189,76 @@ describe('ItemEditorPageComponent recovery', () => {
             expect(authoring.readDraft).toHaveBeenCalledWith(id('3'));
             expect(component.message()).toContain('другому материалу');
             expect(authoring.createDraft).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('a material taken down after a complaint (Share/15)', () => {
+        const member = id('9');
+        const blockedRevision = id('8');
+        const gone = (): never => { throw new HttpErrorResponse({ status: 410 }); };
+        const draftFor = (document = createEmptyNativeDocument()): DraftDetail => ({
+            draftId: id('3'), deckId: deck.deckId, memberKey: member, baseRevisionId: blockedRevision, rowVersion: '0', contentBytes: 100,
+            createdAt: '2026-09-19T10:00:00Z', acknowledgedAt: '2026-09-19T10:00:00Z', expiresAt: '2026-10-19T10:00:00Z', document
+        });
+
+        it('starts a blank replacement on the same place when the list gave the revision, and says why', () => {
+            const { items, authoring } = configure(member, '3', null, blockedRevision);
+            items.read.mockReturnValue(throwError(gone));
+            authoring.listAllDrafts.mockReturnValue(of({ items: [], nextCursor: null }));
+            authoring.createDraft.mockImplementation((_deck, document, _member, _base, commandId) =>
+                of({ acknowledgement: { commandId, draft: draftFor(document) }, replayed: false }));
+            const fixture = TestBed.createComponent(ItemEditorPageComponent);
+            fixture.detectChanges();
+            const component = fixture.componentInstance;
+            expect(component.replacing()).toBe(true);
+            expect(component.phase()).toBe('ready');
+            const created = vi.mocked(authoring.createDraft).mock.calls[0];
+            expect([created[0], created[2], created[3]]).toEqual([deck.deckId, member, blockedRevision]);
+            expect(created[1].root.content.every(node => node.content.length === 0)).toBe(true);
+            const root = fixture.nativeElement as HTMLElement;
+            expect(root.textContent).toContain('Прежний материал снят по жалобе');
+            expect(root.querySelector('header a.button')).toBeNull();
+            fixture.destroy();
+        });
+
+        it('publishes the replacement as a save of the revision and position the list showed, without comparing with the old content', () => {
+            const { items, authoring, router } = configure(member, '3', null, blockedRevision);
+            items.read.mockReturnValue(throwError(gone));
+            authoring.listAllDrafts.mockReturnValue(of({ items: [draftFor()], nextCursor: null }));
+            authoring.readDraft.mockReturnValue(of(draftFor()));
+            authoring.deleteDraft.mockReturnValue(of(undefined));
+            items.save.mockReturnValue(of({ replayed: false, acknowledgement: { commandId: id('5'), deckId: deck.deckId, deckRevisionId: id('6'), deckVersion: '1', memberCount: 1,
+                changes: [{ operation: 'save', memberKey: member, itemRevisionId: id('7'), itemVersion: '1', ordinal: 3 }] } }));
+            const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
+            expect(component.replacing()).toBe(true);
+            component.publish();
+            const call = vi.mocked(items.save).mock.calls[0];
+            expect(call.slice(0, 6)).toEqual([deck.deckId, member, deck.rowVersion, deck.revisionId, blockedRevision, 3]);
+            expect(call[8]).toEqual([]);
+            expect(router.navigate).toHaveBeenCalledWith(['/decks', deck.deckId, 'materials', member], { queryParams: { ordinal: 3 } });
+        });
+
+        it('does not pretend: without the revision of the list a blocked material is a calm failure and no draft is made', () => {
+            for (const replace of [null, 'not-an-id']) {
+                TestBed.resetTestingModule();
+                const { items, authoring } = configure(member, '3', null, replace);
+                items.read.mockReturnValue(throwError(gone));
+                authoring.listAllDrafts.mockReturnValue(of({ items: [], nextCursor: null }));
+                const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
+                expect(component.replacing()).toBe(false);
+                expect(component.phase()).toBe('error');
+                expect(component.message()).toBe('Этот материал снят по жалобе, открыть его нельзя. В списке материалов колоды его можно заменить или удалить.');
+                expect(authoring.createDraft).not.toHaveBeenCalled();
+            }
+        });
+
+        it('keeps the ordinary message for any other failure, even with the revision', () => {
+            const { items, authoring } = configure(member, '3', null, blockedRevision);
+            items.read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+            authoring.listAllDrafts.mockReturnValue(of({ items: [], nextCursor: null }));
+            const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
+            expect(component.replacing()).toBe(false);
+            expect(component.message()).toBe('Не удалось открыть материал. Попробуйте ещё раз.');
         });
     });
 });

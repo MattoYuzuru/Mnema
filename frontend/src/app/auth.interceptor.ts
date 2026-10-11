@@ -34,7 +34,10 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
         const learningExact = [`${prefix}/capabilities`, `${prefix}/exercise-previews`, `${prefix}/usage`, `${prefix}/plans`,
             `${prefix}/learning-profile`, `${prefix}/speech-consent`, `${prefix}/promo-codes/redemptions`, `${prefix}/promo-popup`, `${prefix}/promo-popup/events`,
             `${prefix}/experiment-events`, `${prefix}/billing/checkout`];
-        const adminRoute = [`${prefix}/admin/console/access`, `${prefix}/admin/console/report`, `${prefix}/admin/console/audit`, `${prefix}/admin/promo-codes`, `${prefix}/admin/support/tickets`].includes(url.pathname)
+        const adminRoute = [`${prefix}/admin/console/access`, `${prefix}/admin/console/report`, `${prefix}/admin/console/audit`, `${prefix}/admin/promo-codes`, `${prefix}/admin/support/tickets`,
+            `${prefix}/admin/complaints`, `${prefix}/admin/complaints/journal`].includes(url.pathname)
+            // The complaint queue of the owner console (Share/15): one complaint, its unit picker and the two decisions (`:decide`, `:unhide`).
+            || new RegExp(`^${pattern}/admin/complaints/${accountId}(?:/units|:decide|:unhide)?$`, 'iu').test(url.pathname)
             || new RegExp(`^${pattern}/admin/console/users/${accountId}$`, 'iu').test(url.pathname)
             || new RegExp(`^${pattern}/admin/promo-codes/${accountId}$`, 'iu').test(url.pathname)
             || new RegExp(`^${pattern}/admin/support/tickets/[1-9][0-9]*(?:/commands)?$`, 'u').test(url.pathname);
@@ -42,8 +45,10 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
         // bearer is optional there. A guest has no token and sends none; a signed-in viewer sends it so the server can resolve OWNER or
         // GRANTEE. The code is exactly ten base58 characters, never a prefix match.
         const entityId = '[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}';
-        const publicRead = new RegExp(`^${pattern}/public/decks/[1-9A-HJ-NP-Za-km-z]{10}(?:/items(?:/${entityId})?|/exercises|/media/${entityId})?$`, 'u')
-            .test(url.pathname);
+        const publicRead = new RegExp(`^${pattern}/public/decks/[1-9A-HJ-NP-Za-km-z]{10}(?:/items(?:/${entityId})?|/exercises|/media/${entityId}|/complaints)?$`, 'u')
+            .test(url.pathname)
+            // Filing a complaint about a profile (Share/15): signed-in only, the login is the Identity profile username.
+            || new RegExp(`^${pattern}/public/profiles/[A-Za-z0-9_.-]{3,50}/complaints$`, 'u').test(url.pathname);
         const learningRoute = url.origin === learning.origin && (adminRoute || publicRead || learningExact.includes(url.pathname)
             || learningRoots.some(root => url.pathname === root || url.pathname.startsWith(`${root}/`)));
         return identityRoute || learningRoute;

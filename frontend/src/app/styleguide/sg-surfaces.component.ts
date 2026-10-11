@@ -17,6 +17,10 @@ import { ItemApiService } from '../features/authoring/item-api.service';
 import { PromoPopupComponent } from '../features/promo/promo-popup.component';
 import { PromoCampaign } from '../features/promo/promo.models';
 import { AccessScreenComponent } from '../shared/access-screen.component';
+import { ComplaintApiService } from '../shared/complaint-api.service';
+import { ComplaintDialogComponent } from '../shared/complaint-dialog.component';
+import { ModerationNoticeComponent } from '../shared/moderation-notice.component';
+import { UnavailableNoteComponent } from '../shared/unavailable-note.component';
 import { AccessLevelComponent } from '../shared/access-level.component';
 import { ActionMenuComponent, ActionMenuItem } from '../shared/action-menu.component';
 import { PublicDeckCardComponent } from '../shared/public-deck-card.component';
@@ -35,6 +39,7 @@ import { AutoLoadComponent } from '../shared/auto-load.component';
 import { SgLegalComponent } from './sg-legal.component';
 import { DemoAccessApi, DemoAuthorCards } from './sg-access-demo';
 import { DemoItemApi, DemoPublicationApi, SG_INVITE_DECK, SG_PRIVATE_DECK, SG_SHARED_DECK } from './sg-publication-demo';
+import { DemoComplaintApi } from './sg-moderation-demo';
 import { SgSpecimenComponent } from './sg-specimen.component';
 
 const ARTIFACT_STATES: readonly ArtifactSummary['state'][] = ['PUBLISHED', 'PROPOSED', 'GENERATING', 'FAILED', 'REJECTED', 'STALE'];
@@ -72,9 +77,10 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, AccessScreenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
         NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent, AutoLoadComponent,
-        AccessLevelComponent, PublicationBlockComponent, AccessPanelComponent],
+        AccessLevelComponent, PublicationBlockComponent, AccessPanelComponent, ComplaintDialogComponent, ModerationNoticeComponent, UnavailableNoteComponent],
     providers: [{ provide: PublicationApiService, useClass: DemoPublicationApi }, { provide: ItemApiService, useClass: DemoItemApi },
-        { provide: AccessApiService, useClass: DemoAccessApi }, { provide: AuthorCardsService, useClass: DemoAuthorCards }],
+        { provide: AccessApiService, useClass: DemoAccessApi }, { provide: AuthorCardsService, useClass: DemoAuthorCards },
+        { provide: ComplaintApiService, useClass: DemoComplaintApi }],
     templateUrl: './sg-surfaces.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -124,6 +130,10 @@ export class SgSurfacesComponent {
             if (outcome === 'failed') this.menuFallback.set(url);
         } else this.menuStatus.set(`Выбран пункт «${id}».`);
     }
+
+    protected readonly complaintOpen = signal(false);
+    protected openComplaint(): void { this.complaintOpen.set(true); }
+    protected closeComplaint(): void { this.complaintOpen.set(false); }
 
     protected readonly popupOpen = signal(false);
     protected readonly campaign: PromoCampaign = {

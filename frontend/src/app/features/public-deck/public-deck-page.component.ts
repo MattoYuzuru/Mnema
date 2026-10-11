@@ -8,9 +8,10 @@ import { learnerOrigin } from '../../app.config';
 import { AuthService } from '../../auth.service';
 import { AuthorCardsService } from '../../author-cards.service';
 import { safeReturnUrl } from '../../auth-protocol';
-import { ActionMenuComponent } from '../../shared/action-menu.component';
+import { ActionMenuComponent, ActionMenuItem } from '../../shared/action-menu.component';
 import { AccessScreenComponent } from '../../shared/access-screen.component';
 import { AuthorChipComponent } from '../../shared/author-chip.component';
+import { ComplaintDialogComponent } from '../../shared/complaint-dialog.component';
 import { GlyphComponent, GlyphName } from '../../shared/glyph.component';
 import { sizeLine } from '../../shared/public-deck-card';
 import { SegmentedChoiceComponent, SegmentedOption } from '../../shared/segmented-choice.component';
@@ -39,7 +40,9 @@ type Phase = 'loading' | 'ready' | 'not-found' | 'invite-only' | 'rate-limited' 
 type Tab = 'materials' | 'exercises';
 
 const LEVEL_GLYPHS: Readonly<Record<PublicVisibility, GlyphName>> = { PUBLIC: 'book-open', LINK: 'link', INVITE: 'lock' };
-const MENU_ITEMS = [SHARE_MENU_ITEM];
+const COMPLAINT_MENU_ITEM: ActionMenuItem = { id: 'complain', label: 'Пожаловаться' };
+const OWNER_MENU_ITEMS: readonly ActionMenuItem[] = [SHARE_MENU_ITEM];
+const READER_MENU_ITEMS: readonly ActionMenuItem[] = [SHARE_MENU_ITEM, COMPLAINT_MENU_ITEM];
 
 /**
  * `/d/:code/:slug` and `/d/:code`: the read-only view of someone else's deck behind its public code, for guests and any
@@ -55,7 +58,7 @@ const MENU_ITEMS = [SHARE_MENU_ITEM];
     selector: 'app-public-deck-page',
     imports: [RouterLink, AccessScreenComponent, ActionMenuComponent, AuthorChipComponent, DeckDescriptionComponent, GlyphComponent,
         PublicExercisesListComponent, PublicMaterialComponent, PublicMaterialsListComponent, SegmentedChoiceComponent, ShareButtonComponent,
-        ShareLinkFieldComponent],
+        ShareLinkFieldComponent, ComplaintDialogComponent],
     providers: [PublicPageMeta],
     templateUrl: './public-deck-page.component.html',
     styleUrl: './public-deck-page.component.css',
@@ -68,7 +71,8 @@ export class PublicDeckPageComponent {
     protected readonly author = signal<{ readonly username: string; readonly avatarSrc: string | null } | null>(null);
     protected readonly tab = signal<Tab>('materials');
     protected readonly menuFallback = signal<string | null>(null);
-    protected readonly menuItems = MENU_ITEMS;
+    /** The complaint dialog is open (a signed-in reader chose «Пожаловаться»). */
+    protected readonly complaintOpen = signal(false);
     protected readonly communityRoute = COMMUNITY_ROUTE;
 
     private readonly route = inject(ActivatedRoute);
@@ -92,6 +96,8 @@ export class PublicDeckPageComponent {
 
     protected readonly signedIn = computed(() => this.auth.status() === 'authenticated');
     protected readonly isOwner = computed(() => this.deck()?.access === 'OWNER');
+    /** Share for everybody; «Пожаловаться» for everybody but the owner of the deck (the server refuses a complaint about one's own deck). */
+    protected readonly menuItems = computed(() => this.isOwner() ? OWNER_MENU_ITEMS : READER_MENU_ITEMS);
     /** Where the login sends the reader back to: this very view. */
     protected readonly returnUrl = computed(() => {
         const slug = this.routeSlug();
@@ -165,10 +171,22 @@ export class PublicDeckPageComponent {
     protected setTab(value: Tab | null): void { this.tab.set(value ?? 'materials'); }
 
     protected async menuChosen(id: string): Promise<void> {
+        if (id === COMPLAINT_MENU_ITEM.id) {
+            // A guest signs in first and comes back to this very view; a complaint always has a signed-in reporter.
+            if (this.signedIn()) this.complaintOpen.set(true);
+            else void this.router.navigate(['/login'], { queryParams: { returnUrl: this.returnUrl() } });
+            return;
+        }
         if (id !== SHARE_MENU_ITEM.id) return;
         this.menuFallback.set(null);
         const outcome = await this.links.share(this.shareUrl(), this.deck()?.title ?? '');
         if (outcome === 'failed') this.menuFallback.set(this.shareUrl());
+    }
+
+    /** The complaint dialog found the deck gone for this reader (404): the dialog is closed and the page asks for the summary again. */
+    protected complaintGone(): void {
+        this.complaintOpen.set(false);
+        this.recheck();
     }
 
     /**
@@ -194,6 +212,7 @@ export class PublicDeckPageComponent {
         this.author.set(null);
         this.tab.set('materials');
         this.menuFallback.set(null);
+        this.complaintOpen.set(false);
         this.stopCountdown();
         this.meta.indexable(false);
         this.meta.title(null);

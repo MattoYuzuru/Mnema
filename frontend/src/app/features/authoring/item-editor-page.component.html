@@ -1,7 +1,8 @@
 <section class="page" aria-labelledby="editor-title">
   @if (deck(); as currentDeck) { <a class="back-link" [routerLink]="['/decks', currentDeck.deckId]">← К колоде</a> }
-  <header class="page-heading"><div><p class="eyebrow">{{ item() ? 'Редактирование' : 'Новый материал' }}</p><h1 id="editor-title" tabindex="-1">{{ deck()?.metadata?.title ?? 'Материал' }}</h1><p class="lede">Изменения сохраняются автоматически. Когда материал будет готов, опубликуйте его.</p></div>
-    @if (item(); as currentItem) { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials', currentItem.memberKey, 'exercises', 'new']">Настроить упражнения</a> }
+  <header class="page-heading"><div><p class="eyebrow">{{ item() ? 'Редактирование' : 'Новый материал' }}</p><h1 id="editor-title" tabindex="-1">{{ deck()?.metadata?.title ?? 'Материал' }}</h1><p class="lede">Изменения сохраняются автоматически. Когда материал будет готов, опубликуйте его.</p>
+    @if (replacing()) { <p class="notice warning" role="status">Прежний материал снят по жалобе. Напишите новый: после публикации он займёт то же место в колоде.</p> }</div>
+    @if (item(); as currentItem) { @if (!replacing()) { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials', currentItem.memberKey, 'exercises', 'new']">Настроить упражнения</a> } }
   </header>
   @if (message(); as currentMessage) {
     <section class="notice" [class.error]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected'" [attr.role]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected' ? 'alert' : 'status'">

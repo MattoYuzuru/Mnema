@@ -17,7 +17,9 @@ import { GenerationApiService } from '../generation/generation-api.service';
 import { DeckHubApiService } from './hub/deck-hub-api.service';
 import { DeckInsights } from './hub/deck-hub.models';
 import { OwnDecksApiService } from './own-decks-api.service';
+import { ModerationApiService, parseDeckModeration } from './moderation/moderation-api.service';
 import { PublicationApiService } from './publication/publication-api.service';
+import moderationFixture from '../../../../../contracts/moderation/complaints.json';
 import { neverPublished, sharedState } from './publication/publication-test-data';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 
@@ -31,6 +33,7 @@ describe('OwnDeckDetailPageComponent', () => {
     let capabilities: SpyObj<CapabilitiesApiService>;
     let generation: SpyObj<GenerationApiService>;
     let publication: SpyObj<PublicationApiService>;
+    let moderation: SpyObj<ModerationApiService>;
     const insights = hubFixture.insights.response as unknown as DeckInsights;
     const orderedPage = { ...hubFixture.items.orderedPageWithCounts.response, items: hubFixture.items.sortedPage.items } as unknown as ItemPage;
     const deck = metadataFixture.detail as unknown as OwnDeck;
@@ -76,6 +79,8 @@ describe('OwnDeckDetailPageComponent', () => {
         generation.listSessions.mockReturnValue(of({ items: [], nextCursor: null }));
         publication = spyObj<PublicationApiService>({ read: vi.fn().mockName('PublicationApiService.read'), save: vi.fn().mockName('PublicationApiService.save'), topics: vi.fn().mockName('PublicationApiService.topics') });
         publication.read.mockReturnValue(of(neverPublished({ deckId: deck.deckId })));
+        moderation = spyObj<ModerationApiService>({ notice: vi.fn().mockName('ModerationApiService.notice') });
+        moderation.notice.mockReturnValue(of(parseDeckModeration({ ...moderationFixture.ownerNotice.clean, deckId: deck.deckId })));
         Object.defineProperty(store, 'detailState', { value: detail.asReadonly() });
         Object.defineProperty(store, 'mutationState', { value: mutation.asReadonly() });
         await TestBed.configureTestingModule({
@@ -90,6 +95,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 { provide: CapabilitiesApiService, useValue: capabilities },
                 { provide: GenerationApiService, useValue: generation },
                 { provide: PublicationApiService, useValue: publication },
+                { provide: ModerationApiService, useValue: moderation },
                 { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })), fragment } }
             ]
         }).overrideComponent(OwnDeckDetailPageComponent, {
@@ -346,6 +352,28 @@ describe('OwnDeckDetailPageComponent', () => {
             withoutExercises.click();
             fixture.detectChanges();
             expect(items.list).toHaveBeenLastCalledWith(deck.deckId, { sort: 'exerciseCount', exerciseCount: true, limit: 50 });
+        });
+    });
+    describe('moderation notice', () => {
+        it('reads the notice of this deck and draws nothing for a clean one', () => {
+            const root = fixture.nativeElement as HTMLElement;
+            expect(moderation.notice).toHaveBeenCalledWith(deck.deckId);
+            expect(root.querySelector('app-deck-moderation')).not.toBeNull();
+            expect(root.querySelector('app-moderation-notice section')).toBeNull();
+        });
+
+        it('shows the hidden deck and the counts under the heading of the hub, before the actions', async () => {
+            moderation.notice.mockReturnValue(of(parseDeckModeration({ ...moderationFixture.ownerNotice.answer, deckId: deck.deckId })));
+            const flagged = TestBed.createComponent(OwnDeckDetailPageComponent);
+            flagged.detectChanges();
+            await flagged.whenStable();
+            flagged.detectChanges();
+            const root = flagged.nativeElement as HTMLElement;
+            const notice = root.querySelector('app-moderation-notice section')!;
+            expect(notice.textContent).toContain('Колода скрыта из Сообщества');
+            expect(notice.textContent).toContain('Снято: 2 материала и 1 упражнение.');
+            expect(root.querySelector('header')!.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+            expect(notice.compareDocumentPosition(root.querySelector('nav[aria-label="Действия с колодой"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         });
     });
 });

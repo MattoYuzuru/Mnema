@@ -6,7 +6,7 @@ import { appConfig } from '../../app.config';
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
     AuthoringProtocolError, newCommandId, requireCommand, requireCount, requireCursor, requireEntity, requireInstant,
-    requireObject, requireVersion
+    requireObject, requireObjectWith, requireTakenDown, requireVersion
 } from './authoring.models';
 import { ExerciseSpec, MECHANICS, Mechanic, ObjectiveCommand } from '../../content/exercise/exercise-content.models';
 import {
@@ -131,17 +131,18 @@ function parsePage(value: unknown): ExercisePage {
 }
 
 function parseSummary(value: unknown): ExerciseSummary {
-    const object = requireObject(value, [
+    const object = requireObjectWith(value, [
         'exerciseId', 'exerciseRevisionId', 'exerciseVersion', 'ordinal', 'type', 'enabled', 'schemaVersion',
         'createdAt', 'updatedAt', 'objective', 'isNew'
-    ]);
+    ], ['unavailable']);
     if (object['schemaVersion'] !== 2) throw new AuthoringProtocolError('Unsupported exercise schema.');
+    const unavailable = requireTakenDown(object['unavailable']);
     return {
         exerciseId: requireEntity(object['exerciseId']), exerciseRevisionId: requireEntity(object['exerciseRevisionId']),
         exerciseVersion: requireVersion(object['exerciseVersion']), ordinal: requireCount(object['ordinal'], 99_999),
         type: exerciseType(object['type']), enabled: boolean(object['enabled']), schemaVersion: 2,
         createdAt: requireInstant(object['createdAt']), updatedAt: requireInstant(object['updatedAt']),
-        objective: parseObjective(object['objective']), isNew: boolean(object['isNew'])
+        objective: parseObjective(object['objective'], unavailable), isNew: boolean(object['isNew']), unavailable
     };
 }
 
@@ -167,12 +168,13 @@ function parseDetail(value: unknown): ExerciseDetail {
     };
 }
 
-function parseObjective(value: unknown): ExerciseObjective {
+/** The title of an objective is never blank, except in a row taken down after a complaint: it carries nothing of the content. */
+function parseObjective(value: unknown, takenDown = false): ExerciseObjective {
     const object = requireObject(value, [
         'objectiveId', 'objectiveKey', 'objectiveRevisionId', 'objectiveVersion', 'memberKey', 'title'
     ]);
     const title = object['title'];
-    if (typeof title !== 'string' || title.trim().length === 0 || title.length > 160) {
+    if (typeof title !== 'string' || (takenDown ? title !== '' : title.trim().length === 0) || title.length > 160) {
         throw new AuthoringProtocolError('Invalid objective title.');
     }
     return {

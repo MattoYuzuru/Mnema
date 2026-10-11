@@ -101,6 +101,8 @@ function sentence(notification: AppNotification): string | null {
         case 'MEDIA_PROCESSING_FAILED': return mediaFailed(params);
         case 'DECK_ACCESS_REQUESTED': return accessRequested(params);
         case 'DECK_ACCESS_GRANTED': return text(params, 'code') === null ? null : 'Автор принял ваш запрос: колода теперь доступна вам';
+        case 'DECK_HIDDEN': return text(params, 'deckId') === null ? null : 'Ваша колода скрыта из Сообщества после жалобы. Вам она доступна как раньше';
+        case 'DECK_CONTENT_TAKEN_DOWN': return takenDown(params);
         default: return null;
     }
 }
@@ -129,6 +131,15 @@ function accessRequested(params: Readonly<Record<string, unknown>>): string | nu
     return `${count === 1 ? 'Запрос' : `${count} ${plural(count, ACCESS_REQUESTS)}`} доступа к вашей колоде ${count % 10 === 1 && count % 100 !== 11 ? 'ждёт' : 'ждут'} ответа`;
 }
 
+/** Counts are those of the decision that published the notification; the sentence names only the kinds that were taken down. */
+function takenDown(params: Readonly<Record<string, unknown>>): string | null {
+    const materials = integer(params, 'materialCount');
+    const exercises = integer(params, 'exerciseCount');
+    if (materials === null || exercises === null) return null;
+    const parts = [...(materials > 0 ? [`${materials} ${plural(materials, MATERIALS)}`] : []), ...(exercises > 0 ? [`${exercises} ${plural(exercises, EXERCISES)}`] : [])];
+    return `По жалобе сняты материалы вашей колоды${parts.length === 0 ? '' : `: ${parts.join(' и ')}`}. Откройте колоду, чтобы заменить или удалить их`;
+}
+
 function mediaFailed(params: Readonly<Record<string, unknown>>): string | null {
     const kind = MEDIA[text(params, 'mediaKind') ?? ''];
     if (kind === undefined) return null;
@@ -144,8 +155,8 @@ function mediaFailed(params: Readonly<Record<string, unknown>>): string | null {
 
 /**
  * Route key to a client destination. WORKSHOP opens the Workshop of `sessionId` (`/decks/:deckId/workshop/:sessionId`); a
- * WORKSHOP notification without a usable session falls back to the deck page; DECK_ACCESS_REQUESTED opens the access section of the deck hub
- * and DECK_ACCESS_GRANTED opens `/d/{code}`. PLANS has no plans page yet (paywall:
+ * WORKSHOP notification without a usable session falls back to the deck page; DECK_ACCESS_REQUESTED opens the access section of the deck hub,
+ * DECK_HIDDEN and DECK_CONTENT_TAKEN_DOWN its «Модерация» notice, and DECK_ACCESS_GRANTED opens `/d/{code}`. PLANS has no plans page yet (paywall:
  * AI-19 #301), so it opens the «ИИ-бюджет» block of the profile (`/profile#ai-budget`); NONE stays a plain sentence.
  */
 function routeLink(notification: AppNotification): NotificationLink | null {
@@ -164,6 +175,10 @@ function routeLink(notification: AppNotification): NotificationLink | null {
     }
     // The request notification opens the deck hub on its access section, where the requests are listed.
     if (notification.kind === 'DECK_ACCESS_REQUESTED') return { label: 'Открыть доступ', commands: ['/decks', deckId], fragment: 'access' };
+    // A moderation decision opens the hub on its «Модерация» notice.
+    if (notification.kind === 'DECK_HIDDEN' || notification.kind === 'DECK_CONTENT_TAKEN_DOWN') {
+        return { label: 'Открыть колоду', commands: ['/decks', deckId], fragment: 'moderation' };
+    }
     return { label: 'Открыть колоду', commands: ['/decks', deckId] };
 }
 

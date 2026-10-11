@@ -2,17 +2,17 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Subject, debounceTime, forkJoin, of } from 'rxjs';
+import { Subject, catchError, debounceTime, forkJoin, of, throwError } from 'rxjs';
 
 import { NativeDocument } from '../../content/native-document';
 import { createEmptyNativeDocument } from '../../content/editing/native-editor-adapter';
 import { NativeEditorComponent } from '../../content/editing/native-editor.component';
 import { NativeStructuralEdit, planNativeStructuralEdits } from '../../content/editing/native-structural-edits';
 import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
-import { OwnDeck } from '../own-decks/own-deck.models';
+import { OwnDeck, isCanonicalEntityId } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { AuthoringApiService } from './authoring-api.service';
-import { DraftDetail, DraftSummary, ItemDetail, ItemWriteResult, newCommandId } from './authoring.models';
+import { DraftDetail, DraftSummary, ItemDetail, ItemWriteResult, isTakenDown, newCommandId } from './authoring.models';
 import { ItemApiService } from './item-api.service';
 import { NativeMediaUploadComponent } from './native-media-upload.component';
 
@@ -38,6 +38,11 @@ export class ItemEditorPageComponent {
     readonly dirty = signal(false);
     readonly message = signal<string | null>(null);
     readonly conflict = signal<'draft' | 'publication' | null>(null);
+    /**
+     * The material was taken down after a complaint (Share/15) and cannot be read: the editor starts from a blank page and the
+     * save replaces it on the same place, with the revision and position the list gave (`?replace=<revision>&ordinal=<n>`).
+     */
+    readonly replacing = signal(false);
 
     private readonly route = inject(ActivatedRoute);
     private readonly router = inject(Router);
@@ -72,6 +77,8 @@ export class ItemEditorPageComponent {
         this.expectedOrdinal = parseOrdinal(this.route.snapshot.queryParamMap.get('ordinal'));
         if (deckId === null) { this.fail('Некорректный адрес колоды.'); return; }
         const memberKey = routeMember === 'new' ? null : routeMember;
+        const replaceRevision = replacementRevision(this.route.snapshot.queryParamMap.get('replace'));
+        this.replacing.set(false);
         if (memberKey !== null && this.expectedOrdinal === null) {
             this.fail('Откройте редактор из актуального списка материалов, чтобы подтвердить его позицию.');
             return;
@@ -88,11 +95,15 @@ export class ItemEditorPageComponent {
         this.pendingPublication = null;
         this.pendingNavigation = null;
         this.queuedSave = false;
-        const itemRequest = memberKey === null ? of(null) : this.items.read(deckId, memberKey);
+        // A taken-down material answers 410: with the revision from the list the owner may still replace it without reading it.
+        const itemRequest = memberKey === null ? of(null) : this.items.read(deckId, memberKey).pipe(
+            catchError((error: unknown) => isTakenDown(error) && replaceRevision !== null ? of(TAKEN_DOWN) : throwError(() => error)));
         forkJoin({ deck: this.decks.detail(deckId), item: itemRequest, drafts: this.authoring.listAllDrafts() })
             .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
                 next: result => {
-                    const item = result.item;
+                    const replaced = result.item === TAKEN_DOWN;
+                    const item = result.item === TAKEN_DOWN ? replacementOf(result.deck, memberKey!, replaceRevision!, this.expectedOrdinal!) : result.item;
+                    this.replacing.set(replaced);
                     this.deck.set(result.deck);
                     this.item.set(item);
                     // A draft named in the URL (a material handed over from the Workshop) wins; it must be a new-material draft
@@ -105,7 +116,9 @@ export class ItemEditorPageComponent {
                     if (matching === null) this.createDraft(result.deck, item);
                     else this.openDraft(matching);
                 },
-                error: () => this.fail('Не удалось открыть материал. Попробуйте ещё раз.')
+                error: (error: unknown) => this.fail(isTakenDown(error)
+                    ? 'Этот материал снят по жалобе, открыть его нельзя. В списке материалов колоды его можно заменить или удалить.'
+                    : 'Не удалось открыть материал. Попробуйте ещё раз.')
             });
     }
 
@@ -188,7 +201,8 @@ export class ItemEditorPageComponent {
             return;
         }
         let edits: readonly NativeStructuralEdit[] = [];
-        if (!retry && item !== null) {
+        // A replacement has nothing to compare with: the old content cannot be read, so the save sends the whole new document.
+        if (!retry && item !== null && !this.replacing()) {
             try {
                 edits = planNativeStructuralEdits(item.document, document);
             } catch {
@@ -437,6 +451,25 @@ function sameJson(left: unknown, right: unknown): boolean {
         return value;
     };
     return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
+}
+
+/** Marks the owner's read of a material that was taken down after a complaint (Share/15). */
+const TAKEN_DOWN = 'taken-down' as const;
+
+function replacementRevision(value: string | null): string | null {
+    return value !== null && isCanonicalEntityId(value) ? value.toLowerCase() : null;
+}
+
+/**
+ * The stand-in for a material that cannot be read: its identity, position and the revision the list showed, with a blank
+ * document. Only the identity is sent (`expectedItemRevisionId`, `expectedOrdinal`); nothing of the old content is needed.
+ */
+function replacementOf(deck: OwnDeck, memberKey: string, itemRevisionId: string, ordinal: number): ItemDetail {
+    return {
+        memberKey, itemRevisionId, itemVersion: '1', formatVersion: 1, createdAt: deck.updatedAt, updatedAt: deck.updatedAt,
+        ordinal, exemplar: false, deckId: deck.deckId, deckRevisionId: deck.revisionId, deckVersion: deck.rowVersion,
+        document: createEmptyNativeDocument()
+    };
 }
 
 function parseOrdinal(value: string | null): number | null {

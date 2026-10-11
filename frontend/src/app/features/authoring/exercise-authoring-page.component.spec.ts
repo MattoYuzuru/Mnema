@@ -87,7 +87,7 @@ describe('ExerciseAuthoringPageComponent', () => {
     function summaryOf(detail: ExerciseDetail, exerciseId = detail.exerciseId) {
         return { exerciseId, exerciseRevisionId: detail.exerciseRevisionId, exerciseVersion: '1', ordinal: detail.ordinal,
             type: detail.type, enabled: detail.enabled, schemaVersion: 2 as const, createdAt: detail.createdAt,
-            updatedAt: detail.updatedAt, objective: detail.objective, isNew: newMarks.has(exerciseId) };
+            updatedAt: detail.updatedAt, objective: detail.objective, isNew: newMarks.has(exerciseId), unavailable: false };
     }
 
     /** `detail` opens the edit route; `others` are further exercises of the material already listed. */
@@ -1368,6 +1368,48 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(api.delete).toHaveBeenCalledWith(deck.deckId, id('60'), deck.rowVersion);
             expect(page().querySelector('#existing-exercises .notice')?.textContent).toContain('удалено');
             expect(component().drafts().FREE_RESPONSE.prompt).toEqual([text('Мой вопрос')]);
+        });
+
+        it('shows a blocked exercise as unavailable (Share/15): no toggle, no «Настроить», only the way to delete it without reading it', () => {
+            const other = { ...detailOf(mechanics['createSelfCheck'].exercise, 1), exerciseId: id('60') };
+            configure(null, CAPABILITIES_UNAVAILABLE, [other]);
+            api.list.mockReturnValue(of({ ...emptyPage, total: 2, exercises: [{ ...summaryOf(other), unavailable: true, objective: { ...objective, title: '' } }, summaryOf(other, id('61'))] }));
+            component().load();
+            refresh();
+            const rows = [...page().querySelectorAll('#existing-exercises li')];
+            expect(rows).toHaveLength(2);
+            expect(rows[0].querySelector('app-unavailable-note .title')?.textContent).toBe('Упражнение недоступно');
+            expect(rows[0].querySelector('app-unavailable-note .hint')?.textContent).toContain('Создайте новое или удалите это.');
+            expect(rows[0].querySelector('input[type=checkbox]')).toBeNull();
+            expect(rows[0].querySelector('a.button')).toBeNull();
+            expect(rows[0].querySelector('app-hold-to-delete-button')).not.toBeNull();
+            expect(rows[0].textContent).toContain('Вспомнить и сверить');
+            expect(rows[1].querySelector('input[type=checkbox]')).not.toBeNull();
+            component().deleteListed(component().page()!.exercises[0]);
+            refresh();
+            expect(api.delete).toHaveBeenCalledWith(deck.deckId, id('60'), deck.rowVersion);
+        });
+
+        it('says a blocked material or exercise cannot be opened, in plain words, instead of a generic failure', () => {
+            configure(null, CAPABILITIES_UNAVAILABLE);
+            const reads = TestBed.inject(ItemApiService) as unknown as { read: ReturnType<typeof vi.fn> };
+            reads.read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 410 })));
+            component().load();
+            refresh();
+            expect(component().message()).toContain('Этот материал снят по жалобе');
+            expect(page().querySelector('.notice')?.textContent).not.toContain('Не удалось загрузить');
+            reads.read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+            component().load();
+            expect(component().message()).toBe('Не удалось загрузить материал и упражнения.');
+        });
+
+        it('says a blocked exercise cannot be opened for editing', () => {
+            const detail = detailOf(mechanics['createChoiceVideoMultiple'].exercise);
+            configure(detail);
+            api.read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 410 })));
+            component().load();
+            refresh();
+            expect(component().message()).toContain('Это упражнение снято по жалобе');
         });
     });
 

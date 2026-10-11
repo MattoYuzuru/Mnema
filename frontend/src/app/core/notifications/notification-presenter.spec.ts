@@ -84,6 +84,32 @@ describe('notification presenter', () => {
         expect(presentNotification(make('DECK_ACCESS_REQUESTED', { deckId: '../x', pendingCount: 2 }, { route: 'DECK' }))?.link).toBeNull();
     });
 
+    it('tells the owner of a deck that it was hidden, without naming a complaint or anyone', () => {
+        const hidden = text(make('DECK_HIDDEN', { deckId: DECK }, { route: 'DECK', severity: 'WARNING' }));
+        expect(hidden).toBe('Ваша колода скрыта из Сообщества после жалобы. Вам она доступна как раньше');
+        expect(text(make('DECK_HIDDEN', {}, { route: 'DECK' }))).toBeUndefined();
+    });
+
+    it('tells what was taken down with the right plural, and only the kinds that were', () => {
+        const takenDown = (materialCount: unknown, exerciseCount: unknown): string | undefined =>
+            text(make('DECK_CONTENT_TAKEN_DOWN', { deckId: DECK, materialCount, exerciseCount }, { route: 'DECK', severity: 'WARNING' }));
+        expect(takenDown(2, 1)).toBe('По жалобе сняты материалы вашей колоды: 2 материала и 1 упражнение. Откройте колоду, чтобы заменить или удалить их');
+        expect(takenDown(1, 0)).toBe('По жалобе сняты материалы вашей колоды: 1 материал. Откройте колоду, чтобы заменить или удалить их');
+        expect(takenDown(0, 5)).toBe('По жалобе сняты материалы вашей колоды: 5 упражнений. Откройте колоду, чтобы заменить или удалить их');
+        expect(takenDown(0, 0)).toBe('По жалобе сняты материалы вашей колоды. Откройте колоду, чтобы заменить или удалить их');
+        expect(takenDown('2', 1)).toBeUndefined();
+        expect(takenDown(2, -1)).toBeUndefined();
+        expect(takenDown(undefined, undefined)).toBeUndefined();
+    });
+
+    it('opens the moderation notice of the hub for both decisions', () => {
+        for (const [kind, params] of [['DECK_HIDDEN', { deckId: DECK }], ['DECK_CONTENT_TAKEN_DOWN', { deckId: DECK, materialCount: 1, exerciseCount: 0 }]] as const) {
+            expect(presentNotification(make(kind, params, { route: 'DECK', severity: 'WARNING' }))?.link)
+                .toEqual({ label: 'Открыть колоду', commands: ['/decks', DECK], fragment: 'moderation' });
+            expect(presentNotification(make(kind, { ...params, deckId: '../x' }, { route: 'DECK' }))?.link).toBeNull();
+        }
+    });
+
     it('shows nothing for an unknown kind or params that do not fit', () => {
         expect(presentNotification(make('FROM_THE_FUTURE', { a: 1 }))).toBeNull();
         expect(presentNotification(make('GENERATION_READY', { sessionKind: 'MATERIALS', artifactCount: '5' }))).toBeNull();

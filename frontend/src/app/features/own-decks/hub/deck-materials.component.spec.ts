@@ -20,7 +20,7 @@ describe('DeckMaterialsComponent', () => {
     const row = (index: number, overrides: Partial<ItemSummary> = {}): ItemSummary => ({
         memberKey: key(index), itemRevisionId: `55555555-5555-4555-8555-${String(index).padStart(12, '0')}`, itemVersion: '0',
         ordinal: index, formatVersion: 1, createdAt: '2026-09-12T12:00:00Z', updatedAt: '2026-09-12T12:00:00Z',
-        title: `Материал ${index + 1}`, exerciseCount: index % 2, exemplar: false, ...overrides
+        title: `Материал ${index + 1}`, exerciseCount: index % 2, exemplar: false, unavailable: false, ...overrides
     });
     const page = (from: number, count: number, total: number, overrides: Partial<ItemPage> = {}): ItemPage => ({
         deckId, deckRevisionId: revisionId, deckVersion: '7', total, exemplars: { count: 1, limit: 10 },
@@ -581,6 +581,33 @@ describe('DeckMaterialsComponent', () => {
             slow.next(page(0, 20, 50));
             await settle();
             expect(rows()).toHaveLength(3);
+        });
+    });
+
+    describe('a material taken down after a complaint (Share/15)', () => {
+        const blockedPage = (): ItemPage => page(0, 3, 3, { items: [row(0), row(1, { title: '', unavailable: true }), row(2)] });
+
+        it('draws the blocked row as unavailable with «Заменить» and «Удалить…» and keeps its place in the list', async () => {
+            await open(of(blockedPage()));
+            const li = rows()[1];
+            expect(li.querySelector('app-unavailable-note')).not.toBeNull();
+            expect(li.querySelector('a.row-link')).toBeNull();
+            expect(Array.from(li.querySelectorAll('app-unavailable-note a, app-unavailable-note button')).map(item => item.textContent?.trim())).toEqual(['Заменить', 'Удалить…']);
+            expect(rows()).toHaveLength(3);
+        });
+
+        it('«Удалить…» selects exactly that row, so the shared hold-to-delete bar deletes it, and announces where the button is', async () => {
+            await open(of(blockedPage()));
+            await select(0);
+            buttonWith('Удалить…')!.click();
+            await settle(300);
+            expect(checkbox(0).checked).toBe(false);
+            expect(checkbox(1).checked).toBe(true);
+            expect(root().querySelector('app-bulk-action-bar')!.textContent).toContain('Выбрано 1 материал');
+            expect(api.previewDeletion).toHaveBeenLastCalledWith(deckId, revisionId, { itemIds: [blockedPage().items[1].memberKey] });
+            await settle(1500);
+            expect(root().querySelector('[role=status].sr-only')!.textContent).toBe('Выбрано 1 материал. Удалите его кнопкой «Удалить выбранные» внизу страницы.');
+            expect(api.deleteMany).not.toHaveBeenCalled();
         });
     });
 });

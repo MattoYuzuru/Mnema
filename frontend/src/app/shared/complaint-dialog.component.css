@@ -1,0 +1,71 @@
+:host { display: contents; }
+* { box-sizing: border-box; }
+
+.complaint-dialog {
+    inline-size: min(100% - 1rem, 36rem);
+    max-block-size: calc(100dvh - 1rem);
+    margin: auto;
+    border: 1px solid var(--mn-ink);
+    border-block-start-width: 2px;
+    border-radius: var(--mn-radius, 2px);
+    padding: 0;
+    overflow: auto;
+    background: var(--mn-sheet);
+    color: var(--mn-body);
+    font: 1rem/1.6 var(--mn-font-body, system-ui, sans-serif);
+}
+.complaint-dialog::backdrop { background: color-mix(in srgb, var(--mn-ink) 24%, transparent); }
+
+/* A phone: the dialog takes the whole screen, safe areas respected. */
+@media (max-width: 40rem) {
+    .complaint-dialog { inline-size: 100%; max-inline-size: 100%; block-size: 100dvh; max-block-size: 100dvh; border-width: 0; }
+}
+
+.complaint-body {
+    position: relative;
+    display: grid;
+    gap: 1rem;
+    padding: clamp(1.25rem, 5vw, 2rem);
+    padding-block-start: clamp(3.5rem, 8vw, 3.75rem);
+    padding-block-end: max(clamp(1.25rem, 5vw, 2rem), env(safe-area-inset-bottom, 0px));
+}
+.complaint-body > * { margin: 0; }
+
+h2 { color: var(--mn-ink); font: 500 clamp(1.6rem, 5vw, 2.2rem)/1.15 var(--mn-font-display, Georgia, serif); overflow-wrap: anywhere; }
+h2:focus-visible { outline: none; }
+.subject { color: var(--mn-ink); font-weight: 650; overflow-wrap: anywhere; }
+.optional { color: var(--mn-muted); font-weight: 400; font-size: .9rem; }
+textarea { inline-size: 100%; min-inline-size: 0; resize: vertical; }
+
+.complaint-close {
+    position: absolute;
+    inset-block-start: .75rem;
+    inset-inline-end: .75rem;
+    display: inline-grid;
+    place-items: center;
+    min-inline-size: var(--mn-touch-min, 2.75rem);
+    min-block-size: var(--mn-touch-min, 2.75rem);
+    border: 1px solid var(--mn-field-border);
+    border-radius: var(--mn-radius, 2px);
+    background: var(--mn-sheet);
+    color: var(--mn-ink);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+}
+.complaint-close[aria-disabled='true'] { color: var(--mn-muted); cursor: progress; }
+
+.complaint-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.complaint-actions .button { flex: 1 1 10rem; }
+.complaint-actions .button[aria-busy='true'] { cursor: progress; }
+
+:where(button, textarea):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: no-preference) {
+    .complaint-dialog[open] { animation: complaint-in .18s ease-out; }
+    @keyframes complaint-in { from { opacity: 0; } to { opacity: 1; } }
+}
+
+@media (forced-colors: active) {
+    .complaint-dialog, .complaint-close { border-color: CanvasText; }
+}

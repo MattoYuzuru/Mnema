@@ -1,4 +1,6 @@
-import { LEVEL_LABELS, PublicDeckFailure, canonicalPath, publishedLabel } from './public-deck.models';
+import { HttpErrorResponse } from '@angular/common/http';
+
+import { LEVEL_LABELS, PublicDeckFailure, canonicalPath, parsePublicExercisePage, parsePublicMaterialPage, publicFailureOf, publishedLabel } from './public-deck.models';
 import { readFailureText, waitText } from './public-deck.text';
 
 describe('public deck helpers', () => {
@@ -22,5 +24,33 @@ describe('public deck helpers', () => {
         expect(readFailureText(new PublicDeckFailure('rate-limited', 5), 'материалы')).toBe('Слишком много запросов. Подождите 5 с и повторите.');
         expect(readFailureText(new PublicDeckFailure('busy', 1), 'материалы')).toContain('Повторите через секунду');
         expect(readFailureText(null, 'упражнения')).toBe('Не удалось загрузить упражнения. Проверьте соединение и повторите.');
+    });
+
+    describe('taken down after a complaint (Share/15)', () => {
+        const code = 'Kq7xT3mNpR';
+        const id = (suffix: string) => `7f1c2d3e-4a5b-4c6d-8e7f-${suffix.padStart(12, '0')}`;
+        const materials = (items: unknown[]) => ({ code, total: items.length, items, nextCursor: null });
+        const exercises = (items: unknown[]) => ({ code, total: items.length, exercises: items, nextCursor: null });
+        const entry = { memberKey: id('1'), itemRevisionId: id('2'), ordinal: 0 };
+        const exercise = { exerciseId: id('1'), exerciseRevisionId: id('2'), ordinal: 0, type: 'FREE_RESPONSE', enabled: true };
+
+        it('reads 410 CONTENT_UNAVAILABLE as «removed», apart from not found and from a failure', () => {
+            expect(publicFailureOf(new HttpErrorResponse({ status: 410, error: { code: 'CONTENT_UNAVAILABLE' } })).kind).toBe('removed');
+            expect(publicFailureOf(new HttpErrorResponse({ status: 404 })).kind).toBe('not-found');
+            expect(publicFailureOf(new HttpErrorResponse({ status: 500 })).kind).toBe('unavailable');
+        });
+
+        it('parses the marker of a blocked material (empty title) and of a blocked exercise (empty prompt)', () => {
+            const page = parsePublicMaterialPage(materials([{ ...entry, title: '', unavailable: true }, { ...entry, memberKey: id('3'), title: 'Тема' }]), code, 50);
+            expect(page.items.map(item => item.unavailable)).toEqual([true, false]);
+            const list = parsePublicExercisePage(exercises([{ ...exercise, prompt: '', unavailable: true }, { ...exercise, exerciseId: id('4'), prompt: 'Вопрос' }]), code, 50);
+            expect(list.exercises.map(item => item.unavailable)).toEqual([true, false]);
+        });
+
+        it('refuses a marker that is not exactly true and a blocked entry that still carries its text', () => {
+            expect(() => parsePublicMaterialPage(materials([{ ...entry, title: '', unavailable: false }]), code, 50)).toThrow(PublicDeckFailure);
+            expect(() => parsePublicMaterialPage(materials([{ ...entry, title: 'Спорный', unavailable: true }]), code, 50)).toThrow(PublicDeckFailure);
+            expect(() => parsePublicExercisePage(exercises([{ ...exercise, prompt: '', unavailable: 1 }]), code, 50)).toThrow(PublicDeckFailure);
+        });
     });
 });

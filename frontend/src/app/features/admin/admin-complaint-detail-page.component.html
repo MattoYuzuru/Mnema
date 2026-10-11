@@ -1,0 +1,161 @@
+<header>
+  <p class="eyebrow">Кабинет владельца</p><h1 tabindex="-1">Жалоба</h1>
+  <p><a class="button quiet" routerLink="/manage/complaints">← К очереди жалоб</a></p>
+</header>
+@if (loading() && !detail()) {<p role="status">Загружаем жалобу…</p>}
+@if (missing()) {
+  <div class="notice warning" role="status"><p>Такой жалобы нет. Откройте её из очереди.</p></div>
+}
+@if (loadError()) {
+  <div class="notice error" role="alert">
+    <p>{{ loadError() }}</p><button class="button" type="button" (click)="load()">Повторить</button>
+  </div>
+}
+@if (detail(); as complaint) {
+  @if (notice()) {<p class="notice success" role="status">{{ notice() }}</p>}
+  @if (actionError()) {<p class="notice error" role="alert">{{ actionError() }}</p>}
+  @if (complaint.overdue) {
+    <p class="notice warning" role="status"><strong>{{ deadline() }}.</strong> Срок рассмотрения вышел {{ date(complaint.dueAt) }}. Решите жалобу или отклоните её.</p>
+  }
+  <section aria-labelledby="complaint-facts">
+    <h2 id="complaint-facts">{{ target[complaint.targetKind] }}: о чём жалоба</h2>
+    <dl class="report-facts">
+      <div>
+        <dt>Причина</dt>
+        <dd>{{ reasonOf(complaint.reason) }}</dd>
+      </div>
+      <div>
+        <dt>Срок рассмотрения</dt>
+        <dd>
+          {{ deadline() }}
+          <small class="hint">{{ complaint.status === 'OPEN' ? 'До ' + date(complaint.dueAt) : 'Подана ' + date(complaint.createdAt) }}</small>
+        </dd>
+      </div>
+      <div>
+        <dt>Подана</dt>
+        <dd>{{ date(complaint.createdAt) }}<small class="hint">Хранится до {{ date(complaint.retainUntil) }}</small></dd>
+      </div>
+      <div>
+        <dt>Кто пожаловался</dt>
+        <dd><a [routerLink]="['/manage/users', complaint.reporterId]"><code>{{ complaint.reporterId }}</code></a><small class="hint">Ему о решении не сообщается.</small></dd>
+      </div>
+    </dl>
+    <h3>Что написал автор жалобы</h3>
+    @if (complaint.text) {
+      <p class="complaint-text paper-surface">{{ complaint.text }}</p>
+    } @else {
+      <p class="hint">Текста нет, только причина.</p>
+    }
+    @if (complaint.deck; as deck) {
+      <h3>Колода</h3>
+      @if (!deck.live) {
+        <p class="notice warning">Колоды больше нет: её удалили, или она недоступна. Решить жалобу можно, но скрывать и снимать уже нечего.</p>
+      }
+      <dl class="report-facts">
+        <div>
+          <dt>Название</dt>
+          <dd>{{ deck.title || 'Без названия' }}@if (deck.publicCode) { <small class="hint">Код {{ deck.publicCode }}</small> }</dd>
+        </div>
+        <div>
+          <dt>Доступ</dt>
+          <dd>{{ visibilities[deck.visibility] ?? deck.visibility }}<small class="hint">{{ deck.published ? 'Опубликована' : 'Не опубликована: читателям она недоступна' }}</small></dd>
+        </div>
+        <div>
+          <dt>В Сообществе</dt>
+          <dd>
+            {{ deck.hiddenByModeration ? 'Скрыта' : 'Не скрыта' }}
+            @if (deck.hiddenAt) { <small class="hint">С {{ date(deck.hiddenAt) }}</small> }
+          </dd>
+        </div>
+        <div><dt>Состав</dt><dd>{{ deck.memberCount }} материалов, {{ deck.exerciseCount }} упражнений</dd></div>
+        <div><dt>Открытых жалоб на колоду</dt><dd>{{ deck.openComplaints }}</dd></div>
+        @if (deck.ownerId) {
+          <div><dt>Автор</dt><dd><a [routerLink]="['/manage/users', deck.ownerId]"><code>{{ deck.ownerId }}</code></a></dd></div>
+        }
+      </dl>
+      @if (deckUrl(); as url) {
+        <p>
+          <a class="button" [href]="url" target="_blank" rel="noopener noreferrer">Открыть колоду на сайте (новая вкладка)</a>
+          <small class="hint">Скрытая колода у вас откроется как «Колода не найдена»: её видит только автор.</small>
+        </p>
+      }
+    }
+    @if (complaint.profile; as profile) {
+      <h3>Профиль</h3>
+      <dl class="report-facts">
+        <div><dt>Логин</dt><dd>@{{ profile.username }}</dd></div>
+        <div><dt>Аккаунт</dt><dd><a [routerLink]="['/manage/users', profile.accountId]"><code>{{ profile.accountId }}</code></a><small class="hint">Блокировка и скрытие профиля делаются в разделе «Пользователи».</small></dd></div>
+      </dl>
+    }
+  </section>
+
+  <section class="rule-section" aria-labelledby="decision-title">
+    <h2 id="decision-title" tabindex="-1">Решение</h2>
+    @if (complaint.status === 'DECIDED') {
+      <p>
+        <strong>{{ complaint.decision ? decisions[complaint.decision] : 'Решена' }}.</strong>
+        {{ date(complaint.decidedAt) }}@if (complaint.decidedBy) { , <code>{{ complaint.decidedBy }}</code> }
+      </p>
+    } @else if (pending() === null) {
+      <p class="hint">Выберите одно решение. Перед выполнением кабинет спросит подтверждение, а решение попадёт в журнал.</p>
+    }
+
+    @if (pending(); as action) {
+      <form class="editor" (submit)="$event.preventDefault(); confirm()">
+        <!-- The takedown text changes with every chosen unit; the picker's own summary announces that, so only the other warnings are an alert. -->
+        <p class="notice warning" [attr.role]="action === 'TAKEN_DOWN' ? null : 'alert'">{{ confirmText(action) }} Решение попадёт в журнал.</p>
+        @if (action === 'TAKEN_DOWN') {
+          <app-admin-takedown-picker [complaintId]="complaint.complaintId" (unitsChange)="setUnits($event)" />
+          @if (complaint.status === 'OPEN') {
+            <label class="check-row">
+              <input type="checkbox" [checked]="alsoHide()" [disabled]="busy()" (change)="alsoHide.set(!alsoHide())" />
+              <span>Заодно скрыть колоду из Сообщества</span>
+            </label>
+          }
+        }
+        <div class="actions">
+          <button class="button primary" type="submit" [attr.aria-disabled]="confirmDisabled() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null">
+            {{ busy() ? 'Выполняем…' : confirmLabel(action) }}
+          </button>
+          <button class="button" type="button" (click)="cancel()" [attr.aria-disabled]="busy() ? 'true' : null">Отмена</button>
+        </div>
+      </form>
+    } @else {
+      <div class="actions">
+        @for (action of offered(); track action) {
+          <button class="button" type="button" (click)="ask(action)">{{ askLabel(action, complaint.status === 'DECIDED') }}</button>
+        }
+        @if (canUnhide()) {
+          <button class="button" type="button" (click)="ask('UNHIDE')">Вернуть в Сообщество</button>
+        }
+      </div>
+      @if (complaint.status === 'DECIDED' && offered().length === 0 && !canUnhide()) {
+        <p class="hint">Жалоба решена, больше действий нет.</p>
+      }
+    }
+  </section>
+
+  @if (complaint.takedowns.count > 0) {
+    <section class="rule-section" aria-labelledby="takedowns-title">
+      <h2 id="takedowns-title">Снято по этой жалобе · {{ complaint.takedowns.count }}</h2>
+      @if (complaint.takedowns.truncated) {
+        <p class="notice warning">Показаны первые {{ complaint.takedowns.items.length }} из {{ complaint.takedowns.count }}.</p>
+      }
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Снятые материалы и упражнения">
+        <table class="data-table">
+          <caption>Снятые версии: они перестали открываться везде, где остались неизменными</caption>
+          <thead><tr><th scope="col">Что</th><th scope="col">Версия</th><th scope="col">Когда, Москва</th></tr></thead>
+          <tbody>
+            @for (row of complaint.takedowns.items; track row.takedownId) {
+              <tr>
+                <th scope="row">{{ row.unitKind === 'ITEM' ? 'Материал' : 'Упражнение' }}<small class="hint"><code>{{ row.unitKey }}</code></small></th>
+                <td><code>{{ row.revisionId }}</code></td>
+                <td>{{ date(row.createdAt) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+}
