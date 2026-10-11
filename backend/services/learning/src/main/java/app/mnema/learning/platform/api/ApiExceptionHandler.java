@@ -24,6 +24,8 @@ import app.mnema.learning.promo.PromoRejectedException;
 import app.mnema.learning.speech.PayloadTooLargeException;
 import app.mnema.learning.speech.SpeechConsentOutdatedException;
 import app.mnema.learning.speech.SpeechConsentRequiredException;
+import app.mnema.learning.update.plan.UpdatePlanBusyException;
+import app.mnema.learning.update.plan.UpdatePlanStaleException;
 import app.mnema.learning.usage.SpecNotSupportedException;
 import app.mnema.learning.usage.UsageContentionException;
 import app.mnema.learning.usage.UsageLimitReachedException;
@@ -118,6 +120,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return response(ApiErrorCode.DECK_PREPARING, request.getRequestURI(), new HttpHeaders());
     }
 
+    @ExceptionHandler(UpdatePlanStaleException.class)
+    ResponseEntity<Object> handleUpdatePlanStale(UpdatePlanStaleException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.UPDATE_PLAN_STALE, request.getRequestURI(), new HttpHeaders());
+    }
+
     @ExceptionHandler(ForkOwnDeckException.class)
     ResponseEntity<Object> handleForkOwnDeck(ForkOwnDeckException exception, HttpServletRequest request) {
         return response(ApiErrorCode.FORK_OWN_DECK, request.getRequestURI(), new HttpHeaders());
@@ -138,6 +145,13 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
         return response(ApiErrorCode.PUBLIC_READ_BUSY, ApiErrorCode.PUBLIC_READ_BUSY.status(), request.getRequestURI(), headers, exception.extension());
+    }
+
+    @ExceptionHandler(UpdatePlanBusyException.class)
+    ResponseEntity<Object> handleUpdatePlanBusy(UpdatePlanBusyException exception, HttpServletRequest request) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
+        return response(ApiErrorCode.UPDATE_PLAN_BUSY, ApiErrorCode.UPDATE_PLAN_BUSY.status(), request.getRequestURI(), headers, exception.extension());
     }
 
     @ExceptionHandler(ForkQueueBusyException.class)

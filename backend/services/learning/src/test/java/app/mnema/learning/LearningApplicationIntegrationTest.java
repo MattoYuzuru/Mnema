@@ -95,7 +95,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "43:product events:SUCCESS", "44:speech personal data slot error:SUCCESS", "45:billing orders:SUCCESS", "46:billing failed recheck:SUCCESS", "47:npd receipts:SUCCESS", "48:admin console:SUCCESS",
                         "49:media asset source blob index:SUCCESS", "50:learning jobs:SUCCESS",
                         "51:lineage items:SUCCESS", "52:lineage exercises:SUCCESS", "53:deck access:SUCCESS", "54:deck publication:SUCCESS", "55:shared media:SUCCESS",
-                        "56:deck invites and requests:SUCCESS", "57:deck forks:SUCCESS", "58:complaints and takedowns:SUCCESS", "60:combined publication:SUCCESS");
+                        "56:deck invites and requests:SUCCESS", "57:deck forks:SUCCESS", "58:complaints and takedowns:SUCCESS", "60:combined publication:SUCCESS", "61:fork unit decisions:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -161,7 +161,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "notificationController", "itemHubController", "deckInsightsController",
                         "usageController", "estimateController", "generationController", "speechInputController", "plansController", "learningProfileController", "promoController", "promoAdminController", "promoPopupController", "experimentController",
                         "publicEventsController", "adminEventsController", "billingController", "TBankNotificationController",
-                        "adminConsoleController", "adminSupportController", "publicDeckController", "publicMetaController", "publicationController", "deckAccessController", "inviteRedeemController", "forkController",
+                        "adminConsoleController", "adminSupportController", "publicDeckController", "publicMetaController", "publicationController", "deckAccessController", "inviteRedeemController", "forkController", "updatePlanController",
                         "complaintController", "complaintAdminController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
