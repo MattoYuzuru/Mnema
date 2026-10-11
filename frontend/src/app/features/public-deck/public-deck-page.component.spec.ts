@@ -209,13 +209,12 @@ describe('PublicDeckPageComponent', () => {
     });
 
     describe('signed in', () => {
-        it('draws no guest invitation and no dead «Добавить к себе» (that button is Share/10)', async () => {
+        it('draws no guest invitation, and «Добавить к себе» as the one primary action', async () => {
             status.set('authenticated');
             api.summary.mockReturnValue(of(PUBLIC));
             await open(publicUrl);
-            expect(root().querySelector('.primary-slot')?.children).toHaveLength(0);
+            expect([...root().querySelectorAll('.primary-slot button, .primary-slot a')].map(element => element.textContent?.trim())).toEqual(['Добавить к себе']);
             expect(text()).not.toContain('Войдите');
-            expect(text()).not.toContain('Добавить к себе');
         });
 
         it('asks for the deck only after the session is restored, so the bearer is on the first request', async () => {
@@ -414,7 +413,8 @@ describe('PublicDeckPageComponent', () => {
             status.set('authenticated');
             api.summary.mockReturnValue(throwError(() => new PublicDeckFailure('invite-only')));
             await open(`/d/${INVITE.code}`);
-            expect([...screen()!.querySelectorAll('.actions a, .actions button')].map(element => element.textContent?.trim())).toEqual(['На главную']);
+            expect([...screen()!.querySelectorAll('.actions a, .actions button')].map(element => element.textContent?.trim())).toEqual(['Запросить доступ', 'На главную']);
+            expect(text()).not.toContain('Войти');
         });
 
         it('says how long to wait after 429, keeps «Повторить» aria-disabled until then, and retries once it passes', async () => {

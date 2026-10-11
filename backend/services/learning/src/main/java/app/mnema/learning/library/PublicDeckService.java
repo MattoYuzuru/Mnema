@@ -4,6 +4,7 @@ import app.mnema.learning.catalog.content.ItemPreviews;
 import app.mnema.learning.catalog.content.pages.CountedPageTypes.Entry;
 import app.mnema.learning.catalog.content.storage.NativeSnapshotDecoder;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
+import app.mnema.learning.fork.ForkService;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
@@ -52,10 +53,11 @@ public class PublicDeckService {
     private final NativeStorageBatches nativeBatches;
     private final TransactionTemplate transaction;
     private final TransactionTemplate cacheWrite;
+    private final ForkService forks;
 
     PublicDeckService(PublicReadAdmission admission, DeckAccess access, ManifestPages manifests,
                       PublishedContentRepository content, ItemPreviews previews, ImmutableStorage storage,
-                      PlatformTransactionManager transactions) {
+                      PlatformTransactionManager transactions, ForkService forks) {
         this.admission = admission;
         this.access = access;
         this.manifests = manifests;
@@ -68,6 +70,7 @@ public class PublicDeckService {
         this.transaction.setReadOnly(true);
         this.cacheWrite = new TransactionTemplate(transactions);
         this.cacheWrite.setTimeout(5);
+        this.forks = forks;
     }
 
     public ObjectNode summary(Viewer viewer, String code) {
@@ -79,6 +82,11 @@ public class PublicDeckService {
                     .put("memberCount", published.memberCount()).put("exerciseCount", published.exerciseCount())
                     .put("publishedAt", published.publishedAt().toString()).put("ownerId", read.deck().ownerId().toString());
             if (read.deck().visibility() == DeckVisibility.PUBLIC) result.put("slug", DeckSlug.of(published.title()));
+            // «Открыть мою копию» (Share/10): a signed-in viewer learns whether he already copied exactly this deck; a guest's summary has no such member.
+            if (!viewer.isGuest()) {
+                ObjectNode copy = forks.myCopy(viewer.accountId(), read.deck().scopeId(), read.deck().deckId());
+                if (copy == null) result.putNull("myCopy"); else result.set("myCopy", copy);
+            }
             return result;
         });
     }

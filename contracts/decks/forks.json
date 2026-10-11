@@ -1,0 +1,153 @@
+{
+  "contract": "forks-v1",
+  "description": "Shared frontend/backend fixtures for «Добавить к себе» (Share/10, #432): an O(1) copy of somebody's published deck into the caller's own account, the background materialization that fills the copy's heads from the published manifest, and the state the copy reports until it is ready. Private chain, learning.write for the commands and learning.read for GET; every answer is Cache-Control: private, no-store. The shapes below are executable: the integration tests compare real answers with the property sets of these examples. Additive members of other contracts (the `fork` member of the owner's deck JSON and the `myCopy` member of the public summary) are described here too; `metadata.json` and `public-read.json` are not edited by this task, so consumers treat an absent `fork` as null and an absent `myCopy` (a guest) as no copy.",
+  "constants": {
+    "createPath": "/api/decks/forks",
+    "retryPath": "/api/decks/{deckId}/fork:retry",
+    "detachPath": "/api/decks/{deckId}/fork:detach",
+    "queue": "deck.copy.materialize",
+    "killSwitch": "learning.community.forks.enabled (default false: POST /api/decks/forks answers 404 as if the route did not exist; copies that already exist keep materializing, retrying and detaching)",
+    "sourceCodePattern": "^[1-9A-HJ-NP-Za-km-z]{10}$",
+    "requestBodyMaxBytes": 8192,
+    "sliceEntries": 200,
+    "sliceEntriesNote": "the job copies at most this many manifest entries per transaction (learning.community.forks.slice-size, 10..1000); a small deck is one slice",
+    "maxPreparingCopies": 10,
+    "maxCreationsPerWindow": 20,
+    "creationWindow": "PT1H",
+    "creationWindowNote": "learning.community.forks.max-per-window per learning.community.forks.window: copies CREATED by one account, deleted ones included (counted from forked_at); one more is 429 RATE_LIMITED with Retry-After and the member retryAfter (seconds until the oldest creation leaves the window). Answering an existing copy never counts.",
+    "maxPreparingCopiesNote": "learning.community.forks.max-preparing: live copies of one account that are not yet ready (a failed one counts); one more is 422 RESOURCE_LIMIT_EXCEEDED with the member `limit`",
+    "forkStates": {
+      "preparing": "preparing=true, failed=false: the job is queued or running; poll the deck (GET /api/decks/{deckId}) at a bounded backoff",
+      "failed": "preparing=true, failed=true: the job ended FAILED or CANCELLED, or its record was purged; show «Повторить» (POST fork:retry) or delete the copy",
+      "ready": "preparing=false: the heads are complete, every route works",
+      "detached": "detached=true, independent of the three above: the owner detached the copy; the content stays, updates (a later epic) never arrive"
+    },
+    "pollingNote": "stop polling when preparing=false; there is no push and no progress figure, only these flags",
+    "preparingRoutes": "while preparing=true every mutation of the copy and Study answer 409 DECK_PREPARING; reads of the hub answer normally and the material list is empty (its total still names the count being prepared)"
+  },
+  "invariants": [
+    "POST /api/decks/forks needs learning.write, a strict body {commandId, sourceCode} (unknown or duplicate fields, a non-string field, bodies over 8192 bytes and invalid Unicode are 400 INVALID_REQUEST) and is idempotent by commandId (house receipts: actor, command type and the body are bound; an exact retry returns the original acknowledgement with Idempotency-Replayed: true and the original status; a used commandId with other input is 409 IDEMPOTENCY_CONFLICT)",
+    "the source is resolved by its public code through DeckAccess exactly like the public read: PUBLIC and LINK decks by any signed-in account, an INVITE deck by a grantee; a private deck, an unknown, malformed or rotated code, a deleted deck and a deck that was never published are one and the same 404 RESOURCE_NOT_FOUND; an INVITE deck without a grant is 403 DECK_INVITE_ONLY; the owner of the source is 409 FORK_OWN_DECK",
+    "creations of one account are serialized by an advisory lock taken before the counts, so neither the cap of unfinished copies (422) nor the sliding window of creations (429) can be overshot by parallel requests for different sources",
+    "the copy is made from the PUBLISHED revision of the source at the moment of the request, never from the source's head: title, description, counts and both manifest roots are the published revision's, and the copy's heads are written by the job only from that manifest. Anything the author did after publishing (unpublished materials, exercises, media) is invisible to the copy",
+    "one live copy per (owner, source deck): a second request (any commandId) answers 200 with the existing copy and existing=true, creating nothing; a deleted copy does not count, so the owner may copy again; a copy of a copy copies the copy's own published revision (a copy is publishable once it is ready)",
+    "the request is O(1): a deck row in the source's lineage, a revision 0 on the published roots with its own durable pins, a deck_fork row and one enqueued job; the heads (deck_head_item, deck_head_exercise, objective_head) are written by the job in slices and nothing else ever writes them while the copy is preparing",
+    "the job never writes Study rows, exemplars, drafts, captures, workshop rows or «На потом»; it writes materials with their lineage revision and sequence, exercises with the manifest ordinal, and the objective head of every objective that an ASSESSED binding of a head exercise names (the newest revision any head exercise pins)",
+    "the job verifies, in the slice that finishes, that the heads equal the manifest (counts of materials and exercises against the revision's member_count and exercise_count, one objective head per assessed objective, none missing) and sets materialized_at in the same transaction that ends the job; a mismatch ends the job FAILED",
+    "until materialized_at, every mutation of the copy and Study start answer 409 DECK_PREPARING: every non-GET method of /api/decks/{deckId}/... except fork:retry, fork:detach and DELETE /api/decks/{deckId}, and POST /api/capture-notes and POST /api/editing-drafts that name the copy. Only the owner ever sees it: a foreign or unknown deck id is the opaque 404 as always",
+    "DELETE /api/decks/{deckId} stays allowed on a preparing or failed copy so that a stuck copy can be discarded; the running job notices the deleted deck and ends without writing more. Deleting a copy frees the (owner, source) slot at once",
+    "POST fork:retry is owner-only and has no body: a FAILED or CANCELLED job is requeued under the same id (its cursor is kept, so it resumes), a job whose record was purged is enqueued again, a queued, running or finished copy is left alone; every case answers 200 with the current flags. A deck that is not a copy is 404",
+    "POST fork:detach is owner-only, has no body and is idempotent: it sets detached_at once and answers 200 {deckId, detached: true}; it never touches the content and is allowed while the copy is preparing. A deck that is not a copy is 404",
+    "the owner's deck JSON (GET /api/decks/{deckId} and every item of GET /api/decks) carries `fork`: null for an ordinary deck, otherwise {upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached}; the create and metadata acknowledgements carry it too, so an acknowledgement equals the next read. sourceAvailable is computed at read for the copier through DeckAccess with the code he copied by, for a whole page at once (so it turns false when the source is deleted, made private or its link is rotated away, and stays false after a rotation until a later epic re-links the copy) and nothing is written on read; upstreamCode and upstreamTitle are null exactly when sourceAvailable is false",
+    "the public summary GET /api/public/decks/{code} carries `myCopy` for a signed-in viewer: null, or {deckId, preparing} for his live copy of exactly this deck; a guest's summary has no such member, and the owner of the deck has null",
+    "a copy edited later never reaches the source and the source's later edits never reach the copy (immutable lineage rows plus per-deck heads); a copy keeps working after the source is deleted or made private",
+    "a copy reads media through the COPY grant (the heads of the copy decide), so an asset that only an unpublished revision of the author uses is 404 for the copier on playback, variant download and the offline manifest",
+    "learning.community.forks.enabled switches off creation only (404 as if absent, nothing is read or written); a copy that exists keeps materializing, can be retried, detached, edited, studied and deleted. The jobs have their own switch, learning.jobs.deck.copy.materialize.enabled"
+  ],
+  "routes": [
+    {"method": "POST", "path": "/api/decks/forks", "scope": "learning.write", "answers": "created | existing"},
+    {"method": "POST", "path": "/api/decks/{deckId}/fork:retry", "scope": "learning.write", "answers": "state"},
+    {"method": "POST", "path": "/api/decks/{deckId}/fork:detach", "scope": "learning.write", "answers": "detached"}
+  ],
+  "create": {
+    "request": {
+      "method": "POST",
+      "path": "/api/decks/forks",
+      "body": {"commandId": "018f1d98-5c10-7abc-8abc-0123456789ab", "sourceCode": "Kq7xT3mNpR"}
+    },
+    "created": {
+      "status": 201,
+      "headers": {"Location": "/api/decks/33333333-3333-4333-8333-333333333333", "Cache-Control": "private, no-store"},
+      "body": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789ab",
+        "deckId": "33333333-3333-4333-8333-333333333333",
+        "preparing": true,
+        "existing": false
+      }
+    },
+    "existing": {
+      "status": 200,
+      "headers": {"Cache-Control": "private, no-store"},
+      "body": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789ac",
+        "deckId": "33333333-3333-4333-8333-333333333333",
+        "preparing": false,
+        "existing": true
+      },
+      "note": "`preparing` is the state at the moment of the answer; a replayed acknowledgement (Idempotency-Replayed: true) carries the state of the original answer, so refresh with GET before relying on it"
+    }
+  },
+  "retry": {
+    "request": "POST /api/decks/33333333-3333-4333-8333-333333333333/fork:retry",
+    "status": 200,
+    "body": {"deckId": "33333333-3333-4333-8333-333333333333", "preparing": true, "failed": false}
+  },
+  "detach": {
+    "request": "POST /api/decks/33333333-3333-4333-8333-333333333333/fork:detach",
+    "status": 200,
+    "body": {"deckId": "33333333-3333-4333-8333-333333333333", "detached": true}
+  },
+  "fork": {
+    "preparing": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": true, "failed": false, "detached": false},
+    "failed": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": true, "failed": true, "detached": false},
+    "ready": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": false, "failed": false, "detached": false},
+    "sourceClosed": {"upstreamCode": null, "upstreamTitle": null, "sourceAvailable": false, "preparing": false, "failed": false, "detached": false},
+    "detached": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": false, "failed": false, "detached": true},
+    "ordinaryDeck": null
+  },
+  "deckDetail": {
+    "request": "GET /api/decks/33333333-3333-4333-8333-333333333333",
+    "note": "the detail of metadata.json plus `fork` (null for an ordinary deck); while preparing, memberCount and exerciseCount are the counts being prepared (those of the published revision) and the item and exercise lists are empty",
+    "body": {
+      "deckId": "33333333-3333-4333-8333-333333333333",
+      "revisionId": "44444444-4444-4444-8444-444444444444",
+      "rowVersion": "0",
+      "sequence": "0",
+      "metadata": {"title": "Испанский язык: базовые глаголы", "description": "Сорок глаголов на каждый день"},
+      "visibility": "private",
+      "createdAt": "2026-10-11T10:00:00.123456Z",
+      "updatedAt": "2026-10-11T10:00:00.123456Z",
+      "memberCount": 40,
+      "exerciseCount": 12,
+      "fork": {"upstreamCode": "Kq7xT3mNpR", "upstreamTitle": "Испанский язык: базовые глаголы", "sourceAvailable": true, "preparing": true, "failed": false, "detached": false}
+    }
+  },
+  "myCopy": {
+    "request": "GET /api/public/decks/Kq7xT3mNpR",
+    "note": "a signed-in viewer's summary gains `myCopy`; the guest's summary is unchanged",
+    "none": null,
+    "preparing": {"deckId": "33333333-3333-4333-8333-333333333333", "preparing": true},
+    "ready": {"deckId": "33333333-3333-4333-8333-333333333333", "preparing": false}
+  },
+  "problems": {
+    "notFound": {
+      "status": 404,
+      "body": {"type": "urn:mnema:problem:resource-not-found", "title": "Resource not found", "status": 404, "detail": "The requested resource does not exist.", "instance": "/api/decks/forks", "code": "RESOURCE_NOT_FOUND"}
+    },
+    "inviteOnly": {
+      "status": 403,
+      "body": {"type": "urn:mnema:problem:deck-invite-only", "title": "Deck is invite only", "status": 403, "detail": "The deck is shared by invitation.", "instance": "/api/decks/forks", "code": "DECK_INVITE_ONLY"}
+    },
+    "ownDeck": {
+      "status": 409,
+      "body": {"type": "urn:mnema:problem:fork-own-deck", "title": "Own deck", "status": 409, "detail": "A deck cannot be copied by its owner.", "instance": "/api/decks/forks", "code": "FORK_OWN_DECK"}
+    },
+    "preparing": {
+      "status": 409,
+      "body": {"type": "urn:mnema:problem:deck-preparing", "title": "Deck is preparing", "status": 409, "detail": "The copy is still being prepared; try again when it is ready.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/items", "code": "DECK_PREPARING"}
+    },
+    "throttled": {
+      "status": 429,
+      "headers": {"Retry-After": "3540"},
+      "body": {"type": "urn:mnema:problem:rate-limited", "title": "Rate limited", "status": 429, "detail": "Too many requests; retry after the time in Retry-After.", "instance": "/api/decks/forks", "code": "RATE_LIMITED", "retryAfter": 3540}
+    },
+    "limit": {
+      "status": 422,
+      "body": {"type": "urn:mnema:problem:resource-limit-exceeded", "title": "Resource limit exceeded", "status": 422, "detail": "The account or resource limit would be exceeded.", "instance": "/api/decks/forks", "code": "RESOURCE_LIMIT_EXCEEDED", "limit": 10}
+    }
+  },
+  "texts": {
+    "note": "approved wording lives in the product contract; the backend returns codes and flags only. The frontend owns every string.",
+    "sourceClosed": "Автор закрыл исходную колоду. Ваша копия остаётся с вами, но обновлений больше не будет."
+  }
+}

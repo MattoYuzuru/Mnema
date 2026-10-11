@@ -26,7 +26,10 @@
       @if (phase() === 'unknown' || phase() === 'conflict' || phase() === 'unavailable') {
         <button class="button secondary" type="button" (click)="reconcile()">Проверить состояние</button>
       }
-      @if (phase() === 'error') { <button class="button secondary" type="button" (click)="retryStart()">Начать заново</button> }
+      @if (phase() === 'error') {
+        @if (deckPreparing()) { <a class="button secondary" [routerLink]="['/decks', deckId]">К колоде</a> }
+        @else { <button class="button secondary" type="button" (click)="retryStart()">Начать заново</button> }
+      }
     </section>
   }
 

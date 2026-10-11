@@ -2,7 +2,7 @@
   @switch (phase()) {
     @case ('loading') {
       <h1 class="plain-title" tabindex="-1">Колода</h1>
-      <p class="hint" role="status">Загружаем колоду…</p>
+      <p class="hint" role="status">{{ redeeming() ? text.accepting : 'Загружаем колоду…' }}</p>
     }
     @case ('not-found') {
       <app-access-screen heading="Колода не найдена" eyebrow="Колода">
@@ -19,8 +19,27 @@
     @case ('invite-only') {
       <app-access-screen heading="Колода доступна по приглашению" eyebrow="Колода">
         <p>Автор открыл эту колоду только приглашённым. Попросите доступ, и автор увидит ваш запрос.</p>
-        <!-- TODO(#435): the «Запросить доступ» button (Share/13) goes here; no dead button until the request route exists. -->
-        @if (!signedIn()) { <a access-actions class="button primary" routerLink="/login" [queryParams]="{ returnUrl: returnUrl() }">Войти</a> }
+        @if (!signedIn() && invitePending()) { <p class="invite-note">{{ text.signInToAccept }}</p> }
+        @if (request.state() === 'sent' || request.state() === 'withdrawing') {
+          <p class="request-sent" tabindex="-1">{{ text.requestSent }}</p>
+        }
+        <p class="hint request-notice" role="status">{{ request.notice() }}</p>
+        @if (request.error(); as problem) { <p class="notice error request-error" role="alert">{{ problem }}</p> }
+        @if (!signedIn()) {
+          <a access-actions class="button primary" routerLink="/login" [queryParams]="{ returnUrl: returnUrl() }">Войти</a>
+        } @else if (request.state() === 'idle' || request.state() === 'sending') {
+          <button access-actions type="button" class="button primary" [attr.aria-busy]="request.state() === 'sending' ? 'true' : null"
+            [attr.aria-disabled]="request.state() === 'sending' ? 'true' : null" (click)="request.send(code())">{{ request.state() === 'sending' ? text.requestSending : text.requestAccess }}</button>
+        } @else {
+          <button access-actions type="button" class="button" [attr.aria-busy]="request.state() === 'withdrawing' ? 'true' : null"
+            [attr.aria-disabled]="request.state() === 'withdrawing' ? 'true' : null" (click)="request.withdraw(code())">{{ request.state() === 'withdrawing' ? text.requestWithdrawing : text.requestWithdraw }}</button>
+        }
+        <a access-actions class="button" routerLink="/">На главную</a>
+      </app-access-screen>
+    }
+    @case ('full') {
+      <app-access-screen [heading]="text.fullHeading" eyebrow="Колода">
+        <p>{{ text.fullBody }}</p>
         <a access-actions class="button" routerLink="/">На главную</a>
       </app-access-screen>
     }
@@ -75,7 +94,14 @@
           @if (isOwner()) {
             <a class="button primary" routerLink="/decks">Открыть в своих колодах</a>
           } @else if (signedIn()) {
-            <!-- TODO(#432): «Добавить к себе» / «Открыть мою копию» (Share/10) takes this slot; nothing is drawn until it works. -->
+            @if (current.myCopy; as copy) {
+              <a class="button primary" [routerLink]="['/decks', copy.deckId]">{{ text.openCopy }}</a>
+              @if (copy.preparing) { <p class="hint copy-hint">{{ text.copyPreparing }}</p> }
+            } @else {
+              <button type="button" class="button primary" [attr.aria-busy]="copying() ? 'true' : null" [attr.aria-disabled]="copying() ? 'true' : null"
+                (click)="addCopy()">{{ copying() ? text.adding : text.add }}</button>
+            }
+            @if (copyNotice(); as notice) { <p class="notice error copy-notice" role="alert">{{ notice }}</p> }
           } @else {
             <a class="button primary" routerLink="/login" [queryParams]="{ returnUrl: returnUrl() }">Войдите, чтобы добавить колоду к себе</a>
           }

@@ -139,6 +139,9 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         rows.add(Row.of("GET /decks/{deckId}/grants", w -> get("/decks/" + w.deck().id() + "/grants")));
         rows.add(Row.refused("POST /decks/{deckId}/grants", w -> send("POST", "/decks/" + w.deck().id() + "/grants", JSON.createObjectNode().put("username", GRANTABLE_LOGIN), null)));
         rows.add(Row.of("DELETE /decks/{deckId}/grants/{granteeId}", w -> send("DELETE", "/decks/" + w.deck().id() + "/grants/" + random, null, null)));
+        // copies (Share/10): an ordinary deck is not a copy, so the owner's own answer is the same opaque 404 (the stranger's is, whatever the deck)
+        rows.add(Row.absent("POST /decks/{deckId}/fork:retry", w -> send("POST", "/decks/" + w.deck().id() + "/fork:retry", null, null)));
+        rows.add(Row.absent("POST /decks/{deckId}/fork:detach", w -> send("POST", "/decks/" + w.deck().id() + "/fork:detach", null, null)));
         // materials
         rows.add(Row.of("GET /decks/{deckId}/items", w -> get("/decks/" + w.deck().id() + "/items")));
         rows.add(Row.of("GET /decks/{deckId}/items/{memberKey}", w -> get("/decks/" + w.deck().id() + "/items/" + w.deck().material().member())));

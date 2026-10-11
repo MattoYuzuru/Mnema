@@ -19,6 +19,7 @@ import {
     isDeckVisibility,
     validateDeckMetadata
 } from './own-deck.models';
+import { parseDeckFork } from './fork/fork.models';
 
 @Injectable({ providedIn: 'root' })
 export class OwnDecksApiService {
@@ -145,7 +146,7 @@ function parseOwnDeck(value: unknown): OwnDeck {
     const object = requireObject(value, [
         'deckId', 'revisionId', 'rowVersion', 'sequence', 'metadata', 'visibility',
         'createdAt', 'updatedAt', 'memberCount', 'exerciseCount'
-    ]);
+    ], ['fork']);
     const deckId = requireString(object['deckId'], 'deckId');
     const revisionId = requireString(object['revisionId'], 'revisionId');
     const rowVersion = requireString(object['rowVersion'], 'rowVersion');
@@ -171,7 +172,8 @@ function parseOwnDeck(value: unknown): OwnDeck {
     return {
         deckId: deckId.toLowerCase(), revisionId: revisionId.toLowerCase(),
         rowVersion, sequence, metadata, visibility,
-        createdAt, updatedAt, memberCount, exerciseCount
+        createdAt, updatedAt, memberCount, exerciseCount,
+        fork: parseDeckFork(object['fork'])
     };
 }
 
@@ -210,13 +212,13 @@ function requireEntityId(value: string): string {
     return value.toLowerCase();
 }
 
-function requireObject(value: unknown, exactKeys: readonly string[]): Record<string, unknown> {
+function requireObject(value: unknown, exactKeys: readonly string[], optionalKeys: readonly string[] = []): Record<string, unknown> {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new OwnDeckProtocolError('Expected an object response.');
     }
     const object = value as Record<string, unknown>;
     const keys = Object.keys(object);
-    if (keys.length !== exactKeys.length || keys.some(key => !exactKeys.includes(key))) {
+    if (!exactKeys.every(key => Object.hasOwn(object, key)) || keys.some(key => !exactKeys.includes(key) && !optionalKeys.includes(key))) {
         throw new OwnDeckProtocolError('Response object has an unexpected shape.');
     }
     return object;

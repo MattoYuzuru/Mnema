@@ -17,7 +17,7 @@ import java.util.UUID;
  * revision pinned. A page read costs O(log N + P) object reads (bounded by the reader's own budget); nothing is written.
  */
 @Component
-final class ManifestPages {
+public final class ManifestPages {
     static final int MAX_ENTRIES = 100_000;
     static final Profile MEMBERS = Profile.members(MAX_ENTRIES);
     static final Profile EXERCISES = Profile.exercises(MAX_ENTRIES);
@@ -26,11 +26,11 @@ final class ManifestPages {
 
     ManifestPages(ImmutableStorage storage) { this.storage = storage; }
 
-    List<Entry> members(UUID scope, UUID root, int count, int start, int limit) {
+    public List<Entry> members(UUID scope, UUID root, int count, int start, int limit) {
         return read(MEMBERS, "members", scope, root, count, start, limit);
     }
 
-    List<Entry> exercises(UUID scope, UUID root, int count, int start, int limit) {
+    public List<Entry> exercises(UUID scope, UUID root, int count, int start, int limit) {
         return read(EXERCISES, "exercises", scope, root, count, start, limit);
     }
 

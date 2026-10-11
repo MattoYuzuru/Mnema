@@ -1,5 +1,6 @@
 package app.mnema.learning.catalog.authoring;
 
+import app.mnema.learning.fork.ForkGuard;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
@@ -28,15 +29,17 @@ public class CaptureService {
     private final CaptureItemPublisher items;
     private final CanonicalJsonHasher canonical;
     private final AuthoringSettings settings;
+    private final ForkGuard forkGuard;
 
     public CaptureService(AuthoringRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                          CaptureItemPublisher items, CanonicalJsonHasher canonical, AuthoringSettings settings) {
+                          CaptureItemPublisher items, CanonicalJsonHasher canonical, AuthoringSettings settings, ForkGuard forkGuard) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
         this.items = items;
         this.canonical = canonical;
         this.settings = settings;
+        this.forkGuard = forkGuard;
     }
 
     @Transactional(readOnly = true, timeout = 10)
@@ -73,6 +76,8 @@ public class CaptureService {
     public WriteResult create(UUID actor, AuthoringCommands.CaptureCreate command) {
         actor(actor);
         ownDeck(actor, command.deckId());
+        // a note in a copy that is still being prepared would wait on heads that are not there yet
+        forkGuard.requireReady(actor, command.deckId());
         boolean[] applied = {false};
         JsonNode result = receipts.execute(new CommandIdentity(command.commandId(), actor,
                 "authoring.capture", "capture.create"), command.envelope(), () -> {
@@ -131,6 +136,7 @@ public class CaptureService {
         actor(actor);
         CaptureRecord note = own(actor, noteId);
         ownDeck(actor, note.deckId());
+        forkGuard.requireReady(actor, note.deckId());
         byte[] hash = conversionHash(command, noteId, expected);
         if (note.conversionCommandId() != null) {
             requireSameConversion(note, command.commandId(), hash);

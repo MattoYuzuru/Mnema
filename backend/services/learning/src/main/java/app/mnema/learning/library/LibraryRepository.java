@@ -6,7 +6,11 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -49,6 +53,24 @@ class LibraryRepository {
                   LEFT JOIN app_learning.deck_revision r ON r.deck_id = p.deck_id AND r.revision_id = p.published_revision_id
                  WHERE p.public_code = :code
                 """).param("code", code).query(DECK_ROW).optional();
+    }
+
+    /** The live decks behind several public codes in ONE statement (the batch of {@link DeckAccess#resolveAll}); a code that matches nothing is absent from the answer. */
+    List<DeckRef> byCodes(Collection<String> codes) {
+        if (codes.isEmpty()) return List.of();
+        return jdbc.sql(DECK + """
+                  FROM app_learning.deck_publication p
+                  JOIN app_learning.deck d ON d.deck_id = p.deck_id AND d.deleted_at IS NULL
+                  LEFT JOIN app_learning.deck_revision r ON r.deck_id = p.deck_id AND r.revision_id = p.published_revision_id
+                 WHERE p.public_code IN (:codes)
+                """).param("codes", codes).query(DECK_ROW).list();
+    }
+
+    /** Which of these decks the account holds a grant for, in one statement. */
+    Set<UUID> grantedAmong(Collection<UUID> decks, UUID account) {
+        if (decks.isEmpty()) return Set.of();
+        return new HashSet<>(jdbc.sql("SELECT deck_id FROM app_learning.deck_access_grant WHERE grantee_id = :account AND deck_id IN (:decks)")
+                .param("account", account).param("decks", decks).query(UUID.class).list());
     }
 
     /** The live deck by id, private or not. */

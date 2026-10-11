@@ -13,6 +13,8 @@ describe('OwnDecksApiService', () => {
     const deck = metadataFixture.detail as unknown as OwnDeck;
     const command = metadataFixture.command as unknown as DeckCommand;
     const acknowledgement = { commandId: command.commandId, deck };
+    /** What the api service returns for it: an answer without `fork` reads as `fork: null`. */
+    const parsedAcknowledgement = { commandId: command.commandId, deck: { ...deck, fork: null } };
     const privateHeaders = { 'Cache-Control': 'private, no-store' };
 
     beforeEach(() => {
@@ -32,14 +34,14 @@ describe('OwnDecksApiService', () => {
         expect(request.request.method).toBe('GET');
         request.flush({ items: [deck], nextCursor: 'next-opaque' }, { headers: privateHeaders });
 
-        expect(await result).toEqual({ items: [deck], nextCursor: 'next-opaque' });
+        expect(await result).toEqual({ items: [{ ...deck, fork: null }], nextCursor: 'next-opaque' });
     });
 
     it('requires the exact strong detail ETag and fixture shape', async () => {
         const result = firstValueFrom(api.detail(deck.deckId));
         const request = http.expectOne(`/api/decks/${deck.deckId}`);
         request.flush(deck, { headers: { ...privateHeaders, ETag: '"0"' } });
-        expect(await result).toEqual(deck);
+        expect(await result).toEqual({ ...deck, fork: null });
 
         const invalid = firstValueFrom(api.detail(deck.deckId));
         http.expectOne(`/api/decks/${deck.deckId}`).flush({ ...deck, rowVersion: '01' }, {
@@ -53,7 +55,7 @@ describe('OwnDecksApiService', () => {
         const request = http.expectOne(`/api/decks/${deck.deckId}`);
         request.flush(deck, { headers: { ...privateHeaders, ETag: '"0"' } });
 
-        expect(await result).toEqual(deck);
+        expect(await result).toEqual({ ...deck, fork: null });
     });
 
     it('sends the exact create command and validates fresh acknowledgement headers', async () => {
@@ -71,7 +73,7 @@ describe('OwnDecksApiService', () => {
             }
         });
         expect(await result).toEqual({
-            acknowledgement, etag: '"0"', replayed: false, location: `/api/decks/${deck.deckId}`
+            acknowledgement: parsedAcknowledgement, etag: '"0"', replayed: false, location: `/api/decks/${deck.deckId}`
         });
     });
 
@@ -83,7 +85,7 @@ describe('OwnDecksApiService', () => {
         request.flush(acknowledgement, {
             headers: { ...privateHeaders, 'Idempotency-Replayed': 'true' }
         });
-        expect(await result).toEqual({ acknowledgement, etag: null, replayed: true, location: null });
+        expect(await result).toEqual({ acknowledgement: parsedAcknowledgement, etag: null, replayed: true, location: null });
     });
 
     it('deletes a deck only against its current strong version', async () => {
