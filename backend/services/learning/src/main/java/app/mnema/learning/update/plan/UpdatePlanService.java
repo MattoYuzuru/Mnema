@@ -60,6 +60,15 @@ public class UpdatePlanService {
         return compute(owner, deckId).plan();
     }
 
+    /**
+     * The recorded decisions of a copy, in the order {@link PlanVersion#of} digests them: THE query of the plan version. The apply command (Updates/4) reads the rows through this
+     * method, in its own transaction and again inside the final transaction of its publication, so the two versions it compares cannot be computed from different statements.
+     * Not transactional itself (it joins the caller's); no ownership check, so only code that has already authorized the copy may call it.
+     */
+    public List<Decision> decisions(UUID deckId) {
+        return repository.decisions(deckId);
+    }
+
     /** One page of the plan as the wire shape. {@code cursor} and {@code limit} are the raw query values (null: absent). */
     @Transactional(timeout = 10, isolation = Isolation.REPEATABLE_READ)
     public ObjectNode page(UUID owner, UUID deckId, String cursor, String limit) {

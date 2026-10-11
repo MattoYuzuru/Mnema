@@ -24,6 +24,8 @@ import app.mnema.learning.promo.PromoRejectedException;
 import app.mnema.learning.speech.PayloadTooLargeException;
 import app.mnema.learning.speech.SpeechConsentOutdatedException;
 import app.mnema.learning.speech.SpeechConsentRequiredException;
+import app.mnema.learning.update.apply.ForkDetachedException;
+import app.mnema.learning.update.apply.UpdateSourceUnavailableException;
 import app.mnema.learning.update.plan.UpdatePlanBusyException;
 import app.mnema.learning.update.plan.UpdatePlanStaleException;
 import app.mnema.learning.usage.SpecNotSupportedException;
@@ -123,6 +125,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(UpdatePlanStaleException.class)
     ResponseEntity<Object> handleUpdatePlanStale(UpdatePlanStaleException exception, HttpServletRequest request) {
         return response(ApiErrorCode.UPDATE_PLAN_STALE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(UpdateSourceUnavailableException.class)
+    ResponseEntity<Object> handleUpdateSourceUnavailable(UpdateSourceUnavailableException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.UPDATE_SOURCE_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(ForkDetachedException.class)
+    ResponseEntity<Object> handleForkDetached(ForkDetachedException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.FORK_DETACHED, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(ForkOwnDeckException.class)

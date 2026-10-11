@@ -13,12 +13,13 @@ import java.util.UUID;
  * digest of the decisions, so any change of the three heads or of one decision is a different plan; the apply command recomputes and compares it. A cursor embeds the plan version
  * it was cut from: with a different version it is stale (409), and a cursor of another copy or a malformed one is a 400.
  */
-final class PlanVersion {
+public final class PlanVersion {
     static final String PREFIX = "sha256:";
 
     private PlanVersion() { }
 
-    static String of(UUID head, UUID published, UUID base, List<Decision> decisions) {
+    /** The version of a plan with these pins (public for the apply command, which re-checks it inside the final transaction of the publication, Updates/4). */
+    public static String of(UUID head, UUID published, UUID base, List<Decision> decisions) {
         StringBuilder rows = new StringBuilder();
         for (Decision decision : decisions) {
             rows.append(decision.kind()).append('|').append(decision.key()).append('|').append(decision.verdict()).append('|')
@@ -28,7 +29,7 @@ final class PlanVersion {
         return PREFIX + sha256(head + "|" + published + "|" + base + "|" + sha256(rows.toString()));
     }
 
-    static boolean valid(String version) {
+    public static boolean valid(String version) {
         return version != null && version.length() == PREFIX.length() + 64 && version.startsWith(PREFIX) && version.substring(PREFIX.length()).matches("[0-9a-f]{64}");
     }
 
