@@ -173,6 +173,16 @@ class AttemptRepository {
                 .param("receiptExpiry", receiptExpiry == null ? null : receiptExpiry.atOffset(ZoneOffset.UTC),
                         java.sql.Types.TIMESTAMP_WITH_TIMEZONE)
                 .param("now", Timestamp.from(now)).update();
+        // the first-attempt fact of the AI strictness (V59): kept here, not derived from the presentation the retention deletes
+        if (status.equals("ASSESSED")) {
+            jdbc.sql("""
+                    INSERT INTO app_learning.study_exercise_attempt(account_id,deck_id,exercise_id,learning_epoch,attempts)
+                    SELECT p.account_id,p.deck_id,p.exercise_id,p.learning_epoch,1 FROM app_learning.study_presentation p
+                     WHERE p.account_id=:actor AND p.session_id=:session AND p.presentation_id=:presentation
+                    ON CONFLICT (account_id,deck_id,exercise_id,learning_epoch)
+                    DO UPDATE SET attempts=app_learning.study_exercise_attempt.attempts+1
+                    """).param("actor", actor).param("session", session).param("presentation", command.presentationId()).update();
+        }
     }
 
     void insertEvidence(AttemptCommand command, Presentation presentation, AttemptEvaluation evaluation,

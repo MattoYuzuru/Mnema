@@ -5,6 +5,7 @@ import { SgControlsComponent } from './sg-controls.component';
 import { SgFoundationsComponent } from './sg-foundations.component';
 import { SgScreenComponent } from './sg-screen.component';
 import { SgSurfacesComponent } from './sg-surfaces.component';
+import { SgUpdateComponent } from './sg-update.component';
 import { SECTION_GROUPS } from './styleguide.data';
 
 /**
@@ -14,7 +15,7 @@ import { SECTION_GROUPS } from './styleguide.data';
 @Component({
     selector: 'app-styleguide-page',
     encapsulation: ViewEncapsulation.None,
-    imports: [RouterLink, SgFoundationsComponent, SgControlsComponent, SgSurfacesComponent, SgScreenComponent],
+    imports: [RouterLink, SgFoundationsComponent, SgControlsComponent, SgSurfacesComponent, SgUpdateComponent, SgScreenComponent],
     templateUrl: './styleguide-page.component.html',
     styleUrl: './styleguide.css',
     changeDetection: ChangeDetectionStrategy.OnPush

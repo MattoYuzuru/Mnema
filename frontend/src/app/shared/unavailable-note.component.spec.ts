@@ -6,7 +6,8 @@ import { UnavailableNoteComponent } from './unavailable-note.component';
 @Component({
     imports: [UnavailableNoteComponent],
     template: `<app-unavailable-note id="reader" /><app-unavailable-note id="owner" audience="owner"><a href="#x">Заменить</a></app-unavailable-note>
-      <app-unavailable-note id="exercise" subject="exercise" /><app-unavailable-note id="owner-exercise" subject="exercise" audience="owner" />`
+      <app-unavailable-note id="exercise" subject="exercise" /><app-unavailable-note id="owner-exercise" subject="exercise" audience="owner" />
+      <app-unavailable-note id="source" subject="source" />`
 })
 class HostComponent {}
 
@@ -20,6 +21,7 @@ describe('UnavailableNoteComponent', () => {
         expect(text(root, 'reader')).toBe('Материал недоступен Материал снят по жалобе.');
         expect(text(root, 'owner')).toBe('Материал недоступен Материал снят по жалобе, открыть его нельзя. Напишите новый на его месте или удалите этот. Заменить');
         expect(text(root, 'exercise')).toBe('Упражнение недоступно Упражнение снято по жалобе.');
+        expect(text(root, 'source')).toBe('Источник больше недоступен Автор закрыл исходную колоду. Ваша копия остаётся с вами, но обновлений больше не будет.');
         expect(text(root, 'owner-exercise')).toBe('Упражнение недоступно Упражнение снято по жалобе. Создайте новое или удалите это.');
     });
 

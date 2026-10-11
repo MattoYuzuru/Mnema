@@ -1,5 +1,5 @@
-import { NativeDocument } from '../../content/native-document';
-import { NativeRenderNode, RenderMarkedText, buildNativeRenderState } from '../../content/rendering/native-render-state';
+import { NativeDocument } from './native-document';
+import { NativeRenderNode, RenderMarkedText, buildNativeRenderState } from './rendering/native-render-state';
 
 /** One run of the diff: unchanged text, text taken out of the old version, or text put into the new one. */
 export interface DiffSegment { readonly kind: 'same' | 'del' | 'ins'; readonly text: string; }

@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 /** Every drawing of {@link GlyphComponent}; the names are the whole public vocabulary. */
 export const GLYPH_NAMES = [
-    'book-search', 'book-open', 'share', 'copy-branch', 'lock', 'link', 'scroll-seal', 'colonnade', 'more', 'image', 'audio', 'video'
+    'book-search', 'book-open', 'share', 'copy-branch', 'lock', 'link', 'scroll-seal', 'colonnade', 'more', 'image', 'audio', 'video', 'exercise', 'goal', 'order'
 ] as const;
 export type GlyphName = typeof GLYPH_NAMES[number];
 
@@ -75,6 +75,19 @@ export type GlyphName = typeof GLYPH_NAMES[number];
         @case ('audio') {
           <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4Z" />
           <path d="M15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10" />
+        }
+        @case ('exercise') {
+          <path d="M4 20l1-4L16.2 4.8a1.8 1.8 0 0 1 2.5 0l.5.5a1.8 1.8 0 0 1 0 2.5L8 19Z" />
+          <path d="m14.5 6.5 3 3M4 20l4-1" />
+        }
+        @case ('goal') {
+          <circle cx="12" cy="12" r="8.5" />
+          <circle cx="12" cy="12" r="4.5" />
+          <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+        }
+        @case ('order') {
+          <path d="M4 6.5h10M4 12h10M4 17.5h10" />
+          <path d="M19 6v12M16.5 15.5 19 18l2.5-2.5" />
         }
         @case ('video') {
           <rect x="3.5" y="5" width="17" height="14" rx="1" />

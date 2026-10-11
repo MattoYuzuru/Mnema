@@ -8,7 +8,7 @@ import { NativeDocument } from '../../content/native-document';
 import { ProposalDocumentComponent } from './proposal-document.component';
 import { artifactStatus, failureNote, failureReason, turnFailureReason } from './generation-view';
 import { ArtifactSummary, MAX_EDIT_TARGETS, SessionState, allows, isApprovable } from './generation.models';
-import { DiffParagraph, blocksOf, diffLines, hasChanges, isMediaKind } from './word-diff';
+import { DiffParagraph, blocksOf, diffLines, hasChanges, isMediaKind } from '../../content/word-diff';
 import { DetailEntry, WorkshopSessionStore } from './workshop-session.store';
 
 type DiffState =

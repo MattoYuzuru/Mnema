@@ -204,15 +204,13 @@ class AssessmentRepository {
 
     /**
      * Whether the learner already has an assessed attempt at this exercise in this epoch (in any mode) <b>in this deck</b>: a
-     * source and its copies share the exercise id, and progress (the epoch included) belongs to the learner's own deck.
+     * source and its copies share the exercise id, and progress (the epoch included) belongs to the learner's own deck. The fact lives in
+     * {@code study_exercise_attempt} (V59), written with the receipt, so it outlives the presentation the snapshot retention deletes.
      */
     boolean attemptedExercise(UUID actor, UUID deck, UUID exercise, long epoch) {
         return jdbc.sql("""
-                SELECT EXISTS(SELECT 1 FROM app_learning.study_attempt_tombstone t
-                    JOIN app_learning.study_presentation p ON p.account_id=t.account_id AND p.session_id=t.session_id
-                     AND p.presentation_id=t.presentation_id
-                   WHERE t.account_id=:actor AND p.deck_id=:deck AND p.exercise_id=:exercise AND p.learning_epoch=:epoch
-                     AND t.status='ASSESSED')
+                SELECT EXISTS(SELECT 1 FROM app_learning.study_exercise_attempt
+                   WHERE account_id=:actor AND deck_id=:deck AND exercise_id=:exercise AND learning_epoch=:epoch)
                 """).param("actor", actor).param("deck", deck).param("exercise", exercise).param("epoch", epoch)
                 .query(Boolean.class).single();
     }
@@ -355,8 +353,21 @@ class AssessmentRepository {
                 .param("attempt", attempt).query((row, ignored) -> json(row.getString("response"))).optional();
     }
 
-    /** The grade was taken back: the receipt now says NOT_ASSESSED with {@code disputed}. */
-    void markDisputed(UUID attempt, JsonNode outcome) {
+    /**
+     * The grade was taken back: the receipt now says NOT_ASSESSED with {@code disputed}, and the attempt no longer counts as one at its exercise.
+     * The exercise and epoch come from the presentation the caller already loaded under the session lock, not from a join with
+     * {@code study_presentation}: the receipt does not depend on a presentation the snapshot retention may have deleted.
+     */
+    void markDisputed(UUID attempt, JsonNode outcome, UUID actor, UUID deck, UUID exercise, long epoch) {
+        // delete the last count first, then lower a larger one: the other order would delete a 2 that was just lowered to 1
+        jdbc.sql("""
+                DELETE FROM app_learning.study_exercise_attempt
+                 WHERE account_id=:actor AND deck_id=:deck AND exercise_id=:exercise AND learning_epoch=:epoch AND attempts<=1
+                """).param("actor", actor).param("deck", deck).param("exercise", exercise).param("epoch", epoch).update();
+        jdbc.sql("""
+                UPDATE app_learning.study_exercise_attempt SET attempts=attempts-1
+                 WHERE account_id=:actor AND deck_id=:deck AND exercise_id=:exercise AND learning_epoch=:epoch AND attempts>1
+                """).param("actor", actor).param("deck", deck).param("exercise", exercise).param("epoch", epoch).update();
         jdbc.sql("""
                 UPDATE app_learning.study_attempt_tombstone SET status='NOT_ASSESSED',outcome=CAST(:outcome AS jsonb)
                  WHERE attempt_id=:attempt

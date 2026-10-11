@@ -139,3 +139,10 @@
 .sg-tier-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
 .sg-auto-load-scroll { max-block-size: 22rem; overflow-y: auto; margin-block-start: var(--mn-space-4); border: 1px solid var(--mn-rule); padding: var(--mn-space-4); }
 .sg-auto-load-scroll li { padding-block: var(--mn-space-3); }
+
+/* «Обновление копии»: a phone-wide container for the comparison, the tab panel and the list of unit rows. */
+.sg-narrow { max-inline-size: 22rem; }
+.sg-panel { min-inline-size: 0; padding-block: var(--mn-space-3); }
+.sg-panel:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+.sg-unit-list { border-block-end: 1px solid var(--mn-rule); }
+.sg-order { margin: 0; padding-inline-start: 1.4rem; line-height: 1.7; }
