@@ -255,7 +255,8 @@ Because a scheduled receipt is kept until account deletion, **short quotes of th
 epoch (compare-and-set on the objective's state row, locked). The server appends a compensating transition (`study_transition.kind = COMPENSATION`, `compensates_attempt_id`,
 reason code `AI_DISPUTED`; append-only, no attempt of its own) that restores the before-state of the AI transition (level, streak, lapses, and the objective's `last_assessed_at` and `next_due` exactly as the earlier attempt left them; for a first attempt: never assessed, due at once, as after a restart), makes the attempt `NOT_ASSESSED` with `disputed: true` and writes a
 counts-only row (`study_assessment_dispute`: strictness, judgement, exercise; **no answer text** unless the client sends `shareExample: true`, which the UI never does today). The AI
-evidence row stays as the audit trail. Otherwise `409 DISPUTE_NOT_ALLOWED`. In `PRACTICE`/`REPLAY` there is no transition and the dispute only marks the receipt and counts. The same
+evidence row stays as the audit trail. Otherwise `409 DISPUTE_NOT_ALLOWED`. A dispute also needs the attempt's presentation, which the
+[snapshot retention](#progress-and-retention) deletes after `learning.study.retention.snapshot-horizon` (default 7 days): later it is the opaque `404`. In `PRACTICE`/`REPLAY` there is no transition and the dispute only marks the receipt and counts. The same
 `commandId` replays. The golden fixtures (12 exercises × 12 answers) and the opt-in live eval are in [assessment-golden](assessment-golden/README.md).
 
 ## Session resources
@@ -450,13 +451,22 @@ after purge still returns the stored outcome without re-evaluation. Replay/pract
 never persist raw response. Their compact receipt expires after 24 hours but leaves
 an attempt-ID tombstone so an expired global ID cannot be reused.
 
+**Snapshot retention (#460).** What a session issued is kept for `learning.study.retention.snapshot-horizon` after the session started (default `P7D`, never
+below `P5D`: the replay window is the current local date, up to about 60 hours across the time-zone offsets up to ±18:00, plus the 24 hours a replay session lives). After it the server deletes the session's presentations,
+exposures, hint and transcript reveals, pair checks and AI answer state, and the presentations carried by the `study.start` receipt (the receipt keeps its command
+id, actor, payload hash and `sessionId`/`mode`/`status`). From then on a dispute, a new answer, a reveal or a pair check on such a presentation is the same opaque
+`404` as for an unknown id, and a retry of the old start command replays the stub without presentations. An exact retry of a **terminal** submit still returns the stored
+outcome (the receipt is read before the presentation). Receipts, scheduled outcomes, evidence, transitions, `StudyState` and the session row are not touched; raw responses
+keep their 30 days. The AI strictness is unchanged: "the first attempt at this exercise in this epoch" is a fact stored apart from the presentation
+(`study_exercise_attempt`, backfilled by migration V59). Operations, keys and measurements: [Learning guide](../../backend/services/learning/guide.md).
+
 Live-row deletion does not claim deletion from backup/PITR/WAL. Production backup
 retention remains a separate legal/operations decision.
 
 ## Errors and security
 
 Existing Problem Details remain canonical. Study adds stable error codes
-`SESSION_PREPARING`, `SESSION_EXPIRED` and `PRESENTATION_EXPIRED`; private
+`SESSION_PREPARING`, `SESSION_EXPIRED` and `PRESENTATION_EXPIRED` (the last one only until the snapshot horizon; after it a deleted presentation is the opaque 404); private
 absent/foreign IDs remain the same opaque 404. A recoverable evaluator failure is
 HTTP 200 `UNAVAILABLE` feedback with reason code `EVALUATOR_UNAVAILABLE`, not an
 incorrect result or transport Problem Detail; an `ai-semantic` answer never produces it: a failed grade is self-check (HTTP 202 /

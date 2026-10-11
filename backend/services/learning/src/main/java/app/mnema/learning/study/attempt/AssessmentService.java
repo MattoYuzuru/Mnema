@@ -445,6 +445,9 @@ public class AssessmentService {
     public AttemptService.SubmitResult dispute(UUID actor, UUID deck, UUID session, UUID attemptId, DisputeCommand command) {
         own(actor, deck);
         attempts.lockAttempt(attemptId);
+        // the session lock, like submit, self-rating and the resolution: the snapshot retention takes sessions with SKIP LOCKED, so it never
+        // deletes the presentation a dispute is reading (V59)
+        attempts.lockSession(actor, deck, session);
         AttemptRepository.Receipt receipt = attempts.receipt(attemptId).filter(found -> found.accountId().equals(actor)
                 && found.deckId().equals(deck) && found.sessionId().equals(session) && found.outcome() != null)
                 .orElseThrow(ResourceNotFoundException::new);
@@ -476,7 +479,7 @@ public class AssessmentService {
                 presentation.exerciseRevisionId(), grade.path("strictness").asString("S1"),
                 grade.path("judgement").asString("INSUFFICIENT"), example, now);
         ObjectNode taken = disputed(outcome, presentation);
-        assessments.markDisputed(attemptId, taken);
+        assessments.markDisputed(attemptId, taken, actor, presentation.deckId(), presentation.exerciseId(), presentation.learningEpoch());
         count("DISPUTED", grade.path("strictness").asString("S1"));
         LOG.info("assessment_disputed attempt_id={} strictness={} judgement={} shared={}", attemptId,
                 grade.path("strictness").asString(""), grade.path("judgement").asString(""), example != null);
