@@ -133,13 +133,13 @@ describe('Personal data policy page', () => {
         const dataTable = tables.find(table => text(table.querySelector('caption')).startsWith('Категории'))!;
         expect([...dataTable.querySelectorAll('thead th')].map(header => text(header))).toEqual(['Категория', 'Состав', 'Источник']);
         expect([...dataTable.querySelectorAll('tbody th')].map(header => text(header))).toEqual(['Данные аккаунта', 'Вход через стороннего провайдера', 'Профиль', 'Учебные данные',
-            'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Обращения в поддержку']);
+            'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Жалобы', 'Обращения в поддержку']);
         const purposes = tables.find(table => text(table.querySelector('caption')).startsWith('Цели'))!;
         expect(purposes.querySelectorAll('tbody tr')).toHaveLength(9);
         for (const row of purposes.querySelectorAll('tbody tr')) expect(row.querySelectorAll('td'), text(row)).toHaveLength(3);
         const purposeText = text(purposes);
         for (const purpose of ['Регистрация, вход, ведение аккаунта и профиля', 'Работа сервиса', 'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки и рекомендация тарифа',
-            'Безопасность', 'Служебные письма', 'Поддержка и обратная связь', 'Резервное копирование и восстановление', 'Выполнение требований закона']) expect(purposeText).toContain(purpose);
+            'Безопасность', 'Служебные письма', 'Поддержка и обратная связь', 'Рассмотрение жалоб на колоды и профили', 'Резервное копирование и восстановление', 'Выполнение требований закона']) expect(purposeText).toContain(purpose);
         // legal bases per purpose, and the periods of the table
         for (const basis of ['п. 5 ч. 1 ст. 6', 'п. 7 ч. 1 ст. 6', 'п. 2 ч. 1 ст. 6']) expect(purposeText).toContain(basis);
         for (const period of ['до 30 дней', '2 часа', 'до 35 минут', '3 суток', '10 минут', 'до 12 месяцев', 'не более двух последних копий', 'Срок, установленный законом']) expect(purposeText).toContain(period);
