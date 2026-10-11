@@ -50,6 +50,13 @@ public class DeckModeration {
                 row.getInt("exercise_count"), row.getBoolean("hidden"), instant(row.getTimestamp("hidden_at")))).optional();
     }
 
+    /** Locks the deck's publication row until the end of the caller's transaction: the published revision and the flag cannot move meanwhile. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockPublication(UUID deckId) {
+        UuidPolicy.requireEntityId(deckId, "deckId");
+        jdbc.sql("SELECT 1 FROM app_learning.deck_publication WHERE deck_id = :deck FOR UPDATE").param("deck", deckId).query(Integer.class).optional();
+    }
+
     /** Hides the deck. @return whether the flag changed (false: it was already hidden, or the deck has no publication row) */
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean hide(UUID deckId, Instant now) {

@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +27,6 @@ import java.util.UUID;
 public class PublishedUnits {
     public static final String ITEM = "ITEM";
     public static final String EXERCISE = "EXERCISE";
-    private static final int SCAN = 500;
 
     /** One unit: {@code label} is the material title or the exercise prompt summary, {@code type} the exercise mechanic (null for a material). */
     public record Unit(String kind, UUID key, UUID revisionId, int ordinal, String label, String type, boolean takenDown) { }
@@ -117,30 +117,42 @@ public class PublishedUnits {
         return units;
     }
 
+    /** A unit the operator names by kind and key. */
+    public record Key(String kind, UUID key) { }
+
     /**
-     * The revision the deck's published manifest holds for a unit, or empty when the deck is unpublished or the unit is not in the published manifest.
-     * A material is found by one traversal of the members manifest; an exercise by a scan of the exercises manifest in pages of {@value #SCAN}
-     * (the exercises manifest is not key-addressed; this is an operator's rare action).
+     * The revision the deck's PUBLISHED manifests hold for each of the units, resolved in ONE pass per manifest (one traversal of the pages for all the keys of a
+     * kind, then one lookup of their revisions): a unit that is not in the published manifest, or a deck that is unpublished, is absent from the result.
+     * The caller holds the deck's publication row, so the published revision cannot move meanwhile.
      */
-    public Optional<UUID> publishedRevision(UUID deck, String kind, UUID key) {
+    public Map<Key, UUID> publishedRevisions(UUID deck, Collection<Key> units) {
+        Map<Key, UUID> result = new HashMap<>();
+        if (units.isEmpty()) return result;
         Optional<Header> found = header(deck);
-        if (found.isEmpty()) return Optional.empty();
+        if (found.isEmpty()) return result;
         Header header = found.orElseThrow();
-        if (ITEM.equals(kind)) {
-            if (header.memberCount() == 0) return Optional.empty();
-            return content.locate(header.scope(), header.membersRoot(), header.memberCount(), key)
-                    .flatMap(located -> content.itemRevisions(header.scope(), List.of(key), List.of(located.descriptorRootId())).stream().findFirst())
-                    .map(PublishedContentRepository.ItemRevision::revisionId);
+        List<UUID> members = units.stream().filter(unit -> ITEM.equals(unit.kind())).map(Key::key).distinct().toList();
+        List<UUID> wantedExercises = units.stream().filter(unit -> EXERCISE.equals(unit.kind())).map(Key::key).distinct().toList();
+        if (units.stream().anyMatch(unit -> !ITEM.equals(unit.kind()) && !EXERCISE.equals(unit.kind()))) throw new InvalidRequestException();
+        Map<UUID, PublishedContentRepository.Located> itemSpots = content.locateAll(header.scope(), header.membersRoot(), header.memberCount(),
+                ManifestPages.MEMBERS, "members", members);
+        if (!itemSpots.isEmpty()) {
+            content.itemRevisions(header.scope(), itemSpots.keySet(), itemSpots.values().stream().map(PublishedContentRepository.Located::descriptorRootId).toList())
+                    .forEach(revision -> {
+                        PublishedContentRepository.Located spot = itemSpots.get(revision.memberKey());
+                        if (spot != null && spot.descriptorRootId().equals(revision.descriptorRootId())) result.put(new Key(ITEM, revision.memberKey()), revision.revisionId());
+                    });
         }
-        if (!EXERCISE.equals(kind)) throw new InvalidRequestException();
-        for (int start = 0; start < header.exerciseCount(); start += SCAN) {
-            for (Entry entry : manifests.exercises(header.scope(), header.exercisesRoot(), header.exerciseCount(), start, SCAN)) {
-                if (!key.equals(entry.key())) continue;
-                return content.exercises(header.scope(), List.of(key), List.of(entry.target().objectId())).stream().findFirst()
-                        .map(PublishedContentRepository.ExerciseRow::revisionId);
-            }
+        Map<UUID, PublishedContentRepository.Located> exerciseSpots = content.locateAll(header.scope(), header.exercisesRoot(), header.exerciseCount(),
+                ManifestPages.EXERCISES, "exercises", wantedExercises);
+        if (!exerciseSpots.isEmpty()) {
+            content.exercises(header.scope(), exerciseSpots.keySet(), exerciseSpots.values().stream().map(PublishedContentRepository.Located::descriptorRootId).toList())
+                    .forEach(row -> {
+                        PublishedContentRepository.Located spot = exerciseSpots.get(row.exerciseId());
+                        if (spot != null && spot.descriptorRootId().equals(row.descriptorRootId())) result.put(new Key(EXERCISE, row.exerciseId()), row.revisionId());
+                    });
         }
-        return Optional.empty();
+        return result;
     }
 
     /** The lineage scope of a deck (deleted or not), the key the takedown rows use. */

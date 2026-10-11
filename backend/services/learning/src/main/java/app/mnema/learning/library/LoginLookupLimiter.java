@@ -22,7 +22,7 @@ import java.util.function.LongSupplier;
  * table is bounded; when it is full of live windows a new owner is refused rather than the memory grown.
  */
 @Component
-public final class LoginLookupLimiter {
+final class LoginLookupLimiter {
     static final int DEFAULT_PER_OWNER = 10;
     static final int DEFAULT_PER_INSTANCE = 40;
     private static final long WINDOW_NANOS = 60_000_000_000L;
@@ -57,7 +57,7 @@ public final class LoginLookupLimiter {
     }
 
     /** @throws RateLimitedException the owner or the instance used this minute's lookups; {@code Retry-After} is the rest of that window */
-    public synchronized void admit(UUID owner) {
+    synchronized void admit(UUID owner) {
         long now = nanos.getAsLong();
         if (instance == null || now - instance.startedAt >= WINDOW_NANOS) instance = new Window(now);
         if (instance.count >= perInstance) throw new RateLimitedException(rest(instance, now));

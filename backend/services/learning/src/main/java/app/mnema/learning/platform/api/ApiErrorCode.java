@@ -169,6 +169,11 @@ enum ApiErrorCode {
             "Content unavailable",
             "The content was removed after a complaint."
     ),
+    COMPLAINT_NOT_HIDDEN(
+            HttpStatus.CONFLICT,
+            "Complaint does not hide the deck",
+            "Only a complaint decided HIDDEN can unhide, and only while the deck is hidden by moderation."
+    ),
     COMPLAINT_DECIDED(
             HttpStatus.CONFLICT,
             "Complaint decided",

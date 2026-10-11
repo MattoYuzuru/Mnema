@@ -193,6 +193,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return response(ApiErrorCode.CONTENT_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
     }
 
+    @ExceptionHandler(ComplaintNotHiddenException.class)
+    ResponseEntity<Object> handleComplaintNotHidden(ComplaintNotHiddenException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.COMPLAINT_NOT_HIDDEN, request.getRequestURI(), new HttpHeaders());
+    }
+
     @ExceptionHandler(ComplaintDecidedException.class)
     ResponseEntity<Object> handleComplaintDecided(ComplaintDecidedException exception, HttpServletRequest request) {
         return response(ApiErrorCode.COMPLAINT_DECIDED, request.getRequestURI(), new HttpHeaders());

@@ -35,5 +35,17 @@ public final class TakedownFixture {
         jdbc.sql("INSERT INTO app_learning.content_takedown(reuse_scope_id, unit_kind, unit_key, revision_id, complaint_id, created_at) "
                         + "VALUES (:scope, :kind, :key, :revision, :complaint, clock_timestamp())")
                 .param("scope", scope).param("kind", kind).param("key", key).param("revision", revision).param("complaint", complaint).update();
+        // what the console's decision also records: the media assets of the named revision, blocked for the whole lineage
+        jdbc.sql("""
+                INSERT INTO app_learning.content_takedown_asset(reuse_scope_id, asset_id, takedown_id)
+                SELECT DISTINCT t.reuse_scope_id, r.asset_id, t.takedown_id FROM app_learning.content_takedown t
+                  JOIN app_learning.content_media_ref r ON r.reuse_scope_id = t.reuse_scope_id AND r.member_key = t.unit_key AND r.revision_id = t.revision_id
+                 WHERE t.complaint_id = :complaint AND t.unit_kind = 'ITEM'
+                UNION
+                SELECT DISTINCT t.reuse_scope_id, r.asset_id, t.takedown_id FROM app_learning.content_takedown t
+                  JOIN app_learning.exercise_media_ref r ON r.reuse_scope_id = t.reuse_scope_id AND r.exercise_id = t.unit_key AND r.exercise_revision_id = t.revision_id
+                 WHERE t.complaint_id = :complaint AND t.unit_kind = 'EXERCISE'
+                ON CONFLICT DO NOTHING
+                """).param("complaint", complaint).update();
     }
 }

@@ -59,6 +59,12 @@ class ComplaintRepository {
                 """).param("reporter", reporter).param("kind", targetKind).param("target", target).query(Boolean.class).single();
     }
 
+    /** Whether the reporter has an OPEN complaint about a profile with this (lower-case) login: the probe that precedes the Identity lookup. */
+    boolean openProfileExists(UUID reporter, String login) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.content_complaint WHERE reporter_id = :reporter AND target_kind = 'PROFILE' "
+                + "AND profile_username = :login AND status = 'OPEN')").param("reporter", reporter).param("login", login).query(Boolean.class).single();
+    }
+
     /** Creation times of the reporter's complaints since {@code since}, oldest first. */
     List<Instant> createdSince(UUID reporter, Instant since) {
         return jdbc.sql("SELECT created_at FROM app_learning.content_complaint WHERE reporter_id = :reporter AND created_at > :since ORDER BY created_at")
@@ -165,6 +171,28 @@ class ComplaintRepository {
             }
         }
         return new int[] {materials, exercises};
+    }
+
+    /**
+     * Records the media assets of every taken-down revision of the complaint ({@code content_media_ref} of a material revision, {@code exercise_media_ref} of an
+     * exercise revision), in the lineage of the takedown. Idempotent; the references of a revision never change after it is written, so this is complete.
+     *
+     * @return the number of NEW (scope, asset, takedown) rows
+     */
+    int recordAssets(UUID complaint) {
+        return jdbc.sql("""
+                INSERT INTO app_learning.content_takedown_asset(reuse_scope_id, asset_id, takedown_id)
+                SELECT DISTINCT t.reuse_scope_id, r.asset_id, t.takedown_id
+                  FROM app_learning.content_takedown t
+                  JOIN app_learning.content_media_ref r ON r.reuse_scope_id = t.reuse_scope_id AND r.member_key = t.unit_key AND r.revision_id = t.revision_id
+                 WHERE t.complaint_id = :complaint AND t.unit_kind = 'ITEM'
+                UNION
+                SELECT DISTINCT t.reuse_scope_id, r.asset_id, t.takedown_id
+                  FROM app_learning.content_takedown t
+                  JOIN app_learning.exercise_media_ref r ON r.reuse_scope_id = t.reuse_scope_id AND r.exercise_id = t.unit_key AND r.exercise_revision_id = t.revision_id
+                 WHERE t.complaint_id = :complaint AND t.unit_kind = 'EXERCISE'
+                ON CONFLICT DO NOTHING
+                """).param("complaint", complaint).update();
     }
 
     int takedownCount(UUID complaint) {

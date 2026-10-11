@@ -52,22 +52,50 @@ public class ContentTakedowns {
     }
 
     /**
-     * The exercise predicate for statements that hold a deck id instead of a scope (a Study presentation row carries no scope column): the deck names the
-     * lineage. The same row of {@code content_takedown}, reached through the deck's scope.
+     * What Study may NOT serve: the exercise revision is taken down, or it QUOTES a taken-down material revision (a CONTEXT binding is the text a presentation
+     * shows; the ASSESSED binding shows none). The same rule decides issuing and every later use of an issued presentation.
      */
-    public static String blockedExerciseOfDeck(String deck, String exercise, String revision) {
-        for (String expression : new String[] {deck, exercise, revision}) {
+    public static String blockedExerciseOrQuote(String scope, String exercise, String revision) {
+        check(scope, exercise, revision);
+        return "(" + blockedExercise(scope, exercise, revision) + " OR EXISTS (SELECT 1 FROM app_learning.exercise_content_binding quoted "
+                + "WHERE quoted.reuse_scope_id=%s AND quoted.exercise_id=%s AND quoted.exercise_revision_id=%s AND quoted.role='CONTEXT' AND "
+                .formatted(scope, exercise, revision) + blockedItem("quoted.reuse_scope_id", "quoted.member_key", "quoted.item_revision_id") + "))";
+    }
+
+    /**
+     * {@link #blockedExerciseOrQuote} for statements that hold a deck id instead of a scope (a Study presentation row carries no scope column): the deck names
+     * the lineage. A frozen presentation is no longer shown, resumed, replayed, revealed, answered or graded once this holds.
+     */
+    public static String blockedPresentation(String deck, String exercise, String revision) {
+        check(deck, exercise, revision);
+        return ("EXISTS (SELECT 1 FROM app_learning.deck takedown_deck WHERE takedown_deck.deck_id=%s AND " + blockedExerciseOrQuote("takedown_deck.reuse_scope_id", exercise, revision) + ")")
+                .formatted(deck);
+    }
+
+    /**
+     * True when the asset belongs to a taken-down unit of the lineage {@code scope} ({@code content_takedown_asset}, recorded by the decision from the media
+     * references of the named revisions): any revision of the lineage that keeps the asset still does not serve it.
+     */
+    public static String blockedAsset(String scope, String asset) {
+        check(scope, asset, asset);
+        return "EXISTS (SELECT 1 FROM app_learning.content_takedown_asset taken_asset WHERE taken_asset.reuse_scope_id=%s AND taken_asset.asset_id=%s)"
+                .formatted(scope, asset);
+    }
+
+    /** The owner of a disputed upload does not play it either, in whichever deck it appears: the dispute is about the content. */
+    public static String blockedAssetAnywhere(String asset) {
+        check(asset, asset, asset);
+        return "EXISTS (SELECT 1 FROM app_learning.content_takedown_asset taken_asset WHERE taken_asset.asset_id=%s)".formatted(asset);
+    }
+
+    private static void check(String... expressions) {
+        for (String expression : expressions) {
             if (!EXPRESSION.matcher(expression).matches()) throw new IllegalArgumentException("Invalid takedown fragment arguments");
         }
-        return ("EXISTS (SELECT 1 FROM app_learning.deck takedown_deck JOIN app_learning.content_takedown takedown "
-                + "ON takedown.reuse_scope_id=takedown_deck.reuse_scope_id WHERE takedown_deck.deck_id=%s AND takedown.unit_kind='EXERCISE' "
-                + "AND takedown.revision_id=%s AND takedown.unit_key=%s)").formatted(deck, revision, exercise);
     }
 
     private static String blocked(String kind, String scope, String key, String revision) {
-        for (String expression : new String[] {scope, key, revision}) {
-            if (!EXPRESSION.matcher(expression).matches()) throw new IllegalArgumentException("Invalid takedown fragment arguments");
-        }
+        check(scope, key, revision);
         return "EXISTS (SELECT 1 FROM app_learning.content_takedown takedown WHERE takedown.reuse_scope_id=%s AND takedown.unit_kind='%s' "
                 .formatted(scope, kind) + "AND takedown.revision_id=%s AND takedown.unit_key=%s)".formatted(revision, key);
     }

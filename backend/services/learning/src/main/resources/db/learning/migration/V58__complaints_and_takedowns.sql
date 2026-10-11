@@ -5,12 +5,18 @@
 --   and the login that was asked for. There are NO foreign keys to deck or to Identity data: the record must outlive a deleted deck and an account purge
 --   (a complaint is evidence). reporter_id is an opaque account id. status OPEN becomes DECIDED exactly once (decision, decided_at, decided_by); a guard
 --   trigger freezes every other column. due_at is created_at + 30 days (the product's review promise), retain_until created_at + 3 years (the privacy
---   policy paragraph «Жалобы»); both are written by the application. The application never deletes: the trigger refuses to delete a row before
---   retain_until, and the foreign key of content_takedown refuses to delete a complaint that still has a standing takedown. The purge job is open work (#409).
+--   policy paragraph «Жалобы»); both are written by the application. The application never deletes. PURGE CONTRACT for #409, enforced here: past retain_until a
+--   DECIDED complaint may be (a) deleted, when no takedown references it (the foreign key of content_takedown refuses otherwise), or (b) ANONYMISED, which is
+--   the only way to end the retention of a complaint with a standing takedown: reporter_text becomes NULL and reporter_id the nil UUID, nothing else changes.
+--   Before retain_until nothing but the OPEN to DECIDED transition is possible. The purge job itself is open work (#409).
 --   One OPEN complaint per (reporter, target): the partial unique index is the backstop of the idempotent filing.
 -- content_takedown: the legal takedown by lineage. One row per (reuse scope, unit kind, revision): "this revision of this unit is taken down". The unit key
 --   is the member key (ITEM) or the exercise id (EXERCISE). The readers of content ask exactly one question, whether a row exists for the revision they are
 --   about to serve, which is a unique-index probe. Rows are immutable (no update, no delete): reversing one is a deliberate operator change with its own journal row.
+-- content_takedown_asset: the media assets of the taken-down revisions (content_media_ref / exercise_media_ref rows of the named revisions), recorded by the
+--   decision in its transaction. The unit of the media takedown is the ASSET and the lineage: any revision of the lineage that keeps the asset does not serve it
+--   (public media, a copy owner's media, the offline manifest), so a trivial edit that keeps the disputed image does not bring it back; the owner of the upload
+--   does not play it either. Immutable, like the takedown it belongs to.
 -- content_takedown_journal: the append-only record of every decision (time, actor, action, target snapshot, number of new takedown rows). It has no foreign
 --   keys either. Like the complaint it can only be deleted after retain_until.
 -- deck_publication.hidden_by_moderation: the HIDDEN decision. Not a deck column (deck_head_guard) and not part of the owner's publication command.
@@ -66,6 +72,16 @@ BEGIN
         END IF;
         RETURN OLD;
     END IF;
+    -- RETENTION (#409 purge contract): a DECIDED complaint past retain_until may be ANONYMISED, whether or not a takedown still references it: the reporter's
+    -- text is dropped and the reporter's account id becomes the nil UUID. This is the only change a decided complaint ever takes; every other column is frozen.
+    IF OLD.status = 'DECIDED' AND OLD.retain_until < statement_timestamp() AND NEW.reporter_text IS NULL
+       AND NEW.reporter_id = '00000000-0000-0000-0000-000000000000'
+       AND ROW(NEW.complaint_id, NEW.target_kind, NEW.deck_id, NEW.public_code, NEW.profile_account_id, NEW.profile_username, NEW.reason, NEW.status, NEW.decision,
+               NEW.created_at, NEW.due_at, NEW.decided_at, NEW.decided_by, NEW.retain_until)
+           IS NOT DISTINCT FROM ROW(OLD.complaint_id, OLD.target_kind, OLD.deck_id, OLD.public_code, OLD.profile_account_id, OLD.profile_username, OLD.reason, OLD.status,
+               OLD.decision, OLD.created_at, OLD.due_at, OLD.decided_at, OLD.decided_by, OLD.retain_until) THEN
+        RETURN NEW;
+    END IF;
     IF NEW.complaint_id <> OLD.complaint_id OR NEW.target_kind <> OLD.target_kind OR NEW.deck_id IS DISTINCT FROM OLD.deck_id
        OR NEW.public_code IS DISTINCT FROM OLD.public_code OR NEW.profile_account_id IS DISTINCT FROM OLD.profile_account_id
        OR NEW.profile_username IS DISTINCT FROM OLD.profile_username OR NEW.reason <> OLD.reason
@@ -103,6 +119,19 @@ $$;
 CREATE TRIGGER content_takedown_immutable BEFORE UPDATE OR DELETE ON app_learning.content_takedown
     FOR EACH ROW EXECUTE FUNCTION app_learning.content_takedown_immutable_guard();
 CREATE TRIGGER content_takedown_no_truncate BEFORE TRUNCATE ON app_learning.content_takedown
+    FOR EACH STATEMENT EXECUTE FUNCTION app_learning.content_takedown_immutable_guard();
+
+CREATE TABLE app_learning.content_takedown_asset (
+    reuse_scope_id UUID NOT NULL,
+    asset_id UUID NOT NULL,
+    takedown_id UUID NOT NULL REFERENCES app_learning.content_takedown(takedown_id),
+    PRIMARY KEY (reuse_scope_id, asset_id, takedown_id)
+);
+-- the owner of an upload asks "is my asset disputed anywhere?"
+CREATE INDEX content_takedown_asset_asset ON app_learning.content_takedown_asset (asset_id);
+CREATE TRIGGER content_takedown_asset_immutable BEFORE UPDATE OR DELETE ON app_learning.content_takedown_asset
+    FOR EACH ROW EXECUTE FUNCTION app_learning.content_takedown_immutable_guard();
+CREATE TRIGGER content_takedown_asset_no_truncate BEFORE TRUNCATE ON app_learning.content_takedown_asset
     FOR EACH STATEMENT EXECUTE FUNCTION app_learning.content_takedown_immutable_guard();
 
 CREATE TABLE app_learning.content_takedown_journal (

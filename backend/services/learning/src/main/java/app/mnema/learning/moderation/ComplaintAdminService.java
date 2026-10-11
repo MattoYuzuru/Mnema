@@ -8,6 +8,7 @@ import app.mnema.learning.notification.NotificationKind;
 import app.mnema.learning.notification.NotificationPublisher;
 import app.mnema.learning.notification.NotificationRoute;
 import app.mnema.learning.platform.api.ComplaintDecidedException;
+import app.mnema.learning.platform.api.ComplaintNotHiddenException;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
@@ -172,8 +173,7 @@ public class ComplaintAdminService {
         try {
             Complaint seen = repository.find(id).orElseThrow(ResourceNotFoundException::new);
             if (!(seen.isDeck() ? DECISIONS_FOR_DECK : DECISIONS_FOR_PROFILE).contains(decision.decision())) throw new InvalidRequestException();
-            List<Unit> units = "TAKEN_DOWN".equals(decision.decision()) ? resolve(seen, decision.units()) : List.of();
-            Applied applied = transaction.execute(status -> apply(actor, id, decision, units));
+            Applied applied = transaction.execute(status -> apply(actor, id, decision));
             meters.counter("mnema_complaints_total", "op", "decision", "outcome", applied.changed() ? decision.decision().toLowerCase(java.util.Locale.ROOT) : "replay")
                     .increment();
             return readOnly.execute(status -> detail(repository.find(id).orElseThrow(), applied.changed()));
@@ -183,35 +183,44 @@ public class ComplaintAdminService {
         }
     }
 
-    /** Clears the HIDDEN flag of the complaint's deck. A deck that is not hidden answers {@code changed: false} and writes nothing. */
+    /**
+     * Clears the HIDDEN flag of the complaint's deck. Only a complaint decided HIDDEN can do it, and only while the deck is hidden by moderation:
+     * anything else is {@link ComplaintNotHiddenException} (409) and writes nothing.
+     */
     public ObjectNode unhide(UUID actor, UUID id) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(id, "complaintId");
         try {
-            boolean changed = Boolean.TRUE.equals(transaction.execute(status -> {
+            transaction.executeWithoutResult(status -> {
                 Complaint complaint = repository.lockComplaint(id).orElseThrow(ResourceNotFoundException::new);
                 if (!complaint.isDeck()) throw new InvalidRequestException();
-                if (!decks.unhide(complaint.deckId())) return false;
+                if (!"HIDDEN".equals(complaint.decision())) throw new ComplaintNotHiddenException();
+                decks.lockPublication(complaint.deckId());
+                if (!decks.unhide(complaint.deckId())) throw new ComplaintNotHiddenException();
                 Instant now = clock.instant();
                 repository.appendJournal(complaint, "UNHIDDEN", actor, now, 0, ComplaintService.retainUntil(now));
                 audit.append(actor, "COMPLAINT_UNHIDE", id, null);
-                return true;
-            }));
-            meters.counter("mnema_complaints_total", "op", "decision", "outcome", changed ? "unhidden" : "replay").increment();
-            return readOnly.execute(status -> detail(repository.find(id).orElseThrow(), changed));
-        } catch (ResourceNotFoundException | InvalidRequestException refused) {
+            });
+            meters.counter("mnema_complaints_total", "op", "decision", "outcome", "unhidden").increment();
+            return readOnly.execute(status -> detail(repository.find(id).orElseThrow(), true));
+        } catch (ResourceNotFoundException | InvalidRequestException | ComplaintNotHiddenException refused) {
             meters.counter("mnema_complaints_total", "op", "decision", "outcome", "refused").increment();
             throw refused;
         }
     }
 
-    /** Names the revision of every unit (the published one when the operator gave none) and checks each is a revision of the deck's lineage. */
+    /**
+     * Names the revision of every unit and checks each is a revision of the deck's lineage. Runs in the decision's transaction AFTER the complaint and the
+     * publication row are locked (the published revision cannot move meanwhile), and resolves every unit that names no revision in ONE pass per manifest.
+     */
     private List<Unit> resolve(Complaint complaint, List<ComplaintCommands.UnitSpec> specs) {
         DeckModeration.Info deck = decks.deck(complaint.deckId()).orElseThrow(ResourceNotFoundException::new);
+        Map<PublishedUnits.Key, UUID> published = this.published.publishedRevisions(complaint.deckId(),
+                specs.stream().filter(spec -> spec.revisionId() == null).map(spec -> new PublishedUnits.Key(spec.kind(), spec.key())).toList());
         List<Unit> units = new ArrayList<>();
         for (ComplaintCommands.UnitSpec spec : specs) {
-            UUID revision = spec.revisionId() != null ? spec.revisionId()
-                    : published.publishedRevision(complaint.deckId(), spec.kind(), spec.key()).orElseThrow(InvalidRequestException::new);
+            UUID revision = spec.revisionId() != null ? spec.revisionId() : published.get(new PublishedUnits.Key(spec.kind(), spec.key()));
+            if (revision == null) throw new InvalidRequestException();
             units.add(new Unit(spec.kind(), spec.key(), revision));
         }
         Set<UUID> items = repository.existingItemRevisions(deck.scopeId(), units.stream().filter(unit -> "ITEM".equals(unit.kind())).toList());
@@ -222,7 +231,7 @@ public class ComplaintAdminService {
         return List.copyOf(units);
     }
 
-    private Applied apply(UUID actor, UUID id, ComplaintCommands.Decision decision, List<Unit> units) {
+    private Applied apply(UUID actor, UUID id, ComplaintCommands.Decision decision) {
         Complaint complaint = repository.lockComplaint(id).orElseThrow(ResourceNotFoundException::new);
         boolean first = complaint.open();
         if (!first && !decision.decision().equals(complaint.decision())) throw new ComplaintDecidedException();
@@ -231,6 +240,9 @@ public class ComplaintAdminService {
         // The decision of a DECIDED complaint can be repeated: a TAKEN_DOWN may add units, a HIDDEN hides again after an unhide; the others are a replay.
         if (!first && !takeDown && !hideDecision) return new Applied(id, false);
         Instant now = clock.instant();
+        // lock order: the complaint row, then the publication row; the units are resolved under both
+        if (complaint.isDeck() && (takeDown || hideDecision)) decks.lockPublication(complaint.deckId());
+        List<Unit> units = takeDown ? resolve(complaint, decision.units()) : List.of();
         if (first) {
             repository.decide(id, decision.decision(), actor, now);
             complaint = repository.find(id).orElseThrow();
@@ -247,6 +259,8 @@ public class ComplaintAdminService {
             int[] fresh = repository.insertTakedowns(deck.scopeId(), id, units, now);
             materials = fresh[0];
             exercises = fresh[1];
+            // the assets of the named revisions are blocked for the whole lineage (a trivial edit that keeps the disputed image does not serve it again)
+            repository.recordAssets(id);
             if (decision.hide()) hidden = decks.hide(complaint.deckId(), now);
         }
         int newUnits = materials + exercises;

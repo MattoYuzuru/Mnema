@@ -46,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ContentTakedownReadersIntegrationTest extends PostgresIntegrationTest {
     @Autowired private StudySessionService study;
     @Autowired private app.mnema.learning.study.attempt.AttemptService attempts;
+    @Autowired private app.mnema.learning.study.attempt.AssessmentService assessments;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
     @Autowired private ExerciseService exercises;
@@ -208,5 +209,90 @@ class ContentTakedownReadersIntegrationTest extends PostgresIntegrationTest {
         Issued answered = issued.getFirst();
         assertThatThrownBy(() -> attempts.submit(f.a().actor(), f.a().deck(), session,
                 StudyFixtures.attempt(answered, StudyFixtures.textResponse("memory")))).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    private Issued issuedFor(List<Issued> issued, JsonNode exercise) {
+        return issued.stream().filter(each -> each.json().path("exerciseRevisionId").stringValue(null).equals(revision(exercise))).findFirst().orElseThrow();
+    }
+
+    @Test
+    void aFrozenPresentationThatQuotesATakenDownMaterialIsNotShownRevealedAnsweredOrReplayedWhileTheOthersAre() {
+        Fork f = fork();
+        List<Issued> issued = fixtures.issue(f.a(), "SCHEDULED", null);
+        UUID session = issued.getFirst().session();
+        Issued quoting = issuedFor(issued, f.exerciseAB());
+        Issued plain = issuedFor(issued, f.exerciseB());
+        // before: a reveal reaches the exercise (these have no transcript, so the 400 of the domain, not the 404 of a gone presentation)
+        assertThatThrownBy(() -> study.revealTranscript(f.a().actor(), f.a().deck(), session, quoting.id(), quoting.nonce()))
+                .isInstanceOf(app.mnema.learning.platform.api.InvalidRequestException.class);
+        assertThat(study.read(f.a().actor(), f.a().deck(), session).path("presentations")).hasSize(3);
+
+        // B's material is taken down: the exercise only QUOTES it, and its frozen presentation holds the quoted text
+        takedown.item(f.a().deck(), f.b().member(), f.b().itemRevision());
+        JsonNode reloaded = study.read(f.a().actor(), f.a().deck(), session);
+        List<String> shown = new java.util.ArrayList<>();
+        reloaded.path("presentations").forEach(each -> shown.add(each.path("exerciseRevisionId").stringValue(null)));
+        assertThat(shown).containsExactlyInAnyOrder(revision(f.exerciseA()), revision(f.exerciseB())).doesNotContain(revision(f.exerciseAB()));
+        assertThatThrownBy(() -> study.revealTranscript(f.a().actor(), f.a().deck(), session, quoting.id(), quoting.nonce())).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> study.revealHint(f.a().actor(), f.a().deck(), session, quoting.id(),
+                app.mnema.learning.study.session.StudyHintCommand.read(app.mnema.learning.support.ContractFixtures.bytes(StudyFixtures.JSON.createObjectNode()
+                        .put("nonce", quoting.nonce()).put("blankId", UUID.randomUUID().toString()))))).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> attempts.submit(f.a().actor(), f.a().deck(), session, StudyFixtures.attempt(quoting, StudyFixtures.textResponse("x"))))
+                .isInstanceOf(ResourceNotFoundException.class);
+        // an exercise that is only ASSESSED on the material shows none of it: still answerable
+        assertThat(attempts.submit(f.a().actor(), f.a().deck(), session, StudyFixtures.attempt(plain, StudyFixtures.textResponse("beta"))).outcome().path("feedback").path("result")
+                .stringValue(null)).isEqualTo("CORRECT");
+
+        // a replay of the finished session copies what may still be shown
+        jdbc.sql("UPDATE app_learning.study_session SET status='COMPLETE',completed_at=statement_timestamp() WHERE session_id=:s").param("s", session).update();
+        assertThat(issuedRevisions(fixtures.issue(f.a(), "REPLAY", session))).containsExactlyInAnyOrder(revision(f.exerciseA()), revision(f.exerciseB()));
+    }
+
+    @Test
+    void aRepeatedSubmitOfARecordedAnswerStillReturnsItsReceiptAfterTheExerciseIsTakenDown() {
+        Fork f = fork();
+        List<Issued> issued = fixtures.issue(f.a(), "SCHEDULED", null);
+        UUID session = issued.getFirst().session();
+        Issued plain = issuedFor(issued, f.exerciseB());
+        UUID attemptId = UUID.randomUUID();
+        var first = attempts.submit(f.a().actor(), f.a().deck(), session, StudyFixtures.attempt(attemptId, plain, StudyFixtures.textResponse("beta")));
+        assertThat(first.replayed()).isFalse();
+        takedown.exercise(f.b().deck(), id(f.exerciseB(), "exerciseId"), id(f.exerciseB(), "exerciseRevisionId"));
+        var again = attempts.submit(f.a().actor(), f.a().deck(), session, StudyFixtures.attempt(attemptId, plain, StudyFixtures.textResponse("beta")));
+        assertThat(again.replayed()).isTrue();
+        assertThat(again.outcome()).isEqualTo(first.outcome());
+        // a NEW answer to the same presentation is gone, not graded
+        assertThatThrownBy(() -> attempts.submit(f.a().actor(), f.a().deck(), session, StudyFixtures.attempt(plain, StudyFixtures.textResponse("beta"))))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void anAnswerBeingAssessedWhenItsPresentationIsTakenDownEndsOnTheNextSweepInsteadOfWaitingForItsDeadline() {
+        Fork f = fork();
+        List<Issued> issued = fixtures.issue(f.a(), "SCHEDULED", null);
+        Issued target = issuedFor(issued, f.exerciseA());
+        Issued untouched = issuedFor(issued, f.exerciseB());
+        UUID waiting = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        for (var each : List.of(java.util.Map.entry(waiting, target), java.util.Map.entry(other, untouched))) {
+            jdbc.sql("INSERT INTO app_learning.study_assessment(attempt_id, account_id, session_id, presentation_id, deck_id, state, strictness, payload_hash, answer_source, "
+                            + "response, duration_ms, created_at, deadline_at, expires_at) VALUES (:attempt, :account, :session, :presentation, :deck, 'ASSESSING', 'S1', "
+                            + "decode(repeat('ab', 32), 'hex'), 'TYPED', '{\"kind\":\"TEXT\",\"text\":\"мой ответ\"}', 1000, now(), now() + interval '1 hour', now() + interval '1 day')")
+                    .param("attempt", each.getKey()).param("account", f.a().actor()).param("session", each.getValue().session())
+                    .param("presentation", each.getValue().id()).param("deck", f.a().deck()).update();
+        }
+        takedown.exercise(f.a().deck(), id(f.exerciseA(), "exerciseId"), id(f.exerciseA(), "exerciseRevisionId"));
+        assertThat(assessments.expireOverdue()).isGreaterThanOrEqualTo(1);
+        var ended = jdbc.sql("SELECT state, reason, response IS NULL, resolved_at IS NOT NULL FROM app_learning.study_assessment WHERE attempt_id = :id").param("id", waiting)
+                .query((rs, n) -> List.of(rs.getString(1), rs.getString(2), rs.getBoolean(3), rs.getBoolean(4))).single();
+        assertThat(ended).containsExactly("UNAVAILABLE", "CONTENT_UNAVAILABLE", true, true);
+        // the answer to a presentation that is still servable keeps waiting for its grader or its deadline
+        assertThat(jdbc.sql("SELECT state FROM app_learning.study_assessment WHERE attempt_id = :id").param("id", other).query(String.class).single()).isEqualTo("ASSESSING");
+        // it is not offered to a grader any more, and nothing about it is read back (the presentation is gone)
+        assertThat(assessments.prepare(waiting)).isEmpty();
+        assertThatThrownBy(() -> assessments.read(f.a().actor(), f.a().deck(), target.session(), waiting)).isInstanceOf(ResourceNotFoundException.class);
+        // a repeated submit of the answer is a 404 too, never a 500
+        assertThatThrownBy(() -> attempts.submit(f.a().actor(), f.a().deck(), target.session(), StudyFixtures.attempt(UUID.randomUUID(), target, StudyFixtures.textResponse("x"))))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }

@@ -23,7 +23,7 @@ and is redacted from logs like the other `/api/public/decks/{code}/…` routes; 
 
 - The reporter must be able to read the target now. An unknown, private, rotated, deleted, **hidden** or not-yet-published deck, and an invitation
   deck without a grant, are the same `404 RESOURCE_NOT_FOUND`. Reporting your own deck or profile is `400`.
-- A profile is resolved through Identity (public profiles only); an unknown or hidden login is the same 404.
+- A profile is resolved through Identity (public profiles only) under a lookup budget of its own (never the grants' budget); an unknown or hidden login is the same 404, and a repeat of an open complaint about the login costs no lookup.
 - Idempotent: one OPEN complaint per (reporter, target). A repeat is the same `202`, changes nothing and the first reason stands.
 - At most 10 new complaints per reporter per rolling 24 hours (`429 RATE_LIMITED` with `Retry-After`).
 - `learning.community.complaints.enabled` (default `true`) switches both routes off (404). It must be on before the public routes go live: the
@@ -53,7 +53,7 @@ The console navigation entry follows `GET /api/admin/console/access` → `owner:
   - `{"decision":"ACCOUNT_REFERRED"}` (profile): records that the operator continues in the Identity directory (ban / hide the profile there); Learning writes nothing to Identity.
   - A complaint has **one** decision. The same decision again is `200` with `changed: false` (a `TAKEN_DOWN` may add more units); another decision on a
     DECIDED complaint is `409 COMPLAINT_DECIDED`. Confirmation of a destructive decision is the client's job (house confirmation pattern); the API acts at once.
-- **Unhide** `POST /api/admin/complaints/{id}:unhide` (no body): clears the flag of the complaint's deck; a deck that is not hidden answers `changed: false`.
+- **Unhide** `POST /api/admin/complaints/{id}:unhide` (no body): clears the flag of the complaint's deck. Only a complaint **decided `HIDDEN`** can do it, and only **while the deck is hidden**; an open complaint, one decided `REJECTED` or `TAKEN_DOWN`, and a deck that is not hidden answer `409 COMPLAINT_NOT_HIDDEN`. To lift a hide made by `TAKEN_DOWN` with `hide`, decide `HIDDEN` on a complaint of the deck (recorded even though the deck is already hidden), then unhide with it.
 - **Journal** `GET /api/admin/complaints/journal?limit&cursor`: the append-only record of every decision (time, actor, action, target snapshot, number of units).
   The same decisions also appear in the console audit (`/api/admin/console/audit`) as `COMPLAINT_DECIDE` / `COMPLAINT_UNHIDE`.
 
@@ -81,13 +81,18 @@ is applied wherever a revision would be served, to the revision actually served:
 | AI context (outline, similar titles, pinned and revised materials) | the unit is left out |
 | Copy owner's private media routes and the offline manifest | assets of a blocked unit are not served |
 
+Media is blocked by **asset and lineage**: the decision records the assets of the named revisions, and from then on no revision of that lineage serves them (public media, a
+copy owner's media, the offline manifest), so an edit that keeps the disputed image does not bring it back; their owner does not play them either. A learner's own upload is another asset.
+Signed media URLs already issued live out their TTL (10 minutes public, up to 2 hours for the owner). **Accepted risk:** text trivially re-saved by the owner is a new revision and is not
+blocked; the remedy for a repeat offender is `HIDDEN`. Follow-ups: a takedown lift ledger and a per-target cap on complaints.
+
 Because a copy shares the lineage rows of its source, **the source deck and every copy whose head is still that revision are blocked together**;
 a copy whose learner edited the unit holds a different revision and is unaffected, as is every unit the decision did not name. A later edit of the
 source also produces a new revision that is not blocked: the operator names it in a new decision if it still carries the disputed content.
 The owner of a blocked unit cannot read it (`410`) and so cannot open it in the editor; he can **replace or delete it without reading it**: the list row
 still gives `memberKey`, `ordinal` and `itemRevisionId` (the revision he holds), and a save with those as `expectedItemRevisionId` / `expectedOrdinal` writes a new revision. The
 client shows «Материал недоступен» with «Заменить» and «Удалить» for such a row. A unit that quotes a taken-down material (a CONTEXT binding, the text a presentation shows) is
-skipped by Study wherever it is held; an exercise only *assessed* on a taken-down material shows none of it and is not skipped unless the decision names it.
+skipped by Study wherever it is held, and an issued (frozen) presentation of such an exercise is no longer shown, resumed, replayed, revealed, answered or graded (an answer being assessed ends as `UNAVAILABLE` on the next sweep); an exercise only *assessed* on a taken-down material shows none of it and is not skipped unless the decision names it.
 There is no lift route in this revision.
 
 ## Notifications

@@ -38,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 class ContentTakedownContextIntegrationTest extends PostgresIntegrationTest {
     @Autowired private ContextRepository context;
+    @Autowired private PinnedMaterials pinned;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
     @Autowired private ExerciseService exercises;
@@ -84,5 +85,16 @@ class ContentTakedownContextIntegrationTest extends PostgresIntegrationTest {
         // a pinned or revised material is read through the owner's item read: gone for the prompt, and absent for every caller that tolerates an absent material
         assertThatThrownBy(() -> items.read(a.actor(), a.deck(), a.member(), null)).isInstanceOf(ContentUnavailableException.class).isInstanceOf(ResourceNotFoundException.class);
         assertThatThrownBy(() -> items.read(copy.owner(), copy.deckId(), a.member(), null)).isInstanceOf(ContentUnavailableException.class);
+    }
+
+    @Test
+    void aCachedPinnedMaterialIsDroppedTheMomentATakedownNamesItsRevision() {
+        Material a = fixtures.material();
+        assertThat(pinned.read(a.actor(), a.deck(), a.member(), a.itemRevision())).isPresent();
+        // read again: served from the cache (a revision never changes)
+        assertThat(pinned.read(a.actor(), a.deck(), a.member(), a.itemRevision())).isPresent();
+        takedown.item(a.deck(), a.member(), a.itemRevision());
+        assertThat(pinned.read(a.actor(), a.deck(), a.member(), a.itemRevision())).as("the cache hit re-checks the takedown").isEmpty();
+        assertThat(pinned.read(a.actor(), a.deck(), a.member(), a.itemRevision())).as("and the entry is gone").isEmpty();
     }
 }

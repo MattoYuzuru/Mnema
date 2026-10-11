@@ -35,8 +35,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Share/15 (#437): the media of a taken-down material. The public media route, the copy owner's private routes and the offline manifest all stop serving an
- * asset that a taken-down revision references, while a copy whose learner edited the material (a new revision that keeps the inherited image) still plays it.
- * The author's own routes are the OWNER grant of his own upload and are not part of the takedown.
+ * asset that a taken-down revision references, a copy whose learner edited the material (a new revision that keeps the inherited image) included.
+ * The block is per asset and lineage, so a trivial edit that keeps the disputed image does not bring it back; the owner of the upload does not play it either.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ContentTakedownMediaIntegrationTest extends PostgresIntegrationTest {
@@ -96,15 +96,19 @@ class ContentTakedownMediaIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void aTakenDownMaterialsImageIsNotServedPubliclyNorToACopyThatHoldsItButIsToACopyThatKeptItInANewRevision() {
+    void aTakenDownMaterialsImageIsNotServedPubliclyNorToTheAuthorNorToAnyCopyOfTheLineageEvenOneThatKeptItInANewRevision() {
         SharedMediaWorlds.World world = worlds.world("PUBLIC", null);
         UUID member = world.material().member();
         UUID original = world.material().revision();
         Copy unchanged = shared.copy(world.deck(), UUID.randomUUID());
         Copy edited = shared.copy(world.deck(), UUID.randomUUID());
         UUID own = study.readyAsset(edited.owner(), "image/png");
+        MediaFixtures.variants(jdbc, own, "image/webp");
         UUID second = MediaFixtures.saveImages(decks, items, edited.owner(), edited.deckId(), member, original, world.image(), own);
         assertThat(second).isNotEqualTo(original);
+        Copy dropped = shared.copy(world.deck(), UUID.randomUUID());
+        UUID withoutImage = MediaFixtures.saveImages(decks, items, dropped.owner(), dropped.deckId(), member, original);
+        assertThat(withoutImage).isNotEqualTo(original);
 
         // before: everybody who may read plays it
         assertThat(publicMedia(world.code(), world.image(), viewer).statusCode()).isEqualTo(200);
@@ -126,14 +130,23 @@ class ContentTakedownMediaIntegrationTest extends PostgresIntegrationTest {
         assertThatThrownBy(() -> media.playback(unchanged.owner(), world.image())).isInstanceOf(ResourceNotFoundException.class);
         assertThatThrownBy(() -> media.resolve(unchanged.owner(), world.image(), world.imageVariants().playback())).isInstanceOf(ResourceNotFoundException.class);
         assertThat(manifestMentions(unchanged.owner(), unchanged.deckId(), world.image())).isFalse();
-        // the copy whose learner saved a new revision that keeps the inherited image plays it, and its manifest lists it
-        assertThat(media.playback(edited.owner(), world.image()).state()).isEqualTo("READY");
-        assertThat(media.resolve(edited.owner(), world.image(), world.imageVariants().playback()).objectKey()).isEqualTo(world.imageVariants().playbackKey());
-        assertThat(manifestMentions(edited.owner(), edited.deckId(), world.image())).isTrue();
-        // the author plays his own upload: the OWNER grant is not the takedown's business, and his material is unreadable anyway
-        assertThat(media.playback(author, world.image()).state()).isEqualTo("READY");
+        // the copy whose learner saved a NEW revision that keeps the disputed image does not serve it either: the dispute is about the asset, in the whole lineage
+        assertThat(takedown.scope(edited.deckId())).isEqualTo(takedown.scope(world.deck()));
+        assertThatThrownBy(() -> media.playback(edited.owner(), world.image())).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> media.resolve(edited.owner(), world.image(), world.imageVariants().playback())).isInstanceOf(ResourceNotFoundException.class);
+        assertThat(manifestMentions(edited.owner(), edited.deckId(), world.image())).isFalse();
+        // ... while what the learner added himself is his and plays
+        assertThat(media.playback(edited.owner(), own).state()).isEqualTo("READY");
+        assertThat(manifestMentions(edited.owner(), edited.deckId(), own)).isTrue();
+        // the author's own upload is blocked for him too: the dispute is about that content (the whole asset, in whichever deck it appears)
+        assertThatThrownBy(() -> media.playback(author, world.image())).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> media.resolve(author, world.image(), null)).isInstanceOf(ResourceNotFoundException.class);
+        // a copy whose learner dropped the image in his edit has nothing of it to serve
+        assertThatThrownBy(() -> media.playback(dropped.owner(), world.image())).isInstanceOf(ResourceNotFoundException.class);
+        assertThat(manifestMentions(dropped.owner(), dropped.deckId(), world.image())).isFalse();
         // an exercise sound of the same deck is not taken down
         assertThat(media.playback(unchanged.owner(), world.sound()).state()).isEqualTo("READY");
+        assertThat(media.playback(author, world.sound()).state()).isEqualTo("READY");
     }
 
     @Test
@@ -147,6 +160,7 @@ class ContentTakedownMediaIntegrationTest extends PostgresIntegrationTest {
         takedown.exercise(world.deck(), world.exercise(), revision);
         assertThatThrownBy(() -> media.playback(copy.owner(), world.sound())).isInstanceOf(ResourceNotFoundException.class);
         assertThat(manifestMentions(copy.owner(), copy.deckId(), world.sound())).isFalse();
+        assertThatThrownBy(() -> media.playback(author, world.sound())).isInstanceOf(ResourceNotFoundException.class);
         // the material's image is another unit and stays
         assertThat(media.playback(copy.owner(), world.image()).state()).isEqualTo("READY");
         assertThat(publicMedia(world.code(), world.image(), viewer).statusCode()).isEqualTo(200);

@@ -72,6 +72,8 @@ class ComplaintHttpIntegrationTest extends PostgresIntegrationTest {
         registry.add("learning.community.public-routes.guest-per-minute", () -> 100_000);
         registry.add("learning.community.public-routes.account-per-minute", () -> 100_000);
         registry.add("learning.community.complaints.reporter-per-day", () -> 4);
+        registry.add("learning.community.complaints.profile-lookups-per-reporter-per-minute", () -> 1_000);
+        registry.add("learning.community.complaints.profile-lookups-per-instance-per-minute", () -> 1_000);
         registry.add("learning.community.grants.instance-lookups-per-minute", () -> 1_000);
         registry.add("learning.community.grants.owner-lookups-per-minute", () -> 1_000);
     }
@@ -279,6 +281,9 @@ class ComplaintHttpIntegrationTest extends PostgresIntegrationTest {
                 "{}", "[]", "\"x\"", "", "{\"reason\":\"SPAM\",\"extra\":1}", "{\"reason\":\"spam\"}", "{\"reason\":\"UNKNOWN\"}", "{\"reason\":1}",
                 "{\"reason\":\"SPAM\",\"text\":5}", "{\"reason\":\"SPAM\",\"text\":null}", "{\"reason\":\"SPAM\",\"text\":\"" + "я".repeat(1001) + "\"}",
                 "{\"reason\":\"SPAM\",\"text\":\"" + secret + "\\u0000\"}", "{\"reason\":\"SPAM\",\"text\":\"" + secret + "\\u0007\"}",
+                // Unicode format characters: a bidi override, a zero-width space, the byte order mark, a soft hyphen
+                "{\"reason\":\"SPAM\",\"text\":\"" + secret + "\\u202e\"}", "{\"reason\":\"SPAM\",\"text\":\"a\\u200bb " + secret + "\"}",
+                "{\"reason\":\"SPAM\",\"text\":\"\\ufeff" + secret + "\"}", "{\"reason\":\"SPAM\",\"text\":\"" + secret + "\\u00ad\"}",
                 "{\"reason\":\"SPAM\",\"reason\":\"OTHER\"}", "{\"text\":\"" + secret + "\"}", "{\"reason\":\"SPAM\"," + "\"text\":\"" + "x".repeat(5000) + "\"}");
         for (String body : bad) {
             HttpResponse<String> response = asUser("POST", path, reporter, body);
@@ -563,12 +568,49 @@ class ComplaintHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(restored.path("changed").booleanValue(false)).isTrue();
         assertThat(restored.path("deck").path("hiddenByModeration").booleanValue(true)).isFalse();
         assertThat(asUser("GET", "/public/decks/" + code, viewer, null).statusCode()).isEqualTo(200);
-        assertThat(ok(admin("POST", "/admin/complaints/" + id + ":unhide", null), 200).path("changed").booleanValue(true)).isFalse();
+        // the deck is not hidden now: a second unhide is a 409, and writes nothing
+        HttpResponse<String> notHidden = admin("POST", "/admin/complaints/" + id + ":unhide", null);
+        assertThat(notHidden.statusCode()).isEqualTo(409);
+        assertThat(json(notHidden).path("code").stringValue(null)).isEqualTo("COMPLAINT_NOT_HIDDEN");
         assertThat(journal(id, "HIDDEN")).isEqualTo(1);
         assertThat(journal(id, "UNHIDDEN")).isEqualTo(1);
         // hiding again by the same complaint is the repeat of its decision: the flag flips back on and a notification would be new
         assertThat(ok(admin("POST", "/admin/complaints/" + id + ":decide", decision("HIDDEN").toString()), 200).path("changed").booleanValue(false)).isTrue();
         assertThat(asUser("GET", "/public/decks/" + code, viewer, null).statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void onlyAComplaintDecidedHiddenCanUnhideAndOnlyWhileTheDeckIsHidden() {
+        Published deck = published(DeckVisibility.PUBLIC);
+        UUID open = UUID.randomUUID();
+        UUID rejected = UUID.randomUUID();
+        UUID taken = UUID.randomUUID();
+        UUID hiding = UUID.randomUUID();
+        for (UUID reporter : List.of(open, rejected, taken, hiding)) assertThat(complain(deck.code(), reporter, "SPAM", null).statusCode()).isEqualTo(202);
+        UUID openId = complaintOf(open, deck.id());
+        UUID rejectedId = complaintOf(rejected, deck.id());
+        UUID takenId = complaintOf(taken, deck.id());
+        UUID hidingId = complaintOf(hiding, deck.id());
+        ok(admin("POST", "/admin/complaints/" + rejectedId + ":decide", decision("REJECTED").toString()), 200);
+        ObjectNode takeDown = decision("TAKEN_DOWN");
+        takeDown.putArray("units").addObject().put("kind", "ITEM").put("key", firstMember(deck).toString()).putNull("revisionId");
+        takeDown.put("hide", true);
+        ok(admin("POST", "/admin/complaints/" + takenId + ":decide", takeDown.toString()), 200);
+        assertThat(ok(asUser("GET", "/decks/" + deck.id() + "/moderation", owner, null), 200).path("hiddenByModeration").booleanValue(false)).isTrue();
+        // an open complaint, a rejected one and one that took content down (even with hide) do not unhide: the deck stays hidden
+        for (UUID wrong : List.of(openId, rejectedId, takenId)) {
+            HttpResponse<String> response = admin("POST", "/admin/complaints/" + wrong + ":unhide", null);
+            assertThat(response.statusCode()).as(wrong.toString()).isEqualTo(409);
+            assertThat(json(response).path("code").stringValue(null)).isEqualTo("COMPLAINT_NOT_HIDDEN");
+        }
+        assertThat(ok(asUser("GET", "/decks/" + deck.id() + "/moderation", owner, null), 200).path("hiddenByModeration").booleanValue(false)).isTrue();
+        // a complaint decided HIDDEN does, although the deck was already hidden when it was decided; then the deck is open and the next unhide is a 409
+        assertThat(ok(admin("POST", "/admin/complaints/" + hidingId + ":decide", decision("HIDDEN").toString()), 200).path("changed").booleanValue(false)).isTrue();
+        assertThat(ok(admin("POST", "/admin/complaints/" + hidingId + ":unhide", null), 200).path("deck").path("hiddenByModeration").booleanValue(true)).isFalse();
+        assertThat(admin("POST", "/admin/complaints/" + hidingId + ":unhide", null).statusCode()).isEqualTo(409);
+        assertThat(admin("POST", "/admin/complaints/" + UUID.randomUUID() + ":unhide", null).statusCode()).isEqualTo(404);
+        assertThat(journal(hidingId, "UNHIDDEN")).isEqualTo(1);
+        assertThat(journal(openId, "UNHIDDEN") + journal(rejectedId, "UNHIDDEN") + journal(takenId, "UNHIDDEN")).isZero();
     }
 
     @Test
@@ -635,11 +677,15 @@ class ComplaintHttpIntegrationTest extends PostgresIntegrationTest {
         ObjectNode body = decision("TAKEN_DOWN");
         ArrayNode units = body.putArray("units");
         units.addObject().put("kind", "ITEM").put("key", memberText).putNull("revisionId");
-        units.addObject().put("kind", "EXERCISE").put("key", exercise.toString()).put("revisionId", exerciseUnit.path("revisionId").stringValue(null));
+        // the exercise too by "the published one": both kinds are resolved in one pass each
+        units.addObject().put("kind", "EXERCISE").put("key", exercise.toString()).putNull("revisionId");
         JsonNode decided = ok(admin("POST", "/admin/complaints/" + id + ":decide", body.toString()), 200);
         assertThat(names(decided)).isEqualTo(fixtureNames("complaint", "properties"));
         assertThat(decided.path("decision").stringValue(null)).isEqualTo("TAKEN_DOWN");
         assertThat(decided.path("takedowns").path("count").intValue(-1)).isEqualTo(2);
+        List<String> named = new ArrayList<>();
+        decided.path("takedowns").path("items").forEach(row -> named.add(row.path("unitKind").stringValue(null) + "/" + row.path("revisionId").stringValue(null)));
+        assertThat(named).containsExactlyInAnyOrder("ITEM/" + itemRevision, "EXERCISE/" + exerciseUnit.path("revisionId").stringValue(null));
         assertThat(names(decided.path("takedowns").path("items").get(0))).isEqualTo(fixtureNames("complaint", "takedownProperties"));
         assertThat(decided.path("deck").path("hiddenByModeration").booleanValue(true)).as("hide was not asked").isFalse();
 

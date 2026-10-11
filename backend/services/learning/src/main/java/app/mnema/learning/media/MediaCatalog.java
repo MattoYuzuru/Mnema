@@ -364,8 +364,10 @@ public class MediaCatalog {
     private static String heads(String deckLookup, boolean reading) {
         // The legal takedown by lineage (Share/15): a READ of an asset counts only the head revisions that are not taken down. The attach path
         // (validation of an edit) keeps seeing every head, so a learner who edits a taken-down unit can keep the inherited asset in the new revision.
-        String itemGuard = reading ? " AND NOT " + ContentTakedowns.blockedItem("r.reuse_scope_id", "r.member_key", "r.revision_id") : "";
-        String exerciseGuard = reading ? " AND NOT " + ContentTakedowns.blockedExercise("r.reuse_scope_id", "r.exercise_id", "r.exercise_revision_id") : "";
+        // and an asset a takedown named in the lineage is not served by ANY revision of it (content_takedown_asset), so keeping it in an edit does not bring it back
+        String assetGuard = reading ? " AND NOT " + ContentTakedowns.blockedAsset("r.reuse_scope_id", "a.asset_id") : "";
+        String itemGuard = reading ? " AND NOT " + ContentTakedowns.blockedItem("r.reuse_scope_id", "r.member_key", "r.revision_id") + assetGuard : "";
+        String exerciseGuard = reading ? " AND NOT " + ContentTakedowns.blockedExercise("r.reuse_scope_id", "r.exercise_id", "r.exercise_revision_id") + assetGuard : "";
         return "(EXISTS (SELECT 1 FROM (SELECT r.reuse_scope_id,r.member_key,r.revision_id FROM app_learning.content_media_ref r "
                 + "WHERE r.asset_id=a.asset_id OFFSET 0) r " + deckLookup
                 + "JOIN app_learning.deck_head_item h ON h.deck_id=d.deck_id AND h.member_key=r.member_key AND h.revision_id=r.revision_id" + itemGuard + ") "
@@ -387,7 +389,7 @@ public class MediaCatalog {
     /** Why a reader may use an asset: the whole authorization of media, in one place (the SQL fragment is the alias {@code a} of {@code media_asset}). */
     private enum Grant {
         /** The asset is the actor's own and still reachable (hold, content, exercise, draft, generation or manifest). The only grant that reads the original. */
-        OWNER("a.owner_id=:actor AND (a.owner_hold_until>CURRENT_TIMESTAMP OR EXISTS "
+        OWNER("a.owner_id=:actor AND NOT " + ContentTakedowns.blockedAssetAnywhere("a.asset_id") + " AND (a.owner_hold_until>CURRENT_TIMESTAMP OR EXISTS "
                 + "(SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
                 + "(SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
                 + "(SELECT 1 FROM app_learning.draft_media_ref r JOIN app_learning.editing_draft d "
@@ -402,11 +404,10 @@ public class MediaCatalog {
         COPY(IN_HEADS_OF_ACTOR, true),
         /** The deck's published revision references it ({@code published_media}); the caller has already proved the viewer may read the deck. Derived variants only. */
         PUBLISHED("EXISTS (SELECT 1 FROM app_learning.published_media pm WHERE pm.deck_id=:deck AND pm.asset_id=a.asset_id) "
-                // The legal takedown by lineage (Share/15), fail closed: an asset that a taken-down material revision of THIS deck's lineage references is
-                // not served publicly (published_media does not say which revisions reference it, so an edited revision that keeps the asset is blocked too).
-                + "AND NOT EXISTS (SELECT 1 FROM app_learning.content_media_ref taken JOIN app_learning.deck taken_deck ON taken_deck.deck_id=:deck "
-                + "AND taken_deck.reuse_scope_id=taken.reuse_scope_id WHERE taken.asset_id=a.asset_id AND "
-                + ContentTakedowns.blockedItem("taken.reuse_scope_id", "taken.member_key", "taken.revision_id") + ")", false);
+                // The legal takedown by lineage (Share/15): an asset that a taken-down revision of THIS deck's lineage referenced (content_takedown_asset, recorded
+                // by the decision) is not served publicly by any revision of the lineage, so an edit that keeps the disputed image does not bring it back.
+                + "AND NOT EXISTS (SELECT 1 FROM app_learning.deck taken_deck WHERE taken_deck.deck_id=:deck AND "
+                + ContentTakedowns.blockedAsset("taken_deck.reuse_scope_id", "a.asset_id") + ")", false);
 
         private final String predicate;
         private final boolean usesActor;

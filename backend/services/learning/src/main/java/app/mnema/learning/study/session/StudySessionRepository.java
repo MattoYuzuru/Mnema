@@ -37,16 +37,13 @@ class StudySessionRepository {
     // A revision is issuable only while its media is ready and its evaluator's capability is available.
     // The legal takedown by lineage (Share/15): Study skips an exercise whose revision is taken down, and one that QUOTES a taken-down material revision (a CONTEXT
     // binding is the text a presentation shows; the ASSESSED binding shows none), whichever deck holds it (the source, a copy that still has that revision).
-    private static final String NOT_TAKEN_DOWN = " AND NOT " + ContentTakedowns.blockedExercise("selected.reuse_scope_id", "selected.exercise_id", "selected.revision_id")
-            + " AND NOT EXISTS (SELECT 1 FROM app_learning.exercise_content_binding taken_binding WHERE taken_binding.reuse_scope_id=selected.reuse_scope_id"
-            + " AND taken_binding.exercise_id=selected.exercise_id AND taken_binding.exercise_revision_id=selected.revision_id AND taken_binding.role='CONTEXT' AND "
-            + ContentTakedowns.blockedItem("taken_binding.reuse_scope_id", "taken_binding.member_key", "taken_binding.item_revision_id") + ") ";
+    private static final String NOT_TAKEN_DOWN = " AND NOT " + ContentTakedowns.blockedExerciseOrQuote("selected.reuse_scope_id", "selected.exercise_id", "selected.revision_id") + " ";
     private static final String ISSUABLE_REVISION = CURRENT_MATERIALS + """
             AND app_learning.exercise_media_ready(selected.reuse_scope_id,selected.exercise_id,selected.revision_id)
             AND (selected.evaluator_policy ->> 'id' <> 'ai-semantic' OR :aiAvailable)
             """ + NOT_TAKEN_DOWN;
-    /** A presentation already issued is not shown, resumed or replayed once its exercise revision is taken down. */
-    private static final String NOT_TAKEN_DOWN_PRESENTATION = ContentTakedowns.blockedExerciseOfDeck("p.deck_id", "p.exercise_id", "p.exercise_revision_id") + " ";
+    /** A presentation already issued is not shown, resumed, replayed, revealed, answered or graded once the SAME rule that stops issuing holds for it. */
+    private static final String NOT_TAKEN_DOWN_PRESENTATION = ContentTakedowns.blockedPresentation("p.deck_id", "p.exercise_id", "p.exercise_revision_id") + " ";
     private static final String PRESENTATION_SELECT = """
             SELECT p.*, EXISTS(SELECT 1 FROM app_learning.study_transcript_accommodation a
                     WHERE a.account_id=p.account_id AND a.session_id=p.session_id
@@ -560,7 +557,7 @@ class StudySessionRepository {
                    AND NOT EXISTS (SELECT 1 FROM app_learning.study_attempt_tombstone t
                        WHERE t.account_id=p.account_id AND t.session_id=p.session_id
                          AND t.presentation_id=p.presentation_id)
-                """).param("actor", actor).param("deck", deck).param("session", session)
+                """ + " AND NOT " + NOT_TAKEN_DOWN_PRESENTATION).param("actor", actor).param("deck", deck).param("session", session)
                 .param("presentation", presentation).param("nonce", nonce).param("now", Timestamp.from(now))
                 .query(PRESENTATION).optional();
     }

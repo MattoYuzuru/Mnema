@@ -130,7 +130,7 @@ class AttemptRepository {
                   JOIN app_learning.scheduler_config c ON c.config_id=s.reducer_config_id
                  WHERE p.account_id=:actor AND p.deck_id=:deck AND p.session_id=:session
                    AND p.presentation_id=:presentation
-                """ + " AND NOT " + ContentTakedowns.blockedExerciseOfDeck("p.deck_id", "p.exercise_id", "p.exercise_revision_id")
+                """ + " AND NOT " + ContentTakedowns.blockedPresentation("p.deck_id", "p.exercise_id", "p.exercise_revision_id")
                 // the legal takedown by lineage (Share/15): a presentation of a taken-down exercise revision is gone, so it is neither graded nor answered with its reference
                 + (lock ? " FOR UPDATE OF p" : "")).param("actor", actor).param("deck", deck).param("session", session)
                 .param("presentation", presentation).query((row, ignored) -> new Presentation(

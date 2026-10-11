@@ -21,12 +21,18 @@ class ComplaintCommandsTest {
         assertThat(ComplaintCommands.filing(body("{\"reason\":\"OTHER\",\"text\":\"  два слова \\n\"}"))).isEqualTo(new ComplaintCommands.Filing("OTHER", "два слова"));
         assertThat(ComplaintCommands.filing(body("{\"text\":\"\\t \",\"reason\":\"SPAM\"}")).text()).isNull();
         assertThat(ComplaintCommands.clean("a\tb\nc")).isEqualTo("a\tb\nc");
+        // letters of other scripts and combining marks are text; only the invisible format characters are refused
+        assertThat(ComplaintCommands.clean("Привет, 世界 é (e + combining acute: é)")).isNotNull();
         for (String reason : new String[] {"COPYRIGHT", "PERSONAL_DATA", "ILLEGAL", "SPAM", "OTHER"}) {
             assertThat(ComplaintCommands.filing(body("{\"reason\":\"" + reason + "\"}")).reason()).isEqualTo(reason);
         }
         String thousand = "😀".repeat(1000);
         assertThat(ComplaintCommands.filing(body("{\"reason\":\"SPAM\",\"text\":\"" + thousand + "\"}")).text()).isEqualTo(thousand);
-        for (String bad : new String[] {"{\"reason\":\"SPAM\",\"text\":\"" + thousand + "x\"}", "{\"reason\":\"SPAM\",\"text\":\"a\\u001fb\"}", "{\"reason\":\"SPAM\",\"text\":true}",
+        for (String bad : new String[] {"{\"reason\":\"SPAM\",\"text\":\"" + thousand + "x\"}", "{\"reason\":\"SPAM\",\"text\":\"a\\u001fb\"}",
+                // Unicode format characters (Cf): bidi override and isolate, zero-width space/non-joiner/joiner, the byte order mark, the soft hyphen, the word joiner
+                "{\"reason\":\"SPAM\",\"text\":\"a\\u202eb\"}", "{\"reason\":\"SPAM\",\"text\":\"a\\u2066b\"}", "{\"reason\":\"SPAM\",\"text\":\"a\\u200bb\"}",
+                "{\"reason\":\"SPAM\",\"text\":\"a\\u200cb\"}", "{\"reason\":\"SPAM\",\"text\":\"a\\u200db\"}", "{\"reason\":\"SPAM\",\"text\":\"\\ufeffa\"}",
+                "{\"reason\":\"SPAM\",\"text\":\"a\\u00adb\"}", "{\"reason\":\"SPAM\",\"text\":\"a\\u2060b\"}", "{\"reason\":\"SPAM\",\"text\":true}",
                 "{\"reason\":null}", "{\"reason\":\"spam\"}", "{\"reason\":\"SPAM\",\"x\":1}", "{}", "null", "[]", "", "{\"reason\":\"SPAM\"} {}", "{\"reason\":\"SPAM\","}) {
             assertThatThrownBy(() -> ComplaintCommands.filing(body(bad))).as(bad.length() > 60 ? bad.substring(0, 60) : bad).isInstanceOf(InvalidRequestException.class);
         }

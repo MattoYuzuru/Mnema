@@ -112,7 +112,7 @@ final class ComplaintCommands {
         }
     }
 
-    /** Trims; blank is absent; a longer text, or a control character other than line feed and tab, is the 400. */
+    /** Trims; blank is absent; a longer text, a control character other than line feed and tab, or a Unicode format character is the 400. */
     static String clean(String text) {
         String trimmed = text.strip();
         if (trimmed.isEmpty()) return null;
@@ -120,6 +120,9 @@ final class ComplaintCommands {
         for (int index = 0; index < trimmed.length(); ) {
             int point = trimmed.codePointAt(index);
             if (Character.isISOControl(point) && point != '\n' && point != '\t') throw new InvalidRequestException();
+            // Unicode FORMAT characters (bidi overrides and isolates, zero-width space and joiners, the byte order mark, the soft hyphen) change what the operator
+            // reads in the console without showing: a complaint text is plain text. (This also refuses the zero-width joiner of emoji sequences: accepted.)
+            if (Character.getType(point) == Character.FORMAT) throw new InvalidRequestException();
             index += Character.charCount(point);
         }
         return trimmed;
