@@ -175,6 +175,9 @@ services:
       # Study snapshot retention (#460): on. The first release shipped it off; the read-only check after it found no Study sessions in
       # production (2026-10-11), so there is no backlog to purge.
       LEARNING_STUDY_RETENTION_ENABLED: "true"
+      # Update plans (Updates/3, #442) hold up to learning.updates.plan.max-concurrent connections for a bounded compute budget next to the
+      # public reads and job slices; 16 keeps a margin of 7 over those budgets (PostgreSQL allows 100, about 30 are in use).
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "16"
     volumes:
       # Learning's job spool: a subdirectory (owner 10001, mode 0700) of the root-owned, bounded media-work filesystem (loopback ext4 behind
       # a systemd mount unit). Media jobs run in per-job containers started by the root service mnema-media-runner, which reads these
