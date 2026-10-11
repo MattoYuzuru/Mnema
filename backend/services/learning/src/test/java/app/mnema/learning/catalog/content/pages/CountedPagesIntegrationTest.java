@@ -34,7 +34,7 @@ class CountedPagesIntegrationTest extends PostgresIntegrationTest {
                 JsonNodeFactory.instance.objectNode().put("fixture", "member"),
                 List.of(new NewEdge(0, null, new ObjectRef(scope, content.objectId()))));
         List<StagedRoot> preparation = stage(List.of(content, descriptor));
-        var pages = new CountedPages(Profile.members(100_000), ref -> storage.readBatch(scope, List.of(ref.objectId())).getFirst().value());
+        var pages = new CountedPages(new Profile("members", 10, 100_000, true, true, true), ref -> storage.readBatch(scope, List.of(ref.objectId())).getFirst().value());
         var entries = new ArrayList<Entry>();
         for (int i = 0; i < 1100; i++) entries.add(new Entry(UUID.randomUUID(), new ObjectRef(scope, descriptor.objectId())));
         var initial = pages.build(scope, entries);

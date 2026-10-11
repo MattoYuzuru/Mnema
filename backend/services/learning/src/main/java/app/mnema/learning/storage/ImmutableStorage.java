@@ -17,6 +17,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -34,6 +35,8 @@ import static app.mnema.learning.storage.StorageTypes.*;
 @Service
 public class ImmutableStorage {
     private static final Logger LOG = LoggerFactory.getLogger(ImmutableStorage.class);
+    /** Most ids one {@link #readMany} call takes: 128 full pages (32 edges each) stay below the 1 MiB batch budget with a wide margin. */
+    public static final int MAX_READ_MANY = 128;
     private static final Pattern VIOLATED_CONSTRAINT = Pattern.compile("violates foreign key constraint \"([A-Za-z0-9_$]{1,63})\"");
     private final StorageRepository repository;
     private final StorageEncoding encoding;
@@ -105,6 +108,29 @@ public class ImmutableStorage {
                     .orElseThrow(() -> new StorageFailure(StorageFailure.Code.OBJECT_MISSING)));
         }
         List<StoredObject> result = ordered.stream().map(found::get).toList();
+        encoding.requireBatchBudget(result.stream().map(StoredObject::value).toList());
+        return result;
+    }
+
+    /**
+     * {@link #readBatch} for many objects of one scope in two data statements (headers {@code FOR KEY SHARE}, then edges) plus the lock-timeout
+     * setting: same rules (sealed objects only, a missing id is OBJECT_MISSING, duplicates and more than {@link #MAX_READ_MANY} ids or an
+     * over-budget result are BUDGET_EXCEEDED, an invalid id is an {@link IllegalArgumentException} as in {@code readBatch}, here before any statement),
+     * result in request order. Callers with more ids chunk.
+     */
+    @Transactional(timeout = 10)
+    public List<StoredObject> readMany(UUID scope, Collection<UUID> ids) {
+        UuidPolicy.requireEntityId(scope, "reuseScopeId");
+        List<UUID> ordered = List.copyOf(ids);
+        if (ordered.size() > MAX_READ_MANY || ordered.stream().distinct().count() != ordered.size()) {
+            throw new StorageFailure(StorageFailure.Code.BUDGET_EXCEEDED);
+        }
+        if (ordered.isEmpty()) return List.of();
+        ordered.forEach(id -> UuidPolicy.requireEntityId(id, "objectId"));
+        repository.lockTimeout(settings.lockTimeout());
+        var found = repository.findMany(scope, ordered);
+        if (found.size() != ordered.size()) throw new StorageFailure(StorageFailure.Code.OBJECT_MISSING);
+        List<StoredObject> result = ordered.stream().map(id -> new StoredObject(new ObjectRef(scope, id), found.get(id))).toList();
         encoding.requireBatchBudget(result.stream().map(StoredObject::value).toList());
         return result;
     }
