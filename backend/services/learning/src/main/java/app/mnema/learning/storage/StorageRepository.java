@@ -7,10 +7,15 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static app.mnema.learning.storage.StorageTypes.*;
 
@@ -92,6 +97,40 @@ class StorageRepository {
                         row.getShort(2), row.getShort(3), row.getString(4))).optional();
         return header.map(value -> new StoredObject(ref, new NewObject(ref.objectId(), value.kind(), value.version(),
                 value.rank(), encoding.readPayload(value.payload()), edges(ref))));
+    }
+
+    /**
+     * Sealed objects of one scope in two statements: the headers {@code FOR KEY SHARE}, then all their edges. The row locks are taken in
+     * PostgreSQL's {@code ORDER BY object_id} order (uuid comparison is bytewise, unsigned), which is deterministic, so concurrent
+     * {@code findMany} calls lock in one order; it is not the order of {@code readBatch}, which sorts by Java's signed {@code UUID} order.
+     * An id that is absent, unsealed or of another scope is simply not in the result.
+     */
+    Map<UUID, NewObject> findMany(UUID scope, Collection<UUID> ids) {
+        String literal = ids.stream().map(UUID::toString).collect(Collectors.joining(",", "{", "}"));
+        var headers = jdbc.sql("""
+                SELECT object_id,kind,encoding_version,dag_rank,payload::text FROM app_learning.storage_object
+                WHERE reuse_scope_id=:scope AND object_id=ANY(CAST(:ids AS uuid[])) AND sealed
+                ORDER BY object_id FOR KEY SHARE
+                """).param("scope", scope).param("ids", literal)
+                .query((row, ignored) -> Map.entry(row.getObject(1, UUID.class), new Header(
+                        ObjectKind.valueOf(row.getString(2).toUpperCase(Locale.ROOT)), row.getShort(3), row.getShort(4), row.getString(5)))).list();
+        if (headers.isEmpty()) return Map.of();
+        var edges = new HashMap<UUID, List<NewEdge>>();
+        jdbc.sql("""
+                SELECT parent_id,ordinal,logical_key,child_id FROM app_learning.storage_edge
+                WHERE reuse_scope_id=:scope AND parent_id=ANY(CAST(:ids AS uuid[])) ORDER BY parent_id,ordinal
+                """).param("scope", scope).param("ids", literal).query((row, ignored) -> {
+                    edges.computeIfAbsent(row.getObject(1, UUID.class), id -> new ArrayList<>())
+                            .add(new NewEdge(row.getInt(2), row.getObject(3, UUID.class), new ObjectRef(scope, row.getObject(4, UUID.class))));
+                    return 0;
+                }).list();
+        var result = new HashMap<UUID, NewObject>();
+        for (var header : headers) {
+            Header value = header.getValue();
+            result.put(header.getKey(), new NewObject(header.getKey(), value.kind(), value.version(), value.rank(),
+                    encoding.readPayload(value.payload()), edges.getOrDefault(header.getKey(), List.of())));
+        }
+        return result;
     }
 
     List<NewEdge> edges(ObjectRef ref) {

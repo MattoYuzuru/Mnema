@@ -15,12 +15,14 @@ class CountedPagesTest {
     private final UUID scope = UUID.randomUUID();
     private final Map<UUID, NewObject> objects = new HashMap<>();
     private int reads;
-    private final CountedPages pages = new CountedPages(Profile.members(100_001), ref -> { reads++; return objects.get(ref.objectId()); });
+    /** The members role and rank, with the bulk flag only a test may set: production manifests refuse {@code build}. */
+    private static final Profile BULK_MEMBERS = new Profile("members", 10, 100_001, true, true, true);
+    private final CountedPages pages = new CountedPages(BULK_MEMBERS, ref -> { reads++; return objects.get(ref.objectId()); });
 
     @Test
     void exactEmptyProfilesAndRankContract() {
         for (String role : List.of("members", "exercises")) {
-            var editor = new CountedPages(new Profile(role, 10, 100_000, true, true), ref -> null);
+            var editor = new CountedPages(new Profile(role, 10, 100_000, true, true, true), ref -> null);
             var result = editor.build(scope, List.of());
             assertThat(result.root().height()).isZero();
             assertThat(result.root().count()).isZero();
@@ -30,9 +32,37 @@ class CountedPagesTest {
             assertThat(page.edges()).isEmpty();
             assertThat(page.payload().toString()).isEqualTo("{\"codec\":1,\"role\":\"" + role + "\",\"treeHeight\":0,\"counts\":[]}");
         }
-        assertThatThrownBy(() -> new Profile("bad role", 10, 1, true, true)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new Profile("members", 32, 1000, true, true)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new Profile("bad role", 10, 1, true, true, false)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new Profile("members", 32, 1000, true, true, false)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new CountedPages(Profile.nativeNodes(), ref -> null).build(scope, List.of())).isInstanceOf(CountedPageFailure.class);
+    }
+
+    @Test
+    void manifestProfilesCannotBeBulkBuiltAndOnlyDerivedStructuresMay() {
+        assertThat(Profile.members(10).bulkBuild()).isFalse();
+        assertThat(Profile.exercises(10).bulkBuild()).isFalse();
+        assertThat(Profile.nativeNodes().bulkBuild()).isTrue();
+        // Fail closed: the flag is part of the only constructor, so no profile can forget to state it.
+        assertThat(Profile.class.getConstructors()).hasSize(1);
+        assertThat(new Profile("fragments", 1, 10, false, false, true).bulkBuild()).isTrue();
+        Entry value = entry();
+        for (Profile profile : List.of(Profile.members(10), Profile.exercises(10))) {
+            var editor = new CountedPages(profile, ref -> objects.get(ref.objectId()));
+            assertThatThrownBy(() -> editor.build(scope, List.of())).isInstanceOfSatisfying(CountedPageFailure.class,
+                    failure -> assertThat(failure.code()).isEqualTo(CountedPageFailure.Code.BULK_BUILD_FORBIDDEN));
+            assertThatThrownBy(() -> editor.build(scope, List.of(value))).isInstanceOfSatisfying(CountedPageFailure.class,
+                    failure -> assertThat(failure.code()).isEqualTo(CountedPageFailure.Code.BULK_BUILD_FORBIDDEN));
+        }
+        // Derived structures (native nodes: leaf rank 4) still bulk-build.
+        NewObject node = new NewObject(UUID.randomUUID(), ObjectKind.PAGE, (short) 1, (short) 3,
+                JsonNodeFactory.instance.objectNode().put("node", true), List.of());
+        objects.put(node.objectId(), node);
+        var natives = new CountedPages(Profile.nativeNodes(), ref -> objects.get(ref.objectId()));
+        assertThat(natives.build(scope, List.of(new Entry(UUID.randomUUID(), new ObjectRef(scope, node.objectId())))).root().count()).isOne();
+        // Local edits stay available for the production profile.
+        var production = new CountedPages(Profile.members(10), ref -> objects.get(ref.objectId()));
+        TreeRoot root = keep(pages.build(scope, List.of(value)));
+        assertThat(production.insert(root, 1, entry()).root().count()).isEqualTo(2);
     }
 
     @Test
