@@ -11,6 +11,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
@@ -20,8 +21,8 @@ import java.net.URI;
 import java.util.UUID;
 
 /**
- * «Добавить к себе» ({@code /api/decks/forks}, {@code /api/decks/{deckId}/fork:retry}, {@code fork:detach}; contract {@code contracts/decks/forks.json}). Private chain: the
- * authenticated subject is the only owner input and {@code learning.write} is needed for all three. The creation route is disabled (404) unless
+ * «Добавить к себе» ({@code /api/decks/forks}, {@code /api/decks/{deckId}/fork:retry}, {@code fork:detach}, {@code PUT fork:auto-update}; contract {@code contracts/decks/forks.json}). Private chain: the
+ * authenticated subject is the only owner input and {@code learning.write} is needed for all four. The creation route is disabled (404) unless
  * {@code learning.community.forks.enabled}. Answers are {@code private, no-store}.
  */
 @RestController
@@ -51,6 +52,13 @@ public class ForkController {
     @PostMapping("/{deckId}/fork:detach")
     ResponseEntity<JsonNode> detach(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId) {
         return ResponseEntity.ok().headers(privateHeaders()).body(service.detach(entityId(identity.getSubject()), entityId(deckId)));
+    }
+
+    @PutMapping(value = "/{deckId}/fork:auto-update", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> autoUpdate(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId, InputStream body) {
+        UUID owner = entityId(identity.getSubject());
+        UUID deck = entityId(deckId);
+        return ResponseEntity.ok().headers(privateHeaders()).body(service.setAutoUpdate(owner, deck, AutoUpdateCommand.read(body).autoUpdate()));
     }
 
     private static HttpHeaders privateHeaders() {

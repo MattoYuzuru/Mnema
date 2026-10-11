@@ -144,6 +144,7 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         // copies (Share/10): an ordinary deck is not a copy, so the owner's own answer is the same opaque 404 (the stranger's is, whatever the deck)
         rows.add(Row.absent("POST /decks/{deckId}/fork:retry", w -> send("POST", "/decks/" + w.deck().id() + "/fork:retry", null, null)));
         rows.add(Row.absent("POST /decks/{deckId}/fork:detach", w -> send("POST", "/decks/" + w.deck().id() + "/fork:detach", null, null)));
+        rows.add(Row.absent("PUT /decks/{deckId}/fork:auto-update", w -> send("PUT", "/decks/" + w.deck().id() + "/fork:auto-update", JSON.createObjectNode().put("autoUpdate", true), null)));
         // the update plan of a copy (Updates/3): an ordinary deck is not a copy, so the owner's own answer is the same opaque 404 (the stranger's is, whatever the deck)
         rows.add(Row.absent("GET /decks/{deckId}/update-plan", w -> get("/decks/" + w.deck().id() + "/update-plan")));
         rows.add(Row.absent("GET /decks/{deckId}/update-plan/units/{kind}/{key}",

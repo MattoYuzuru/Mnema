@@ -55,6 +55,7 @@ class ForkDisabledHttpIntegrationTest extends PostgresIntegrationTest {
         Source source = worlds.source("LINK", 2, 1);
         UUID reader = UUID.randomUUID();
         long decksBefore = jdbc.sql("SELECT count(*) FROM app_learning.deck").query(Long.class).single();
+        long forksBefore = jdbc.sql("SELECT count(*) FROM app_learning.deck_fork").query(Long.class).single();
         long jobsBefore = jdbc.sql("SELECT count(*) FROM app_learning.learning_job WHERE queue = 'deck.copy.materialize'").query(Long.class).single();
 
         HttpResponse<String> response = worlds.fork(reader, source.code());
@@ -67,7 +68,7 @@ class ForkDisabledHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(worlds.fork(source.author(), source.code()).statusCode()).isEqualTo(404);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck").query(Long.class).single()).isEqualTo(decksBefore);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.learning_job WHERE queue = 'deck.copy.materialize'").query(Long.class).single()).isEqualTo(jobsBefore);
-        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck_fork").query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck_fork").query(Long.class).single()).as("the shared database may hold copies of other tests").isEqualTo(forksBefore);
         // authentication still comes first
         assertThat(HttpIdentityFixture.send(port, "POST", "/decks/forks", null, "{}", java.util.Map.of()).statusCode()).isEqualTo(401);
         // the service itself refuses too (no caller can bypass the switch)

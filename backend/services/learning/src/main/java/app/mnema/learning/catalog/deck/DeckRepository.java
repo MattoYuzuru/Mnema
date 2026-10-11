@@ -19,7 +19,10 @@ class DeckRepository {
                    r.members_root_id, r.exercises_root_id, r.member_count, r.exercise_count,
                    lower(COALESCE(p.visibility, 'PRIVATE')) AS visibility,
                    f.deck_id AS fork_deck_id, f.upstream_deck_id, f.upstream_code, f.materialized_at IS NULL AS fork_preparing,
-                   f.detached_at IS NOT NULL AS fork_detached, j.state AS fork_job_state
+                   f.detached_at IS NOT NULL AS fork_detached, j.state AS fork_job_state, f.base_revision_id AS fork_base, f.auto_update AS fork_auto_update,
+                   -- the badge reads this in the same statement; an ordinary, preparing or detached deck asks nothing (CASE is lazy), a copy is one probe of the partial index fork_unit_decision_pending
+                   CASE WHEN f.materialized_at IS NOT NULL AND f.detached_at IS NULL
+                        THEN EXISTS (SELECT 1 FROM app_learning.fork_unit_decision u WHERE u.deck_id = f.deck_id AND u.decision = 'PENDING') ELSE FALSE END AS fork_pending
               FROM app_learning.deck d JOIN app_learning.deck_revision r
                 ON r.deck_id = d.deck_id AND r.revision_id = d.head_revision_id
               LEFT JOIN app_learning.deck_publication p ON p.deck_id = d.deck_id
@@ -35,7 +38,8 @@ class DeckRepository {
             row.getObject("exercises_root_id", UUID.class), row.getInt("member_count"), row.getInt("exercise_count"),
             row.getString("visibility"), row.getObject("fork_deck_id", UUID.class) == null ? null
             : ForkLink.of(row.getObject("upstream_deck_id", UUID.class), row.getString("upstream_code"), row.getBoolean("fork_preparing"),
-            row.getString("fork_job_state"), row.getBoolean("fork_detached")));
+            row.getString("fork_job_state"), row.getBoolean("fork_detached"), row.getObject("fork_base", UUID.class), row.getBoolean("fork_pending"),
+            row.getBoolean("fork_auto_update")));
     private final JdbcClient jdbc;
 
     DeckRepository(JdbcClient jdbc) { this.jdbc = jdbc; }

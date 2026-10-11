@@ -117,23 +117,45 @@ class ForkRepository {
     }
 
     /** The owner's live copy with its job and flags; absent for a foreign, deleted or ordinary deck. */
-    record Own(UUID deckId, UUID jobId, boolean materialized, boolean detached, String jobState) { }
+    record Own(UUID deckId, UUID jobId, boolean materialized, boolean detached, boolean autoUpdate, String jobState) { }
 
     Optional<Own> own(UUID owner, UUID deck) {
         return jdbc.sql("""
-                SELECT f.deck_id, f.job_id, f.materialized_at IS NOT NULL AS materialized, f.detached_at IS NOT NULL AS detached, j.state AS job_state
+                SELECT f.deck_id, f.job_id, f.materialized_at IS NOT NULL AS materialized, f.detached_at IS NOT NULL AS detached, f.auto_update, j.state AS job_state
                   FROM app_learning.deck d JOIN app_learning.deck_fork f ON f.deck_id = d.deck_id
                   LEFT JOIN app_learning.learning_job j ON j.job_id = f.job_id
                  WHERE d.owner_id = :owner AND d.deck_id = :deck AND d.deleted_at IS NULL
                 """).param("owner", owner).param("deck", deck)
                 .query((row, ignored) -> new Own(row.getObject("deck_id", UUID.class), row.getObject("job_id", UUID.class), row.getBoolean("materialized"),
-                        row.getBoolean("detached"), row.getString("job_state"))).optional();
+                        row.getBoolean("detached"), row.getBoolean("auto_update"), row.getString("job_state"))).optional();
     }
 
     /** Sets the detach time once; false when the copy was already detached (the call is idempotent either way). */
     boolean detach(UUID deck) {
         return jdbc.sql("UPDATE app_learning.deck_fork SET detached_at = statement_timestamp() WHERE deck_id = :deck AND detached_at IS NULL")
                 .param("deck", deck).update() == 1;
+    }
+
+    /**
+     * Stores the owner's auto-update setting on a live copy that is ready and attached; false when no such row changed (the copy is not ready, is detached, or already has the value).
+     * The predicate repeats the transition guard of V64, so a concurrent detach turns into "no row" and the service answers its own 409 instead of a database error.
+     */
+    boolean setAutoUpdate(UUID deck, boolean value) {
+        return jdbc.sql("""
+                UPDATE app_learning.deck_fork SET auto_update = :value
+                 WHERE deck_id = :deck AND auto_update <> :value AND materialized_at IS NOT NULL AND detached_at IS NULL AND released_at IS NULL
+                """).param("deck", deck).param("value", value).update() == 1;
+    }
+
+    /**
+     * The re-link: points an attached live copy at {@code code}, the public code that now opens its source, when it stored another one. The guard of V64 accepts exactly the source's
+     * current code, so the statement can never point a copy at another deck's code; zero rows means the copy already holds this code (or is detached).
+     */
+    boolean relink(UUID deck, String code) {
+        return jdbc.sql("""
+                UPDATE app_learning.deck_fork SET upstream_code = :code
+                 WHERE deck_id = :deck AND upstream_code <> :code AND detached_at IS NULL AND released_at IS NULL
+                """).param("deck", deck).param("code", code).update() == 1;
     }
 
     /** Points an unfinished copy at a freshly enqueued job (the previous one was purged by retention). */

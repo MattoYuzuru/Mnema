@@ -7,6 +7,7 @@ import app.mnema.learning.library.DeckRef;
 import app.mnema.learning.library.Denial;
 import app.mnema.learning.library.Resolution;
 import app.mnema.learning.library.Viewer;
+import app.mnema.learning.platform.api.CapabilityUnavailableException;
 import app.mnema.learning.platform.api.ProblemExtension;
 import app.mnema.learning.platform.api.RateLimitedException;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
@@ -103,7 +104,10 @@ public class ForkService {
         if (!frozen.equals(source.published().revisionId())) throw new ResourceNotFoundException();
         Optional<ForkRepository.Live> live = repository.live(actor, source.deckId());
         if (live.isPresent()) {
-            meters.counter("mnema_deck_forks_total", "outcome", "existing").increment();
+            // The re-link: this code opens the source of a copy the viewer already holds (decided above by DeckAccess, like every copy command), so if the copy stored another code (the
+            // author lowered the level and rotated it, and the copy reads «источник недоступен»), it now holds the code that works. Under the actor's lock, never on the read path.
+            boolean relinked = repository.relink(live.get().deckId(), source.code());
+            meters.counter("mnema_deck_forks_total", "outcome", relinked ? "relinked" : "existing").increment();
             return acknowledgement(command, live.get().deckId(), live.get().preparing(), true);
         }
         ForkRepository.Window window = repository.window(actor, settings.window);
@@ -186,6 +190,29 @@ public class ForkService {
         repository.own(actor, deck).orElseThrow(ResourceNotFoundException::new);
         repository.detach(deck);
         return JsonNodeFactory.instance.objectNode().put("deckId", deck.toString()).put("detached", true);
+    }
+
+    /**
+     * The owner's auto-update setting of a copy (idempotent: the stored value is answered without a write). Owner only (the opaque 404 for anything that is not the caller's live copy);
+     * a copy that is preparing is {@code 409 DECK_PREPARING} and a detached one {@code 409 CAPABILITY_UNAVAILABLE} (capability {@code forkAutoUpdate}, reason {@code DETACHED}): a detached copy
+     * never gets updates. The kill switch {@code learning.updates.auto.enabled} is read by the job that applies updates, not here: the choice is stored either way.
+     */
+    @Transactional(timeout = 10)
+    public ObjectNode setAutoUpdate(UUID actor, UUID deck, boolean value) {
+        UuidPolicy.requireEntityId(actor, "actor");
+        UuidPolicy.requireEntityId(deck, "deckId");
+        ForkRepository.Own own = repository.own(actor, deck).orElseThrow(ResourceNotFoundException::new);
+        if (!own.materialized()) throw new DeckPreparingException();
+        if (own.detached()) {
+            throw new CapabilityUnavailableException(ProblemExtension.builder().put("capability", "forkAutoUpdate").put("reason", "DETACHED").build());
+        }
+        if (own.autoUpdate() != value && !repository.setAutoUpdate(deck, value)) {
+            // a detach or a delete between the read and the write: answer what the row is now
+            ForkRepository.Own now = repository.own(actor, deck).orElseThrow(ResourceNotFoundException::new);
+            if (now.detached()) throw new CapabilityUnavailableException(ProblemExtension.builder().put("capability", "forkAutoUpdate").put("reason", "DETACHED").build());
+            if (now.autoUpdate() != value) throw new IllegalStateException("The auto-update setting was not stored");
+        }
+        return JsonNodeFactory.instance.objectNode().put("deckId", deck.toString()).put("autoUpdate", value);
     }
 
     /** {@code myCopy} of the public summary: the viewer's live copy of exactly this deck, or null. */

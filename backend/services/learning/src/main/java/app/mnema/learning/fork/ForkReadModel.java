@@ -16,7 +16,8 @@ import java.util.UUID;
 /**
  * The {@code fork} member of the owner's deck JSON (contract {@code contracts/decks/forks.json}): the flags of the copy and what the copier may still know of the source.
  * {@code sourceAvailable} is computed at read, for the copier, by {@link DeckAccess} with the public code he copied by, so it goes dark exactly when he could no longer open
- * the source: the deck was deleted, made private, or its code was rotated away by lowering the level (a copier is never handed the new code). Nothing is written on read.
+ * the source: the deck was deleted, made private, or its code was rotated away by lowering the level (a copier is never handed the new code). {@code updateAvailable} (the badge
+ * «Есть обновление») is computed from the same resolution, so it costs no statement of its own. Nothing is written on read.
  */
 @Component
 public class ForkReadModel {
@@ -32,7 +33,7 @@ public class ForkReadModel {
     /**
      * The JSON of every link of a page, in order ({@code null} entries stay JSON null): the sources of the whole page are resolved in two statements
      * ({@link DeckAccess#resolveAll}), not one per copy. Availability is decided by the code the copier stored, so a source whose code was rotated away reads as unavailable
-     * even though the deck exists (see the guide: re-linking is epic 2).
+     * even though the deck exists, until the copier opens the new link and presses «Добавить к себе» again (the re-link of {@link ForkService}).
      */
     public List<JsonNode> describeAll(UUID actor, List<ForkLink> links) {
         List<String> codes = links.stream().filter(java.util.Objects::nonNull).map(ForkLink::upstreamCode).distinct().toList();
@@ -49,7 +50,12 @@ public class ForkReadModel {
             ObjectNode json = JsonNodeFactory.instance.objectNode();
             if (available) json.put("upstreamCode", link.upstreamCode()).put("upstreamTitle", resolution.deck().published().title());
             else json.putNull("upstreamCode").putNull("upstreamTitle");
-            result.add(json.put("sourceAvailable", available).put("preparing", link.preparing()).put("failed", link.failed()).put("detached", link.detached()));
+            // «Есть обновление» is computed here, at read, and writes nothing: the copy is ready and attached, its source opens by the stored code, and the author's published revision
+            // is not the one the copy stands on or a unit the learner left for later is still on offer (the base rule of the architecture, section 7).
+            boolean updateAvailable = available && !link.preparing() && !link.detached()
+                    && (!link.baseRevisionId().equals(resolution.deck().published().revisionId()) || link.pendingUpdates());
+            result.add(json.put("sourceAvailable", available).put("preparing", link.preparing()).put("failed", link.failed()).put("detached", link.detached())
+                    .put("updateAvailable", updateAvailable).put("autoUpdate", link.autoUpdate()));
         }
         return result;
     }
