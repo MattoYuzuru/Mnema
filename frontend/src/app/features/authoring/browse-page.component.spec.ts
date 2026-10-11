@@ -19,7 +19,7 @@ describe('BrowsePageComponent', () => {
     const item = (ordinal: number): ItemSummary => ({
         memberKey: `00000000-0000-4000-8000-${String(ordinal + 10).padStart(12, '0')}`,
         title: 'Париж — столица Франции', itemRevisionId: revisionId, itemVersion: '1', formatVersion: 1, ordinal,
-        createdAt: '2026-09-29T10:00:00Z', updatedAt: '2026-09-29T10:00:00Z', exerciseCount: null, exemplar: false
+        createdAt: '2026-09-29T10:00:00Z', updatedAt: '2026-09-29T10:00:00Z', exerciseCount: null, exemplar: false, unavailable: false
     });
     let api: SpyObj<ItemApiService>;
     let fixture: ComponentFixture<BrowsePageComponent>;
@@ -176,6 +176,24 @@ describe('BrowsePageComponent', () => {
         fixture.detectChanges();
         expect(fixture.componentInstance.failure()).toBe(true);
         expect(fixture.nativeElement.textContent).toContain('Не удалось загрузить материал');
+        fixture.destroy();
+    });
+
+    it('shows a calm screen, not a failure, for a material taken down after a complaint (410)', () => {
+        api.read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 410 })));
+        TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: {
+                    paramMap: convertToParamMap({ deckId, memberKey: item(1).memberKey }), queryParamMap: convertToParamMap({}) } } });
+        fixture = TestBed.createComponent(BrowsePageComponent);
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(fixture.componentInstance.failure()).toBe(false);
+        expect(fixture.componentInstance.takenDown()).toBe(true);
+        expect(root.querySelector('h1')!.textContent).toBe('Материал недоступен');
+        expect(root.textContent).toContain('снят по жалобе');
+        expect(root.textContent).not.toContain('Не удалось загрузить');
+        expect(root.querySelector('[role=alert]')).toBeNull();
+        expect([...root.querySelectorAll('a')].map(link => link.getAttribute('href'))).toEqual([`/decks/${deckId}`, `/decks/${deckId}`]);
+        expect(root.querySelector('a.button.primary')!.textContent).toContain('К материалам колоды');
         fixture.destroy();
     });
 });

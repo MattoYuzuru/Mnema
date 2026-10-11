@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, input, output, si
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AutoLoadComponent } from '../../../shared/auto-load.component';
+import { UnavailableNoteComponent } from '../../../shared/unavailable-note.component';
 
 import { ExemplarBudget, ItemSummary } from '../../authoring/authoring.models';
 import { MaterialSelection } from './material-selection';
@@ -18,7 +19,7 @@ let nextList = 0;
  */
 @Component({
     selector: 'app-selectable-material-list',
-    imports: [DatePipe, RouterLink, AutoLoadComponent],
+    imports: [DatePipe, RouterLink, AutoLoadComponent, UnavailableNoteComponent],
     templateUrl: './selectable-material-list.component.html',
     styleUrl: './selectable-material-list.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -37,6 +38,8 @@ export class SelectableMaterialListComponent {
     readonly loadingMore = input(false);
     readonly moreError = input(false);
     readonly toggleExemplar = output<ItemSummary>();
+    /** «Удалить…» on a row taken down after a complaint: the owner selects it for the shared hold-to-delete bar. */
+    readonly removeUnavailable = output<ItemSummary>();
     readonly loadMore = output<void>();
 
     protected readonly uid = `mn-materials-${nextList++}`;
@@ -59,7 +62,9 @@ export class SelectableMaterialListComponent {
         });
     }
 
-    protected titleOf(item: ItemSummary): string { return item.title || 'Материал без текста'; }
+    protected titleOf(item: ItemSummary): string {
+        return item.unavailable ? `Материал ${item.ordinal + 1} недоступен` : item.title || 'Материал без текста';
+    }
 
     protected pick(item: ItemSummary, event: MouseEvent): void {
         this.selection().toggle(item.memberKey, this.keys(), event.shiftKey);

@@ -47,6 +47,8 @@ expires_at)` with `UNIQUE(owner_id, dedupe_key)` and `UNIQUE(owner_id, seq)`, an
 | `MEDIA_PROCESSING_FAILED` | ERROR | DYNAMIC | `assetId`, `mediaKind`, `deckId`, `sessionId`, `artifactId`, `slotKey`, `reason` | media processing and generation media steps |
 | `DECK_ACCESS_REQUESTED` | INFO | DECK | `deckId`, `pendingCount` | deck access requests (Share/13, #435) |
 | `DECK_ACCESS_GRANTED` | INFO | DECK | `code` | deck access requests (Share/13, #435) |
+| `DECK_HIDDEN` | WARNING | DECK | `deckId` | complaint decisions (Share/15, #437) |
+| `DECK_CONTENT_TAKEN_DOWN` | WARNING | DECK | `deckId`, `materialCount`, `exerciseCount` | complaint decisions (Share/15, #437) |
 
 Semantics (details and dedupe keys per kind in `notifications.json`):
 
@@ -66,6 +68,9 @@ Semantics (details and dedupe keys per kind in `notifications.json`):
   goes to the requester when the author approves (a rejection is silent). Its route is `DECK` with `params.code`, the **public code** of the
   deck, because a reader never learns the deck id: the client opens `/d/{code}`. For the author's kind the route is `DECK` with `params.deckId`
   (the hub, section «Доступ»). Contract of the feature: [`contracts/decks/access.json`](../decks/access.json).
+- `DECK_HIDDEN` and `DECK_CONTENT_TAKEN_DOWN` go to the owner of a deck when the console owner decides a complaint (HIDDEN, or a legal takedown that names
+  new units). They carry only the deck id and counts; the reporter is never told and the owners of copies see only the hub notice. The client opens
+  the deck hub (section «Модерация»). Contract of the feature: [`contracts/moderation`](../moderation/README.md).
 - `MEDIA_PROCESSING_FAILED` is also produced for provider-step media failures of a generation slot; the route is `WORKSHOP` when
   `sessionId` is set, `DECK` when only `deckId` is set, else `NONE`.
 

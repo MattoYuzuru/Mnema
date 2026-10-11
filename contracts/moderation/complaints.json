@@ -1,0 +1,248 @@
+{
+  "contract": "complaints-v1",
+  "description": "Shared frontend/backend fixtures for complaints about a public deck or profile, the owner console queue, hiding by moderation and legal takedown by lineage (Share/15, #437). Filing is for a signed-in account that can read the target; the queue and the decisions are for the console owner only (the admin client token, contracts/admin); the deck owner and the owners of copies see only their own notice. `invariants` are executable: the integration tests compare real answers with the property sets of these examples.",
+  "constants": {
+    "filing": {
+      "deck": {"method": "POST", "path": "/api/public/decks/{code}/complaints", "scope": "learning.write", "chain": "public (optional bearer; a guest is 401)"},
+      "profile": {"method": "POST", "path": "/api/public/profiles/{username}/complaints", "scope": "learning.write", "chain": "private (signed-in only)"},
+      "bodyMaxBytes": 4096,
+      "answer": {"status": 202, "body": {"status": "RECEIVED"}}
+    },
+    "console": {
+      "base": "/api/admin/complaints",
+      "access": "the configured owner account AND an access token of the mnema-admin-web client (contracts/admin); anything else is 403; every answer is Cache-Control: private, no-store",
+      "nav": "visible when GET /api/admin/console/access says owner: true; no new permission flag"
+    },
+    "ownerNotice": {"method": "GET", "path": "/api/decks/{deckId}/moderation", "scope": "learning.read", "access": "owner of the live deck (source or copy); everybody else the opaque 404"},
+    "targetKinds": ["DECK", "PROFILE"],
+    "reasons": ["COPYRIGHT", "PERSONAL_DATA", "ILLEGAL", "SPAM", "OTHER"],
+    "statuses": ["OPEN", "DECIDED"],
+    "decisions": ["REJECTED", "HIDDEN", "TAKEN_DOWN", "ACCOUNT_REFERRED"],
+    "decisionTargets": {"REJECTED": ["DECK", "PROFILE"], "HIDDEN": ["DECK"], "TAKEN_DOWN": ["DECK"], "ACCOUNT_REFERRED": ["PROFILE"]},
+    "journalActions": ["REJECTED", "HIDDEN", "TAKEN_DOWN", "ACCOUNT_REFERRED", "UNHIDDEN"],
+    "unitKinds": ["ITEM", "EXERCISE"],
+    "unitKindNote": "ITEM is a material of the deck, EXERCISE an exercise; the key is the memberKey or the exerciseId, the revision is the item revision id or the exercise revision id",
+    "text": {"maxCodePoints": 1000, "optional": true, "rules": "trimmed; blank is the same as absent; control characters other than line feed and tab, and every Unicode FORMAT character (bidi overrides and isolates, zero-width space and joiners, the byte order mark, the soft hyphen), are 400"},
+    "reviewDays": 30,
+    "reviewNote": "dueAt = createdAt + 30 days; the queue shows OPEN complaints oldest dueAt first and says overdue in words, not only by colour",
+    "retention": {"years": 3, "note": "a complaint, its journal rows and the reporter account id are kept 3 years from createdAt (the privacy policy paragraph «Жалобы»). retainUntil is stored; the application never deletes. The database refuses to delete a row before retainUntil and refuses to delete a complaint that still has a standing takedown. The purge job is open work (TODO #409)."},
+    "limits": {
+      "reporterNewComplaintsPerDay": 10,
+      "reporterNote": "rolling 24 hours by creation time of NEW complaints; a silent repeat creates nothing and counts nothing; over the limit is 429 RATE_LIMITED with Retry-After",
+      "unitsPerDecision": 1000,
+      "queuePage": {"default": 50, "max": 100},
+      "journalPage": {"default": 50, "max": 100},
+      "unitsPage": {"default": 50, "max": 100},
+      "detailTakedowns": 200
+    },
+    "usernamePattern": "^[A-Za-z0-9_.-]{3,50}$ (the Identity profile username; case-insensitive)",
+    "killSwitch": {"key": "learning.community.complaints.enabled", "default": true, "off": "both filing routes answer 404 as if absent; nothing is written. The console and the enforcement of decisions already taken are not affected"}
+  },
+  "invariants": [
+    "filing is for a signed-in account (learning.write): a guest is 401, a read-only token 403. A deck is reported by its PUBLIC CODE and only when the reporter can read it right now: an unknown, private, rotated, never-published, deleted or HIDDEN deck, and an invitation deck the reporter has no grant for, are the SAME opaque 404 RESOURCE_NOT_FOUND (a complaint never confirms that a deck exists). The owner of the deck reporting it is 400 INVALID_REQUEST",
+    "a profile is reported by its username: Learning resolves it through Identity's public-profile lookup (consent on and a login set); an unknown, malformed or hidden profile is the same 404; reporting your own profile is 400. The lookup has a budget of its own, never the grant-by-login budget (429 RATE_LIMITED before Identity is asked; Identity 429 is 429 with its Retry-After; any other Identity failure is 503 IDENTITY_UNAVAILABLE and nothing is written). A repeat of an open complaint about the same login is answered before the budget and before Identity: it costs no lookup",
+    "filing is idempotent per (reporter, target): while a complaint of this reporter about this target is OPEN, a repeat is the same 202 {status: RECEIVED}, writes nothing and counts nothing, and the first reason and text stand. After the complaint is DECIDED a new one may be filed. The answer never says whether the complaint was new",
+    "the body is strict: exactly {reason} or {reason, text}; an unknown field, a reason outside the closed list, a text over 1000 code points, a non-string text or an oversized body is 400 INVALID_REQUEST; the body is never echoed in an error",
+    "a new complaint stores createdAt, dueAt = createdAt + 30 days, retainUntil = createdAt + 3 years and the target snapshot (deck id and public code, or profile account id and username). The reporter gets no message of any kind about the decision (product: no messages); the filing acknowledgement is the only answer",
+    "the public code of a deck is a credential: it is redacted from every log line of the filing route (the route template is logged, never the path)",
+    "the console routes are owner-only through the admin client: a stranger, a mnema-web token of the owner, a token without scopes are 401/403 before anything is read; the queue and the detail never contain tokens, emails or names, only opaque account ids (the console resolves them through the Identity directory)",
+    "the queue lists OPEN complaints ordered by dueAt then complaintId (oldest due first), DECIDED ones newest decision first; limit 1..100 (default 50), an opaque cursor, nextCursor null on the last page, a malformed cursor or an unknown/duplicate parameter is 400. overdue is true for an OPEN complaint whose dueAt has passed",
+    "a decision is one transaction: the complaint becomes DECIDED (decision, decidedAt, decidedBy), its effect is applied, one row is appended to the immutable journal (content_takedown_journal) and one to the console audit (admin_audit: COMPLAINT_DECIDE / COMPLAINT_UNHIDE), and the notification (if any) is published. Journal rows and complaint decisions can never be updated; the same decision repeated on a DECIDED complaint with the same effect is the same 200 and writes no second journal row",
+    "REJECTED changes nothing but the complaint. ACCOUNT_REFERRED (profiles only) records that the operator took the matter to the Identity account directory; Learning writes nothing to Identity. HIDDEN and TAKEN_DOWN are for decks only (PROFILE target is 400)",
+    "HIDDEN sets deck_publication.hidden_by_moderation: for everybody but the owner the deck answers exactly like an unknown code on every public route (summary, items, exercises, media, access requests, invitation redeem, complaint filing) and it leaves the catalog; copies already made are untouched; the OWNER still reads and edits his deck and sees a notice (GET /api/decks/{deckId}/moderation) and a DECK_HIDDEN notification. Hiding bumps the publication row version (the open publication editor gets 412 and reloads); republishing, changing the level or rotating the code never clears the flag",
+    "unhide is the explicit POST /api/admin/complaints/{complaintId}:unhide. It works only for a complaint decided HIDDEN and only while the deck is hidden by moderation: it clears the flag and appends an UNHIDDEN journal row. An OPEN complaint, one decided REJECTED or TAKEN_DOWN (hide included), and a deck that is not hidden now are 409 COMPLAINT_NOT_HIDDEN and write nothing; a PROFILE complaint is 400. (A deck hidden by a TAKEN_DOWN with hide is lifted by a complaint decided HIDDEN: deciding HIDDEN on an already hidden deck is recorded, and that complaint can then unhide.)",
+    "TAKEN_DOWN is the legal takedown by LINEAGE: units = [{kind, key, revisionId}] (1..1000). revisionId null means the revision the deck's PUBLISHED manifest holds for that key; an explicit revisionId must be a revision of that unit in the deck's lineage; a unit that is not in the lineage is 400. One content_takedown row per (lineage, kind, revision). Every unit that names no revision is resolved in ONE pass per manifest, inside the decision transaction after the complaint and the publication row are locked. The decision also records the media assets of the named revisions (content_takedown_asset). `hide: true` also hides the deck in the same decision. The decision may be repeated on a TAKEN_DOWN complaint with more units (existing units are skipped; a journal row is written only when something changed)",
+    "ONE predicate blocks a revision wherever it would be served: a reader that is about to serve revision R of unit U of lineage L checks content_takedown(L, kind, R). It acts on the revision actually served: the source's published revision for public readers and the deck's head for the owner, so the source deck, every copy whose head still IS that revision, and a published copy are blocked together, while a copy whose learner edited the unit (a new revision) is unaffected and so is any unit that was not named",
+    "blocked readers: public item read is 410 CONTENT_UNAVAILABLE; public item and exercise pages keep the entry with unavailable: true, an empty title/prompt; the owner's item read is 410, owner item/exercise lists keep the row with unavailable: true and an empty title; Study never issues an exercise whose revision is blocked, nor one that QUOTES a blocked material revision (a CONTEXT binding is the text a presentation shows; an exercise only assessed on that material shows none of it), and a frozen presentation is no longer shown, resumed, replayed, revealed, answered or graded once its exercise is blocked or it quotes a blocked material (an answer being assessed ends on the next sweep as UNAVAILABLE, never hangs; a repeat of an answer already recorded still returns its stored receipt) (it skips it); AI context (outline, similar-title, pinned and revise reads) leaves the unit out; media is blocked by ASSET and lineage: the assets of the named revisions are not served by the public media route, the copy owner's private media routes or the offline manifest through ANY revision of that lineage (a copy or the source that saved a new revision keeping the disputed image still does not serve it), and their owner does not play them either, in whichever deck they appear; what a learner uploaded himself is another asset. Text trivially re-saved by the owner is a new revision and is NOT blocked (accepted risk; the remedy for a repeat offender is HIDDEN). Signed media URLs already issued live out their TTL (10 minutes public, up to 2 hours for the owner). The statements are in the guide",
+    "TAKEN_DOWN publishes DECK_CONTENT_TAKEN_DOWN to the deck owner and HIDDEN publishes DECK_HIDDEN (INFO/WARNING per contracts/notifications), only when the decision changed something; a copy owner is not notified (his hub shows the notice from GET /api/decks/{deckId}/moderation)",
+    "the owner notice counts, for a live deck of the caller: hiddenByModeration and hiddenAt for his own deck, and takenDown.materials / takenDown.exercises = heads of this deck that are blocked right now. A foreign, absent or deleted deck is the opaque 404",
+    "the owner of a blocked unit cannot read it (410) and so cannot open it in the editor, but he can replace or delete it without reading it: the list still gives its memberKey, ordinal and the revision it holds, and a save with those (expectedItemRevisionId, expectedOrdinal) writes a new revision that is not blocked. Re-saving the same disputed content is a new revision and needs a new decision naming it; the console picker shows the deck's published revisions",
+    "a takedown has no lift route in this revision: the rows are immutable (follow-up: a lift ledger). A cap on complaints per target is a follow-up too",
+    "retention: after retainUntil a DECIDED complaint can be deleted (when no takedown references it) or ANONYMISED (reporter text NULL, reporter id the nil UUID, nothing else changes); the application does neither yet (#409). The reporter id is opaque and never leaves the console detail"
+  ],
+  "routes": [
+    {"method": "POST", "path": "/api/public/decks/{code}/complaints", "answers": "filed", "status": 202},
+    {"method": "POST", "path": "/api/public/profiles/{username}/complaints", "answers": "filed", "status": 202},
+    {"method": "GET", "path": "/api/decks/{deckId}/moderation", "answers": "ownerNotice"},
+    {"method": "GET", "path": "/api/admin/complaints?status=OPEN|DECIDED&limit&cursor", "answers": "queue"},
+    {"method": "GET", "path": "/api/admin/complaints/{complaintId}", "answers": "complaint"},
+    {"method": "GET", "path": "/api/admin/complaints/{complaintId}/units?kind=ITEM|EXERCISE&limit&cursor", "answers": "units"},
+    {"method": "POST", "path": "/api/admin/complaints/{complaintId}:decide", "answers": "complaint"},
+    {"method": "POST", "path": "/api/admin/complaints/{complaintId}:unhide", "answers": "complaint"},
+    {"method": "GET", "path": "/api/admin/complaints/journal?limit&cursor", "answers": "journal"}
+  ],
+  "errors": {
+    "400": "INVALID_REQUEST: malformed body, unknown field, reason, decision or kind outside the closed lists, a decision that does not fit the target, a unit outside the lineage, own deck/profile, bad cursor or parameter",
+    "401": "no or invalid bearer (a guest on the filing routes)",
+    "403": "ACCESS_DENIED: not the console owner/admin client on /api/admin/complaints; a read-only token on filing",
+    "404": "RESOURCE_NOT_FOUND: the opaque answer of filing, the owner notice and an unknown complaint",
+    "409": "COMPLAINT_DECIDED: the complaint is already DECIDED with another decision (a complaint has one decision; hide/take down via another open complaint, or file/decide a new one). COMPLAINT_NOT_HIDDEN: :unhide of a complaint that was not decided HIDDEN, or of a deck that is not hidden now",
+    "410": "CONTENT_UNAVAILABLE: the revision was taken down (public item read, owner item read, exercise read)",
+    "429": "RATE_LIMITED with Retry-After: 10 new complaints in 24 hours, or the profile lookup budget",
+    "503": "IDENTITY_UNAVAILABLE on the profile route"
+  },
+  "filing": {
+    "request": {"reason": "COPYRIGHT", "text": "Это моя иллюстрация, права не передавались."},
+    "requestWithoutText": {"reason": "SPAM"},
+    "answer": {"status": "RECEIVED"}
+  },
+  "ownerNotice": {
+    "answer": {
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "hiddenByModeration": true,
+      "hiddenAt": "2026-10-12T09:30:00Z",
+      "takenDown": {"materials": 2, "exercises": 1}
+    },
+    "properties": ["deckId", "hiddenByModeration", "hiddenAt", "takenDown"],
+    "takenDownProperties": ["materials", "exercises"],
+    "clean": {"deckId": "11111111-1111-4111-8111-111111111111", "hiddenByModeration": false, "hiddenAt": null, "takenDown": {"materials": 0, "exercises": 0}}
+  },
+  "queue": {
+    "answer": {
+      "items": [
+        {
+          "complaintId": "0199c478-b000-7000-8000-000000000001",
+          "targetKind": "DECK",
+          "reason": "COPYRIGHT",
+          "status": "OPEN",
+          "decision": null,
+          "createdAt": "2026-09-20T10:00:00Z",
+          "dueAt": "2026-10-20T10:00:00Z",
+          "overdue": false,
+          "decidedAt": null,
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "publicCode": "Kq7xT3mNpR",
+          "deckTitle": "Английский: путешествия",
+          "profileAccountId": null,
+          "profileUsername": null
+        },
+        {
+          "complaintId": "0199c478-b000-7000-8000-000000000002",
+          "targetKind": "PROFILE",
+          "reason": "PERSONAL_DATA",
+          "status": "OPEN",
+          "decision": null,
+          "createdAt": "2026-10-01T10:00:00Z",
+          "dueAt": "2026-10-31T10:00:00Z",
+          "overdue": false,
+          "decidedAt": null,
+          "deckId": null,
+          "publicCode": null,
+          "deckTitle": null,
+          "profileAccountId": "22222222-2222-4222-8222-222222222222",
+          "profileUsername": "ivan.k"
+        }
+      ],
+      "nextCursor": null
+    },
+    "itemProperties": ["complaintId", "targetKind", "reason", "status", "decision", "createdAt", "dueAt", "overdue", "decidedAt", "deckId", "publicCode", "deckTitle", "profileAccountId", "profileUsername"]
+  },
+  "complaint": {
+    "answer": {
+      "complaintId": "0199c478-b000-7000-8000-000000000001",
+      "targetKind": "DECK",
+      "reason": "COPYRIGHT",
+      "text": "Это моя иллюстрация, права не передавались.",
+      "status": "DECIDED",
+      "decision": "TAKEN_DOWN",
+      "reporterId": "33333333-3333-4333-8333-333333333333",
+      "createdAt": "2026-09-20T10:00:00Z",
+      "dueAt": "2026-10-20T10:00:00Z",
+      "overdue": false,
+      "decidedAt": "2026-10-12T09:30:00Z",
+      "decidedBy": "10000000-0000-4000-8000-000000000001",
+      "retainUntil": "2029-09-20T10:00:00Z",
+      "deck": {
+        "deckId": "11111111-1111-4111-8111-111111111111",
+        "live": true,
+        "ownerId": "44444444-4444-4444-8444-444444444444",
+        "publicCode": "Kq7xT3mNpR",
+        "title": "Английский: путешествия",
+        "visibility": "PUBLIC",
+        "published": true,
+        "memberCount": 120,
+        "exerciseCount": 85,
+        "hiddenByModeration": true,
+        "hiddenAt": "2026-10-12T09:30:00Z",
+        "openComplaints": 1
+      },
+      "profile": null,
+      "takedowns": {
+        "count": 2,
+        "truncated": false,
+        "items": [
+          {"takedownId": "0199c478-c000-7000-8000-000000000001", "unitKind": "ITEM", "unitKey": "55555555-5555-4555-8555-555555555555", "revisionId": "66666666-6666-4666-8666-666666666666", "createdAt": "2026-10-12T09:30:00Z"},
+          {"takedownId": "0199c478-c000-7000-8000-000000000002", "unitKind": "EXERCISE", "unitKey": "77777777-7777-4777-8777-777777777777", "revisionId": "88888888-8888-4888-8888-888888888888", "createdAt": "2026-10-12T09:30:00Z"}
+        ]
+      },
+      "changed": true
+    },
+    "properties": ["complaintId", "targetKind", "reason", "text", "status", "decision", "reporterId", "createdAt", "dueAt", "overdue", "decidedAt", "decidedBy", "retainUntil", "deck", "profile", "takedowns", "changed"],
+    "deckProperties": ["deckId", "live", "ownerId", "publicCode", "title", "visibility", "published", "memberCount", "exerciseCount", "hiddenByModeration", "hiddenAt", "openComplaints"],
+    "profileProperties": ["accountId", "username"],
+    "takedownsProperties": ["count", "truncated", "items"],
+    "takedownProperties": ["takedownId", "unitKind", "unitKey", "revisionId", "createdAt"],
+    "changedNote": "changed is present on the answers of :decide and :unhide only (false for a repeat that did nothing); GET omits it"
+  },
+  "decide": {
+    "requests": {
+      "reject": {"decision": "REJECTED"},
+      "hide": {"decision": "HIDDEN"},
+      "referAccount": {"decision": "ACCOUNT_REFERRED"},
+      "takeDown": {
+        "decision": "TAKEN_DOWN",
+        "units": [
+          {"kind": "ITEM", "key": "55555555-5555-4555-8555-555555555555", "revisionId": null},
+          {"kind": "EXERCISE", "key": "77777777-7777-4777-8777-777777777777", "revisionId": "88888888-8888-4888-8888-888888888888"}
+        ],
+        "hide": true
+      }
+    },
+    "fields": {"decision": "required", "units": "TAKEN_DOWN only, 1..1000", "hide": "TAKEN_DOWN only, optional boolean, default false"},
+    "strict": "exactly the documented fields for the decision; nothing else"
+  },
+  "units": {
+    "answer": {
+      "kind": "ITEM",
+      "total": 120,
+      "units": [
+        {"kind": "ITEM", "key": "55555555-5555-4555-8555-555555555555", "revisionId": "66666666-6666-4666-8666-666666666666", "ordinal": 0, "title": "Памятка туриста", "takenDown": true}
+      ],
+      "nextCursor": null
+    },
+    "exerciseUnit": {"kind": "EXERCISE", "key": "77777777-7777-4777-8777-777777777777", "revisionId": "88888888-8888-4888-8888-888888888888", "ordinal": 0, "type": "FREE_RESPONSE", "prompt": "Как сказать «где вокзал»?", "takenDown": false},
+    "properties": ["kind", "total", "units", "nextCursor"],
+    "itemUnitProperties": ["kind", "key", "revisionId", "ordinal", "title", "takenDown"],
+    "exerciseUnitProperties": ["kind", "key", "revisionId", "ordinal", "type", "prompt", "takenDown"],
+    "note": "the PUBLISHED revision of the deck (what readers get), in manifest order; an unpublished deck has total 0. The picker shows titles and prompts: it is the owner console"
+  },
+  "journal": {
+    "answer": {
+      "items": [
+        {
+          "journalId": "0199c478-d000-7000-8000-000000000001",
+          "complaintId": "0199c478-b000-7000-8000-000000000001",
+          "action": "TAKEN_DOWN",
+          "actorId": "10000000-0000-4000-8000-000000000001",
+          "occurredAt": "2026-10-12T09:30:00Z",
+          "targetKind": "DECK",
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "publicCode": "Kq7xT3mNpR",
+          "profileAccountId": null,
+          "unitCount": 2
+        }
+      ],
+      "nextCursor": null
+    },
+    "itemProperties": ["journalId", "complaintId", "action", "actorId", "occurredAt", "targetKind", "deckId", "publicCode", "profileAccountId", "unitCount"],
+    "note": "newest first by journalId (uuidv7); unitCount is the number of NEW takedown rows of that decision (0 for the other actions)"
+  },
+  "readers": {
+    "unavailableMarker": {"unavailable": true, "note": "additive field on an entry of an owner or public list whose revision is blocked: the entry keeps its place and ordinal, title (materials) or prompt (public exercises) is the empty string, and the owner's list entries keep their identity fields. Entries that are not blocked do not carry the field"},
+    "gone": {"status": 410, "type": "urn:mnema:problem:content-unavailable", "title": "Content unavailable", "detail": "The content was removed after a complaint."}
+  },
+  "notifications": {
+    "DECK_HIDDEN": {"severity": "WARNING", "route": "DECK", "params": {"deckId": "uuid"}},
+    "DECK_CONTENT_TAKEN_DOWN": {"severity": "WARNING", "route": "DECK", "params": {"deckId": "uuid", "materialCount": "integer >= 0", "exerciseCount": "integer >= 0"}}
+  }
+}

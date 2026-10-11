@@ -74,7 +74,7 @@ export class AdminAuditPageComponent implements OnInit {
     private readonly destroy = inject(DestroyRef);
     protected readonly sources = [{
             key: 'learning',
-            name: 'Learning: новости и промокоды'
+            name: 'Learning: новости, промокоды и жалобы'
         }, {
             key: 'identity',
             name: 'Identity: изменения аккаунтов'
@@ -97,6 +97,8 @@ export class AdminAuditPageComponent implements OnInit {
             EVENT_CREATE: 'Создана новость',
             EVENT_REPLACE: 'Изменена новость',
             EVENT_DELETE: 'Удалена новость',
+            COMPLAINT_DECIDE: 'Решение по жалобе',
+            COMPLAINT_UNHIDE: 'Колода возвращена в Сообщество',
             BAN: 'Блокировка аккаунта',
             UNBAN: 'Разблокировка аккаунта',
             GRANT_ADMIN: 'Выдача прав администратора',

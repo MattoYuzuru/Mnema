@@ -2,6 +2,7 @@ package app.mnema.learning.catalog.content;
 
 import app.mnema.learning.catalog.content.storage.NativeSnapshotDecoder;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
+import app.mnema.learning.moderation.ContentTakedowns;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
@@ -26,10 +27,18 @@ public class ItemPreviews {
         this.batches = new NativeStorageBatches(storage);
     }
 
+    /**
+     * The title of a revision, or the empty string for a revision a legal takedown names (Share/15): every list, progress page, speech hint and AI outline
+     * takes its titles from here, so none of them can show the text of a taken-down material. One statement answers both questions.
+     */
     public String title(UUID scope, UUID member, UUID revision) {
-        var existing = jdbc.sql("SELECT title FROM app_learning.item_preview WHERE reuse_scope_id=:scope AND member_key=:member AND revision_id=:revision")
-                .param("scope", scope).param("member", member).param("revision", revision).query(String.class).optional();
-        if (existing.isPresent()) return existing.get();
+        record Cached(boolean blocked, String title) { }
+        Cached cached = jdbc.sql("SELECT " + ContentTakedowns.blockedItem(":scope", ":member", ":revision") + " AS blocked, "
+                        + "(SELECT title FROM app_learning.item_preview WHERE reuse_scope_id=:scope AND member_key=:member AND revision_id=:revision) AS title")
+                .param("scope", scope).param("member", member).param("revision", revision)
+                .query((row, ignored) -> new Cached(row.getBoolean("blocked"), row.getString("title"))).single();
+        if (cached.blocked()) return "";
+        if (cached.title() != null) return cached.title();
         UUID root = jdbc.sql("SELECT content_root_id FROM app_learning.item_revision "
                         + "WHERE reuse_scope_id=:scope AND member_key=:member AND revision_id=:revision")
                 .param("scope", scope).param("member", member).param("revision", revision).query(UUID.class).optional()

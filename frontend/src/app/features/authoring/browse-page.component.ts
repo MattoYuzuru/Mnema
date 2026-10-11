@@ -12,7 +12,7 @@ import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from './capabilities-api.service';
 import { ItemApiService } from './item-api.service';
-import { ItemDetail, newCommandId } from './authoring.models';
+import { ItemDetail, isTakenDown, newCommandId } from './authoring.models';
 
 @Component({
     selector: 'app-browse-page',
@@ -27,6 +27,10 @@ export class BrowsePageComponent {
     readonly selectedOrdinal = signal<number | null>(null);
     readonly loading = signal(true);
     readonly failure = signal(false);
+    /** The material was taken down after a complaint (`410`, Share/15): a calm screen instead of a failure. */
+    readonly takenDown = signal(false);
+    /** The deck of the address, known even when the material cannot be read. */
+    readonly deckId = signal<string | null>(null);
     readonly deleting = signal(false);
     readonly deleteMessage = signal<string | null>(null);
     readonly positionError = signal(false);
@@ -63,6 +67,8 @@ export class BrowsePageComponent {
         const deckId = this.route.snapshot.paramMap.get('deckId');
         const memberKey = this.route.snapshot.paramMap.get('memberKey');
         if (this.deleting() || this.pendingDeletion) return;
+        this.deckId.set(deckId);
+        this.takenDown.set(false);
         this.selectedOrdinal.set(null);
         this.deletionSnapshot = null;
         this.positionError.set(false);
@@ -78,7 +84,10 @@ export class BrowsePageComponent {
                 this.setPosition(result.content);
                 this.loading.set(false);
             },
-            error: () => { this.failure.set(true); this.loading.set(false); }
+            error: (error: unknown) => {
+                if (isTakenDown(error)) this.takenDown.set(true); else this.failure.set(true);
+                this.loading.set(false);
+            }
         });
     }
 

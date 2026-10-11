@@ -270,7 +270,13 @@ public class StudySessionService {
         Set<UUID> fresh = newMarks.fresh(session.accountId(), session.deckId(),
                 candidates.stream().map(StudySessionRepository.Candidate::exerciseId).toList());
         for (StudySessionRepository.Candidate candidate : candidates) {
-            insert(session, candidate, session.issuedCount() + batch++, now, texts, fresh.contains(candidate.exerciseId()));
+            try {
+                insert(session, candidate, session.issuedCount() + batch, now, texts, fresh.contains(candidate.exerciseId()));
+            } catch (QuotedMaterialGoneException gone) {
+                // a takedown committed between choosing this candidate and loading the material it quotes (nothing of the candidate was written yet): skip it
+                continue;
+            }
+            batch++;
             // Only scheduled sessions have a new-objective budget; practice may include unseen material freely.
             if (session.mode() == StudySessionCommand.Mode.SCHEDULED && !candidate.introduced()) newObjectives++;
             if (batch == target) break;
@@ -335,9 +341,16 @@ public class StudySessionService {
         Map<List<UUID>, NativeNodeIndex> indexes = new HashMap<>();
         return material -> indexes.computeIfAbsent(List.of(material.memberKey(), material.itemRevisionId()), key -> {
             StudySessionRepository.Material pinned = repository.material(deck, material.memberKey(),
-                    material.itemRevisionId()).orElseThrow(IllegalStateException::new);
+                    material.itemRevisionId()).orElseThrow(QuotedMaterialGoneException::new);
             return NativeNodeIndex.load(nativeBatches, new ObjectRef(pinned.scopeId(), pinned.contentRootId()));
         }).text(material.nodeId()).orElseThrow(() -> new IllegalStateException("Pinned node is missing"));
+    }
+
+    /** The quoted material revision is no longer servable (taken down meanwhile): the candidate is skipped, not a 500. Thrown before any write of the candidate. */
+    private static final class QuotedMaterialGoneException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        QuotedMaterialGoneException() { super("Quoted material is gone", null, false, false); }
     }
 
     private ObjectNode response(StudySessionRepository.Session session) {

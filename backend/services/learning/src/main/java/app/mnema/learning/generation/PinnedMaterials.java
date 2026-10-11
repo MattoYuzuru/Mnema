@@ -80,7 +80,12 @@ class PinnedMaterials {
     Optional<Pinned> read(UUID owner, UUID deck, UUID member, UUID revision) {
         List<UUID> key = List.of(deck, member, revision);
         Kept kept = cache.get(key);
-        if (kept != null && System.nanoTime() - kept.at() < KEPT_NANOS && repository.deckOwned(owner, deck)) return Optional.of(kept.pinned());
+        if (kept != null && System.nanoTime() - kept.at() < KEPT_NANOS && repository.deckOwned(owner, deck)) {
+            // a revision never changes, but a legal takedown (Share/15) can name it after it was cached: re-check, drop the entry
+            if (!repository.itemTakenDown(deck, member, revision)) return Optional.of(kept.pinned());
+            cache.remove(key);
+            return Optional.empty();
+        }
         Optional<Pinned> read = load(owner, deck, member, revision);
         read.ifPresent(pinned -> cache.put(key, new Kept(pinned, System.nanoTime())));
         return read;

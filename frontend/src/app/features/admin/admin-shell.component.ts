@@ -71,6 +71,9 @@ export class AdminShellComponent implements OnInit {
             path: '/manage/support',
             name: 'Поддержка'
         }, {
+            path: '/manage/complaints',
+            name: 'Жалобы'
+        }, {
             path: '/manage/audit',
             name: 'Журнал действий'
         }];

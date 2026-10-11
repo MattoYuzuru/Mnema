@@ -1,5 +1,6 @@
 package app.mnema.learning.speech;
 
+import app.mnema.learning.moderation.ContentTakedowns;
 import app.mnema.learning.ai.Transcription;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -180,7 +181,9 @@ class SpeechInputRepository {
                         + "JOIN app_learning.deck_head_item h ON h.deck_id=d.deck_id "
                         + "JOIN app_learning.item_revision r ON r.reuse_scope_id=h.reuse_scope_id AND r.member_key=h.member_key AND r.revision_id=h.revision_id "
                         + "LEFT JOIN app_learning.item_preview p ON p.reuse_scope_id=h.reuse_scope_id AND p.member_key=h.member_key AND p.revision_id=h.revision_id "
-                        + "WHERE d.deck_id=:deck AND d.owner_id=:owner AND d.deleted_at IS NULL ORDER BY h.member_key LIMIT :limit")
+                        + "WHERE d.deck_id=:deck AND d.owner_id=:owner AND d.deleted_at IS NULL AND NOT "
+                        // the legal takedown by lineage (Share/15): the terms of a taken-down material are not offered as speech hints
+                        + ContentTakedowns.blockedItem("r.reuse_scope_id", "r.member_key", "r.revision_id") + " ORDER BY h.member_key LIMIT :limit")
                 .param("deck", deck).param("owner", owner).param("limit", limit)
                 .query((row, ignored) -> new Head(row.getObject("member_key", UUID.class), row.getObject("revision_id", UUID.class),
                         row.getObject("reuse_scope_id", UUID.class), row.getObject("content_root_id", UUID.class), row.getString("title"))).list();

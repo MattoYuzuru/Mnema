@@ -1,6 +1,7 @@
 package app.mnema.learning.study.session;
 
 import app.mnema.learning.catalog.item.ItemRevisionVisibility;
+import app.mnema.learning.moderation.ContentTakedowns;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -34,10 +35,15 @@ class StudySessionRepository {
             )
             """;
     // A revision is issuable only while its media is ready and its evaluator's capability is available.
+    // The legal takedown by lineage (Share/15): Study skips an exercise whose revision is taken down, and one that QUOTES a taken-down material revision (a CONTEXT
+    // binding is the text a presentation shows; the ASSESSED binding shows none), whichever deck holds it (the source, a copy that still has that revision).
+    private static final String NOT_TAKEN_DOWN = " AND NOT " + ContentTakedowns.blockedExerciseOrQuote("selected.reuse_scope_id", "selected.exercise_id", "selected.revision_id") + " ";
     private static final String ISSUABLE_REVISION = CURRENT_MATERIALS + """
             AND app_learning.exercise_media_ready(selected.reuse_scope_id,selected.exercise_id,selected.revision_id)
             AND (selected.evaluator_policy ->> 'id' <> 'ai-semantic' OR :aiAvailable)
-            """;
+            """ + NOT_TAKEN_DOWN;
+    /** A presentation already issued is not shown, resumed, replayed, revealed, answered or graded once the SAME rule that stops issuing holds for it. */
+    private static final String NOT_TAKEN_DOWN_PRESENTATION = ContentTakedowns.blockedPresentation("p.deck_id", "p.exercise_id", "p.exercise_revision_id") + " ";
     private static final String PRESENTATION_SELECT = """
             SELECT p.*, EXISTS(SELECT 1 FROM app_learning.study_transcript_accommodation a
                     WHERE a.account_id=p.account_id AND a.session_id=p.session_id
@@ -406,7 +412,8 @@ class StudySessionRepository {
                   FROM app_learning.deck d JOIN app_learning.item_revision r
                     ON r.reuse_scope_id=d.reuse_scope_id AND r.member_key=:member AND r.revision_id=:revision
                  WHERE d.deck_id=:deck
-                """ + " AND " + ItemRevisionVisibility.visibleToStudy(":deck", "r")).param("deck", deck).param("member", member).param("revision", revision)
+                """ + " AND NOT " + ContentTakedowns.blockedItem("r.reuse_scope_id", "r.member_key", "r.revision_id") + " AND "
+                + ItemRevisionVisibility.visibleToStudy(":deck", "r")).param("deck", deck).param("member", member).param("revision", revision)
                 .query((row, ignored) -> new Material(row.getObject("member_key", UUID.class),
                         row.getObject("revision_id", UUID.class), row.getObject("reuse_scope_id", UUID.class),
                         row.getObject("content_root_id", UUID.class))).optional();
@@ -503,6 +510,7 @@ class StudySessionRepository {
     List<Presentation> presentations(UUID actor, UUID session, int start, int limit) {
         return jdbc.sql(PRESENTATION_SELECT + """
                  WHERE p.account_id=:actor AND p.session_id=:session AND p.presentation_ordinal>=:start
+                """ + " AND NOT " + NOT_TAKEN_DOWN_PRESENTATION + """
                  ORDER BY p.presentation_ordinal LIMIT :limit
                 """).param("actor", actor).param("session", session).param("start", start).param("limit", limit)
                 .query(PRESENTATION).list();
@@ -516,6 +524,7 @@ class StudySessionRepository {
                         WHERE t.account_id=p.account_id AND t.session_id=p.session_id
                           AND t.presentation_id=p.presentation_id
                    )
+                """ + " AND NOT " + NOT_TAKEN_DOWN_PRESENTATION + """
                  ORDER BY p.presentation_ordinal LIMIT :limit
                 """).param("actor", actor).param("session", session).param("start", start).param("limit", limit)
                 .query(PRESENTATION).list();
@@ -548,7 +557,7 @@ class StudySessionRepository {
                    AND NOT EXISTS (SELECT 1 FROM app_learning.study_attempt_tombstone t
                        WHERE t.account_id=p.account_id AND t.session_id=p.session_id
                          AND t.presentation_id=p.presentation_id)
-                """).param("actor", actor).param("deck", deck).param("session", session)
+                """ + " AND NOT " + NOT_TAKEN_DOWN_PRESENTATION).param("actor", actor).param("deck", deck).param("session", session)
                 .param("presentation", presentation).param("nonce", nonce).param("now", Timestamp.from(now))
                 .query(PRESENTATION).optional();
     }

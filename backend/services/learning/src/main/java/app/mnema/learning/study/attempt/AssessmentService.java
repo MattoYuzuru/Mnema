@@ -114,8 +114,9 @@ public class AssessmentService {
                 || !AttemptRepository.same(row.payloadHash(), hash)) {
             throw new IdempotencyConflictException();
         }
+        // a presentation the takedown removed is gone (404), never a 500: an answer already recorded replays through its receipt before this point
         AttemptRepository.Presentation presentation = attempts.presentation(actor, deck, session, row.presentationId())
-                .orElseThrow(IllegalStateException::new);
+                .orElseThrow(ResourceNotFoundException::new);
         JsonNode view = view(row, presentation);
         // the grade may have been stored between the receipt lookup of the caller and this read: then it is the outcome, not «accepted»
         return Optional.of(new AttemptService.SubmitResult(view, true, !row.state().equals("DONE")));
@@ -318,7 +319,13 @@ public class AssessmentService {
             return;
         }
         AttemptRepository.Presentation presentation = attempts.presentationForUpdate(row.accountId(), row.deckId(),
-                row.sessionId(), row.presentationId()).orElseThrow(IllegalStateException::new);
+                row.sessionId(), row.presentationId()).orElse(null);
+        if (presentation == null) {
+            // the legal takedown (Share/15) removed the presentation while the model was grading: the grade is discarded, nothing hangs
+            assessments.transition(attemptId, "ASSESSING", "UNAVAILABLE", "CONTENT_UNAVAILABLE", now);
+            count("UNAVAILABLE", "CONTENT_UNAVAILABLE");
+            return;
+        }
         if (row.response() == null) {
             assessments.transition(attemptId, "ASSESSING", "UNAVAILABLE", "ANSWER_GONE", now);
             count("UNAVAILABLE", "ANSWER_GONE");
@@ -409,7 +416,13 @@ public class AssessmentService {
             LOG.info("assessment_deadline_passed count={}", expired);
             meters.counter("mnema_assessment_total", "outcome", "UNAVAILABLE", "reason", "DEADLINE").increment(expired);
         }
-        return expired;
+        // the legal takedown (Share/15): an answer whose presentation can no longer be served ends on the next sweep instead of waiting for its deadline
+        int blocked = assessments.expireBlocked(SWEEP_BATCH);
+        if (blocked > 0) {
+            LOG.info("assessment_content_unavailable count={}", blocked);
+            meters.counter("mnema_assessment_total", "outcome", "UNAVAILABLE", "reason", "CONTENT_UNAVAILABLE").increment(blocked);
+        }
+        return expired + blocked;
     }
 
     /** Retention: answers kept in assessment rows past the presentation's expiry are cleared. */

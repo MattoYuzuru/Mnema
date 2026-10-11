@@ -87,6 +87,34 @@ class DeckAccessIntegrationTest extends PostgresIntegrationTest {
         return deck;
     }
 
+    @Autowired private DeckModeration moderation;
+
+    @Test
+    void aDeckHiddenByModerationResolvesOnlyForItsOwnerAtEveryLevelAndComesBackWhenUnhidden() {
+        var tx = new org.springframework.transaction.support.TransactionTemplate(transactions);
+        for (DeckVisibility level : new DeckVisibility[] {DeckVisibility.LINK, DeckVisibility.INVITE, DeckVisibility.PUBLIC}) {
+            Deck deck = granted("hidden " + level);
+            String code = fixtures.publishAt(deck, level);
+            String visible = level == DeckVisibility.LINK ? "LINK" : level == DeckVisibility.PUBLIC ? "PUBLIC" : "GRANTEE";
+            String reader = level == DeckVisibility.INVITE ? INVITE_ONLY : visible;
+            expectByCode(level + " before", code, "OWNER", visible, reader, reader);
+            assertThat(Boolean.TRUE.equals(tx.execute(status -> moderation.hide(deck.id(), java.time.Instant.now())))).isTrue();
+            assertThat(Boolean.TRUE.equals(tx.execute(status -> moderation.hide(deck.id(), java.time.Instant.now())))).as("hiding twice changes nothing").isFalse();
+            // everybody but the owner: the answer of an unknown code, even the grantee and even an invitation deck's INVITE_ONLY (it would confirm the deck)
+            expectByCode(level + " hidden", code, "OWNER", NF, NF, NF);
+            expectById(level + " hidden", deck.id(), "OWNER", NF, NF, NF);
+            assertThat(moderation.deck(deck.id()).orElseThrow().hidden()).isTrue();
+            assertThat(Boolean.TRUE.equals(tx.execute(status -> moderation.unhide(deck.id())))).isTrue();
+            assertThat(Boolean.TRUE.equals(tx.execute(status -> moderation.unhide(deck.id())))).isFalse();
+            expectByCode(level + " restored", code, "OWNER", visible, reader, reader);
+        }
+        // a deck that never had a publication row cannot be hidden (there is nothing to hide)
+        Deck never = fixtures.deck(owner, "never published");
+        assertThat(Boolean.TRUE.equals(tx.execute(status -> moderation.hide(never.id(), java.time.Instant.now())))).isFalse();
+        // the writers need the caller's transaction
+        assertThatThrownBy(() -> moderation.hide(never.id(), java.time.Instant.now())).isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
+    }
+
     @Test
     void theResolutionMatrixHoldsForEveryLevelStateAndViewer() {
         Deck neverPublished = granted("never");

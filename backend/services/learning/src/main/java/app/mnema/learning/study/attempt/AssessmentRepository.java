@@ -157,6 +157,26 @@ class AssessmentRepository {
                 """).param("limit", limit).update();
     }
 
+    /**
+     * The legal takedown (Share/15): an answer still ASSESSING whose presentation is no longer servable (its exercise, or a material it quotes, was taken down)
+     * will never be graded or shown; it becomes UNAVAILABLE with the reason {@code CONTENT_UNAVAILABLE} and its answer text is dropped. Rows another
+     * transaction is resolving are skipped.
+     *
+     * @return how many answers were ended
+     */
+    int expireBlocked(int limit) {
+        return jdbc.sql("""
+                UPDATE app_learning.study_assessment SET state='UNAVAILABLE',reason='CONTENT_UNAVAILABLE',response=NULL,resolved_at=statement_timestamp()
+                 WHERE attempt_id IN (
+                       SELECT candidate.attempt_id FROM app_learning.study_assessment candidate
+                        JOIN app_learning.study_presentation p ON p.account_id=candidate.account_id AND p.session_id=candidate.session_id
+                         AND p.presentation_id=candidate.presentation_id
+                        WHERE candidate.state='ASSESSING' AND /*BLOCKED*/
+                        ORDER BY candidate.deadline_at LIMIT :limit FOR UPDATE OF candidate SKIP LOCKED)
+                """.replace("/*BLOCKED*/", app.mnema.learning.moderation.ContentTakedowns.blockedPresentation("p.deck_id", "p.exercise_id", "p.exercise_revision_id")))
+                .param("limit", limit).update();
+    }
+
     /** Retention: answers past the presentation's expiry are not kept (the state row stays, it holds no text). */
     int clearAnswers(Instant asOf, int limit) {
         return jdbc.sql("""

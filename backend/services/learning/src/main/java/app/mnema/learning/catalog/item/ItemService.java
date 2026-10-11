@@ -173,7 +173,9 @@ public class ItemService {
     }
 
     private ObjectNode listed(ItemRecord row, int ordinal, UUID deckId, Integer exerciseCount, Set<UUID> exemplars) {
-        ObjectNode item = row.summary(ordinal).put("title", previews.title(row.scopeId(), row.memberKey(), row.revisionId()));
+        // A taken-down revision keeps its place and identity but nothing of its content (Share/15): not even the cached title.
+        ObjectNode item = row.summary(ordinal).put("title", row.unavailable() ? "" : previews.title(row.scopeId(), row.memberKey(), row.revisionId()));
+        if (row.unavailable()) item.put("unavailable", true);
         if (exerciseCount != null) item.put("exerciseCount", exerciseCount);
         return item.put("exemplar", exemplars.contains(row.memberKey()));
     }
@@ -183,6 +185,8 @@ public class ItemService {
         ItemRepository.DeckHead deck = own(actor, deckId);
         ItemRecord item = (revisionId == null ? repository.headItem(actor, deckId, memberKey)
                 : repository.revision(actor, deckId, memberKey, revisionId)).orElseThrow(ResourceNotFoundException::new);
+        // The legal takedown by lineage (Share/15): the revision actually served is blocked, in the source and in every copy that still holds it.
+        if (item.unavailable()) throw new app.mnema.learning.platform.api.ContentUnavailableException();
         UUID selectedDeckRevision = revisionId == null ? deck.revisionId() : item.publishedDeckRevisionId();
         long selectedDeckVersion = revisionId == null ? deck.version() : item.publishedDeckVersion();
         // A revision this deck inherited (a copy's starting head) has no journal row, so no recorded ordinal: it is the

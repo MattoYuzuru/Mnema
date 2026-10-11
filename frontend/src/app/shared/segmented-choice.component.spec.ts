@@ -87,4 +87,35 @@ describe('SegmentedChoiceComponent', () => {
         fixture.detectChanges();
         expect((fixture.nativeElement as HTMLElement).querySelector('.row')).not.toBeNull();
     });
+
+    it('can be busy without losing the focus: aria-disabled radios that refuse a change, not a disabled fieldset', () => {
+        const fixture = create('AUTO', { busy: true });
+        const root = fixture.nativeElement as HTMLElement;
+        const group = root.querySelector('fieldset')!;
+        expect(group.disabled).toBe(false);
+        expect(group.getAttribute('aria-busy')).toBe('true');
+        expect(radios(root).every(radio => radio.getAttribute('aria-disabled') === 'true' && !radio.disabled)).toBe(true);
+        radios(root)[0].focus();
+        radios(root)[1].click();
+        fixture.detectChanges();
+        expect(fixture.componentInstance.value()).toBe('AUTO');
+        expect(radios(root)[0].checked).toBe(true);
+        expect(document.activeElement).toBe(radios(root)[0]);
+        fixture.componentRef.setInput('busy', false);
+        fixture.detectChanges();
+        radios(root)[1].click();
+        expect(fixture.componentInstance.value()).toBe('BRIEF');
+    });
+
+    it('names an error that describes the group and marks it invalid, after its own live hint', () => {
+        const fixture = create(null, { describedBy: 'reason-error', invalid: true });
+        const group = (fixture.nativeElement as HTMLElement).querySelector('fieldset')!;
+        expect(group.getAttribute('aria-describedby')).toMatch(/^mn-segmented-\d+-hint reason-error$/u);
+        expect(group.getAttribute('aria-invalid')).toBe('true');
+        fixture.componentRef.setInput('describedBy', null);
+        fixture.componentRef.setInput('invalid', false);
+        fixture.detectChanges();
+        expect(group.getAttribute('aria-describedby')).toMatch(/^mn-segmented-\d+-hint$/u);
+        expect(group.hasAttribute('aria-invalid')).toBe(false);
+    });
 });

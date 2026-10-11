@@ -107,7 +107,8 @@ public class ExerciseService {
         rows.forEach(row -> {
             ObjectNode entry = summary(row.exercise());
             entry.put("isNew", fresh.contains(row.exercise().exerciseId()));
-            entry.set("objective", objective(row.objective()));
+            // A taken-down revision keeps its place and identity in the roster and nothing of its content (Share/15), the authored objective title included.
+            entry.set("objective", row.exercise().unavailable() ? hiddenObjective(row.objective()) : objective(row.objective()));
             values.add(entry);
         });
         if (more) result.put("nextCursor", new ExerciseCursor(deck.revisionId(), fetched.get(size).exercise().ordinal()).encode());
@@ -122,6 +123,8 @@ public class ExerciseService {
                 ? repository.exerciseHead(actor, deckId, exerciseId)
                 : repository.exerciseRevision(actor, deckId, exerciseId, revisionId))
                 .orElseThrow(ResourceNotFoundException::new);
+        // The legal takedown by lineage (Share/15): the revision actually served is blocked, in the source and in every copy that still holds it.
+        if (exercise.unavailable()) throw new app.mnema.learning.platform.api.ContentUnavailableException();
         ExerciseRepository.SubjectRow subject = repository.subject(deckId, exerciseId, exercise.revisionId())
                 .orElseThrow(() -> new IllegalStateException("Exercise has no assessed binding"));
         ExerciseRepository.ObjectiveRow objective = repository.objectiveOf(actor, deckId, exerciseId,
@@ -488,11 +491,19 @@ public class ExerciseService {
     }
 
     private static ObjectNode summary(ExerciseRepository.ExerciseRow row) {
-        return JsonNodeFactory.instance.objectNode().put("exerciseId", row.exerciseId().toString())
+        ObjectNode summary = JsonNodeFactory.instance.objectNode().put("exerciseId", row.exerciseId().toString())
                 .put("exerciseRevisionId", row.revisionId().toString())
                 .put("exerciseVersion", Long.toString(row.sequence())).put("ordinal", row.ordinal())
                 .put("type", row.type()).put("enabled", row.enabled()).put("schemaVersion", ExerciseCommand.SCHEMA_VERSION)
                 .put("createdAt", row.createdAt().toString()).put("updatedAt", row.updatedAt().toString());
+        if (row.unavailable()) summary.put("unavailable", true);
+        return summary;
+    }
+
+    private static ObjectNode hiddenObjective(ExerciseRepository.ObjectiveRow row) {
+        ObjectNode objective = objective(row);
+        objective.put("title", "");
+        return objective;
     }
 
     private static ObjectNode objective(ExerciseRepository.ObjectiveRow row) {

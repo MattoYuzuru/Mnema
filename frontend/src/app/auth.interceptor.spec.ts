@@ -49,6 +49,12 @@ describe('canonical bearer interceptor', () => {
             '/api/public/decks/Kq7xT3mNpR', '/api/public/decks/Kq7xT3mNpR/items?limit=20&cursor=abc', '/api/public/decks/Kq7xT3mNpR/exercises',
             '/api/public/decks/Kq7xT3mNpR/items/7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
             '/api/public/decks/Kq7xT3mNpR/media/7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
+            '/api/public/decks/Kq7xT3mNpR/complaints', '/api/public/profiles/ivan.k/complaints',
+            '/api/topics', '/api/invites:redeem', '/api/public/decks/Kq7xT3mNpR/access-requests', '/api/public/decks/Kq7xT3mNpR/access-requests:withdraw',
+            '/api/admin/complaints?status=OPEN&limit=50', '/api/admin/complaints/journal?limit=50',
+            '/api/admin/complaints/0199c478-b000-7000-8000-000000000001', '/api/admin/complaints/0199c478-b000-7000-8000-000000000001/units?kind=ITEM',
+            '/api/admin/complaints/0199c478-b000-7000-8000-000000000001:decide', '/api/admin/complaints/0199c478-b000-7000-8000-000000000001:unhide',
+            '/api/decks/10000000-0000-4000-8000-000000000001/moderation',
             `${identity}/api/accounts/me`, `${identity}/api/accounts/me/avatar`, `${identity}/api/accounts/me/public-profile`, `${identity}/userinfo`]) {
             http.get(url).subscribe();
             const request = mock.expectOne(url);
@@ -86,6 +92,15 @@ describe('canonical bearer interceptor', () => {
             '/api/public/decks/Kq7xT3mNpR/exercises/x', '/api/public/decks/Kq7xT3mNpR%2fitems', '/api/public/decks/Kq7xT3mNpR/media',
             '/api/public/decks/Kq7xT3mNpR/media/x', '/api/public/decks-other/Kq7xT3mNpR', '/api/x/public/decks/Kq7xT3mNpR',
             'https://evil.test/api/public/decks/Kq7xT3mNpR',
+            // complaints: exactly the documented routes
+            '/api/public/decks/Kq7xT3mNpR/complaints/x', '/api/public/decks/Kq7xT3mNp0/complaints', '/api/public/profiles/ab/complaints',
+            '/api/public/profiles/ivan.k/complaints/x', '/api/public/profiles/ivan.k', '/api/public/profiles/iv%2fan/complaints', '/api/public/profiles/ivan.k%2fcomplaints',
+            '/api/admin/complaints/x', '/api/admin/complaints/journal/x', '/api/admin/complaints-other', '/api/admin/complaints/0199c478-b000-7000-8000-000000000001:other',
+            '/api/admin/complaints/0199c478-b000-7000-8000-000000000001/other', '/api/admin/complaints/0199c478-b000-7000-8000-000000000001/units/x',
+            'https://evil.test/api/public/profiles/ivan.k/complaints',
+            // topics, invitation redemption and access requests: exactly the documented routes
+            '/api/topics/x', '/api/topics-other', '/api/invites', '/api/invites:other', '/api/invites:redeem/x',
+            '/api/public/decks/Kq7xT3mNpR/access-requests/x', '/api/public/decks/Kq7xT3mNpR/access-requests:other', '/api/public/decks/Kq7xT3mNp0/access-requests',
             'https://evil.test/api/decks', '//evil.test/api/decks', 'https://user@identity.example.test/userinfo']) {
             expect(isCredentialTarget(url, identity, '/api', window.location.origin), url).toBe(false);
             http.get(url).subscribe();

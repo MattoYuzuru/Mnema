@@ -28,7 +28,7 @@ review of the actual recipients, contracts and data flows.
   rate limits, `blocked` kill switch).
 - The public [privacy policy](../../frontend/src/app/privacy-page.component.html) and
   [terms](../../frontend/src/app/terms-page.component.html) are published from code
-  (effective 2026-10-08, version 1.0) with the operator requisites from
+  (version 1.3, effective 2026-10-11: the 2026-10-11 edit shortened both documents into plain language without changing the operator details, purposes, bases, periods, recipients, rights or deadlines) with the operator requisites from
   `frontend/src/app/shared/legal-operator.ts` (contact e-mail approved by the owner on
   2026-10-09: printed in the policy and terms, offered as a «Написать на почту» action
   in the footer without printing it). Legal bases: contract (article 6 part 1

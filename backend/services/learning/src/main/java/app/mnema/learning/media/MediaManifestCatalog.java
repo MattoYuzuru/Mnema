@@ -1,5 +1,6 @@
 package app.mnema.learning.media;
 
+import app.mnema.learning.moderation.ContentTakedowns;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
@@ -57,13 +58,16 @@ public class MediaManifestCatalog {
                         + "r.revision_id,r.node_id FROM app_learning.deck_head_item h "
                         + "JOIN app_learning.content_media_ref r ON r.reuse_scope_id=h.reuse_scope_id "
                         + "AND r.member_key=h.member_key AND r.revision_id=h.revision_id "
-                        + "WHERE h.deck_id=:deck UNION ALL "
+                        // the legal takedown by lineage (Share/15): the offline manifest lists no asset of a taken-down head revision
+                        + "WHERE h.deck_id=:deck AND NOT " + ContentTakedowns.blockedItem("h.reuse_scope_id", "h.member_key", "h.revision_id")
+                        + " AND NOT " + ContentTakedowns.blockedAsset("h.reuse_scope_id", "r.asset_id") + " UNION ALL "
                         + "SELECT r.asset_id,'exercise' AS kind,r.exercise_id AS subject_id, "
                         + "r.exercise_revision_id AS revision_id,NULL::uuid AS node_id "
                         + "FROM app_learning.deck_head_exercise h "
                         + "JOIN app_learning.exercise_media_ref r ON r.reuse_scope_id=h.reuse_scope_id "
                         + "AND r.exercise_id=h.exercise_id AND r.exercise_revision_id=h.revision_id "
-                        + "WHERE h.deck_id=:deck "
+                        + "WHERE h.deck_id=:deck AND NOT " + ContentTakedowns.blockedExercise("h.reuse_scope_id", "h.exercise_id", "h.revision_id")
+                        + " AND NOT " + ContentTakedowns.blockedAsset("h.reuse_scope_id", "r.asset_id") + " "
                         + "ORDER BY asset_id,kind,subject_id,revision_id,node_id LIMIT :limit")
                 .param("deck", deck).param("limit", settings.maxReferences() + 1)
                 .query((row, ignored) -> new Pin((UUID) row.getObject("asset_id"), row.getString("kind"),

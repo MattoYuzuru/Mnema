@@ -22,7 +22,7 @@ class LibraryRepository {
     private static final String DECK = """
             SELECT d.deck_id, d.owner_id, d.reuse_scope_id, COALESCE(p.visibility, 'PRIVATE') AS visibility, p.public_code,
                    p.published_revision_id, p.published_at, r.title, r.description, r.members_root_id, r.exercises_root_id,
-                   r.member_count, r.exercise_count
+                   r.member_count, r.exercise_count, COALESCE(p.hidden_by_moderation, FALSE) AS hidden
             """;
     private static final RowMapper<DeckRef> DECK_ROW = (row, ignored) -> {
         UUID revision = row.getObject("published_revision_id", UUID.class);
@@ -31,7 +31,7 @@ class LibraryRepository {
                 row.getString("public_code"), revision == null ? null : new DeckRef.Published(revision,
                 row.getTimestamp("published_at").toInstant(), row.getString("title"), row.getString("description"),
                 row.getObject("members_root_id", UUID.class), row.getObject("exercises_root_id", UUID.class),
-                row.getInt("member_count"), row.getInt("exercise_count")));
+                row.getInt("member_count"), row.getInt("exercise_count")), row.getBoolean("hidden"));
     };
     private static final RowMapper<Publication> PUBLICATION = (row, ignored) -> new Publication(
             row.getObject("deck_id", UUID.class), DeckVisibility.valueOf(row.getString("visibility")), row.getString("public_code"),

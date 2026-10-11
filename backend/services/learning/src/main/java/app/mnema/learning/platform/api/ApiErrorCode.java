@@ -166,6 +166,21 @@ enum ApiErrorCode {
             "Resource not found",
             "The requested resource does not exist."
     ),
+    CONTENT_UNAVAILABLE(
+            HttpStatus.GONE,
+            "Content unavailable",
+            "The content was removed after a complaint."
+    ),
+    COMPLAINT_NOT_HIDDEN(
+            HttpStatus.CONFLICT,
+            "Complaint does not hide the deck",
+            "Only a complaint decided HIDDEN can unhide, and only while the deck is hidden by moderation."
+    ),
+    COMPLAINT_DECIDED(
+            HttpStatus.CONFLICT,
+            "Complaint decided",
+            "The complaint already has another decision."
+    ),
     SESSION_EXPIRED(
             HttpStatus.GONE,
             "Study session expired",

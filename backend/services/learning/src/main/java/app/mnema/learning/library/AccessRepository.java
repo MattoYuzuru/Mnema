@@ -19,7 +19,7 @@ import java.util.UUID;
 class AccessRepository {
     /** An invitation joined with its deck, as redeem needs it; locked until the end of the transaction. */
     record RedeemTarget(UUID inviteId, UUID deckId, UUID ownerId, Integer maxUses, int uses, Instant expiresAt, Instant revokedAt,
-                        DeckVisibility visibility, String publicCode, boolean published, boolean currentGeneration) { }
+                        DeckVisibility visibility, String publicCode, boolean published, boolean currentGeneration, boolean hidden) { }
 
     record Grant(UUID granteeId, GrantRole role, Instant grantedAt) { }
 
@@ -118,7 +118,8 @@ class AccessRepository {
         return jdbc.sql("""
                 SELECT i.invite_id, i.deck_id, d.owner_id, i.max_uses, i.uses, i.expires_at, i.revoked_at,
                        COALESCE(p.visibility, 'PRIVATE') AS visibility, p.public_code, p.published_revision_id IS NOT NULL AS published,
-                       COALESCE(i.code_rotated_at = p.code_rotated_at, FALSE) AS current_generation
+                       COALESCE(i.code_rotated_at = p.code_rotated_at, FALSE) AS current_generation,
+                       COALESCE(p.hidden_by_moderation, FALSE) AS hidden
                   FROM app_learning.deck_invite i
                   JOIN app_learning.deck d ON d.deck_id = i.deck_id AND d.deleted_at IS NULL
                   LEFT JOIN app_learning.deck_publication p ON p.deck_id = i.deck_id
@@ -128,7 +129,7 @@ class AccessRepository {
                 row.getObject("deck_id", UUID.class), row.getObject("owner_id", UUID.class), row.getObject("max_uses", Integer.class),
                 row.getInt("uses"), instant(row.getTimestamp("expires_at")), instant(row.getTimestamp("revoked_at")),
                 DeckVisibility.valueOf(row.getString("visibility")), row.getString("public_code"), row.getBoolean("published"),
-                row.getBoolean("current_generation"))).optional();
+                row.getBoolean("current_generation"), row.getBoolean("hidden"))).optional();
     }
 
     void consumeInvite(UUID invite, Instant now) {

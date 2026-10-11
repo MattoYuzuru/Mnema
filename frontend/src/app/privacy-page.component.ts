@@ -13,13 +13,13 @@ export const PRIVACY_SECTIONS = [
     { id: 'methods', title: '5. Действия и способы обработки' },
     { id: 'cookies', title: '6. Cookie и хранилище браузера' },
     { id: 'recipients', title: '7. Кому могут передаваться данные' },
-    { id: 'cross-border', title: '8. Трансграничная передача: Cloudflare Turnstile' },
+    { id: 'cross-border', title: '8. Передача данных за границу: Cloudflare Turnstile' },
     { id: 'localization', title: '9. Хранение в России' },
     { id: 'retention', title: '10. Сроки хранения, удаление и резервные копии' },
     { id: 'rights', title: '11. Ваши права и как ими воспользоваться' },
     { id: 'security', title: '12. Как мы защищаем данные' },
     { id: 'minors', title: '13. Дети' },
-    { id: 'changes', title: '14. Изменения Политики' },
+    { id: 'changes', title: '14. Изменения политики' },
     { id: 'public-profile', title: '15. Публичный профиль и колоды сообщества' },
     { id: 'sources', title: '16. Нормативная база' }
 ] as const;

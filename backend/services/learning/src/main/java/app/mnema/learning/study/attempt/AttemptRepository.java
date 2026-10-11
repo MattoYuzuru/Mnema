@@ -1,5 +1,6 @@
 package app.mnema.learning.study.attempt;
 
+import app.mnema.learning.moderation.ContentTakedowns;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -129,7 +130,9 @@ class AttemptRepository {
                   JOIN app_learning.scheduler_config c ON c.config_id=s.reducer_config_id
                  WHERE p.account_id=:actor AND p.deck_id=:deck AND p.session_id=:session
                    AND p.presentation_id=:presentation
-                """ + (lock ? " FOR UPDATE OF p" : "")).param("actor", actor).param("deck", deck).param("session", session)
+                """ + " AND NOT " + ContentTakedowns.blockedPresentation("p.deck_id", "p.exercise_id", "p.exercise_revision_id")
+                // the legal takedown by lineage (Share/15): a presentation of a taken-down exercise revision is gone, so it is neither graded nor answered with its reference
+                + (lock ? " FOR UPDATE OF p" : "")).param("actor", actor).param("deck", deck).param("session", session)
                 .param("presentation", presentation).query((row, ignored) -> new Presentation(
                         row.getObject("account_id", UUID.class), row.getObject("session_id", UUID.class),
                         row.getObject("presentation_id", UUID.class), row.getObject("deck_id", UUID.class),

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
@@ -46,6 +46,7 @@ interface HubNotice { readonly text: string; readonly refresh: boolean; readonly
 
 const PREVIEW_DELAY_MS = 300;
 const ANNOUNCE_DELAY_MS = 500;
+const ROW_ACTION_ANNOUNCE_MS = 50;
 /** Materials per hub page; the backend caps a page at 100. */
 const PAGE_SIZE = 50;
 const BAR_HEIGHT_PROPERTY = '--mn-bulk-bar-height';
@@ -94,6 +95,8 @@ export class DeckMaterialsComponent {
     protected readonly problem = signal<string | null>(null);
     /** Polite announcements: selection counts and star changes. The element exists before its text changes. */
     protected readonly announcement = signal('');
+    /** The polite announcement of a row action (see {@link removeUnavailable}); its own region, so the count announcement never overwrites it. */
+    protected readonly rowAction = signal('');
     protected readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
     protected readonly bar = viewChild<BulkActionBarComponent, ElementRef<HTMLElement>>('bar', { read: ElementRef });
 
@@ -112,6 +115,7 @@ export class DeckMaterialsComponent {
     protected readonly deleteDisabled = computed(() => this.preview().phase !== 'ready' || this.deleting());
 
     private readonly router = inject(Router);
+    private readonly injector = inject(Injector);
     private readonly items$ = inject(ItemApiService);
     private readonly hub = inject(DeckHubApiService);
     private readonly destroyRef = inject(DestroyRef);
@@ -120,6 +124,7 @@ export class DeckMaterialsComponent {
     private moreLoad: Subscription | null = null;
     private loadSequence = 0;
     private pendingDelete: { readonly key: string; readonly commandId: string } | null = null;
+    private rowActionTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor() {
         effect(() => {
@@ -134,7 +139,11 @@ export class DeckMaterialsComponent {
             onCleanup(() => clearTimeout(timer));
         });
         effect(onCleanup => this.reserveBarSpace(onCleanup));
-        this.destroyRef.onDestroy(() => { this.listLoad?.unsubscribe(); this.moreLoad?.unsubscribe(); });
+        this.destroyRef.onDestroy(() => {
+            this.listLoad?.unsubscribe();
+            this.moreLoad?.unsubscribe();
+            if (this.rowActionTimer !== null) clearTimeout(this.rowActionTimer);
+        });
     }
 
     /** Lists materials without exercises first and moves the reader to the list; called by the statistics widgets. */
@@ -257,6 +266,20 @@ export class DeckMaterialsComponent {
                 },
                 error: (error: unknown) => this.deletionFailed(error)
             });
+    }
+
+    /**
+     * «Удалить…» on a material taken down after a complaint: selects exactly that row and moves the focus to the delete button of the shared
+     * hold-to-delete bar (it stays focusable with `aria-disabled` until the server preview is back), so the long hold deletes it. Nothing is
+     * deleted here and no `confirm()` is used. The row action has its own polite announcement, which is said even when the count of the
+     * selection does not change.
+     */
+    protected removeUnavailable(item: ItemSummary): void {
+        this.selection.replace([item.memberKey]);
+        if (this.rowActionTimer !== null) clearTimeout(this.rowActionTimer);
+        this.rowAction.set('');
+        this.rowActionTimer = setTimeout(() => this.rowAction.set(`Выбран материал ${item.ordinal + 1}. Удалите его кнопкой «Удалить выбранные».`), ROW_ACTION_ANNOUNCE_MS);
+        afterNextRender(() => this.bar()?.nativeElement.querySelector<HTMLElement>('app-hold-to-delete-button button')?.focus(), { injector: this.injector });
     }
 
     protected selectRemainder(): void {

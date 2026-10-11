@@ -15,6 +15,7 @@ import { MECHANIC_CATALOG, StepId, catalogEntry, stepTitle } from '../../content
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { NewBadgeComponent } from '../../shared/new-badge.component';
+import { UnavailableNoteComponent } from '../../shared/unavailable-note.component';
 import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { ToastService } from '../../core/notifications/toast.service';
 import { AskMnemaComponent } from '../generation/ask-mnema.component';
@@ -26,7 +27,7 @@ import { problemMessage } from '../generation/generation-view';
 import { ArtifactDetail } from '../generation/generation.models';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
-import { AuthoringProtocolError, ItemDetail, newCommandId } from './authoring.models';
+import { AuthoringProtocolError, ItemDetail, isTakenDown, newCommandId } from './authoring.models';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from './capabilities-api.service';
 import { ExerciseApiService } from './exercise-api.service';
 import {
@@ -69,6 +70,9 @@ interface PendingSwitch {
     readonly target: Mechanic;
     readonly lost: readonly string[];
 }
+
+const TAKEN_DOWN_MATERIAL = 'Этот материал снят по жалобе, поэтому настроить его упражнения нельзя. Его можно заменить или удалить в списке материалов колоды.';
+const TAKEN_DOWN_EXERCISE = 'Это упражнение снято по жалобе, открыть его нельзя. Удалите его в списке упражнений материала или создайте новое.';
 
 const ID_PREFIX: Readonly<Record<Mechanic, string>> = {
     SELF_CHECK: 'self-check', FREE_RESPONSE: 'free-response', CLOZE: 'cloze', CHOICE: 'choice', MATCH: 'match', ORDER: 'order',
@@ -121,7 +125,7 @@ function stepOwns(step: StepId, key: string): boolean {
 
 @Component({
     selector: 'app-exercise-authoring-page',
-    imports: [RouterLink, MnemaSelectComponent, HoldToDeleteButtonComponent, NewBadgeComponent, MechanicPickerComponent, ExercisePreviewHostComponent,
+    imports: [RouterLink, MnemaSelectComponent, HoldToDeleteButtonComponent, NewBadgeComponent, UnavailableNoteComponent, MechanicPickerComponent, ExercisePreviewHostComponent,
         ExerciseSlotEditorComponent, FreeResponseEditorComponent, ClozeEditorComponent, ChoiceEditorComponent, MatchEditorComponent,
         OrderEditorComponent, CategoryGroupsEditorComponent, CategorizeItemsEditorComponent, AskMnemaComponent, AutoLoadComponent],
     templateUrl: './exercise-authoring-page.component.html',
@@ -303,7 +307,8 @@ export class ExerciseAuthoringPageComponent {
                     next: result => result.artifact === null
                         ? this.openNew(result.deck, result.item, result.page)
                         : this.openProposal(result.deck, result.item, result.page, result.artifact.sessionId, result.artifact.value),
-                    error: () => this.fail(proposed ? 'Не удалось загрузить упражнение из мастерской.' : 'Не удалось загрузить материал и упражнения.')
+                    error: error => this.fail(isTakenDown(error) ? TAKEN_DOWN_MATERIAL
+                    : proposed ? 'Не удалось загрузить упражнение из мастерской.' : 'Не удалось загрузить материал и упражнения.')
                 });
             return;
         }
@@ -318,10 +323,10 @@ export class ExerciseAuthoringPageComponent {
                                 // Opening the exercise is what clears «Новое»; the mark is decoration, so a failure is ignored.
                                 this.exercises.clearNewMark(result.deck.deckId, result.detail.exerciseId).subscribe({ error: () => undefined });
                             },
-                            error: () => this.fail('Не удалось сверить упражнение с актуальным материалом.')
+                            error: error => this.fail(isTakenDown(error) ? TAKEN_DOWN_MATERIAL : 'Не удалось сверить упражнение с актуальным материалом.')
                         });
                 },
-                error: () => this.fail('Не удалось загрузить упражнение.')
+                error: error => this.fail(isTakenDown(error) ? TAKEN_DOWN_EXERCISE : 'Не удалось загрузить упражнение.')
             });
     }
 
