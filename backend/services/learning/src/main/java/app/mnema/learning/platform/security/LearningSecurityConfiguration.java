@@ -136,7 +136,7 @@ public class LearningSecurityConfiguration {
      * The public read of a deck by its code (Share/7): an OPTIONAL bearer, GET and HEAD only. Without a token the request is a guest; with one it must
      * validate exactly like the private API (the same decoder and the same live Identity check): the resource server rejects a present but invalid
      * token with 401 before authorization, so it is never silently treated as a guest ({@code permitAll} does not override that). A valid token without
-     * {@code learning.read} is 403, as on the private API. An account is admitted by the limiter BEFORE Identity is asked ({@link PublicAccountLimitFilter}). Every other method is refused; no session, cookie or form login exists here.
+     * {@code learning.read} is 403, as on the private API. An account is admitted by the limiter BEFORE Identity is asked ({@link PublicAccountLimitFilter}). The only writes are {@code POST /public/decks/{code}/access-requests} and its {@code :withdraw} (scope {@code learning.write}, no guest); every other method is refused; no session, cookie or form login exists here.
      */
     @Bean
     @Order(4)
@@ -153,6 +153,8 @@ public class LearningSecurityConfiguration {
                 .authorizeHttpRequests(requests -> requests.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.GET, "/public/decks/**").access(guestOrReader)
                         .requestMatchers(HttpMethod.HEAD, "/public/decks/**").access(guestOrReader)
+                        // The only writes of this chain (Share/13): a signed-in account asks the author of an invitation deck for access, or takes that request back. A guest has no token and is 401.
+                        .requestMatchers(HttpMethod.POST, "/public/decks/*/access-requests", "/public/decks/*/access-requests:withdraw").hasAuthority("SCOPE_learning.write")
                         .anyRequest().denyAll())
                 .exceptionHandling(failures -> failures.authenticationEntryPoint((r, s, e) -> errors.unauthorized(r, s))
                         .accessDeniedHandler((r, s, e) -> errors.forbidden(r, s)))

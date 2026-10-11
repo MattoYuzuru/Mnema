@@ -70,6 +70,7 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         registry.add("learning.community.public-routes.enabled", () -> true);
         registry.add("learning.community.public-routes.guest-per-minute", () -> 100_000);
         registry.add("learning.community.public-routes.account-per-minute", () -> 100_000);
+        registry.add("learning.community.grants.instance-lookups-per-minute", () -> 1_000);
     }
 
     /** The owner's fixture world: every id a row may need. */
@@ -111,6 +112,10 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         return body;
     }
 
+    private static final String GRANTABLE_LOGIN = "owner-only-grantee";
+
+    private static ObjectNode inviteSpec() { return JSON.createObjectNode().put("maxUses", 1).put("expiresInDays", 7); }
+
     private static ObjectNode command() { return JSON.createObjectNode().put("commandId", UUID.randomUUID().toString()); }
 
     private List<Row> rows() {
@@ -124,6 +129,16 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         // publication (Share/8)
         rows.add(Row.of("GET /decks/{deckId}/publication", w -> get("/decks/" + w.deck().id() + "/publication")));
         rows.add(Row.of("PUT /decks/{deckId}/publication", w -> send("PUT", "/decks/" + w.deck().id() + "/publication", publication(w), q(w.version()))));
+        // access: invitation links, requests and people (Share/13)
+        rows.add(Row.of("POST /decks/{deckId}/invites", w -> send("POST", "/decks/" + w.deck().id() + "/invites", inviteSpec(), null)));
+        rows.add(Row.of("GET /decks/{deckId}/invites", w -> get("/decks/" + w.deck().id() + "/invites")));
+        rows.add(Row.absent("POST /decks/{deckId}/invites/{inviteId}:revoke", w -> send("POST", "/decks/" + w.deck().id() + "/invites/" + random + ":revoke", null, null)));
+        rows.add(Row.of("GET /decks/{deckId}/access-requests", w -> get("/decks/" + w.deck().id() + "/access-requests")));
+        rows.add(Row.absent("POST /decks/{deckId}/access-requests/{requesterId}:approve", w -> send("POST", "/decks/" + w.deck().id() + "/access-requests/" + random + ":approve", null, null)));
+        rows.add(Row.absent("POST /decks/{deckId}/access-requests/{requesterId}:reject", w -> send("POST", "/decks/" + w.deck().id() + "/access-requests/" + random + ":reject", null, null)));
+        rows.add(Row.of("GET /decks/{deckId}/grants", w -> get("/decks/" + w.deck().id() + "/grants")));
+        rows.add(Row.refused("POST /decks/{deckId}/grants", w -> send("POST", "/decks/" + w.deck().id() + "/grants", JSON.createObjectNode().put("username", GRANTABLE_LOGIN), null)));
+        rows.add(Row.of("DELETE /decks/{deckId}/grants/{granteeId}", w -> send("DELETE", "/decks/" + w.deck().id() + "/grants/" + random, null, null)));
         // materials
         rows.add(Row.of("GET /decks/{deckId}/items", w -> get("/decks/" + w.deck().id() + "/items")));
         rows.add(Row.of("GET /decks/{deckId}/items/{memberKey}", w -> get("/decks/" + w.deck().id() + "/items/" + w.deck().material().member())));
@@ -287,6 +302,7 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     private World world(DeckVisibility level, UUID grantee) {
+        HttpIdentityFixture.publicLogin(GRANTABLE_LOGIN, UUID.randomUUID());
         LibraryFixtures fixtures = new LibraryFixtures(decks, items, exercises, sessions, media, jdbc, publications);
         UUID owner = UUID.randomUUID();
         Deck deck = fixtures.deck(owner, "Колода " + level);
@@ -326,7 +342,7 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         List<String> parts = new ArrayList<>();
         parts.add(jdbc.sql("SELECT to_jsonb(d)::text FROM app_learning.deck d WHERE deck_id = :deck").param("deck", deck).query(String.class).single());
         for (String table : new String[] {"deck_revision", "deck_head_item", "deck_item_change", "deck_item_exemplar", "deck_head_exercise", "exercise_revision",
-                "deck_exercise_change", "memory_objective", "study_session", "editing_draft", "capture_note", "deck_publication", "deck_publication_event", "deck_access_grant",
+                "deck_exercise_change", "memory_objective", "study_session", "editing_draft", "capture_note", "deck_publication", "deck_publication_event", "deck_access_grant", "deck_invite", "deck_access_request",
                 "generation_session"}) {
             parts.add(table + "=" + jdbc.sql("SELECT count(*) FROM app_learning." + table + " WHERE deck_id = :deck").param("deck", deck).query(Long.class).single());
         }
@@ -432,6 +448,12 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
             if (!method.getBeanType().equals(PublicDeckController.class)) return;
             assertThat(info.getMethodsCondition().getMethods()).containsOnly(RequestMethod.GET);
         });
+        // the only writes below /public (Share/13) are a signed-in account asking for access and taking the request back; the security chain admits exactly that method and path
+        Set<String> writes = new TreeSet<>();
+        mappings.getHandlerMethods().keySet().forEach(info -> info.getPathPatternsCondition().getPatternValues().stream()
+                .filter(pattern -> pattern.startsWith("/public/")).forEach(pattern -> info.getMethodsCondition().getMethods().stream()
+                        .filter(method -> method != RequestMethod.GET).forEach(method -> writes.add(method + " " + pattern))));
+        assertThat(writes).containsExactly("POST /public/decks/{code}/access-requests", "POST /public/decks/{code}/access-requests:withdraw");
         ArrayNode patterns = JSON.createArrayNode();
         mappings.getHandlerMethods().keySet().forEach(info -> info.getPathPatternsCondition().getPatternValues().forEach(patterns::add));
         assertThat(patterns.toString()).contains("/public/decks/{code}", "/public/decks/{code}/items", "/public/decks/{code}/items/{memberKey}", "/public/decks/{code}/exercises");

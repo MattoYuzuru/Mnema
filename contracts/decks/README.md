@@ -378,3 +378,96 @@ normalization (lowercase, NFKC, `ё`→`е`, diacritics stripped from Latin/Gree
 
 New: `PUBLICATION_REQUIRED` (400: the command must publish the head, for the first publication or for becoming public) and `PUBLICATION_REQUIREMENTS` (409, member `failed`: list of strings). Existing
 codes keep their status/title/detail. Problem text never echoes titles, descriptions, tags or identifiers.
+
+## Access: invitations, requests and grants (Share/13, #435)
+
+The level of a deck is changed only by the publication `PUT` above. This section is what lets people **in** to an
+«По приглашению» deck: an invitation link (one-time or multi-use, with an expiry, revocable), a request from the
+«нет доступа» screen and a grant by login. Exact examples and executable invariants are in
+[`access.json`](access.json); the architecture is
+[community decks §6, §9](../../docs/architecture/community-decks.md#6-доступ-и-публикация-cd-3-cd-4). Owner routes are owner-only
+(a foreign, absent or deleted deck is the opaque 404 for everybody else, before anything else is read), private/no-store,
+`learning.read` for GET and `learning.write` for the rest. Nothing here changes `deck.row_version`.
+
+| Operation | Request | Success |
+|---|---|---|
+| Create an invitation | `POST /api/decks/{deckId}/invites` `{maxUses, expiresInDays}` | 201 `{invite, token, link}` (the token **once**) |
+| Invitations | `GET /api/decks/{deckId}/invites?limit&cursor` | 200 page of invites (no token) |
+| Revoke an invitation | `POST /api/decks/{deckId}/invites/{inviteId}:revoke` | 200 invite |
+| Redeem | `POST /api/invites:redeem` `{token}` (any signed-in account) | 200 `{code}` |
+| Ask for access | `POST /api/public/decks/{code}/access-requests` (signed in) | 202 `{status: PENDING}` |
+| Take it back | `POST /api/public/decks/{code}/access-requests:withdraw` (signed in) | 204 |
+| Open requests | `GET /api/decks/{deckId}/access-requests?limit&cursor` | 200 page, PENDING only |
+| Approve / reject | `POST /api/decks/{deckId}/access-requests/{requesterId}:approve` / `:reject` | 200 `{requesterId, status, decidedAt}` |
+| People with access | `GET /api/decks/{deckId}/grants?limit&cursor` | 200 page |
+| Grant by login | `POST /api/decks/{deckId}/grants` `{username}` | 200 grant |
+| Revoke a person | `DELETE /api/decks/{deckId}/grants/{granteeId}` | 204 |
+
+- **Invitation links.** The token is 32 random bytes, base64url without padding (43 characters). It is returned **once**,
+  with the ready link `/d/{code}?invite={token}`; only its SHA-256 digest is stored, so lists never contain it and a lost
+  link is revoked and replaced. The token never appears in a log or in the path of any API call: the client sends it in the
+  body of `POST /api/invites:redeem`. `maxUses` is `null` (unlimited) or `1..1000` (`1` is a one-time link),
+  `expiresInDays` is `null` or `1..365`; both fields are required, unknown fields are 400. There is no `commandId`: an answer
+  that carries a secret cannot be replayed. A deck can hold 20 active invitations and 200 in all (invitations that died more than 30 days ago are pruned
+  when a new one is created; stale ones are not active); more is 422 `RESOURCE_LIMIT_EXCEEDED` with `limit`. A deck that is private or has never been
+  shared is 400 `PUBLICATION_REQUIRED`.
+- **Invite `status`:** `REVOKED`, else `STALE`, else `EXPIRED`, else `EXHAUSTED` (`uses == maxUses`), else `ACTIVE`. **`STALE`**: the
+  invitation is tied to the code generation it was created under; any move to a more restrictive level rotates the code (the
+  canon: «при понижении видимости ссылка меняется, и старые ссылки перестают работать»), and every older invitation is
+  stale for good, also after the level is raised again. The owner creates new ones; raising the level keeps the code.
+- **Redeem** runs in one transaction under a lock of the invitation row, in this order: a deleted, private or never published deck
+  is 404; an invitation of an older code generation (`STALE`) is 404 for everybody, the owner and grantees included; the owner and an
+  account that already holds the grant are answered with the code and consume nothing, even if the invitation was used up or revoked
+  since (opening the same link twice must not turn a one-time link into a 404); anybody else needs an invitation that is not
+  revoked, not expired and has uses left; on a `LINK` or `PUBLIC` deck a valid invitation is a no-op answer with the code (nothing to
+  grant, no use consumed); on an `INVITE` deck the grant is written first and a use is consumed only if a grant was created; a
+  person the owner revoked in the last 30 days is refused (below). **Every failure is the same 404 `RESOURCE_NOT_FOUND`**: unknown,
+  malformed, revoked, expired, exhausted, stale, a deleted/private/unpublished deck, a revoked person. The one exception is a valid
+  token for a deck that already holds 1000 people: 422 `RESOURCE_LIMIT_EXCEEDED`, `limit: 1000`. The answer is the **current**
+  code of the deck; the client opens `/d/{code}`. Revoking an invitation stops new redemptions only; the people it already let in
+  keep their grants until the owner revokes them one by one.
+- **Access requests.** Only for an `INVITE` deck the signed-in caller cannot read: an unknown, private or rotated code is
+  404; the owner, a grantee and the readers of a `LINK`/`PUBLIC` deck have nothing to ask for (400 `INVALID_REQUEST`); an
+  author who turned the request switch off (`requestsEnabled` of the publication) answers **403 `DECK_INVITE_ONLY`**, the
+  same body as the «Колода доступна по приглашению» screen, so a client shows the same neutral failure. The answer to a
+  request is always `202 {"status":"PENDING"}`; a first request, a repeat while it is open and a repeat within 30 days of a
+  rejection look identical (a rejection is silent), and only the first writes anything. Limits of a requester: 20 open
+  requests (422 `RESOURCE_LIMIT_EXCEEDED`, `limit: 20`) and 5 new requests per rolling 24 hours (429 `RATE_LIMITED`,
+  `Retry-After` = the time the oldest one leaves the window); the silent repeats are answered before the limits. After 30
+  days a rejected request can be repeated and is a new request. The routes live on the public chain (optional bearer
+  everywhere else, but required here, scope `learning.write`) and follow the kill switch
+  `learning.community.public-routes.enabled`. **`:withdraw`** takes an open request back (`PENDING` to `WITHDRAWN`), which frees one
+  of the 20 open slots: idempotent and uniform, 204 whether the request was open, already decided or never made; an unknown,
+  private or rotated code is the opaque 404; the request can be made again at once (the daily limit still counts it).
+- **Decisions.** `approve` creates the `VIEWER` grant, marks the request `APPROVED` and notifies the requester
+  (`DECK_ACCESS_GRANTED`); `reject` marks it `REJECTED` and tells nobody. Repeating the same decision is the same 200; the opposite
+  decision of a decided request, or a requester with no request, is 404. The list shows `PENDING` requests only.
+  `approve` is 422 `RESOURCE_LIMIT_EXCEEDED` (`limit: 1000`) when the deck is full; the request stays open.
+- **Notifications** ([`notifications-v1`](../notifications/README.md)): `DECK_ACCESS_REQUESTED` to the author at most once per
+  deck per UTC day (dedupe key by deck and date, `pendingCount` = open requests, capped at 1000, at the time) and
+  `DECK_ACCESS_GRANTED` to the requester (route `DECK`, params `{code}`). Params never name people: the panel shows
+  requesters through Identity author cards, which are consent-gated.
+- **Grant by login.** The deck must be a **published `INVITE` deck** (any other level, or private, is 400 `PUBLICATION_REQUIRED` and
+  costs no lookup: a grant means nothing there). `{username}` is resolved server-side through the Identity public-profile lookup;
+  only profiles with consent resolve, and an unknown login, a malformed one and a hidden profile are the same 404. The owner's own
+  login is 400. A grant is idempotent (the existing one is returned), closes a pending request of that person as `APPROVED` without a
+  notification, and, being the owner's deliberate act, lifts the block a revocation puts on that person's invitation links. A deck
+  holds at most 1000 people (422 `RESOURCE_LIMIT_EXCEEDED`, `limit: 1000`, for every way in). **Lookup budget:** 10 per owner per
+  minute and 40 per instance per minute (429 `RATE_LIMITED`, `Retry-After` = the rest of that window, before Identity is asked).
+  Identity limits this public lookup per *network* (60 a minute) and every Learning call comes from one address, so all owners of
+  all instances behind it share that budget; the instance cap keeps one instance below it (with N instances behind one address
+  set `learning.community.grants.instance-lookups-per-minute` to about 40 / N). Identity answering 429 is 429 with its
+  `Retry-After`, being unreachable is 503; neither grants anything.
+- **Revoking a person** (`DELETE …/grants/{granteeId}`) closes access at once and records a `REJECTED` request of that person marked
+  as a revocation (created if they never asked). For 30 days a live invitation link cannot let them back in (the same 404) and
+  asking again is the silent answer; the owner can add them by login at once. Copies the person already made stay (Share/10).
+  Revoking a grant that does not exist is the same 204 and records nothing.
+- **Lists** are keyset pages: `limit` 1–100 (default 20), opaque `cursor`, `nextCursor` null on the last page; a malformed
+  cursor is 400. Invitations, requests and grants are newest first.
+
+### Codes
+
+No new codes: `RESOURCE_NOT_FOUND`, `INVALID_REQUEST`, `DECK_INVITE_ONLY`, `RESOURCE_LIMIT_EXCEEDED` (with the member `limit`),
+`RATE_LIMITED` (with `Retry-After` and `retryAfter`), `PUBLICATION_REQUIRED`, `IDENTITY_UNAVAILABLE`. These routes carry no
+`If-Match` (every write is idempotent by state), so there is no `VERSION_CONFLICT` and no `IDEMPOTENCY_CONFLICT`. Problem text never
+echoes tokens, logins or identifiers.
