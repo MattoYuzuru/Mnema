@@ -71,6 +71,24 @@ class MediaPlaybackControllerTest {
     }
 
     @Test
+    void theOwnerOfACopyReceivesDerivedVariantsAndNoDownloadLink() throws Exception {
+        var playable = new MediaCatalog.BlobLocation(UUID.randomUUID(), "private/playback", 200, "video/mp4");
+        var poster = new MediaCatalog.BlobLocation(UUID.randomUUID(), "private/poster", 20, "image/webp");
+        when(catalog.playback(owner, asset))
+                .thenReturn(new MediaCatalog.PlaybackDescriptor("READY", playable, poster, null));
+        Instant expires = Instant.parse("2026-09-28T12:00:00Z");
+        when(store.read("private/playback", false)).thenReturn(new MediaPlaybackStore.SignedRead("https://s3.test/play", expires));
+        when(store.read("private/poster", false)).thenReturn(new MediaPlaybackStore.SignedRead("https://s3.test/poster", expires));
+        mvc.perform(get("/media-assets/" + asset + "/playback"))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.playback.url").value("https://s3.test/play"))
+                .andExpect(jsonPath("$.poster.url").value("https://s3.test/poster"))
+                .andExpect(jsonPath("$.download").isEmpty());
+        verify(store, times(2)).read(anyString(), eq(false));
+        verify(store, never()).read(anyString(), eq(true));
+    }
+
+    @Test
     void foreignAssetUsesTheSameNotFoundBoundary() throws Exception {
         when(catalog.playback(owner, asset)).thenThrow(new ResourceNotFoundException());
         mvc.perform(get("/media-assets/" + asset + "/playback"))

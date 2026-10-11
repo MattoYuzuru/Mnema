@@ -155,10 +155,22 @@ class PublicationSchemaIntegrationTest extends PostgresIntegrationTest {
         }
         // the provenance probe: the REAL statement of the checklist repeats the predicate of the partial index, so a deck without a non-commercial license costs one empty index scan
         String provenance = transaction.execute(status -> {
+            // a table where a planner that could flatten the probe prefers a hash join against all the non-commercial rows (a few dozen, as in a suite run), analyzed (rolled back afterwards)
+            jdbc.sql("""
+                    INSERT INTO app_learning.generation_provenance(provenance_id, owner_id, session_id, artifact_id, revision_id, published_ref, created_at, media)
+                    SELECT gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), '{}'::jsonb, now(),
+                           jsonb_build_array(jsonb_build_object('assetId', gen_random_uuid()::text, 'license', 'CC BY-NC 4.0'))
+                      FROM generate_series(1, 24)
+                    """).update();
+            jdbc.sql("ANALYZE app_learning.generation_provenance").update();
             jdbc.sql("SET LOCAL enable_seqscan = off").update();
-            return String.join("\n", jdbc.sql("EXPLAIN " + PublicationRepository.BLOCKED_MEDIA_SQL).param("owner", owner).param("deck", UUID.randomUUID())
+            String plan = String.join("\n", jdbc.sql("EXPLAIN " + PublicationRepository.BLOCKED_MEDIA_SQL).param("owner", owner).param("deck", UUID.randomUUID())
                     .param("regex", PublicationRepository.NC_REGEX).param("limit", 50).query(String.class).list());
+            status.setRollbackOnly();
+            return plan;
         });
         assertThat(provenance).contains("generation_provenance_nc");
+        // bounded by the owners of the head's assets: the index is probed with owner_id = <an owner of the head>, never scanned for every non-commercial row
+        assertThat(provenance).containsPattern("Index Cond: \\(owner_id = ");
     }
 }

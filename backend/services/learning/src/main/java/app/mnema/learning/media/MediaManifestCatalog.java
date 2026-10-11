@@ -28,7 +28,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/** Immutable offline inventory. A manifest names verified bytes, never a signed URL or storage key. */
+/**
+ * Immutable offline inventory. A manifest names verified bytes, never a signed URL or storage key. It lists the media of the deck's HEAD revisions, whoever
+ * owns the assets (Share/9: a copy references the author's media); the verified original is listed only for an asset the owner of the manifest owns, and
+ * every other asset carries its derived variants alone.
+ */
 @Service
 public class MediaManifestCatalog {
     private final JdbcClient jdbc;
@@ -53,15 +57,15 @@ public class MediaManifestCatalog {
                         + "r.revision_id,r.node_id FROM app_learning.deck_head_item h "
                         + "JOIN app_learning.content_media_ref r ON r.reuse_scope_id=h.reuse_scope_id "
                         + "AND r.member_key=h.member_key AND r.revision_id=h.revision_id "
-                        + "WHERE h.deck_id=:deck AND r.asset_owner_id=:owner UNION ALL "
+                        + "WHERE h.deck_id=:deck UNION ALL "
                         + "SELECT r.asset_id,'exercise' AS kind,r.exercise_id AS subject_id, "
                         + "r.exercise_revision_id AS revision_id,NULL::uuid AS node_id "
                         + "FROM app_learning.deck_head_exercise h "
                         + "JOIN app_learning.exercise_media_ref r ON r.reuse_scope_id=h.reuse_scope_id "
                         + "AND r.exercise_id=h.exercise_id AND r.exercise_revision_id=h.revision_id "
-                        + "WHERE h.deck_id=:deck AND r.asset_owner_id=:owner "
+                        + "WHERE h.deck_id=:deck "
                         + "ORDER BY asset_id,kind,subject_id,revision_id,node_id LIMIT :limit")
-                .param("deck", deck).param("owner", owner).param("limit", settings.maxReferences() + 1)
+                .param("deck", deck).param("limit", settings.maxReferences() + 1)
                 .query((row, ignored) -> new Pin((UUID) row.getObject("asset_id"), row.getString("kind"),
                         (UUID) row.getObject("subject_id"), (UUID) row.getObject("revision_id"),
                         (UUID) row.getObject("node_id"))).list();
@@ -77,11 +81,12 @@ public class MediaManifestCatalog {
         Set<UUID> heldBlobs = new LinkedHashSet<>();
         for (var entry : byAsset.entrySet()) {
             UUID assetId = entry.getKey();
-            Asset asset = jdbc.sql("SELECT state,generation,source_blob_id FROM app_learning.media_asset "
-                            + "WHERE asset_id=:asset AND owner_id=:owner FOR SHARE")
-                    .param("asset", assetId).param("owner", owner)
+            // The reference is the authorization: the asset is in the heads of THIS deck, which the manifest's owner owns.
+            Asset asset = jdbc.sql("SELECT state,generation,source_blob_id,owner_id FROM app_learning.media_asset "
+                            + "WHERE asset_id=:asset FOR SHARE")
+                    .param("asset", assetId)
                     .query((row, ignored) -> new Asset(row.getString("state"), row.getLong("generation"),
-                            (UUID) row.getObject("source_blob_id"))).optional()
+                            (UUID) row.getObject("source_blob_id"), owner.equals(row.getObject("owner_id", UUID.class)))).optional()
                     .orElseThrow(ResourceNotFoundException::new);
             ObjectNode assetNode = assets.addObject();
             assetNode.put("assetId", assetId.toString());
@@ -106,10 +111,11 @@ public class MediaManifestCatalog {
                                 row.getString("purpose"), row.getString("profile"),
                                 (UUID) row.getObject("blob_id"), (Integer) row.getObject("width"),
                                 (Integer) row.getObject("height"), (Long) row.getObject("duration_ms"))).list();
-                // The source is retained for saving the original even if playback uses a derived variant.
                 if (asset.sourceBlob() == null) throw new IllegalStateException("READY asset lacks source blob");
-                appendBlob(variants.addObject(), null, "original", "original", asset.sourceBlob(),
-                        null, null, null, heldBlobs);
+                // The source is retained for saving the original even if playback uses a derived variant; only its owner is offered it.
+                if (asset.owned()) {
+                    appendBlob(variants.addObject(), null, "original", "original", asset.sourceBlob(), null, null, null, heldBlobs);
+                }
                 for (Variant variant : currentVariants) {
                     appendBlob(variants.addObject(), variant.id(), variant.purpose(), variant.profile(),
                             variant.blobId(), variant.width(), variant.height(), variant.durationMs(), heldBlobs);
@@ -204,7 +210,7 @@ public class MediaManifestCatalog {
     public record Snapshot(UUID id, long version, String etag, String body, Instant expiresAt,
                            byte[] contentSha256) { }
     private record Pin(UUID assetId, String kind, UUID subjectId, UUID revisionId, UUID nodeId) { }
-    private record Asset(String state, long generation, UUID sourceBlob) { }
+    private record Asset(String state, long generation, UUID sourceBlob, boolean owned) { }
     private record Variant(UUID id, String purpose, String profile, UUID blobId,
                            Integer width, Integer height, Long durationMs) { }
     private record Blob(UUID id, byte[] sha256, long length, String mime) { }

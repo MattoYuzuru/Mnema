@@ -231,15 +231,21 @@ class LineageSharedScopeIntegrationTest extends PostgresIntegrationTest {
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("content_media_ref_asset_id_owner_id_fkey");
 
-        // media views: the author's manifest is exactly what it was; the copy owner's has no asset of the author
+        // media views: the author's manifest is exactly what it was; since Share/9 the copy owner's manifest lists the assets his heads reference, without originals
         assertThat(manifests.current(author, source).body()).isEqualTo(authorManifest);
-        assets.forEach(asset -> assertThat(manifests.current(owner, copy.deckId()).body()).doesNotContain(asset.toString()));
-        // the app-level rule is unchanged for now (TODO Share/9, #431): the editor refuses another account's asset...
-        assertThatThrownBy(() -> fixture.save(owner, copy.deckId(), rich.member(), rich.revision(), richWith(assets)))
+        assets.forEach(asset -> assertThat(manifests.current(owner, copy.deckId()).body()).contains(asset.toString()).doesNotContain("\"purpose\":\"original\""));
+        // Share/9: the editor accepts the author's assets on a revision of the copy, because the deck's heads already reference them...
+        UUID kept = fixture.save(owner, copy.deckId(), rich.member(), rich.revision(), richWith(assets));
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE reuse_scope_id=:scope AND revision_id=:revision "
+                        + "AND asset_owner_id=:author AND deck_id=:deck").param("scope", copy.scope()).param("revision", kept)
+                .param("author", author).param("deck", copy.deckId()).query(Long.class).single()).isEqualTo(3L);
+        // ...but an account's asset that no head of the deck holds is still refused
+        UUID stranger = mediaCatalog.reserve(UUID.randomUUID(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
+        assertThatThrownBy(() -> fixture.save(owner, copy.deckId(), rich.member(), kept, richWith(List.of(stranger, assets.get(1), assets.get(2)))))
                 .isInstanceOf(ResourceNotFoundException.class);
         // ...and accepts the same document with the copy owner's own assets
         List<UUID> own = assets(owner);
-        UUID withOwn = fixture.save(owner, copy.deckId(), rich.member(), rich.revision(), richWith(own));
+        UUID withOwn = fixture.save(owner, copy.deckId(), rich.member(), kept, richWith(own));
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE reuse_scope_id=:scope AND revision_id=:revision "
                         + "AND asset_owner_id=:owner AND deck_id=:deck").param("scope", copy.scope()).param("revision", withOwn)
                 .param("owner", owner).param("deck", copy.deckId()).query(Long.class).single()).isEqualTo(3L);

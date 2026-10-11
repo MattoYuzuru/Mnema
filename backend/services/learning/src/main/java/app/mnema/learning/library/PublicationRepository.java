@@ -167,40 +167,49 @@ class PublicationRepository {
     }
 
     /**
-     * The materials and exercises of the deck's head that use stock media under a non-commercial license (generation provenance of the owner). It starts
-     * from the owner's provenance rows that name such a license (the partial index {@code generation_provenance_nc}; none for almost everybody), then probes
-     * the media references of those assets, then the head.
+     * The materials and exercises of the deck's head that use stock media under a non-commercial license. It collects the head's media references, then asks the
+     * partial index {@code generation_provenance_nc} (none for almost everybody) for the non-commercial rows of the owners of those assets.
      *
-     * <p>Keyed by {@code owner_id}: provenance is the author's record of what HE added. When copies exist (Share/9/10) a copy owner's deck references the author's
-     * assets without provenance rows of his own, so this lookup must be re-keyed by asset (the provenance of the asset's owner) before copies can be published.
+     * <p>Keyed by the ASSET, not by the publisher (Share/9): the provenance row is the record of the account that added the stock image, and a copy's owner
+     * publishes decks whose heads reference the AUTHOR's assets, so filtering the rows by the publisher would let an inherited non-commercial image through.
+     * A provenance row counts for a reference only when its account is the owner of the referenced asset ({@code asset_owner_id}), so another account's row
+     * that merely names the asset id is not evidence. The statement collects the head's references FIRST and then probes the partial index
+     * {@code generation_provenance_nc} once per distinct asset owner of the head ({@code owner_id = o.asset_owner_id}, a lateral join fenced with {@code OFFSET 0} so that the planner cannot flatten it into a join against every non-commercial row), so the cost is
+     * proportional to the head's references and the non-commercial rows of THOSE owners, never to every non-commercial row of the table.
      *
-     * <p>V52-safe: the exercise head is joined by {@code (exercise_id, revision_id)} and filtered by {@code deck_id}, columns that exist before and after V52 (exercise ids are
-     * UUIDs; under V52 the strict form adds {@code h.reuse_scope_id = r.reuse_scope_id}, which V53 does not have yet), and the media owner column is not read.
+     * <p>The exercise head is joined by {@code (exercise_id, revision_id)} and filtered by {@code deck_id}; the media owner is the V52 column {@code asset_owner_id}.
      */
     static final String BLOCKED_MEDIA_SQL = """
-            WITH nc AS (
-                SELECT DISTINCT CASE WHEN m.value ->> 'assetId' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-                                     THEN CAST(m.value ->> 'assetId' AS uuid) END AS asset_id
-                  FROM app_learning.generation_provenance p
-                 CROSS JOIN LATERAL jsonb_array_elements(p.media) AS m(value)
-                 WHERE p.owner_id = :owner
-                   AND\s""" + NC_PREDICATE + """
+            WITH refs AS (
+                SELECT 'item' AS kind, h.member_key AS subject, r.asset_id, r.asset_owner_id
+                  FROM app_learning.deck_head_item h
+                  JOIN app_learning.content_media_ref r ON r.reuse_scope_id = h.reuse_scope_id AND r.member_key = h.member_key AND r.revision_id = h.revision_id
+                 WHERE h.deck_id = :deck
+                UNION ALL
+                SELECT 'exercise', h.exercise_id, r.asset_id, r.asset_owner_id
+                  FROM app_learning.deck_head_exercise h
+                  JOIN app_learning.exercise_media_ref r ON r.reuse_scope_id = h.reuse_scope_id AND r.exercise_id = h.exercise_id AND r.exercise_revision_id = h.revision_id
+                 WHERE h.deck_id = :deck
+            ), nc AS (
+                SELECT DISTINCT o.asset_owner_id, found.asset_id
+                  FROM (SELECT DISTINCT asset_owner_id FROM refs) o
+                 CROSS JOIN LATERAL (
+                       SELECT CASE WHEN m.value ->> 'assetId' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                                   THEN CAST(m.value ->> 'assetId' AS uuid) END AS asset_id
+                         FROM app_learning.generation_provenance p
+                        CROSS JOIN LATERAL jsonb_array_elements(p.media) AS m(value)
+                        WHERE p.owner_id = o.asset_owner_id AND\s""" + NC_PREDICATE + """
 
-                   AND (m.value ->> 'license') ~* :regex)
-            SELECT 'item' AS kind, h.member_key AS subject
-              FROM nc JOIN app_learning.content_media_ref r ON r.asset_id = nc.asset_id
-              JOIN app_learning.deck_head_item h ON h.reuse_scope_id = r.reuse_scope_id AND h.member_key = r.member_key AND h.revision_id = r.revision_id
-             WHERE h.deck_id = :deck
-            UNION ALL
-            SELECT 'exercise' AS kind, h.exercise_id AS subject
-              FROM nc JOIN app_learning.exercise_media_ref r ON r.asset_id = nc.asset_id
-              JOIN app_learning.deck_head_exercise h ON h.reuse_scope_id = r.reuse_scope_id AND h.exercise_id = r.exercise_id AND h.revision_id = r.exercise_revision_id
-             WHERE h.deck_id = :deck
+                          AND (m.value ->> 'license') ~* :regex
+                        OFFSET 0) found
+            )
+            SELECT refs.kind, refs.subject
+              FROM refs JOIN nc ON nc.asset_id = refs.asset_id AND nc.asset_owner_id = refs.asset_owner_id
              LIMIT :limit
             """;
 
-    List<Blocked> blockedMedia(UUID owner, UUID deck, int limit) {
-        return jdbc.sql(BLOCKED_MEDIA_SQL).param("owner", owner).param("deck", deck).param("regex", NC_REGEX).param("limit", limit)
+    List<Blocked> blockedMedia(UUID deck, int limit) {
+        return jdbc.sql(BLOCKED_MEDIA_SQL).param("deck", deck).param("regex", NC_REGEX).param("limit", limit)
                 .query((row, ignored) -> new Blocked(row.getString("kind"), row.getObject("subject", UUID.class))).list();
     }
 

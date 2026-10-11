@@ -203,6 +203,13 @@ full-decode errors, hash mismatches, and output profile mismatches fail closed. 
 source remains unchanged for retry or download. The maximum source sizes are 64 MiB
 image, 512 MiB audio, 4 GiB video; maximum audio/video durations are 1 h / 5 min.
 
+No private metadata reaches a variant (shared media, Share/9). Every output is re-encoded from decoded frames or samples with `-map_metadata -1 -map_chapters -1 -sn -dn`, so
+container tags, ID3 tags, MP4 location atoms, stream handler names and chapters are not copied. EXIF and GPS in a JPEG are frame-level data rather than container
+metadata, and FFmpeg 7.1 and later can carry them into WebP; the pinned Ubuntu FFmpeg 6.1.1 does not. `test_derived_image_variants_carry_no_exif_or_gps` (a JPEG with a real
+EXIF block: Make and Software, Orientation and GPS) and `test_derived_video_and_audio_variants_carry_no_location_or_tags` (an MP4 with location, title and a stream handler name,
+an MP3 with ID3 tags) fail the build when any marker survives, so a bump of the FFmpeg pins has to keep them green (and strip explicitly if it does not) before the
+public media route is enabled.
+
 Reference: [FFmpeg legal](https://ffmpeg.org/legal.html),
 [Ubuntu snapshot service](https://ubuntu.com/server/docs/how-to/software/snapshot-service/),
 [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/),

@@ -44,8 +44,9 @@ describe('Public deck wire contract (contracts/decks/public-read.json)', () => {
         expect(contract.constants.accessLevels).toEqual(['OWNER', 'GRANTEE', 'PUBLIC', 'LINK']);
     });
 
-    it('asks for exactly the four routes of the contract', async () => {
-        expect(contract.routes.map(route => route.method)).toEqual(['GET', 'GET', 'GET', 'GET']);
+    it('asks for the four read routes of the contract (the fifth, media, is the playback adapter)', async () => {
+        expect(contract.routes.map(route => route.method)).toEqual(['GET', 'GET', 'GET', 'GET', 'GET']);
+        expect(contract.routes.map(route => route.path)).toContain('/api/public/decks/{code}/media/{assetId}');
         const memberKey = contract.items.document.response.memberKey;
         const reads: readonly (readonly [Observable<unknown>, string])[] = [
             [api.summary(code), `/api/public/decks/${code}`],

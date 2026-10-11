@@ -1,6 +1,6 @@
 {
   "contract": "public-read-v1",
-  "description": "Shared frontend/backend fixtures for the read-only view of someone else's deck (Share/7, #429): the published revision of a deck behind its public code, for guests and any account. GET and HEAD only; the Bearer token is optional (no token is a guest, a valid token identifies the account, a present but invalid Bearer token is 401 and is never treated as a guest). Responses are no-store and vary with the bearer. Problem shapes follow RFC 9457 as everywhere. `invariants` are executable: the integration tests compare the real answers with the property sets of these examples. Media is not served here (Share/9) and the exercise list never carries answers or authoring titles.",
+  "description": "Shared frontend/backend fixtures for the read-only view of someone else's deck (Share/7, #429): the published revision of a deck behind its public code, for guests and any account. GET and HEAD only; the Bearer token is optional (no token is a guest, a valid token identifies the account, a present but invalid Bearer token is 401 and is never treated as a guest). Responses are no-store and vary with the bearer. Problem shapes follow RFC 9457 as everywhere. `invariants` are executable: the integration tests compare the real answers with the property sets of these examples. The media of the published revision has its own route (Share/9, #431): signed links to DERIVED variants only, never the original, and the exercise list never carries answers or authoring titles.",
   "constants": {
     "basePath": "/api/public/decks/{code}",
     "codeLength": 10,
@@ -36,7 +36,24 @@
       "status": 503,
       "retryAfterSeconds": 1,
       "note": "reads served at once per instance; guests may hold all but one place, so one is always free for a signed-in viewer; the next read is refused immediately instead of waiting for a connection"
-    }
+    },
+    "mediaKillSwitch": "learning.community.public-media.enabled (default false: the media route answers 404 as if absent; it also needs learning.community.public-routes.enabled)",
+    "mediaRateLimit": {
+      "guestPerMinute": 240,
+      "coarsePerMinute": 1200,
+      "deckPerMinute": 3000,
+      "overflowPerMinute": 600,
+      "scope": "per instance, counting REQUESTS FOR SIGNED LINKS, not bytes (the object store serves the bytes after a link is handed out, so these limits bound how fast links are minted, not the egress itself): a guest per client network (IPv4 address, IPv6 /64), for IPv6 all guests of one /48 together (a request must pass both), and all guests together per deck; a signed-in viewer is limited per account by the public chain and is never counted against the deck; a key that finds its table full shares the table's overflow bucket",
+      "status": 429
+    },
+    "mediaStates": [
+      "READY",
+      "PENDING_UPLOAD",
+      "VERIFYING",
+      "PROCESSING",
+      "UNAVAILABLE"
+    ],
+    "mediaUrlTtl": "PT10M (learning.community.public-media.url-ttl, five minutes to two hours): the signed links of a guest are shorter-lived than the owner's playback links (learning.media.playback.url-ttl, PT1H)"
   },
   "invariants": [
     "an unknown code, a code rotated away, a private deck, a deleted deck and a deck without a published revision answer the same 404 (only `instance` differs)",
@@ -51,7 +68,15 @@
     "pageDefault <= pageMax; limit outside 1..pageMax, repeated parameters and malformed cursors are 400",
     "ownerId is returned on purpose: the UI needs it to ask Identity for the author's card; the card (name, avatar) is consent-gated in Identity (Share/1), Learning exposes only the opaque account id",
     "a link changes (the old code answers 404) whenever the level moves to a more restrictive one: PUBLIC > LINK > INVITE > PRIVATE, every step down included; raising the level keeps the code",
-    "a read refused by the bulkhead is 503 PUBLIC_READ_BUSY with Retry-After before any lookup, so it says nothing about the code"
+    "a read or media request refused by the bulkhead is 503 PUBLIC_READ_BUSY with Retry-After before any lookup, so it says nothing about the code",
+    "media: GET /api/public/decks/{code}/media/{assetId} answers {assetId, state, playback, poster} for an asset that a MATERIAL of the published revision references; playback and poster are null unless state is READY, poster is also null when the asset has no poster or thumbnail variant",
+    "media: only the media of materials is offered; the media of exercises is not (the public view shows exercises as plain-text prompts and an exercise pin does not say whether an asset belongs to the question or to the answer), so an exercise-only asset is the same 404 for every viewer, the owner included",
+    "media: state is READY, the state of an upload that is still going (PENDING_UPLOAD, VERIFYING, PROCESSING) or UNAVAILABLE; a rejected, failed or deleted asset is UNAVAILABLE for a non-owner, whatever the reason",
+    "media: playback and poster are short-lived signed links of DERIVED variants (playback, poster or thumbnail) as {url, expiresAt, mimeType}; the links live ten minutes by default; the verified original, a download link and any object key never appear, whoever asks",
+    "media: the answer is Cache-Control: private, no-store with Vary: Authorization (a signed link is a credential of the moment)",
+    "media: access is DeckAccess to the deck behind the code (any level that grants a published revision) AND the asset in the deck's published material set; an unknown or rotated code, a private deck, an invitation-only deck for a viewer without a grant (404 here, not 403), a deck without a published revision, an asset that is not in the published set (a change the owner has not published, an asset removed by a republication, an exercise-only asset, an asset of another deck) and an unknown asset id are the same 404",
+    "media: a malformed asset id is 400; a present but invalid bearer is 401 as everywhere; the media route is 404 while its kill switch is off",
+    "media: the requests are counted as mnema_public_media_requests_total{outcome} (ok, not_found, rate_limited, busy, disabled, unavailable); neither the code nor the asset id is a label"
   ],
   "routes": [
     {
@@ -73,6 +98,11 @@
       "method": "GET",
       "path": "/api/public/decks/{code}/exercises?limit=&cursor=",
       "answers": "exercises.page"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/decks/{code}/media/{assetId}",
+      "answers": "media"
     }
   ],
   "summary": {
@@ -303,6 +333,46 @@
         "code": "PUBLIC_READ_BUSY",
         "retryAfter": 1
       }
+    }
+  },
+  "media": {
+    "request": "GET /api/public/decks/Kq7xT3mNpR/media/3c9f1a52-6b7d-4e08-9a1f-5d2e7b8c4f60",
+    "ready": {
+      "assetId": "3c9f1a52-6b7d-4e08-9a1f-5d2e7b8c4f60",
+      "state": "READY",
+      "playback": {
+        "url": "https://storage.example.invalid/mnema-media/variant/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=3600&X-Amz-Signature=0000",
+        "expiresAt": "2026-10-11T10:30:00Z",
+        "mimeType": "image/webp"
+      },
+      "poster": {
+        "url": "https://storage.example.invalid/mnema-media/variant/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c36?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=3600&X-Amz-Signature=0000",
+        "expiresAt": "2026-10-11T10:30:00Z",
+        "mimeType": "image/webp"
+      }
+    },
+    "readyWithoutPoster": {
+      "assetId": "5e1b3c74-8d9f-4a20-b3c1-7f4a9d0e6b82",
+      "state": "READY",
+      "playback": {
+        "url": "https://storage.example.invalid/mnema-media/variant/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c37?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=3600&X-Amz-Signature=0000",
+        "expiresAt": "2026-10-11T10:30:00Z",
+        "mimeType": "audio/mp4"
+      },
+      "poster": null
+    },
+    "notReady": {
+      "assetId": "7a3d5e96-0fb1-4c42-95e3-9b6cb1f28d04",
+      "state": "PROCESSING",
+      "playback": null,
+      "poster": null
+    },
+    "rules": "the answer has exactly these four members; there is no download, original or objectKey member; a state other than READY carries null links; UNAVAILABLE covers rejected, failed and deleted assets; every refusal is the notFound problem",
+    "unavailable": {
+      "assetId": "9d5f7b18-2a3c-4e64-8b07-1c8e3f4a5d96",
+      "state": "UNAVAILABLE",
+      "playback": null,
+      "poster": null
     }
   }
 }
