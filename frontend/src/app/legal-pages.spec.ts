@@ -23,8 +23,8 @@ describe('Personal data policy page', () => {
         const root = render(PrivacyPageComponent);
         expect(text(root.querySelector('h1'))).toBe('Политика обработки персональных данных');
         expect(text(root.querySelector('.last-updated'))).toContain(LEGAL_EFFECTIVE_DATE);
-        // 1.3: plain-language edit; 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
-        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 11 октября 2026 · версия 1.3');
+        // 1.4: shared and public decks, complaints; 1.3: plain-language edit; 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
+        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 11 октября 2026 · версия 1.4');
         expect(root.querySelector('.legal-page')?.getAttribute('lang')).toBe('ru');
         const block = text(root.querySelector('app-legal-operator-block'));
         for (const value of [LEGAL_OPERATOR.name, LEGAL_OPERATOR.inn, LEGAL_OPERATOR.ogrnip, LEGAL_OPERATOR.email]) expect(block).toContain(value);
@@ -103,13 +103,20 @@ describe('Personal data policy page', () => {
         expect(text(heading)).toBe('15. Публичный профиль и колоды сообщества');
         const section = heading.closest('section')!;
         expect(section.getAttribute('aria-labelledby')).toBe('public-profile');
-        // only the paragraph of the feature that exists; the other three ship with their tasks
-        expect(section.querySelectorAll('p')).toHaveLength(1);
+        // the paragraphs of the features that exist: the public profile, shared decks and complaints; recommendations ship with their task
+        expect(section.querySelectorAll('p')).toHaveLength(3);
         const paragraph = text(section);
         for (const phrase of ['Профиль виден другим, только если вы включили его в настройках.', 'Тогда всем показывается ваш логин и то, что вы отметили: имя, фото, «О себе».',
             'ст. 10.1 152-ФЗ', 'Оно действует до отзыва', 'данные показываются только на mnema.app', 'другие цели и передача третьим лицам запрещены',
             'Отозвать согласие можно переключателем в профиле или письмом оператору: показ прекращается сразу.']) expect(paragraph).toContain(phrase);
-        expect(paragraph).not.toContain('Колоды, которыми вы делитесь');
+        for (const phrase of ['Колоды, которыми вы делитесь.', 'только вы, все, у кого есть ссылка, приглашённые люди или все пользователи',
+            'Ни ваши ответы, ни прогресс, ни имена учеников автору не показываются.', 'Жалобы.', 'мы храним вашу жалобу, аккаунт и решение по ней до 3 лет']) expect(paragraph).toContain(phrase);
+        // author statistics and recommendations are not built yet: their sentences ship with them
+        expect(paragraph).not.toContain('общие цифры');
+        expect(paragraph).not.toContain('Сообщество и рекомендации');
+        const purposes = text(root.querySelector('#purposes')!.closest('section'));
+        expect(purposes).toContain('Рассмотрение жалоб на колоды и профили');
+        expect(purposes).toContain('До 3 лет с подачи жалобы');
         const data = text(root.querySelector('#data')!.closest('section'));
         expect(data).toContain('другим не показываются, пока вы не включили публичный профиль (см. раздел 15 «Публичный профиль и колоды сообщества»)');
         expect(data).not.toContain('доступен без входа');
@@ -233,6 +240,12 @@ describe('Terms of service page', () => {
         expect(section('rules')).toContain('Cloudflare Turnstile');
         expect(section('content')).toContain('остаются вашими');
         expect(section('content')).toContain('срок их хранения, указанный в политике');
+        expect(section('content')).toContain('кроме колод, которые вы сами открыли другим');
+        for (const phrase of ['По умолчанию колода видна только вам.', 'бесплатно разрешаете им смотреть её в Mnema и добавлять себе копию',
+            'Вне Mnema ваши материалы этим разрешением не распространяются.', 'лицензией, запрещающей коммерческое использование (NC)',
+            'Мы рассматриваем жалобу в течение 30 дней', 'он скрывается и в копиях, где не был изменён']) expect(section('sharing')).toContain(phrase);
+        // the catalog and the author page are epic 3: their sentence ships with them
+        expect(section('sharing')).not.toContain('Сообщество» и в вашем профиле');
         expect(section('liability')).toContain('ст. 400 ГК РФ');
         expect(section('liability')).toContain('Наша ответственность ограничена реальным ущербом');
         expect(section('law')).toContain('в течение 30 дней');

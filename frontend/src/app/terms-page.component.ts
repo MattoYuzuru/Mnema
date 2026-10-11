@@ -11,14 +11,15 @@ export const TERMS_SECTIONS = [
     { id: 'account', title: '3. Аккаунт' },
     { id: 'plans', title: '4. Тарифы, промокоды и платежи' },
     { id: 'content', title: '5. Ваш контент' },
-    { id: 'rules', title: '6. Запрещённое использование' },
-    { id: 'ai', title: '7. Функции искусственного интеллекта' },
-    { id: 'availability', title: '8. Доступность и изменение сервиса' },
-    { id: 'liability', title: '9. Ответственность' },
-    { id: 'termination', title: '10. Прекращение использования' },
-    { id: 'law', title: '11. Применимое право и споры' },
-    { id: 'amendments', title: '12. Изменение соглашения' },
-    { id: 'contacts', title: '13. Контакты и реквизиты' }
+    { id: 'sharing', title: '6. Общий доступ и публичные колоды' },
+    { id: 'rules', title: '7. Запрещённое использование' },
+    { id: 'ai', title: '8. Функции искусственного интеллекта' },
+    { id: 'availability', title: '9. Доступность и изменение сервиса' },
+    { id: 'liability', title: '10. Ответственность' },
+    { id: 'termination', title: '11. Прекращение использования' },
+    { id: 'law', title: '12. Применимое право и споры' },
+    { id: 'amendments', title: '13. Изменение соглашения' },
+    { id: 'contacts', title: '14. Контакты и реквизиты' }
 ] as const;
 
 @Component({
