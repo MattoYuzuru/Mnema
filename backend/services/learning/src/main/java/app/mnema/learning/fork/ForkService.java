@@ -36,7 +36,7 @@ import java.util.UUID;
  * small owner commands on a copy (retry and detach).
  *
  * <p><b>The copy command</b> runs in one transaction with the house receipt: it resolves the source by its public code through {@link DeckAccess} (the same decision as the public
- * read; the owner is {@code 409 FORK_OWN_DECK}), takes the account's advisory lock (the window and the cap are counts, so the account's creations are serialized), returns the live copy when there already is one, and otherwise writes a deck in the source's
+ * read; the owner is {@code 409 FORK_OWN_DECK}), takes the account's advisory lock (the window and the cap are counts, so the account's creations are serialized), returns the live copy when there already is one, checks the limits (the account's window 429 and unfinished copies 422, then the global cap of unfinished copies, {@code 503 FORKS_BUSY}), and otherwise writes a deck in the source's
  * lineage, its revision 0 on the roots of the published revision with durable pins of its own, the {@code deck_fork} row and the enqueued materialization job. It reads
  * <i>only</i> the published revision, and it freezes the publication row ({@code FOR SHARE}) before it resolves the second time, so a republication or a level change cannot interleave: what is
  * copied is exactly what the viewer was allowed to read at that moment. The heads of the copy are not touched here; the job writes them from the manifest ({@link ForkMaterializer}).
@@ -73,9 +73,12 @@ public class ForkService {
         public boolean existing() { return acknowledgement.path("existing").asBoolean(false); }
     }
 
-    /** The kill switch «создание копий»: the creation route answers 404 as if it did not exist, before it reads anything. */
+    /**
+     * The kill switches of «создание копий»: the creation route answers 404 as if it did not exist, before it reads anything, unless BOTH
+     * {@code learning.community.forks.enabled} and {@code learning.community.public-routes.enabled} are on (a copy is made from a deck found by its public code).
+     */
     public void requireEnabled() {
-        if (!settings.enabled) throw new ResourceNotFoundException();
+        if (!settings.creation()) throw new ResourceNotFoundException();
     }
 
     @Transactional(timeout = 10)
@@ -111,6 +114,12 @@ public class ForkService {
         if (repository.unfinished(actor) >= settings.maxPreparing) {
             meters.counter("mnema_deck_forks_total", "outcome", "limit").increment();
             throw new ResourceLimitExceededException(ProblemExtension.limit(settings.maxPreparing));
+        }
+        // The queue of the materialization job is shared by every account: past the global cap a new copy waits (the owner retries later). A SOFT cap: copies of
+        // different accounts are created concurrently (only one account's creations are serialized), so it can be overshot by the number of requests in flight.
+        if (repository.unfinishedTotal(settings.maxUnfinishedTotal) >= settings.maxUnfinishedTotal) {
+            meters.counter("mnema_deck_forks_total", "outcome", "busy").increment();
+            throw new ForkQueueBusyException();
         }
         ForkRepository.Published published = repository.published(source.deckId(), frozen);
         UUID deck = UUID.randomUUID();

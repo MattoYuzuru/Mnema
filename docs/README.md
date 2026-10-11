@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-10-10"
+  updated_at: "2026-10-11"
   owners: ["project-owner"]
 ---
 
@@ -33,6 +33,7 @@ artifact:
 | Изменить Study | [Study contract](../contracts/study/README.md); продукт — [exercise catalog](./product/exercise-catalog-v2.md) |
 | Изменить authoring/content | [Learning guide](../backend/services/learning/guide.md) и [native content contract](../contracts/content/native-v1/README.md) |
 | Изменить media | Раздел [Media](#media-epic-76) ниже |
+| Колоды сообщества: доступ, публикация, копии, жалобы | [Product contract](./product/community-decks.md) (раздел «Статус реализации»), затем [architecture](./architecture/community-decks.md) и разделы эпика в [Learning guide](../backend/services/learning/guide.md); состояние задач — [evidence эпика 1](./engineering/evidence/community-decks/epic-1/README.md) |
 | Изменить AI | [Generation](../contracts/generation/README.md), [speech](../contracts/speech/README.md), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md); смысл — [product contract](./product/ai-layer-2026-10.md) |
 | GitHub Issue/PR | [Work item standard](./engineering/work-item-standard.md) |
 | Публикация или deployment | [Production delivery](./operations/production-delivery.md), только в scope соответствующего поручения |
@@ -62,7 +63,7 @@ artifact:
 | accepted | [AI layer contract](./product/ai-layer-2026-10.md) | Принятые решения AI-слоя: слои, сценарии, UX, usage, тарифы, промокоды, legal gates. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Текущий статус РКН/эквайринга и оставшиеся human gates; не юридическая гарантия. |
-| accepted | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. |
+| accepted | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. Эпик 1 (доступ, публикация, копии, жалобы) реализован и выкачен выключенным; эпики 2–4 не начаты, раздел «Уточнено реализацией» фиксирует отличия от плана. |
 
 ## Architecture и backend
 
@@ -74,13 +75,13 @@ artifact:
 | accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; P0 content/Study реализованы, P1/P2 — границы будущей работы. |
 | accepted | [Native content format](./architecture/learning-content-format-v2.md) | Persisted native document contract. |
 | accepted | [AI generation platform](./architecture/ai-generation-platform.md) | Принятая архитектура AI-слоя: модули в Learning, Мастерская, MBM, провайдеры, usage, уведомления, безопасность. |
-| accepted | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. |
+| accepted | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. Таблица статуса реализации по частям (эпик 1 сделан, обновления и каталог нет). |
 | current | [Revision storage and runtime boundaries](./architecture/revision-storage-and-runtime-boundaries.md) | Выбранное и реализованное storage-направление. |
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Counted-page/structural invariants. |
 | current | [Identity & Account guide](../backend/services/identity-account/guide.md) | Identity runtime. |
 | current | [Learning API guide](../backend/services/learning/guide.md) | Content, exercise, Study и media runtime. |
-| current | [Learning runtime policy index](./engineering/runtime-policy-index.md) | Реестр runtime policies Learning. |
-| current | Контракты: [study](../contracts/study/README.md), [authoring](../contracts/authoring/README.md), [decks](../contracts/decks/README.md), [items](../contracts/items/README.md), [native content](../contracts/content/native-v1/README.md) | Общие fixtures backend/frontend. |
+| current | [Learning runtime policy index](./engineering/runtime-policy-index.md) | Реестр runtime policies Learning, включая выключатели, лимиты и метрики колод сообщества с значениями в production. |
+| current | Контракты: [study](../contracts/study/README.md), [authoring](../contracts/authoring/README.md), [decks](../contracts/decks/README.md) (метаданные, публичное чтение, публикация, доступ, копии, превью), [moderation](../contracts/moderation/README.md) (жалобы и снятие), [identity](../contracts/identity/README.md) (публичный профиль), [items](../contracts/items/README.md), [native content](../contracts/content/native-v1/README.md) | Общие fixtures backend/frontend. |
 | accepted | AI-контракты: [generation](../contracts/generation/README.md) (состояния, HTTP, события, ошибки, [MBM v1](../contracts/generation/mbm-v1/README.md), [упражнения](../contracts/generation/exercises/README.md)), [usage](../contracts/usage/README.md), [billing](../contracts/billing/README.md), [notifications](../contracts/notifications/README.md), [speech input](../contracts/speech/README.md) и [prompt library](../backend/services/learning/src/main/resources/ai/prompts/README.md) | Исполняемые fixtures для реализованных AI/Workshop, speech, usage/plans/promo, billing (T-Bank checkout и уведомления) и notifications; доступность функций задаёт runtime-конфигурация. |
 | historical | [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) | Последний полный срез старых сервисов и миграций. |
 
@@ -119,7 +120,7 @@ artifact:
 | accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения и реализованные delivery slices. |
 | accepted | [Epic #77 refinement](./engineering/epic-77-refinement.md) | AI-слой: delivery slices, пять прогонов и acceptance эпика. |
 | current | [Epic #77 prompts](./engineering/prompts/epic-77-ai-layer.md) | Промпты последовательных прогонов агента для реактивированного AI-эпика. |
-| accepted | [Community decks refinement](./engineering/community-decks-refinement.md) | Четыре эпика (#419–#422), задачи, зависимости и правила исполнения. |
+| accepted | [Community decks refinement](./engineering/community-decks-refinement.md) | Четыре эпика (#419–#422), задачи, зависимости и правила исполнения; статус выполнения эпика 1. |
 | current | [Community decks prompts](./engineering/prompts/community-decks.md) | Промпты сессий ведущего агента для четырёх эпиков колод сообщества. |
 | historical | [Epic #74 refinement](./engineering/epic-74-refinement.md), [dependency decisions](./engineering/epic-74-dependency-decisions.md), [hardware handoff](./engineering/epic-74-hardware-handoff.md) | Выполненный план, принятые зависимости и session handoff #74. |
 | historical | [GitHub execution model](./engineering/github-execution-model.md) | Исходная настройка Project #4; текущие статусы читаются из GitHub. |
@@ -153,6 +154,8 @@ Kubernetes-доставка (staging/production workflows, `k8s/`, recovery и p
   Epic #74/#75/#76, storage, browser, security и research evidence. Ключевые записи:
   [закрытие #74](./engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md),
   [закрытие #75](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
+- **historical:** [Community decks, эпик 1: evidence задач](./engineering/evidence/community-decks/epic-1/README.md) — PR, коммиты, миграции V49–V58,
+  состояние production (всё за выключателями, жалобы включены) и проверка каждой задачи; начиная с [прототипа линии хранения](./engineering/evidence/community-decks/epic-1/share-3-lineage-prototype.md).
 - **historical:** [Community decks research and RFC](./reviews/community-decks-2026-10/README.md) — факты кода,
   варианты, исследования конкурентов/права/поиска, аудит индексов и ответы владельца 2026-10-10.
 - **historical:** [Owner console delivery record](./engineering/evidence/admin-console-2026-10/README.md) — первый снимок реализации эпика #398, его задачи, локальная проверка и границы.

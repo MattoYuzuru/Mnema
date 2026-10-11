@@ -269,7 +269,7 @@ reader: the owner of a copy, for the media his own deck's heads reference ([medi
 - **Bulkhead.** At most 3 public reads run at once per instance (guests at most 2 of them, so one place stays free for a signed-in viewer); the next one is refused before any lookup with **503
   `PUBLIC_READ_BUSY`** and `Retry-After: 1` (house schema, member `retryAfter`). Clients retry after the delay.
 - **Kill switch.** `learning.community.public-routes.enabled` is **false** by default: every route answers 404 as if it did
-  not exist. (A bearer that is present and invalid is still 401, because authentication runs first.)
+  not exist (the link previews, the access requests, `POST /api/invites:redeem` and the creation of copies `POST /api/decks/forks` are children of the same switch). (A bearer that is present and invalid is still 401, because authentication runs first.)
 - Failure codes: `DECK_INVITE_ONLY` (403, new), `RESOURCE_NOT_FOUND` (404), `INVALID_REQUEST` (400), `VERSION_CONFLICT` (412),
   `RATE_LIMITED` (429), `PUBLIC_READ_BUSY` (503, new), `AUTHENTICATION_REQUIRED` (401), `ACCESS_DENIED` (403, a valid token without `learning.read`).
 
@@ -322,12 +322,12 @@ and search engines see the title, description and author of a PUBLIC deck. Exact
 |---|---|---|
 | Deck card | `GET\|HEAD /api/public/meta/decks/{code}` | 200, `{kind, title, description, canonical, robots, image, author}` |
 | Deck head | `GET\|HEAD /api/public/meta/decks/{code}/head` | 200, `text/plain;charset=UTF-8` fragment; `X-Mnema-Preview`, and `X-Mnema-Canonical` for a PUBLIC deck |
-| Author card | `GET\|HEAD /api/public/meta/profiles/{username}` and `/head` | 200, the same shape, `kind: PROFILE` only when Identity has a public card |
+| Author card | `GET\|HEAD /api/public/meta/profiles/{username}` and `/head` | 200, always the generic card (`kind: GENERIC`) and no call to Identity until the author page `/u/` exists (epic 3) |
 
 - **Same chain, same switch.** The routes are in the optional-bearer public chain of the deck reads with the same limiter, bulkhead and kill
   switch (`404` while public routes are off); the viewer is always a guest, a token changes nothing, and a present but invalid one is 401 like there.
   Success is `Cache-Control: public, max-age=300`; problem answers stay `no-store`.
-- **Not an oracle.** Only a PUBLIC deck with a published revision gets its own card. LINK, INVITE, private, rotated, deleted, unknown, malformed
+- **Not an oracle.** Only a PUBLIC deck with a published revision gets its own card. EVERY profile route is the generic card too, whatever the login (a known public profile, a hidden or unknown one): Identity is not called, because its by-username lookup has one 15-minute allowance per caller address that grants by login and profile complaints share, and a guest-reachable route must not spend it. LINK, INVITE, private, rotated, deleted, unknown, malformed
   and never-published codes all get **the same** `GENERIC` card (`noindex`, `canonical: null`, `author: null`), byte for byte, with `200`; its `/head`
   answer also carries `X-Robots-Tag: noindex`, which the web server puts on the page.
 - **Text, not markup.** Every JSON string is plain text on one line (whitespace and control characters become one space, bidirectional formatting
@@ -335,8 +335,7 @@ and search engines see the title, description and author of a PUBLIC deck. Exact
   `Колода на Mnema.`). The `/head` fragment is the only markup: fixed `title`, `meta` and `link` tags with every value escaped (`& < > " '`), nothing
   that can open a tag, a comment or an SSI directive. It is served as `text/plain;charset=UTF-8` with `Content-Security-Policy: default-src 'none';
   sandbox` because it is reachable on the application origin: a browser shows it as text and never runs it, while the web server includes its bytes.
-- **Author.** `author {username, displayName|null}` only when Identity publishes the card (the owner's consent, fields per consent; `bio` is used for
-  a profile card only). Learning asks Identity with a 150 ms deadline of its own and caches a card or its absence 60 s and a failure 5 s; a failure
+- **Author.** `author {username, displayName|null}` only when Identity publishes the card (the owner's consent, fields per consent; `bio` is for the profile card of epic 3 and unused today). Learning asks Identity with a 150 ms deadline of its own and caches a card or its absence 60 s and a failure 5 s; a failure
   leaves `author: null` and never blocks the card.
 - **Canonical and redirect.** `canonical = {origin}/d/{code}/{slug}` (`origin` from `MNEMA_PUBLIC_BASE_URL`). The `/head` answer of a PUBLIC deck carries
   `X-Mnema-Canonical: /d/{code}/{slug}`; the web server compares it with the path it was asked for and answers one `301` on a difference (a missing or
@@ -422,7 +421,7 @@ bytes and invalid Unicode are 400. The state after the command is **exactly the 
   with one relaxation: the public profile and the media items gate only the **exposure**, i.e. becoming `PUBLIC` and a
   `publish` while `PUBLIC`. A benign edit of a deck that is already public (tags, `requestsEnabled`, topic, language, level)
   is not blocked by a withdrawn consent. Withdrawing the consent hides the author at once (Identity: the card answers like
-  an unknown account); whether the deck itself is then demoted is an **open owner decision**.
+  an unknown account); the deck itself stays public without a byline (owner decision 2026-10-11).
 - **Becoming public needs the head.** The media check reads the deck head while readers get the published revision. A
   command that makes the deck `PUBLIC` (from any other level) while the published revision is not the head must therefore
   carry `publish` for that head; otherwise it is 400 `PUBLICATION_REQUIRED` and nothing is written. `GET` still lists the
@@ -467,7 +466,7 @@ The level of a deck is changed only by the publication `PUT` above. This section
 | Create an invitation | `POST /api/decks/{deckId}/invites` `{maxUses, expiresInDays}` | 201 `{invite, token, link}` (the token **once**) |
 | Invitations | `GET /api/decks/{deckId}/invites?limit&cursor` | 200 page of invites (no token) |
 | Revoke an invitation | `POST /api/decks/{deckId}/invites/{inviteId}:revoke` | 200 invite |
-| Redeem | `POST /api/invites:redeem` `{token}` (any signed-in account) | 200 `{code}` |
+| Redeem | `POST /api/invites:redeem` `{token}` (any signed-in account; 404 while `learning.community.public-routes.enabled` is off, decided before the body is read) | 200 `{code}` |
 | Ask for access | `POST /api/public/decks/{code}/access-requests` (signed in) | 202 `{status: PENDING}` |
 | Take it back | `POST /api/public/decks/{code}/access-requests:withdraw` (signed in) | 204 |
 | Open requests | `GET /api/decks/{deckId}/access-requests?limit&cursor` | 200 page, PENDING only |
@@ -525,12 +524,11 @@ The level of a deck is changed only by the publication `PUT` above. This section
   only profiles with consent resolve, and an unknown login, a malformed one and a hidden profile are the same 404. The owner's own
   login is 400. A grant is idempotent (the existing one is returned), closes a pending request of that person as `APPROVED` without a
   notification, and, being the owner's deliberate act, lifts the block a revocation puts on that person's invitation links. A deck
-  holds at most 1000 people (422 `RESOURCE_LIMIT_EXCEEDED`, `limit: 1000`, for every way in). **Lookup budget:** 10 per owner per
-  minute and 40 per instance per minute (429 `RATE_LIMITED`, `Retry-After` = the rest of that window, before Identity is asked).
-  Identity limits this public lookup per *network* (60 a minute) and every Learning call comes from one address, so all owners of
-  all instances behind it share that budget; the instance cap keeps one instance below it (with N instances behind one address
-  set `learning.community.grants.instance-lookups-per-minute` to about 40 / N). Identity answering 429 is 429 with its
-  `Retry-After`, being unreachable is 503; neither grants anything.
+  holds at most 1000 people (422 `RESOURCE_LIMIT_EXCEEDED`, `limit: 1000`, for every way in). **Lookup budget:** one in-process budget in Identity's own unit, a fixed
+  **15-minute window**, shared with the profile complaints: at most 10 per owner, and 40 per instance together with the complaints (complaints take at most 10 of them, so they cannot starve grants)
+  (429 `RATE_LIMITED`, `Retry-After` = the seconds until the window ends, before Identity is asked). Identity limits this public lookup per *network* (60 per 15 minutes) and every Learning call comes from one address, so all owners
+  of all instances behind it share that allowance; with N instances behind one address set `learning.community.profile-lookups.instance-per-window` to about 40 / N. Identity answering 429 itself spends the whole budget until the end of the current window and is answered
+  429 with that remaining time (never a fixed guess); being unreachable is 503; neither grants anything.
 - **Revoking a person** (`DELETE …/grants/{granteeId}`) closes access at once and records a `REJECTED` request of that person marked
   as a revocation (created if they never asked). For 30 days a live invitation link cannot let them back in (the same 404) and
   asking again is the silent answer; the owner can add them by login at once. Copies the person already made stay (Share/10).
@@ -564,8 +562,8 @@ duplicated and edits never cross in either direction.
 - **Who may copy** is `DeckAccess` by the code in the body, the same decision as the public read: `PUBLIC` and `LINK` decks by any
   signed-in account, an `INVITE` deck by a grantee (403 `DECK_INVITE_ONLY` without a grant). A private deck, an unknown, malformed or
   rotated code, a deleted deck and a deck that was never published are the same 404 `RESOURCE_NOT_FOUND`. The owner of the source gets
-  **409 `FORK_OWN_DECK`**. The kill switch `learning.community.forks.enabled` is **false** by default: creation answers 404 as if the
-  route did not exist (existing copies are unaffected).
+  **409 `FORK_OWN_DECK`**. The kill switches `learning.community.forks.enabled` and `learning.community.public-routes.enabled` are **false** by default: creation needs BOTH, otherwise it answers 404 as if the
+  route did not exist, before the body is read (forks on with public routes off is the same 404; existing copies are unaffected).
 - **Idempotent twice.** By `commandId` (house receipts: an exact retry returns the original acknowledgement and status with
   `Idempotency-Replayed: true`; a used `commandId` with another body is 409 `IDEMPOTENCY_CONFLICT`), and by **(owner, source)**: a second request
   with any `commandId` while a live copy of this source exists returns that copy (`existing: true`, 200). A deleted copy does not count.
@@ -591,10 +589,10 @@ duplicated and edits never cross in either direction.
   of exactly this deck («Открыть мою копию»); the guest's summary is unchanged («Войдите, чтобы добавить колоду к себе»).
 - **Limits.** At most `learning.community.forks.max-preparing` (10) live copies per account may be unfinished at once: one more is 422
   `RESOURCE_LIMIT_EXCEEDED` with the member `limit`. At most `learning.community.forks.max-per-window` (20) copies may be **created** per account in a sliding `learning.community.forks.window` (one hour), deleted copies included: one more is 429
-  `RATE_LIMITED` with `Retry-After` (and the member `retryAfter`), the time until the oldest creation leaves the window; answering an existing copy never counts. The job runs one copy per account at a time (`learning.jobs` per-account limit) in slices of at most 200 entries.
+  `RATE_LIMITED` with `Retry-After` (and the member `retryAfter`), the time until the oldest creation leaves the window; answering an existing copy never counts. Across all accounts at most `learning.community.forks.max-unfinished-total` (200) copies may be unfinished (the queue of the job is shared): one more is **503 `FORKS_BUSY`** with `Retry-After: 30` (and the member `retryAfter`), nothing is written and the same command may be sent again; answering an existing copy never counts. The job runs one copy per account at a time (`learning.jobs` per-account limit) in slices of at most 200 entries.
 
 ### Codes
 
-New: `DECK_PREPARING` (409) and `FORK_OWN_DECK` (409); no members. Existing codes keep their status/title/detail
+New: `DECK_PREPARING` (409), `FORK_OWN_DECK` (409) and `FORKS_BUSY` (503, member `retryAfter`, header `Retry-After`). Existing codes keep their status/title/detail
 (`RATE_LIMITED` 429, `RESOURCE_NOT_FOUND` 404, `DECK_INVITE_ONLY` 403, `IDEMPOTENCY_CONFLICT` 409, `INVALID_REQUEST` 400, `RESOURCE_LIMIT_EXCEEDED` 422). Problem text never echoes
 codes, titles or identifiers.

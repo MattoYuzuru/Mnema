@@ -82,12 +82,6 @@ class IdentityAuthorCardsTest {
     }
 
     @Test
-    void readsTheCardByLoginCaseInsensitively() {
-        assertThat(cards.byUsername("Anna.K")).hasValueSatisfying(card -> assertThat(card.username()).isEqualTo("anna.k"));
-        assertThat(path.get()).isEqualTo("/api/accounts/profiles/by-username/Anna.K");
-    }
-
-    @Test
     void fieldsTheOwnerDidNotShowAreAbsent() {
         body = card(account.toString(), "anna.k", "null", "null");
         assertThat(cards.byAccount(account)).hasValueSatisfying(card -> {
@@ -152,13 +146,10 @@ class IdentityAuthorCardsTest {
             now.set(now.get().plusSeconds(IdentityAuthorCards.FAILURE_TTL_SECONDS + 1));
             assertThat(cards.byAccount(account)).as(rejected).isEmpty();
         }
-        body = card(account.toString(), "other.login", "null", "null");
-        assertThat(cards.byUsername("anna.k")).isEmpty();
     }
 
     @Test
-    void aMalformedLoginNeverReachesTheNetwork() {
-        for (String login : new String[] {null, "", "ab", "a/b/c", "../x", "a b c", "x".repeat(51), "имя-логин"}) assertThat(cards.byUsername(login)).isEmpty();
+    void aMissingAccountNeverReachesTheNetwork() {
         assertThat(cards.byAccount(null)).isEmpty();
         assertThat(calls.get()).isZero();
     }

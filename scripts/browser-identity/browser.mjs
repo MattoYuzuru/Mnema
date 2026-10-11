@@ -13,6 +13,7 @@ import { runEvents } from './events.mjs';
 import { runAdmin } from './admin.mjs';
 import { runWorkshop } from './workshop.mjs';
 import { runAssessment } from './assessment.mjs';
+import { runCommunity } from './community.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const defaultCdpTimeout = Number.isInteger(config.cdpTimeoutMs) && config.cdpTimeoutMs >= 1000 && config.cdpTimeoutMs <= 120_000 ? config.cdpTimeoutMs : 10_000;
@@ -93,6 +94,7 @@ const tabs = [];
 let step = 'startup';
 let mechanicsFailures = [];
 let mechanicsFindings = [];
+let communityOutcome = null;
 let diagnostics = () => ({});
 async function openTab() {
   const response = await fetch(`http://127.0.0.1:${config.debugPort}/json/new?about:blank`,
@@ -176,8 +178,11 @@ try {
       // The paywall scenario (#301) loads the app about twenty times (every width and the quiet routes of the goal question).
       // The bounded 1317-item infinite-list fixture adds 66 reads + 66 publications + 27 pages, plus its shell/assets.
       const infiniteListBudget = config.mechanics ? 250 : 0;
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0) + (config.admin ? 1000 : 0)
-          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0)) {
+      // Community decks (#439): two passes of ~24 full page loads each on four tabs (the invitee registers in its own browser context), every one with
+      // its public reads, the author card and the shell assets.
+      const communityBudget = config.community ? 3600 : 0;
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0) + (config.admin ? 1000 : 0) + communityBudget
+          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0) + (config.community ? 300 : 0)) {
         asynchronousFailure = true;
         firstAsynchronousFailure ??= 'bounded browser request budget exceeded';
       }
@@ -270,6 +275,34 @@ try {
     await tab.call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   }
   await initialize(cdp);
+  /**
+   * A tab in a NEW browser context (Target.createBrowserContext): no cookies, no storage, no session of either account. The context is
+   * disposed with `close()`. The same origin allowlist, request budget and event bookkeeping apply as for every other tab.
+   */
+  async function openGuestTab() {
+    const version = await (await fetch(`http://127.0.0.1:${config.debugPort}/json/version`, { signal: AbortSignal.timeout(10000) })).json();
+    const browserSocket = new WebSocket(version.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => {
+      browserSocket.addEventListener('open', resolve, { once: true });
+      browserSocket.addEventListener('error', () => reject(new Error('CDP connection failed')), { once: true });
+    });
+    const browser = new CDP(browserSocket);
+    tabs.push(browser);
+    const { browserContextId } = await browser.call('Target.createBrowserContext', { disposeOnDetach: false });
+    const { targetId } = await browser.call('Target.createTarget', { url: 'about:blank', browserContextId });
+    const socket = new WebSocket(`ws://127.0.0.1:${config.debugPort}/devtools/page/${targetId}`);
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', () => reject(new Error('CDP connection failed')), { once: true });
+    });
+    const tab = new CDP(socket);
+    tabs.push(tab);
+    await initialize(tab);
+    return { tab, close: async () => {
+      tab.close();
+      await browser.call('Target.disposeBrowserContext', { browserContextId }).catch(() => {});
+    } };
+  }
   async function until(predicate, label, timeoutMs = 18000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -531,7 +564,7 @@ try {
   const visibilityBeforeFocus = await cdp.evaluate('document.visibilityState');
   require(visibilityBeforeFocus === 'hidden', 'primary tab did not become hidden');
   const hiddenDeckRequests = primaryDeckListRequests;
-  if (!config.media) {
+  if (!config.media && !config.community) {
     await sleep(47_000);
     require(primaryDeckListRequests === hiddenDeckRequests, 'hidden library performed periodic deck reads');
   }
@@ -541,11 +574,11 @@ try {
   require((await sanitizedLocation()) === '/decks', 'cross-tab refresh navigated the primary tab');
   record('real_own_deck_cross_tab_refresh', {
     visibilityBeforeFocus, requestsAfterFocus: networkRequests - requestsBeforeFocus,
-    hiddenSecondsWithoutDeckReads: config.media ? 0 : 47,
+    hiddenSecondsWithoutDeckReads: config.media || config.community ? 0 : 47,
     primaryRoutePreserved: true, manualReload: false
   });
 
-  if (!config.media) {
+  if (!config.media && !config.community) {
     step = 'own_deck_visible_polling';
     const timerDeckTitle = 'Новая колода по таймеру';
     const createByOtherTab = await conflictTab.callFunction(`async function(base, token, title) {
@@ -1110,6 +1143,14 @@ try {
         setStep: value => { step = value; }, deckPath, bearer: secondBearer });
     }
   }
+  if (config.community) {
+    // Community decks (#439): publication -> guest -> copy -> study -> by invitation, on desktop and mobile viewports, first account
+    // as the owner (first tab), second account as the member (second tab) and a guest tab in a new browser context.
+    step = 'community_prepare';
+    communityOutcome = await runCommunity({
+      config, record, SafeFailure, until, exists, navigate, fill, submit, clickText, saveScreenshot, saveFullScreenshot,
+      setStep: value => { step = value; }, ownerTab: cdp, ownerBearer: firstBearer, memberTab: second, memberBearer: secondBearer, openGuestTab });
+  }
   step = 'first_tab_profile';
   // The first tab stayed in the background through the authoring, notification, mechanics and hub flows; bring it back
   // before reading it, as the second tab's focus changes in those flows may have hidden it.
@@ -1148,10 +1189,14 @@ try {
   record('two_account_shared_cookie_logout_isolation', { loggedOutAccountBearerStatus: actorAfterLogout,
     otherAccountBearerStatus: otherAfterLogout });
   // The public /ai page, on the first tab that is now anonymous (#301).
-  step = 'ai_public';
-  await runAiPublic({ tab: cdp, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; } });
-  await runEvents({ tab: cdp, config, record, SafeFailure, until, exists, navigate, fill, submit, clickText,
-    saveScreenshot, bearer: secondBearer, setStep: value => { step = value; } });
+  // `--community` (#439) is an integration aid for community decks: the public /ai page and the events editor have nothing to do with it, so
+  // it leaves them to the default run (which also carries the known 320 px / 200 % text check of /ai that headless Chrome fails).
+  if (!config.community) {
+    step = 'ai_public';
+    await runAiPublic({ tab: cdp, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; } });
+    await runEvents({ tab: cdp, config, record, SafeFailure, until, exists, navigate, fill, submit, clickText,
+      saveScreenshot, bearer: secondBearer, setStep: value => { step = value; } });
+  }
   if (config.admin) {
     await runAdmin({ tab: cdp, config, record, SafeFailure, until, exists, navigate, fill, submit, clickText,
       saveScreenshot, bearer: secondBearer, setStep: value => { step = value; } });
@@ -1187,21 +1232,24 @@ try {
   require(browserErrors === 0 && !asynchronousFailure && !tabs.some(tab => tab.eventFailed), 'browser runtime errors');
   const screenshot = await cdp.call('Page.captureScreenshot', { format: 'png' });
   await writeFile(join(config.output, 'login.png'), Buffer.from(screenshot.data, 'base64'));
-  const evidence = { state: mechanicsFailures.length === 0 ? 'passed' : 'failed',
+  // A community gap (a flow the product does not complete through its own UI) is a finding like a failed stage: the run is red until it is fixed.
+  const communityFailures = [...(communityOutcome?.failures ?? []), ...(communityOutcome?.gaps ?? []).map(gap => ({ stage: 'gap:' + gap.id, reason: gap.effect }))];
+  const evidence = { state: mechanicsFailures.length === 0 && communityFailures.length === 0 ? 'passed' : 'failed',
     ...(config.mechanics ? { mechanicsFailures, mechanicsFindings, syntheticMicrophone: true, realDeviceMicrophone: false } : {}),
+    ...(config.community ? { communityFailures, communityGaps: communityOutcome?.gaps ?? [] } : {}),
     scenarios: results, tokenExchanges, networkRequests, identityRequests, cancelledInterceptions,
     externalRequestsBlocked: externalRequests,
     browserRuntimeErrors: browserErrors, transport: 'real HTTPS, exact ephemeral SPKI allowlist, same-site cross-origin loopback',
     browser: (await cdp.call('Browser.getVersion')).product };
   await writeFile(join(config.output, 'browser.json'), JSON.stringify(evidence, null, 2));
-  if (mechanicsFailures.length > 0) process.exitCode = 1;
+  if (mechanicsFailures.length > 0 || communityFailures.length > 0) process.exitCode = 1;
 } catch (error) {
   // No caught exception, URL, DOM, response body or stack may reveal a credential.
   await writeFile(join(config.output, 'browser.json'), JSON.stringify({ state: 'failed', step,
     reason: error instanceof SafeFailure ? error.message : 'driver_failure', completedScenarios: results.length,
     // Local diagnosis only (--keep-on-failure): CDP method names and timeouts, never page data or credentials.
     ...(config.diagnosticsDir && !(error instanceof SafeFailure) ? { driverDetail: String(error?.message ?? error).slice(0, 160) } : {}),
-    ...(config.mechanics ? { scenarios: results } : {}), counts: diagnostics() }));
+    ...(config.mechanics || config.community ? { scenarios: results } : {}), counts: diagnostics() }));
   process.exitCode = 1;
 } finally {
   for (const tab of tabs) tab.close();

@@ -204,7 +204,7 @@ public class PublicationService {
     /**
      * The checklist of a resulting «Публичная» level; the description is that of the revision the readers will get. The description, topic and language hold for every
      * effective write of a public deck. The public profile and the media check gate the exposure only (the transition into PUBLIC and a publish while PUBLIC): a withdrawn
-     * consent already hides the author in Identity at once, whether the deck itself is demoted is an open owner decision, and until then it does not freeze benign edits.
+     * consent already hides the author in Identity at once, the deck itself stays public without a byline (owner decision 2026-10-11), so it does not freeze benign edits.
      */
     private void requirePublic(UUID owner, UUID deck, Head head, UUID pointer, boolean publishing, boolean exposure, PublicationMetadata metadata, boolean profileReady) {
         List<String> failed = new ArrayList<>();

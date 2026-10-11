@@ -72,10 +72,10 @@ class ComplaintHttpIntegrationTest extends PostgresIntegrationTest {
         registry.add("learning.community.public-routes.guest-per-minute", () -> 100_000);
         registry.add("learning.community.public-routes.account-per-minute", () -> 100_000);
         registry.add("learning.community.complaints.reporter-per-day", () -> 4);
-        registry.add("learning.community.complaints.profile-lookups-per-reporter-per-minute", () -> 1_000);
-        registry.add("learning.community.complaints.profile-lookups-per-instance-per-minute", () -> 1_000);
-        registry.add("learning.community.grants.instance-lookups-per-minute", () -> 1_000);
-        registry.add("learning.community.grants.owner-lookups-per-minute", () -> 1_000);
+        registry.add("learning.community.profile-lookups.instance-per-window", () -> 1_000);
+        registry.add("learning.community.profile-lookups.complaints-per-window", () -> 1_000);
+        registry.add("learning.community.profile-lookups.owner-per-window", () -> 1_000);
+        registry.add("learning.community.profile-lookups.reporter-per-window", () -> 1_000);
     }
 
     @BeforeEach
@@ -362,10 +362,7 @@ class ComplaintHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(asUser("POST", "/public/profiles/nobody-" + UUID.randomUUID() + "/complaints", reporter, body).statusCode()).isEqualTo(404);
         assertThat(asUser("POST", "/public/profiles/a/complaints", reporter, body).statusCode()).isEqualTo(404);
         assertThat(asUser("POST", "/public/profiles/self-" + reporter.toString().substring(0, 8) + "/complaints", reporter, body).statusCode()).isEqualTo(400);
-        // Identity limits lookups / is down: the answers of the grant lookup
-        HttpResponse<String> limited = asUser("POST", "/public/profiles/" + HttpIdentityFixture.LIMITED_LOGIN + "/complaints", reporter, body);
-        assertThat(limited.statusCode()).isEqualTo(429);
-        assertThat(limited.headers().firstValue("retry-after")).hasValue("7");
+        // Identity is down: the answer of the grant lookup (Identity limiting lookups is 429 with the budget window's wait, ProfileLookupBudgetHttpIntegrationTest)
         assertThat(asUser("POST", "/public/profiles/" + HttpIdentityFixture.BROKEN_LOGIN + "/complaints", reporter, body).statusCode()).isEqualTo(503);
         assertThat(complaints(reporter)).isEqualTo(1);
     }

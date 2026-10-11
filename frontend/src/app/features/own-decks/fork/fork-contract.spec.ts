@@ -189,6 +189,7 @@ describe('Fork wire contract (contracts/decks/forks.json)', () => {
             expect(failure(forks.problems.ownDeck).kind).toBe('own-deck');
             expect(failure(forks.problems.preparing).kind).toBe('preparing');
             expect(failure(forks.problems.limit)).toEqual({ kind: 'limit', limit: forks.problems.limit.body.limit, retryAfter: null });
+            expect(failure(forks.problems.busy, forks.problems.busy.headers)).toEqual({ kind: 'queue-busy', limit: null, retryAfter: 30 });
         });
 
         it('keeps a 403 without the invitation code, a 429 delay, a 503 and a lost connection apart', () => {

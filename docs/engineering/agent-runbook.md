@@ -114,6 +114,9 @@ python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
 - Flags: `--authoring` (Deck/Capture/draft/publish/Browse + one Study interaction), `--media`
   (needs `--authoring`), `--mechanics` (needs both; default deadline 600 s). Scope and
   limits: [harness README](../../scripts/browser-identity/README.md).
+- `--community` (no `--authoring` needed): community decks end to end (publication, guest, copy, Study, a complaint, by-invitation access with a request,
+  its withdrawal, an approval and an invitation link redeemed by a new account) on desktop and mobile viewports, about 50 s; turns the three
+  `learning.community.*` kill switches on for that disposable run only (README, «Community decks»).
 - Chrome always runs muted (`--mute-audio`); audio is verified through media-element state.
   `--mechanics` uses Chrome's synthetic microphone, not a real device.
 - Screenshots/evidence go to a `mnema-browser-evidence-*` temp directory. `--keep-on-failure`

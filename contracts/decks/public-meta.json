@@ -1,6 +1,6 @@
 {
   "contract": "public-meta-v1",
-  "description": "Shared fixtures for the link-preview metadata of the web server (Share/14, #436, docs/operations/link-previews.md): the card of a deck or of an author that nginx puts into the head of index.html for /d/{code}/{slug}, so Telegram, VK and search engines see the deck without server-side rendering. GET and HEAD only, the public chain of the deck reads (same limiter, bulkhead and kill switch), a guest's view that never depends on a token. The /head fragment is served as text/plain with a restrictive Content-Security-Policy because it is reachable on the application origin. Every case that is not a PUBLIC deck (or a profile with a public card) is the SAME generic card, so the answer is not an oracle. All JSON strings are plain text; the HTML fragment is the only markup and has every value escaped. `invariants` are executable: PublicMetaContractFixtureTest builds these examples with the production code.",
+  "description": "Shared fixtures for the link-preview metadata of the web server (Share/14, #436, docs/operations/link-previews.md): the card of a deck that nginx puts into the head of index.html for /d/{code}/{slug}, so Telegram, VK and search engines see the deck without server-side rendering. GET and HEAD only, the public chain of the deck reads (same limiter, bulkhead and kill switch), a guest's view that never depends on a token. The /head fragment is served as text/plain with a restrictive Content-Security-Policy because it is reachable on the application origin. Every case that is not a PUBLIC deck is the SAME generic card, so the answer is not an oracle; that includes EVERY profile route, which answers the generic card without calling Identity until the author page /u/ exists (epic 3). All JSON strings are plain text; the HTML fragment is the only markup and has every value escaped. `invariants` are executable: PublicMetaContractFixtureTest builds these examples with the production code.",
   "constants": {
     "origin": "https://mnema.app (learning.community.public-origin, from MNEMA_PUBLIC_BASE_URL)",
     "imagePath": "/assets/og-image.png",
@@ -26,11 +26,11 @@
     },
     {
       "route": "GET|HEAD /api/public/meta/profiles/{username}",
-      "answer": "JSON card"
+      "answer": "JSON card: always the generic card, whatever the login (a known public profile, a hidden or unknown one, a malformed one); Identity is never called. Epic 3 (the author page /u/{username}) brings the PROFILE card back, behind a budget that is not Identity's per-address by-username allowance"
     },
     {
       "route": "GET|HEAD /api/public/meta/profiles/{username}/head",
-      "answer": "text/plain;charset=UTF-8 head fragment, same headers (no canonical header)"
+      "answer": "text/plain;charset=UTF-8 head fragment: always the generic fragment with the generic headers (X-Mnema-Preview: generic, X-Robots-Tag: noindex, no canonical header)"
     }
   ],
   "publicDeck": {
@@ -54,7 +54,7 @@
     }
   },
   "generic": {
-    "appliesTo": "LINK, INVITE, PRIVATE, rotated, deleted, unknown and malformed codes, a deck without a published revision, a profile without a public card",
+    "appliesTo": "LINK, INVITE, PRIVATE, rotated, deleted, unknown and malformed codes, a deck without a published revision, and every profile route (any login, known or not) until the author page exists",
     "json": {
       "kind": "GENERIC",
       "title": "Mnema — учиться, понимать, помнить",
@@ -72,6 +72,7 @@
   },
   "invariants": [
     "the JSON of every non-public case equals `generic.json` byte for byte, and so does the fragment; no canonical header is ever sent for them",
+    "the profile routes never call Identity (neither the author card nor the by-username lookup): the by-username lookup is Identity's 60 per 15 minutes per caller address, shared with the grants by login and the profile complaints, and a guest-reachable route must not spend it; the answer does not depend on the login, so it is no oracle for the existence of a profile",
     "the JSON has exactly the members kind, title, description, canonical, robots, image, author in this order",
     "a title or description is one line of plain text, cut on a word boundary with an ellipsis, at most 120 and 200 code points",
     "a title, description or name is one line of plain text: whitespace and control characters become one space, bidirectional formatting characters (U+200E/F, U+202A-202E, U+2066-2069, U+061C) are dropped",
