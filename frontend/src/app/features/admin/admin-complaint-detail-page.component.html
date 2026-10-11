@@ -12,7 +12,8 @@
   </div>
 }
 @if (detail(); as complaint) {
-  @if (notice()) {<p class="notice success" role="status">{{ notice() }}</p>}
+  <!-- Always on the page, so a result is announced; after a decision the focus comes here, as the buttons that led to it are gone. -->
+  <div id="decision-status" class="status-region" role="status" tabindex="-1">@if (notice()) {<p class="notice success">{{ notice() }}</p>}</div>
   @if (actionError()) {<p class="notice error" role="alert">{{ actionError() }}</p>}
   @if (complaint.overdue) {
     <p class="notice warning" role="status"><strong>{{ deadline() }}.</strong> Срок рассмотрения вышел {{ date(complaint.dueAt) }}. Решите жалобу или отклоните её.</p>
@@ -67,7 +68,7 @@
             @if (deck.hiddenAt) { <small class="hint">С {{ date(deck.hiddenAt) }}</small> }
           </dd>
         </div>
-        <div><dt>Состав</dt><dd>{{ deck.memberCount }} материалов, {{ deck.exerciseCount }} упражнений</dd></div>
+        <div><dt>Состав</dt><dd>{{ materialsText(deck.memberCount) }}, {{ exercisesText(deck.exerciseCount) }}</dd></div>
         <div><dt>Открытых жалоб на колоду</dt><dd>{{ deck.openComplaints }}</dd></div>
         @if (deck.ownerId) {
           <div><dt>Автор</dt><dd><a [routerLink]="['/manage/users', deck.ownerId]"><code>{{ deck.ownerId }}</code></a></dd></div>
@@ -103,7 +104,7 @@
     @if (pending(); as action) {
       <form class="editor" (submit)="$event.preventDefault(); confirm()">
         <!-- The takedown text changes with every chosen unit; the picker's own summary announces that, so only the other warnings are an alert. -->
-        <p class="notice warning" [attr.role]="action === 'TAKEN_DOWN' ? null : 'alert'">{{ confirmText(action) }} Решение попадёт в журнал.</p>
+        <p id="confirm-warning" class="notice warning" tabindex="-1" [attr.role]="action === 'TAKEN_DOWN' ? null : 'alert'">{{ confirmText(action) }} Решение попадёт в журнал.</p>
         @if (action === 'TAKEN_DOWN') {
           <app-admin-takedown-picker [complaintId]="complaint.complaintId" (unitsChange)="setUnits($event)" />
           @if (complaint.status === 'OPEN') {
@@ -123,12 +124,13 @@
     } @else {
       <div class="actions">
         @for (action of offered(); track action) {
-          <button class="button" type="button" (click)="ask(action)">{{ askLabel(action, complaint.status === 'DECIDED') }}</button>
+          <button class="button" type="button" [attr.data-action]="action" (click)="ask(action)">{{ askLabel(action, complaint.status === 'DECIDED') }}</button>
         }
         @if (canUnhide()) {
-          <button class="button" type="button" (click)="ask('UNHIDE')">Вернуть в Сообщество</button>
+          <button class="button" type="button" data-action="UNHIDE" (click)="ask('UNHIDE')">Вернуть в Сообщество</button>
         }
       </div>
+      @if (hideHint()) { <p class="hint">{{ hideHint() }}</p> }
       @if (complaint.status === 'DECIDED' && offered().length === 0 && !canUnhide()) {
         <p class="hint">Жалоба решена, больше действий нет.</p>
       }

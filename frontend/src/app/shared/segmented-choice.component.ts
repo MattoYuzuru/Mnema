@@ -20,14 +20,15 @@ let nextGroup = 0;
 @Component({
     selector: 'app-segmented-choice',
     template: `
-      <fieldset class="segmented" [disabled]="disabled()" [attr.aria-describedby]="hintId">
+      <fieldset class="segmented" [disabled]="disabled()" [attr.aria-describedby]="describedBy() === null ? hintId : hintId + ' ' + describedBy()"
+        [attr.aria-invalid]="invalid() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null">
         <legend>{{ legend() }}</legend>
         <div class="row">
           <div class="segments">
             @for (option of options(); track option.value) {
               <label class="segment">
                 <input type="radio" [name]="groupName()" [value]="option.value" [checked]="option.value === value()"
-                  [disabled]="option.disabled === true" (change)="select(option.value)" />
+                  [disabled]="option.disabled === true" [attr.aria-disabled]="busy() ? 'true' : null" (click)="guard($event)" (change)="select(option.value)" />
                 <span class="mark" aria-hidden="true"></span>
                 <span class="text">{{ option.label }}</span>
               </label>
@@ -49,11 +50,20 @@ export class SegmentedChoiceComponent<T extends string = string> {
     /** Radio group name; supply a stable one when the group takes part in a form, otherwise a unique one is generated. */
     readonly name = input<string | null>(null);
     readonly disabled = input(false);
+    /** Ids of elements that describe the whole group (for example its error); they follow the live hint. */
+    readonly describedBy = input<string | null>(null);
+    /** The choice was refused (a missing answer). */
+    readonly invalid = input(false);
+    /** The choice is locked for a moment (a request is on its way) but stays in the focus order: `aria-disabled`, and every change is refused. */
+    readonly busy = input(false);
 
     private readonly uid = `mn-segmented-${nextGroup++}`;
     protected readonly hintId = `${this.uid}-hint`;
     protected readonly groupName = computed(() => this.name() ?? this.uid);
     protected readonly hint = computed(() => this.options().find(option => option.value === this.value())?.hint ?? '');
 
-    protected select(value: T): void { this.value.set(value); }
+    protected select(value: T): void { if (!this.busy()) this.value.set(value); }
+
+    /** A radio cannot be refused with `disabled` without losing the focus; cancelling the click keeps the old choice. */
+    protected guard(event: Event): void { if (this.busy()) event.preventDefault(); }
 }

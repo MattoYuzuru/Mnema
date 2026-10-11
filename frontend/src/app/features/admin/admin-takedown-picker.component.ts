@@ -24,7 +24,8 @@ export const MAX_TAKEDOWN_UNITS = 1000;
     <h3 id="picker-title">Что снять</h3>
     <p class="hint">
       Отметьте материалы и упражнения опубликованной версии, где есть спорное содержимое. Снимаются именно эти версии: они перестанут открываться
-      в колоде и в копиях, где их не меняли. Версия, которую владелец копии изменил у себя, остаётся.
+      в колоде и в копиях, где их не меняли. Версия, которую владелец копии изменил у себя, остаётся. Картинки, звук и видео этих версий перестанут
+      показываться везде, где есть эта колода и её копии, даже если их оставят в новой версии; другой файл, загруженный самим владельцем копии, не затрагивается.
     </p>
     <app-segmented-choice legend="Что отмечать" [options]="kindOptions()" [value]="kind()" (valueChange)="setKind($event)" />
     @for (list of lists; track list.kind) {
@@ -35,19 +36,22 @@ export const MAX_TAKEDOWN_UNITS = 1000;
             <p>{{ list.cursor.error() }}</p><button class="button" type="button" (click)="list.cursor.reload()">Повторить</button>
           </div>
         }
-        <ul #rows class="picker-list" role="list" [attr.aria-label]="list.kind === 'ITEM' ? 'Материалы колоды' : 'Упражнения колоды'">
-          @for (unit of list.cursor.items(); track unit.key) {
-            <li>
-              <label class="check-row">
-                <input type="checkbox" [checked]="isChosen(unit)" [disabled]="unit.takenDown" (change)="toggle(unit)" />
-                <span>
-                  <strong>{{ unit.ordinal + 1 }}.</strong> {{ label(unit) }}
-                  @if (unit.takenDown) { <span class="stamp">Уже снято</span> }
-                </span>
-              </label>
-            </li>
-          }
-        </ul>
+        <fieldset class="check-group">
+          <legend>{{ list.kind === 'ITEM' ? 'Материалы колоды' : 'Упражнения колоды' }}</legend>
+          <ul #rows class="picker-list" role="list">
+            @for (unit of list.cursor.items(); track unit.key) {
+              <li>
+                <label class="check-row">
+                  <input type="checkbox" [checked]="isChosen(unit)" [disabled]="unit.takenDown" (change)="toggle(unit)" />
+                  <span>
+                    <strong>{{ unit.ordinal + 1 }}.</strong> {{ label(unit) }}
+                    @if (unit.takenDown) { <span class="stamp">Уже снято</span> }
+                  </span>
+                </label>
+              </li>
+            }
+          </ul>
+        </fieldset>
         @if (!list.cursor.loading() && !list.cursor.error() && list.cursor.items().length === 0) {
           <p class="empty-state">{{ list.kind === 'ITEM' ? 'В опубликованной версии нет материалов.' : 'В опубликованной версии нет упражнений.' }}</p>
         }

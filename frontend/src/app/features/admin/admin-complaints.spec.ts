@@ -53,6 +53,8 @@ async function setup<T>(type: Type<T>, routeParams: Record<string, string> = {},
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(type);
     root = fixture.nativeElement as HTMLElement;
+    // Attached, so the focus can be asserted
+    document.body.append(root);
     fixture.detectChanges();
 }
 async function settle(): Promise<void> {
@@ -69,7 +71,7 @@ const queueUrl = (status: string, cursor?: string) => (request: { url: string; p
     request.url === '/api/admin/complaints' && request.params.get('status') === status && request.params.get('limit') === '50' && request.params.get('cursor') === (cursor ?? null);
 
 beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(NOW); });
-afterEach(() => { http?.verify(); fixture?.destroy(); vi.useRealTimers(); });
+afterEach(() => { http?.verify(); root?.remove(); fixture?.destroy(); vi.useRealTimers(); });
 
 describe('complaint queue', () => {
     it('lists open complaints with the deadline in words, the reason and a link to each', async () => {
@@ -79,9 +81,9 @@ describe('complaint queue', () => {
         await settle();
         const rows = [...root.querySelectorAll('tbody tr')].map(row => row.textContent!.replace(/\s+/g, ' ').trim());
         expect(rows).toHaveLength(3);
-        expect(rows[0]).toContain('Просрочена на 3 дн.');
-        expect(rows[1]).toContain('Срок через 10 дн.');
-        expect(rows[2]).toContain('Срок через 21 дн.');
+        expect(rows[0]).toContain('Просрочена на 3 дня');
+        expect(rows[1]).toContain('Срок через 10 дней');
+        expect(rows[2]).toContain('Срок через 21 день');
         expect(rows[1]).toContain('Английский: путешествия');
         expect(rows[1]).toContain('код Kq7xT3mNpR');
         expect(rows[1]).toContain('Нарушены авторские права');
@@ -101,7 +103,7 @@ describe('complaint queue', () => {
         const rows = [...root.querySelectorAll('tbody tr')].map(row => row.textContent!);
         expect(rows[0]).toContain('Просрочена');
         expect(rows[0]).not.toContain('на 0');
-        expect(rows[1]).toContain('Срок через 1 дн.');
+        expect(rows[1]).toContain('Срок через 1 день');
     });
 
     it('switches to the decided complaints through the address and shows what each decision did', async () => {
@@ -167,7 +169,7 @@ describe('complaint detail', () => {
         expect(text).toContain('Нарушены авторские права');
         expect(text).toContain(base.text);
         expect(text).toContain('Английский: путешествия');
-        expect(text).toContain('Срок через 10 дн.');
+        expect(text).toContain('Срок через 10 дней');
         expect(text).toContain('Ему о решении не сообщается');
         expect(text).toContain('Открытых жалоб на колоду');
         const hrefs = [...root.querySelectorAll<HTMLAnchorElement>('a')].map(link => link.getAttribute('href'));
@@ -183,7 +185,7 @@ describe('complaint detail', () => {
         http.expectOne(detailUrl).flush(openDeck({ overdue: true, dueAt: '2026-10-08T00:00:00Z' }));
         await settle();
         const warning = root.querySelector('.notice.warning')!;
-        expect(warning.textContent).toContain('Просрочена на 3 дн.');
+        expect(warning.textContent).toContain('Просрочена на 3 дня');
         expect(warning.textContent).toContain('Срок рассмотрения вышел');
     });
 
@@ -270,6 +272,9 @@ describe('complaint detail', () => {
         it('lists the published materials and exercises, marks the ones already taken down and keeps the confirmation disabled until something is chosen', async () => {
             await openPicker();
             expect(root.querySelector('app-admin-takedown-picker h3')!.textContent).toBe('Что снять');
+            expect([...root.querySelectorAll('app-admin-takedown-picker fieldset.check-group > legend')].map(legend => legend.textContent)).toEqual(['Материалы колоды', 'Упражнения колоды']);
+            expect(root.querySelector('app-admin-takedown-picker fieldset ul')!.hasAttribute('aria-label')).toBe(false);
+            expect(root.querySelector('app-admin-takedown-picker')!.textContent).toContain('перестанут показываться везде');
             expect([...root.querySelectorAll('app-admin-takedown-picker ul')[0].querySelectorAll('li')].map(row => row.textContent!.replace(/\s+/g, ' ').trim()))
                 .toEqual(['1. Материал 1', '2. Материал 2 Уже снято', '3. Материал 3']);
             expect(boxes()[1].disabled).toBe(true);
@@ -340,15 +345,120 @@ describe('complaint detail', () => {
         });
     });
 
-    it('treats a decided complaint as closed except for more takedown units and returning a hidden deck', async () => {
+    it('treats a decided complaint as closed except for more takedown units, and does not offer «Вернуть» for a hide that a takedown made', async () => {
         await setup(AdminComplaintDetailPageComponent, { complaintId: id });
         http.expectOne(detailUrl).flush(base);
         await settle();
-        expect([...root.querySelectorAll('.actions button')].map(item => item.textContent!.trim())).toEqual(['Добавить к снятию…', 'Вернуть в Сообщество']);
+        expect(base.deck.hiddenByModeration).toBe(true);
+        expect([...root.querySelectorAll('.actions button')].map(item => item.textContent!.trim())).toEqual(['Добавить к снятию…']);
         expect(root.querySelector('#decision-title')!.nextElementSibling!.textContent).toContain('Материалы сняты по закону.');
+        expect(root.querySelector('.hint:last-of-type, section .hint')).not.toBeNull();
+        expect(root.textContent).toContain('Колода скрыта, но не этой жалобой');
         expect(root.querySelectorAll('tbody tr')).toHaveLength(2);
         expect(root.querySelector('tbody')!.textContent).toContain('Материал');
         expect(root.querySelector('tbody')!.textContent).toContain('Упражнение');
+        expect(root.textContent).toContain('120 материалов, 85 упражнений');
+    });
+
+    it('offers «Вернуть в Сообщество» only for a complaint decided HIDDEN while the deck is hidden', async () => {
+        const hiddenBy = (decision: string, hidden: boolean) => ({ ...openDeck({}, { hiddenByModeration: hidden, hiddenAt: hidden ? '2026-10-11T08:00:00Z' : null }), status: 'DECIDED', decision,
+            decidedAt: '2026-10-11T08:00:00Z', decidedBy: ownerId });
+        const unhideOffered = async (value: object) => {
+            await setup(AdminComplaintDetailPageComponent, { complaintId: id });
+            http.expectOne(detailUrl).flush(value);
+            await settle();
+            const offered = [...root.querySelectorAll('button')].some(item => item.textContent!.includes('Вернуть в Сообщество'));
+            fixture.destroy(); root.remove(); TestBed.resetTestingModule();
+            return offered;
+        };
+        expect(await unhideOffered(hiddenBy('HIDDEN', true))).toBe(true);
+        expect(await unhideOffered(hiddenBy('HIDDEN', false))).toBe(false);
+        expect(await unhideOffered(hiddenBy('REJECTED', true))).toBe(false);
+        expect(await unhideOffered(hiddenBy('TAKEN_DOWN', true))).toBe(false);
+        expect(await unhideOffered(openDeck({}, { hiddenByModeration: true, hiddenAt: '2026-10-11T08:00:00Z' }))).toBe(false);
+    });
+
+    it('says an open complaint of an already hidden deck can still decide «Скрыть», to lift the hide later through it', async () => {
+        await setup(AdminComplaintDetailPageComponent, { complaintId: id });
+        http.expectOne(detailUrl).flush(openDeck({}, { hiddenByModeration: true, hiddenAt: '2026-10-11T08:00:00Z' }));
+        await settle();
+        expect([...root.querySelectorAll('.actions button')].map(item => item.textContent!.trim())).toContain('Скрыть из Сообщества');
+        expect(root.textContent).toContain('Колода уже скрыта. Решение «Скрыть из Сообщества» на этой жалобе нужно, чтобы потом вернуть колоду через неё.');
+    });
+
+    it('gives a plain message and reloads when the API answers 409 COMPLAINT_NOT_HIDDEN to «Вернуть»', async () => {
+        await setup(AdminComplaintDetailPageComponent, { complaintId: id });
+        const hidden = { ...openDeck({}, { hiddenByModeration: true, hiddenAt: '2026-10-11T08:00:00Z' }), status: 'DECIDED', decision: 'HIDDEN', decidedAt: '2026-10-11T08:00:00Z', decidedBy: ownerId };
+        http.expectOne(detailUrl).flush(hidden);
+        await settle();
+        click('Вернуть в Сообщество');
+        click('Подтвердить возврат');
+        http.expectOne(`${detailUrl}:unhide`).flush({ code: 'COMPLAINT_NOT_HIDDEN' }, { status: 409, statusText: 'Conflict' });
+        await settle();
+        expect(root.querySelector('.notice.error')!.textContent).toBe('Вернуть колоду не получилось: по этой жалобе она не скрыта. Загружаем жалобу заново.');
+        expect(root.querySelector('.notice.error')!.textContent).not.toMatch(/409|COMPLAINT/u);
+        http.expectOne(detailUrl).flush({ ...hidden, deck: { ...hidden.deck, hiddenByModeration: false, hiddenAt: null } });
+        await settle();
+        expect([...root.querySelectorAll('button')].some(item => item.textContent!.includes('Вернуть в Сообщество'))).toBe(false);
+        expect(document.activeElement).toBe(root.querySelector('#decision-title'));
+    });
+
+    describe('focus', () => {
+        it('moves to the warning when a decision is asked for, and back to the button that was pressed on «Отмена»', async () => {
+            await setup(AdminComplaintDetailPageComponent, { complaintId: id });
+            http.expectOne(detailUrl).flush(openDeck());
+            await settle();
+            const pressed = button('Скрыть из Сообщества');
+            pressed.focus();
+            pressed.click();
+            fixture.detectChanges();
+            expect(document.activeElement).toBe(root.querySelector('#confirm-warning'));
+            expect(root.querySelector('#confirm-warning')!.getAttribute('tabindex')).toBe('-1');
+            click('Отмена');
+            expect(document.activeElement).toBe(root.querySelector('[data-action="HIDDEN"]'));
+        });
+
+        it('moves to the warning of a takedown too, which the picker does not replace', async () => {
+            await setup(AdminComplaintDetailPageComponent, { complaintId: id });
+            http.expectOne(detailUrl).flush(openDeck());
+            await settle();
+            click('Снять материалы по закону');
+            http.expectOne(request => request.url === `${detailUrl}/units` && request.params.get('kind') === 'ITEM').flush({ kind: 'ITEM', total: 0, units: [], nextCursor: null });
+            http.expectOne(request => request.url === `${detailUrl}/units` && request.params.get('kind') === 'EXERCISE').flush({ kind: 'EXERCISE', total: 0, units: [], nextCursor: null });
+            await settle();
+            expect(document.activeElement).toBe(root.querySelector('#confirm-warning'));
+            click('Отмена');
+            expect(document.activeElement).toBe(root.querySelector('[data-action="TAKEN_DOWN"]'));
+        });
+
+        it('lands on the result, a status region that is always on the page, after a decision', async () => {
+            await setup(AdminComplaintDetailPageComponent, { complaintId: id });
+            http.expectOne(detailUrl).flush(openDeck());
+            await settle();
+            const region = root.querySelector<HTMLElement>('#decision-status')!;
+            expect(region.getAttribute('role')).toBe('status');
+            expect(region.textContent).toBe('');
+            click('Отклонить жалобу');
+            click('Подтвердить отклонение');
+            http.expectOne(`${detailUrl}:decide`).flush({ ...openDeck(), status: 'DECIDED', decision: 'REJECTED', decidedAt: '2026-10-11T08:00:00Z', decidedBy: ownerId, changed: true });
+            await settle();
+            expect(root.querySelector('#decision-status')).toBe(region);
+            expect(region.textContent).toContain('Жалоба отклонена и закрыта.');
+            expect(document.activeElement).toBe(region);
+        });
+
+        it('lands on the decision heading after a 409, because the buttons that were pressed are gone', async () => {
+            await setup(AdminComplaintDetailPageComponent, { complaintId: id });
+            http.expectOne(detailUrl).flush(openDeck());
+            await settle();
+            click('Скрыть из Сообщества');
+            click('Подтвердить скрытие');
+            http.expectOne(`${detailUrl}:decide`).flush({ code: 'COMPLAINT_DECIDED' }, { status: 409, statusText: 'Conflict' });
+            await settle();
+            http.expectOne(detailUrl).flush(base);
+            await settle();
+            expect(document.activeElement).toBe(root.querySelector('#decision-title'));
+        });
     });
 
     it('shows a profile complaint with the way to the account directory and a hand-off instead of hiding', async () => {
@@ -358,10 +468,10 @@ describe('complaint detail', () => {
         await settle();
         expect(root.textContent).toContain('@ivan.k');
         expect(root.querySelector<HTMLAnchorElement>(`a[href="/manage/users/${second.profileAccountId}"]`)).not.toBeNull();
-        expect([...root.querySelectorAll('.actions button')].map(item => item.textContent!.trim())).toEqual(['Отклонить жалобу', 'Передать в справочник аккаунтов']);
-        click('Передать в справочник аккаунтов');
-        expect(root.querySelector('form .notice.warning')!.textContent).toContain('блокировку или скрытие профиля вы делаете в разделе «Пользователи»');
-        click('Подтвердить передачу');
+        expect([...root.querySelectorAll('.actions button')].map(item => item.textContent!.trim())).toEqual(['Отклонить жалобу', 'Продолжить в разделе «Пользователи»']);
+        click('Продолжить в разделе «Пользователи»');
+        expect(root.querySelector('form .notice.warning')!.textContent).toContain('блокировку или скрытие профиля вы делаете там');
+        click('Подтвердить и закрыть жалобу');
         const request = http.expectOne(`/api/admin/complaints/${profileId}:decide`);
         expect(request.request.body).toEqual(contract.decide.requests.referAccount);
         request.flush({ ...openProfile(), status: 'DECIDED', decision: 'ACCOUNT_REFERRED', decidedAt: '2026-10-11T08:00:00Z', decidedBy: ownerId, changed: true });

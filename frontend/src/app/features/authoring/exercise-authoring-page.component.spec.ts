@@ -1383,6 +1383,7 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(rows[0].querySelector('input[type=checkbox]')).toBeNull();
             expect(rows[0].querySelector('a.button')).toBeNull();
             expect(rows[0].querySelector('app-hold-to-delete-button')).not.toBeNull();
+            expect(rows[0].querySelector('app-hold-to-delete-button button')?.textContent).toContain('Удалить упражнение 2');
             expect(rows[0].textContent).toContain('Вспомнить и сверить');
             expect(rows[1].querySelector('input[type=checkbox]')).not.toBeNull();
             component().deleteListed(component().page()!.exercises[0]);

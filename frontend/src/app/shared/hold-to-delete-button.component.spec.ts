@@ -145,4 +145,33 @@ describe('HoldToDeleteButtonComponent', () => {
             fixture.destroy();
         });
     });
+
+    it('can stay in the focus order while disabled (aria-disabled, no disabled attribute) and still refuse every action', async () => {
+        const { fixture, component, button } = setup();
+        fixture.componentRef.setInput('disabled', true);
+        fixture.componentRef.setInput('focusable', true);
+        fixture.detectChanges();
+        let confirmations = 0;
+        component.confirmed.subscribe(() => confirmations++);
+        expect(button.disabled).toBe(false);
+        expect(button.getAttribute('aria-disabled')).toBe('true');
+        button.focus();
+        expect(document.activeElement).toBe(button);
+        button.click();
+        button.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+        await vi.advanceTimersByTimeAsync(3500);
+        expect(component.armed()).toBe(false);
+        expect(confirmations).toBe(0);
+        fixture.componentRef.setInput('disabled', false);
+        fixture.detectChanges();
+        expect(button.hasAttribute('aria-disabled')).toBe(false);
+    });
+
+    it('drops out of the focus order with the plain disabled attribute unless it was asked to stay', () => {
+        const { fixture, button } = setup();
+        fixture.componentRef.setInput('disabled', true);
+        fixture.detectChanges();
+        expect(button.disabled).toBe(true);
+        expect(button.hasAttribute('aria-disabled')).toBe(false);
+    });
 });

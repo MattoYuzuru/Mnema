@@ -5,6 +5,7 @@
 
   <!-- Present before its text changes, so screen readers announce selection counts and star changes. -->
   <p class="sr-only" role="status">{{ announcement() }}</p>
+  <p class="sr-only" role="status">{{ rowAction() }}</p>
 
   @switch (phase()) {
     @case ('loading') { <p class="note" role="status">Загружаем материалы…</p> }

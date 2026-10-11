@@ -1,8 +1,12 @@
+import { plural } from '../../core/notifications/notification-presenter';
 import { COMPLAINT_REASON_LABELS } from '../../shared/complaint.models';
 import { ComplaintDecision, ComplaintRow, ComplaintTarget, JournalAction, Reason } from './admin-complaints.models';
 import { dateTime } from './admin-presenters';
 
 const DAY_MS = 86_400_000;
+
+/** «1 день», «3 дня», «12 дней»: the unit is declined, never abbreviated (an abbreviation ends in a dot that a sentence then doubles). */
+export const daysText = (days: number): string => `${days} ${plural(days, ['день', 'дня', 'дней'])}`;
 
 export const reasonName = (reason: Reason): string => COMPLAINT_REASON_LABELS[reason];
 
@@ -13,7 +17,7 @@ export const decisionNames: Readonly<Record<ComplaintDecision, string>> = {
     REJECTED: 'Жалоба отклонена',
     HIDDEN: 'Колода скрыта из Сообщества',
     TAKEN_DOWN: 'Материалы сняты по закону',
-    ACCOUNT_REFERRED: 'Передано в справочник аккаунтов'
+    ACCOUNT_REFERRED: 'Продолжено в разделе «Пользователи»'
 };
 
 export const journalActionNames: Readonly<Record<JournalAction, string>> = {
@@ -32,16 +36,16 @@ export function targetTitle(row: Pick<ComplaintRow, 'targetKind' | 'deckTitle' |
 }
 
 /**
- * The review deadline in words, never in colour alone: «Просрочена на 3 дн.» for an open complaint past its due date (the server's flag
- * decides), «Срок через 12 дн.» before it, «Решена 12 октября…» once decided. The date itself is shown next to it by the caller.
+ * The review deadline in words, never in colour alone: «Просрочена на 3 дня» for an open complaint past its due date (the server's flag
+ * decides), «Срок через 12 дней» before it, «Решена 12 октября…» once decided. The date itself is shown next to it by the caller.
  */
 export function deadlineText(row: Pick<ComplaintRow, 'status' | 'overdue' | 'dueAt' | 'decidedAt'>, now: number): string {
     if (row.status === 'DECIDED') return row.decidedAt === null ? 'Решена' : `Решена ${dateTime(row.decidedAt)}`;
     const due = Date.parse(row.dueAt);
     if (row.overdue) {
         const days = Math.floor((now - due) / DAY_MS);
-        return days >= 1 ? `Просрочена на ${days} дн.` : 'Просрочена';
+        return days >= 1 ? `Просрочена на ${daysText(days)}` : 'Просрочена';
     }
     const days = Math.ceil((due - now) / DAY_MS);
-    return days <= 0 ? 'Срок истекает сегодня' : `Срок через ${days} дн.`;
+    return days <= 0 ? 'Срок истекает сегодня' : `Срок через ${daysText(days)}`;
 }

@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, input } from '@angular/core';
 
-import { plural } from '../core/notifications/notification-presenter';
+import { plural, takedownRemedy } from '../core/notifications/notification-presenter';
 
 const MATERIALS = ['материал', 'материала', 'материалов'] as const;
 const EXERCISES = ['упражнение', 'упражнения', 'упражнений'] as const;
@@ -60,10 +60,7 @@ export class ModerationNoticeComponent {
         return `Снято: ${parts.join(' и ')}.`;
     });
 
-    protected readonly remedy = computed(() => {
-        if (this.materials() > 0 && this.exercises() > 0) return 'Материал можно заменить или удалить, упражнение удалить или создать заново.';
-        return this.materials() > 0 ? 'Материал можно заменить или удалить.' : 'Упражнение можно удалить или создать заново.';
-    });
+    protected readonly remedy = computed(() => `${takedownRemedy(this.materials(), this.exercises())}.`);
 
     /** Puts the focus on the heading (the notification link `#moderation`). `false` when nothing is shown. */
     focusHeading(): boolean {

@@ -55,6 +55,7 @@ textarea { inline-size: 100%; min-inline-size: 0; resize: vertical; }
 }
 .complaint-close[aria-disabled='true'] { color: var(--mn-muted); cursor: progress; }
 
+.notice .button { margin-inline-start: .5rem; }
 .complaint-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .complaint-actions .button { flex: 1 1 10rem; }
 .complaint-actions .button[aria-busy='true'] { cursor: progress; }

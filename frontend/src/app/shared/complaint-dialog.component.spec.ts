@@ -1,5 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 
 import { ToastService } from '../core/notifications/toast.service';
@@ -12,11 +13,11 @@ import { COMPLAINT_REASONS, COMPLAINT_REASON_LABELS, ComplaintFailure } from './
     template: `<button id="opener" type="button">Пожаловаться</button>
       @if (open()) {
         <app-complaint-dialog [target]="target()" [subject]="subject()" subjectName="Английский: путешествия"
-          (filed)="log.push('filed')" (gone)="log.push('gone')" (dismissed)="log.push('dismissed')" />
+          (filed)="open.set(false); log.push('filed')" (gone)="open.set(false); log.push('gone')" (dismissed)="open.set(false); log.push('dismissed')" />
       }`
 })
 class HostComponent {
-    readonly open = signal(true);
+    readonly open = signal(false);
     readonly target = signal<'deck' | 'profile'>('deck');
     readonly subject = signal('Kq7xT3mNpR');
     readonly log: string[] = [];
@@ -32,12 +33,23 @@ describe('ComplaintDialogComponent', () => {
     beforeEach(() => {
         api = { fileDeck: vi.fn().mockReturnValue(of(undefined)), fileProfile: vi.fn().mockReturnValue(of(undefined)) };
         toasts = { echo: vi.fn(), echoError: vi.fn() };
-        TestBed.configureTestingModule({ providers: [{ provide: ComplaintApiService, useValue: api }, { provide: ToastService, useValue: toasts }] });
+        TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: ComplaintApiService, useValue: api }, { provide: ToastService, useValue: toasts }] });
         fixture = TestBed.createComponent(HostComponent);
         host = fixture.componentInstance;
         root = fixture.nativeElement as HTMLElement;
+        document.body.append(root);
         fixture.detectChanges();
+        openDialog();
     });
+    afterEach(() => root.remove());
+
+    /** Like a reader: the «⋯» button has the focus, then the dialog opens. */
+    function openDialog(): void {
+        opener().focus();
+        host.open.set(true);
+        fixture.detectChanges();
+    }
+    const opener = (): HTMLButtonElement => root.querySelector<HTMLButtonElement>('#opener')!;
 
     const dialog = (): HTMLDialogElement => root.querySelector('dialog')!;
     const radios = (): HTMLInputElement[] => [...root.querySelectorAll<HTMLInputElement>('input[type=radio]')];
@@ -126,12 +138,77 @@ describe('ComplaintDialogComponent', () => {
         expect(host.log).toEqual(['filed']);
     });
 
-    it('closes without sending by Esc, by «×» and by «Отмена»', () => {
-        dialog().dispatchEvent(new Event('cancel', { cancelable: true }));
-        root.querySelector<HTMLButtonElement>('.complaint-close')!.click();
-        [...root.querySelectorAll<HTMLButtonElement>('button[type=button]')].find(button => button.textContent!.trim() === 'Отмена')!.click();
-        expect(host.log).toEqual(['dismissed', 'dismissed', 'dismissed']);
+    it('closes without sending by Esc, by «×» and by «Отмена», and each time the focus is on the opener, not lost to the body', () => {
+        const exits: readonly (() => void)[] = [
+            () => dialog().dispatchEvent(new Event('cancel', { cancelable: true })),
+            () => root.querySelector<HTMLButtonElement>('.complaint-close')!.click(),
+            () => [...root.querySelectorAll<HTMLButtonElement>('button[type=button]')].find(button => button.textContent!.trim() === 'Отмена')!.click()
+        ];
+        for (const exit of exits) {
+            exit();
+            fixture.detectChanges();
+            expect(root.querySelector('dialog')).toBeNull();
+            expect(document.activeElement).toBe(opener());
+            host.log.length = 0;
+            openDialog();
+        }
         expect(api.fileDeck).not.toHaveBeenCalled();
+    });
+
+    it('reports a dismissal once, after the native dialog is closed while it is still connected', () => {
+        const element = dialog();
+        const order: string[] = [];
+        element.addEventListener('close', () => order.push(`closed:${element.isConnected}`));
+        const stop = fixture.componentInstance.log;
+        element.dispatchEvent(new Event('cancel', { cancelable: true }));
+        order.push(`log:${stop.join()}`);
+        expect(order).toEqual(['closed:true', 'log:dismissed']);
+    });
+
+    it('hands the focus back to the opener after a sent complaint and after a deck that is gone', () => {
+        choose('Другое');
+        submit();
+        expect(host.log).toEqual(['filed']);
+        expect(document.activeElement).toBe(opener());
+        host.log.length = 0;
+        openDialog();
+        api.fileDeck.mockReturnValue(throwError(() => new ComplaintFailure('not-found')));
+        choose('Другое');
+        submit();
+        expect(host.log).toEqual(['gone']);
+        expect(document.activeElement).toBe(opener());
+    });
+
+    it('asks for the toast only after the dialog is closed, so a modal never holds it back', () => {
+        let openWhenAsked: boolean | null = null;
+        toasts.echo.mockImplementation(() => { openWhenAsked = root.querySelector('dialog')?.hasAttribute('open') ?? false; });
+        choose('Другое');
+        submit();
+        expect(openWhenAsked).toBe(false);
+    });
+
+    it('opens the dialog again when the platform closes it (a second Esc) while the complaint is on its way, and keeps the focus inside', () => {
+        const pending = new Subject<void>();
+        api.fileDeck.mockReturnValue(pending);
+        choose('Другое');
+        submit();
+        dialog().close();
+        fixture.detectChanges();
+        expect(dialog().hasAttribute('open')).toBe(true);
+        expect(host.log).toEqual([]);
+        dialog().close();
+        expect(dialog().hasAttribute('open')).toBe(true);
+        pending.next();
+        pending.complete();
+        expect(host.log).toEqual(['filed']);
+        expect(document.activeElement).toBe(opener());
+    });
+
+    it('treats a native close while nothing is sent as a dismissal, once, with the focus on the opener', () => {
+        dialog().close();
+        fixture.detectChanges();
+        expect(host.log).toEqual(['dismissed']);
+        expect(document.activeElement).toBe(opener());
     });
 
     it('tells the host the deck is gone on 404, with an error toast, and keeps no dialog message', () => {
@@ -148,7 +225,7 @@ describe('ComplaintDialogComponent', () => {
         choose('Спам или реклама');
         typeText('Написанное');
         submit();
-        expect(root.querySelector('.notice.error')!.textContent).toBe('Попробуйте позже');
+        expect(root.querySelector('.notice.error .message')!.textContent).toBe('Попробуйте позже');
         expect(root.querySelector('.notice.error')!.getAttribute('role')).toBe('alert');
         expect(field().value).toBe('Написанное');
         expect(submitButton().textContent!.trim()).toBe('Отправить жалобу');
@@ -165,7 +242,7 @@ describe('ComplaintDialogComponent', () => {
         for (const [failure, message] of cases) {
             api.fileDeck.mockReturnValueOnce(throwError(() => failure));
             submit();
-            expect(root.querySelector('.notice.error')!.textContent).toBe(message);
+            expect(root.querySelector('.notice.error .message')!.textContent).toBe(message);
         }
         api.fileDeck.mockReturnValueOnce(of(undefined));
         submit();
@@ -179,5 +256,45 @@ describe('ComplaintDialogComponent', () => {
         fixture.detectChanges();
         expect(close).toHaveBeenCalled();
         expect(root.querySelector('dialog')).toBeNull();
+        expect(host.log).toEqual([]);
+    });
+
+    it('links the missing-reason error to the group, which is marked invalid, and clears both once a reason is chosen', () => {
+        submit();
+        const group = dialog().querySelector('fieldset')!;
+        const error = dialog().querySelector('.field-error')!;
+        expect(group.getAttribute('aria-describedby')).toContain(error.id);
+        expect(group.getAttribute('aria-invalid')).toBe('true');
+        choose('Спам или реклама');
+        expect(group.getAttribute('aria-describedby')).not.toContain(error.id);
+        expect(group.hasAttribute('aria-invalid')).toBe(false);
+    });
+
+    it('never disables the group while sending, so the focus stays: it is aria-disabled and refuses a change', () => {
+        api.fileDeck.mockReturnValue(new Subject<void>());
+        choose('Спам или реклама');
+        radios().find(radio => radio.checked)!.focus();
+        submit();
+        const group = dialog().querySelector('fieldset')!;
+        expect(group.disabled).toBe(false);
+        expect(radios().every(radio => radio.getAttribute('aria-disabled') === 'true')).toBe(true);
+        expect(document.activeElement).toBe(radios().find(radio => radio.checked));
+        radios()[0].click();
+        fixture.detectChanges();
+        expect(radios()[0].checked).toBe(false);
+        expect(radios().find(radio => radio.checked)!.closest('label')!.textContent!.trim()).toBe('Спам или реклама');
+        expect(field().readOnly).toBe(true);
+    });
+
+    it('offers the way to sign in again after an ended session, with this very view as the return address', () => {
+        api.fileDeck.mockReturnValue(throwError(() => new ComplaintFailure('sign-in')));
+        choose('Другое');
+        submit();
+        const link = root.querySelector<HTMLAnchorElement>('.notice.error a')!;
+        expect(link.textContent!.trim()).toBe('Войти');
+        expect(link.getAttribute('href')).toMatch(/^\/login\?returnUrl=/u);
+        api.fileDeck.mockReturnValue(throwError(() => new ComplaintFailure('rate-limited', 60)));
+        submit();
+        expect(root.querySelector('.notice.error a')).toBeNull();
     });
 });

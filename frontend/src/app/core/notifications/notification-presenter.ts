@@ -131,13 +131,23 @@ function accessRequested(params: Readonly<Record<string, unknown>>): string | nu
     return `${count === 1 ? 'Запрос' : `${count} ${plural(count, ACCESS_REQUESTS)}`} доступа к вашей колоде ${count % 10 === 1 && count % 100 !== 11 ? 'ждёт' : 'ждут'} ответа`;
 }
 
+/**
+ * What the owner can do with what was taken down, without a final stop: a material is replaced or deleted, an exercise cannot be replaced (its
+ * content cannot be read), so it is deleted or made again. Shared with the moderation notice of the hub.
+ */
+export function takedownRemedy(materials: number, exercises: number): string {
+    if (materials > 0 && exercises > 0) return 'Материал можно заменить или удалить, упражнение удалить или создать заново';
+    return materials > 0 ? 'Материал можно заменить или удалить' : 'Упражнение можно удалить или создать заново';
+}
+
 /** Counts are those of the decision that published the notification; the sentence names only the kinds that were taken down. */
 function takenDown(params: Readonly<Record<string, unknown>>): string | null {
     const materials = integer(params, 'materialCount');
     const exercises = integer(params, 'exerciseCount');
     if (materials === null || exercises === null) return null;
+    if (materials + exercises === 0) return 'По жалобе в вашей колоде снято содержимое. Откройте колоду, чтобы посмотреть';
     const parts = [...(materials > 0 ? [`${materials} ${plural(materials, MATERIALS)}`] : []), ...(exercises > 0 ? [`${exercises} ${plural(exercises, EXERCISES)}`] : [])];
-    return `По жалобе сняты материалы вашей колоды${parts.length === 0 ? '' : `: ${parts.join(' и ')}`}. Откройте колоду, чтобы заменить или удалить их`;
+    return `По жалобе в вашей колоде снято: ${parts.join(' и ')}. ${takedownRemedy(materials, exercises)}`;
 }
 
 function mediaFailed(params: Readonly<Record<string, unknown>>): string | null {

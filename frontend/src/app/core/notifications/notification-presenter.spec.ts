@@ -90,13 +90,14 @@ describe('notification presenter', () => {
         expect(text(make('DECK_HIDDEN', {}, { route: 'DECK' }))).toBeUndefined();
     });
 
-    it('tells what was taken down with the right plural, and only the kinds that were', () => {
+    it('tells what was taken down with the right plural, and what can be done: replace a material, never an exercise', () => {
         const takenDown = (materialCount: unknown, exerciseCount: unknown): string | undefined =>
             text(make('DECK_CONTENT_TAKEN_DOWN', { deckId: DECK, materialCount, exerciseCount }, { route: 'DECK', severity: 'WARNING' }));
-        expect(takenDown(2, 1)).toBe('По жалобе сняты материалы вашей колоды: 2 материала и 1 упражнение. Откройте колоду, чтобы заменить или удалить их');
-        expect(takenDown(1, 0)).toBe('По жалобе сняты материалы вашей колоды: 1 материал. Откройте колоду, чтобы заменить или удалить их');
-        expect(takenDown(0, 5)).toBe('По жалобе сняты материалы вашей колоды: 5 упражнений. Откройте колоду, чтобы заменить или удалить их');
-        expect(takenDown(0, 0)).toBe('По жалобе сняты материалы вашей колоды. Откройте колоду, чтобы заменить или удалить их');
+        expect(takenDown(2, 1)).toBe('По жалобе в вашей колоде снято: 2 материала и 1 упражнение. Материал можно заменить или удалить, упражнение удалить или создать заново');
+        expect(takenDown(1, 0)).toBe('По жалобе в вашей колоде снято: 1 материал. Материал можно заменить или удалить');
+        expect(takenDown(0, 5)).toBe('По жалобе в вашей колоде снято: 5 упражнений. Упражнение можно удалить или создать заново');
+        expect(takenDown(0, 0)).toBe('По жалобе в вашей колоде снято содержимое. Откройте колоду, чтобы посмотреть');
+        expect(takenDown(0, 5)).not.toContain('замен');
         expect(takenDown('2', 1)).toBeUndefined();
         expect(takenDown(2, -1)).toBeUndefined();
         expect(takenDown(undefined, undefined)).toBeUndefined();

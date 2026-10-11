@@ -174,7 +174,7 @@
                 @if (entry.unavailable) {
                   <!-- Taken down after a complaint (Share/15): it cannot be opened or switched; the owner may delete it without reading it. -->
                   <div class="row-main"><span class="row-heading"><strong>{{ typeTitle(entry.type) }}</strong></span><app-unavailable-note subject="exercise" audience="owner" /></div>
-                  <app-hold-to-delete-button label="Удалить" [disabled]="listBusy() !== null" (confirmed)="deleteListed(entry)" />
+                  <app-hold-to-delete-button [label]="'Удалить упражнение ' + (entry.ordinal + 1)" [disabled]="listBusy() !== null" (confirmed)="deleteListed(entry)" />
                 } @else {
                 <div class="row-main"><span class="row-heading"><strong>{{ typeTitle(entry.type) }}</strong>@if (entry.isNew) { <app-new-badge /> }</span><span>{{ entry.objective.title }}</span></div>
                 @if (entry.exerciseId === exercise()?.exerciseId) {
