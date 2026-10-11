@@ -1,0 +1,225 @@
+{
+  "contract": "publication-v1",
+  "description": "Shared frontend/backend fixtures for the owner's explicit publication of a deck (Share/8, #430): who may read the published revision (access level), the publication metadata (topic from a two-level directory, content and target language, level, up to five tags), the release note, the «Публичная» checklist and the topic directory. Owner only (learning.read for GET, learning.write for PUT); a foreign or deleted deck is the same opaque 404 as everywhere. Publishing never creates a deck revision and never changes deck.row_version: an open editor gets no 412. `invariants` are executable: the integration tests compare real answers with the property sets of these examples.",
+  "constants": {
+    "publicationPath": "/api/decks/{deckId}/publication",
+    "topicsPath": "/api/topics",
+    "visibilities": ["PRIVATE", "INVITE", "LINK", "PUBLIC"],
+    "levels": ["A1", "A2", "B1", "B2", "C1", "C2", "BEGINNER", "INTERMEDIATE", "ADVANCED"],
+    "levelsNote": "one closed list: CEFR for languages and exams, the three words for everything else; the server does not tie a level to a topic",
+    "maxTags": 5,
+    "tagCodePoints": {"min": 1, "max": 32},
+    "tagAlphabet": "letters, digits, space, '-', '_', '+', '#', '.'; trimmed, NFKC, lowercase, inner whitespace collapsed to one space; duplicates after normalization are 400",
+    "releaseNoteMaxCodePoints": 500,
+    "languagePattern": "^[a-z]{2,3}$ (BCP 47 primary subtag, lowercase)",
+    "requestBodyMaxBytes": 8192,
+    "versionWire": "rowVersion and the ETag are the stored row version plus one; \"0\" means the deck has no publication row yet (it never left «Приватная» and nothing was saved)",
+    "catalogThreshold": {"needMaterials": 10, "needExercises": 1, "blocking": false, "note": "informational: a deck below the threshold is public by link and in the author's profile but not in the catalog (catalog epic); it never blocks the checklist"},
+    "checklistKeys": ["description", "topic", "language", "publicProfile", "blockedMedia"],
+    "topicsCache": "private, max-age=3600",
+    "identityClaim": "mnema_public_profile",
+    "identityClaimNote": "boolean claim of the Identity /userinfo answer (consent on, account active, login set); the one name both services read from this file in their tests",
+    "linkShapes": {"PUBLIC": "/d/{code}/{slug}", "LINK": "/d/{code}", "INVITE": "/d/{code}", "PRIVATE": null}
+  },
+  "invariants": [
+    "owner only: a foreign, absent or deleted deck is the opaque 404 RESOURCE_NOT_FOUND on GET and PUT; GET needs learning.read, PUT needs learning.write",
+    "every answer is Cache-Control: private, no-store; GET carries ETag = quoted rowVersion; a fresh PUT carries the ETag of the new version; a replayed PUT carries no ETag and Idempotency-Replayed: true",
+    "PUT needs exactly one If-Match: a quoted canonical decimal (missing 428, malformed 400, stale 412 VERSION_CONFLICT); \"0\" is the version of a deck without a publication row",
+    "PUT is idempotent by commandId (house receipts: actor, command type, deck, expected version and the whole body are bound; a used commandId with other input is 409 IDEMPOTENCY_CONFLICT)",
+    "a PUT whose resulting state equals the stored one writes nothing: rowVersion, publishedAt and the event outbox do not move (changed: false)",
+    "publishing never creates a deck revision and never changes deck.row_version",
+    "`publish` moves publishedRevisionId to the deck's current head; expectedHeadRevisionId must be that head, otherwise 412 VERSION_CONFLICT (the client re-reads)",
+    "leaving PRIVATE for the first time requires `publish` (the first publication happens on leaving «Приватная»): without a published revision and without `publish` the answer is 400 PUBLICATION_REQUIRED; `publish` together with visibility PRIVATE is 400 INVALID_REQUEST",
+    "becoming PUBLIC (from any other level) requires the published revision to be the head or `publish` in the same command, otherwise 400 PUBLICATION_REQUIRED: the non-commercial media check judges the head, readers get the published revision; GET still lists blockedMedia of the head for the UI",
+    "a resulting level PUBLIC requires the checklist: non-empty description of the revision readers get, a topic, a content language, a public profile ready in Identity (claim mnema_public_profile of /userinfo) and no non-commercial stock media in the deck head; otherwise 409 PUBLICATION_REQUIREMENTS with `failed` listing the checklist keys; the catalog threshold never blocks. The public profile and the media items gate only the exposure (becoming PUBLIC, or `publish` while PUBLIC): a benign edit of a public deck (tags, requestsEnabled, topic, language) is not blocked by a withdrawn consent. Withdrawal hides the author at once in Identity; demoting the deck itself is an open owner decision",
+    "every effective write whose resulting level is PUBLIC (metadata, tags, requestsEnabled included) appends one deck_publication_event, so the catalog projector never misses a metadata edit; a no-op appends none",
+    "any move to a more restrictive level rotates the public code (PUBLIC > LINK > INVITE > PRIVATE, every step down); raising the level or keeping it keeps the code; a PRIVATE deck reports publicCode null and link null",
+    "every effective change of the level or of the published revision appends one row to the deck_publication_event outbox (nothing consumes it before the catalog epic)",
+    "unpublishedChanges is the number of distinct materials plus distinct exercises changed in the deck journal after the published revision, null while the deck was never published; headRevisionId differing from publishedRevisionId with 0 changes means a title or description edit only",
+    "metadata.topicId must be a selectable topic: a leaf of the directory (a top-level topic without children, «Другое», is a leaf); unknown or non-leaf is 400",
+    "suggested never writes anything: it is the detector's guess for the UI to pre-fill (contentLanguage null when unsure, at most three topicIds ordered by score)",
+    "the topic directory is authenticated, static data: names in Russian and English, two levels, siblings ordered by ordinal"
+  ],
+  "routes": [
+    {"method": "GET", "path": "/api/decks/{deckId}/publication", "answers": "state"},
+    {"method": "PUT", "path": "/api/decks/{deckId}/publication", "answers": "acknowledgement"},
+    {"method": "GET", "path": "/api/topics", "answers": "topics"}
+  ],
+  "state": {
+    "never": {
+      "request": "GET /api/decks/11111111-1111-4111-8111-111111111111/publication",
+      "headers": {"ETag": "\"0\"", "Cache-Control": "private, no-store"},
+      "body": {
+        "deckId": "11111111-1111-4111-8111-111111111111",
+        "visibility": "PRIVATE",
+        "publicCode": null,
+        "link": null,
+        "publishedRevisionId": null,
+        "publishedAt": null,
+        "headRevisionId": "22222222-2222-4222-8222-222222222222",
+        "unpublishedChanges": null,
+        "metadata": {"topicId": null, "contentLanguage": null, "targetLanguage": null, "level": null, "tags": []},
+        "suggested": {"contentLanguage": "ru", "topicIds": ["japanese"]},
+        "releaseNote": null,
+        "requestsEnabled": true,
+        "checklist": {
+          "description": true,
+          "topic": false,
+          "language": false,
+          "publicProfile": false,
+          "catalogThreshold": {"met": false, "materials": 3, "exercises": 2, "needMaterials": 10, "needExercises": 1},
+          "blockedMedia": []
+        },
+        "rowVersion": "0"
+      }
+    },
+    "public": {
+      "request": "GET /api/decks/11111111-1111-4111-8111-111111111111/publication",
+      "headers": {"ETag": "\"3\"", "Cache-Control": "private, no-store"},
+      "body": {
+        "deckId": "11111111-1111-4111-8111-111111111111",
+        "visibility": "PUBLIC",
+        "publicCode": "Kq7xT3mNpR",
+        "link": "/d/Kq7xT3mNpR/yaponskiy-zametki",
+        "publishedRevisionId": "33333333-3333-4333-8333-333333333333",
+        "publishedAt": "2026-10-11T09:30:00.123456Z",
+        "headRevisionId": "44444444-4444-4444-8444-444444444444",
+        "unpublishedChanges": 4,
+        "metadata": {"topicId": "japanese", "contentLanguage": "ru", "targetLanguage": "ja", "level": "A2", "tags": ["jlpt n5", "кандзи"]},
+        "suggested": {"contentLanguage": "ru", "topicIds": ["japanese"]},
+        "releaseNote": "Добавлены 20 слов по теме «Семья»",
+        "requestsEnabled": true,
+        "checklist": {
+          "description": true,
+          "topic": true,
+          "language": true,
+          "publicProfile": true,
+          "catalogThreshold": {"met": true, "materials": 42, "exercises": 40, "needMaterials": 10, "needExercises": 1},
+          "blockedMedia": []
+        },
+        "rowVersion": "3"
+      }
+    },
+    "blocked": {
+      "note": "stock media under a non-commercial license in the head: blockedMedia names the material or exercise that uses it; the level cannot be PUBLIC until it is replaced",
+      "checklist": {
+        "description": true,
+        "topic": true,
+        "language": true,
+        "publicProfile": true,
+        "catalogThreshold": {"met": false, "materials": 5, "exercises": 1, "needMaterials": 10, "needExercises": 1},
+        "blockedMedia": [
+          {"memberKey": "55555555-5555-4555-8555-555555555555", "reason": "NC_LICENSE"},
+          {"exerciseId": "66666666-6666-4666-8666-666666666666", "reason": "NC_LICENSE"}
+        ]
+      }
+    }
+  },
+  "put": {
+    "request": {
+      "method": "PUT",
+      "path": "/api/decks/11111111-1111-4111-8111-111111111111/publication",
+      "headers": {"If-Match": "\"0\"", "Content-Type": "application/json"},
+      "body": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789ab",
+        "visibility": "LINK",
+        "metadata": {"topicId": "japanese", "contentLanguage": "ru", "targetLanguage": "ja", "level": "A2", "tags": ["JLPT N5", " кандзи "]},
+        "requestsEnabled": true,
+        "publish": {"expectedHeadRevisionId": "22222222-2222-4222-8222-222222222222", "releaseNote": null}
+      }
+    },
+    "requestNoPublish": {
+      "note": "a metadata/level change without moving the published revision",
+      "body": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789ac",
+        "visibility": "PUBLIC",
+        "metadata": {"topicId": "japanese", "contentLanguage": "ru", "targetLanguage": null, "level": null, "tags": []},
+        "requestsEnabled": false,
+        "publish": null
+      }
+    },
+    "acknowledgement": {
+      "headers": {"ETag": "\"1\"", "Cache-Control": "private, no-store"},
+      "body": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789ab",
+        "changed": true,
+        "publication": {
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "visibility": "LINK",
+          "publicCode": "Kq7xT3mNpR",
+          "link": "/d/Kq7xT3mNpR",
+          "publishedRevisionId": "22222222-2222-4222-8222-222222222222",
+          "publishedAt": "2026-10-11T09:30:00.123456Z",
+          "headRevisionId": "22222222-2222-4222-8222-222222222222",
+          "unpublishedChanges": 0,
+          "metadata": {"topicId": "japanese", "contentLanguage": "ru", "targetLanguage": "ja", "level": "A2", "tags": ["jlpt n5", "кандзи"]},
+          "suggested": {"contentLanguage": "ru", "topicIds": ["japanese"]},
+          "releaseNote": null,
+          "requestsEnabled": true,
+          "checklist": {
+            "description": true,
+            "topic": true,
+            "language": true,
+            "publicProfile": true,
+            "catalogThreshold": {"met": false, "materials": 3, "exercises": 2, "needMaterials": 10, "needExercises": 1},
+            "blockedMedia": []
+          },
+          "rowVersion": "1"
+        }
+      }
+    },
+    "replayNote": "an exact retry returns the original acknowledgement body with Idempotency-Replayed: true and no ETag; the embedded publication is the state at the time of the command, so the client re-reads with GET before editing further"
+  },
+  "problems": {
+    "publicationRequired": {
+      "type": "urn:mnema:problem:publication-required",
+      "title": "Publication required",
+      "status": 400,
+      "detail": "The deck must publish its current head: for its first publication and for becoming public.",
+      "instance": "/api/decks/11111111-1111-4111-8111-111111111111/publication",
+      "code": "PUBLICATION_REQUIRED"
+    },
+    "publicationRequirements": {
+      "type": "urn:mnema:problem:publication-requirements",
+      "title": "Publication requirements not met",
+      "status": 409,
+      "detail": "The deck does not meet the requirements of a public deck.",
+      "instance": "/api/decks/11111111-1111-4111-8111-111111111111/publication",
+      "code": "PUBLICATION_REQUIREMENTS",
+      "failed": ["topic", "language", "publicProfile"]
+    },
+    "staleVersion": {
+      "type": "urn:mnema:problem:version-conflict",
+      "title": "Version conflict",
+      "status": 412,
+      "detail": "The resource changed after the supplied version was read.",
+      "instance": "/api/decks/11111111-1111-4111-8111-111111111111/publication",
+      "code": "VERSION_CONFLICT",
+      "note": "the same answer for a stale If-Match and for a stale expectedHeadRevisionId"
+    }
+  },
+  "topics": {
+    "request": "GET /api/topics",
+    "headers": {"Cache-Control": "private, max-age=3600"},
+    "body": {
+      "topics": [
+        {
+          "topicId": "languages",
+          "nameRu": "Языки",
+          "nameEn": "Languages",
+          "ordinal": 10,
+          "children": [
+            {"topicId": "english", "nameRu": "Английский", "nameEn": "English", "ordinal": 10},
+            {"topicId": "japanese", "nameRu": "Японский", "nameEn": "Japanese", "ordinal": 80}
+          ]
+        },
+        {"topicId": "other", "nameRu": "Другое", "nameEn": "Other", "ordinal": 120, "children": []}
+      ]
+    },
+    "note": "the real directory is longer; a top-level entry with an empty `children` is itself selectable («Другое»)"
+  },
+  "ownerDeck": {
+    "note": "the owner's own deck JSON (detail, list, acknowledgements of contracts/decks/metadata.json) reports the real level from the publication row, lowercase: private | invite | link | public",
+    "visibilities": ["private", "invite", "link", "public"]
+  }
+}

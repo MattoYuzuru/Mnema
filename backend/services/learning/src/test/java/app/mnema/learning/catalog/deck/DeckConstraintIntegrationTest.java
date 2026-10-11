@@ -97,7 +97,7 @@ class DeckConstraintIntegrationTest extends PostgresIntegrationTest {
         UUID actor = UUID.randomUUID();
         // Synthetic authorized lineage setup only, not a public fork command or grant.
         DeckRecord branch = new DeckRecord(UUID.randomUUID(), UUID.randomUUID(), source.row().scopeId(), 0,
-                "branch", "", TIME, TIME, source.row().membersRootId(), source.row().exercisesRootId(), 0, 0);
+                "branch", "", TIME, TIME, source.row().membersRootId(), source.row().exercisesRootId(), 0, 0, "private");
         new TransactionTemplate(transactions).executeWithoutResult(status -> {
             repository.insertDeck(branch.deckId(), actor, branch.scopeId(), branch.revisionId(), TIME);
             Protection pins = protect(branch, actor, "deck.revision", branch.revisionId(), false);
@@ -152,7 +152,7 @@ class DeckConstraintIntegrationTest extends PostgresIntegrationTest {
             if (violation == PinBinding.MISSING_PIN) members = UUID.randomUUID();
             if (violation == PinBinding.SAME_ROOT) candidate = new DeckRecord(candidate.deckId(), candidate.revisionId(), candidate.scopeId(),
                     candidate.rowVersion(), candidate.title(), candidate.description(), candidate.createdAt(), candidate.updatedAt(),
-                    candidate.membersRootId(), candidate.membersRootId(), 0, 0);
+                    candidate.membersRootId(), candidate.membersRootId(), 0, 0, "private");
             repository.insertRevision(candidate, base.actor(), base.row().revisionId(), command("invalid pins"), members, exercises);
         });
         assertThat(pinCount(base.row().scopeId())).isEqualTo(2);
@@ -210,7 +210,7 @@ class DeckConstraintIntegrationTest extends PostgresIntegrationTest {
             UUID scope = UUID.randomUUID(), revision = UUID.randomUUID();
             NewObject members = empty("members"), exercises = empty("exercises");
             DeckRecord row = new DeckRecord(deck, revision, scope, 0, "fixture", "exact time", time, time,
-                    members.objectId(), exercises.objectId(), 0, 0);
+                    members.objectId(), exercises.objectId(), 0, 0, "private");
             repository.insertDeck(deck, actor, scope, revision, time);
             List<StagedRoot> staged = storage.stageBatch(new StageBatch(scope, actor, List.of(members, exercises),
                     List.of(members.objectId(), exercises.objectId())), Duration.ofMinutes(1));
@@ -235,7 +235,7 @@ class DeckConstraintIntegrationTest extends PostgresIntegrationTest {
 
     private static DeckRecord candidate(Fixture base, Fixture roots, long sequence) {
         return new DeckRecord(base.row().deckId(), UUID.randomUUID(), roots.row().scopeId(), sequence, "candidate", "",
-                base.row().createdAt(), TIME.plusSeconds(1), roots.row().membersRootId(), roots.row().exercisesRootId(), 0, 0);
+                base.row().createdAt(), TIME.plusSeconds(1), roots.row().membersRootId(), roots.row().exercisesRootId(), 0, 0, "private");
     }
 
     private void rejected(String sqlState, Runnable action) {

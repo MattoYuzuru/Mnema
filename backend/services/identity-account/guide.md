@@ -36,6 +36,15 @@ that a later request remains authorized. The receiving Learning filter, private
 content APIs and real cross-service tests are implemented; this Identity-side
 contract still does not replace their independent authorization tests.
 
+`/userinfo` also carries one product claim, `mnema_public_profile` (boolean): the account may publish a
+public deck, i.e. the public-profile consent is enabled and the account is active with a profile
+username (`PublicProfiles.publishReady`, the same gate as the author card). It is computed on every request, so a
+withdrawn consent is visible at once, and it is the only way Learning learns it (Learning reads no Identity
+table). It is added through the Spring Authorization Server `userInfoMapper`
+([OIDC UserInfo endpoint configuration](https://docs.spring.io/spring-authorization-server/reference/protocol-endpoints.html#oidc-user-info-endpoint)):
+the answer is `{sub, mnema_public_profile}`; the ID token carries no profile claims, so nothing the
+default mapper returned is dropped.
+
 Every login rotates the Secure/HttpOnly/SameSite=Lax session cookie and CSRF token.
 Sessions live in PostgreSQL with eight-hour inactivity and absolute limits.
 Cookie-authenticated browser mutations require `X-CSRF-TOKEN`; fetch its value and header name from

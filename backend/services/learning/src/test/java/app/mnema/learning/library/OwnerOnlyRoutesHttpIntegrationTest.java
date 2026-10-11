@@ -103,6 +103,14 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         return body;
     }
 
+    /** A well-formed publication command: share by link and publish the head the fixture saw. */
+    private static ObjectNode publication(World w) {
+        ObjectNode body = command().put("visibility", "LINK").put("requestsEnabled", true);
+        body.putObject("metadata").put("topicId", "japanese").put("contentLanguage", "ru").putNull("targetLanguage").putNull("level").putArray("tags");
+        body.putObject("publish").put("expectedHeadRevisionId", w.deckRevision().toString()).putNull("releaseNote");
+        return body;
+    }
+
     private static ObjectNode command() { return JSON.createObjectNode().put("commandId", UUID.randomUUID().toString()); }
 
     private List<Row> rows() {
@@ -113,6 +121,9 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         rows.add(Row.of("PATCH /decks/{deckId}", w -> send("PATCH", "/decks/" + w.deck().id(), metadata(), q(w.version()))));
         rows.add(Row.of("DELETE /decks/{deckId}", w -> send("DELETE", "/decks/" + w.deck().id(), null, q(w.version()))));
         rows.add(Row.of("GET /decks/{deckId}/insights", w -> get("/decks/" + w.deck().id() + "/insights")));
+        // publication (Share/8)
+        rows.add(Row.of("GET /decks/{deckId}/publication", w -> get("/decks/" + w.deck().id() + "/publication")));
+        rows.add(Row.of("PUT /decks/{deckId}/publication", w -> send("PUT", "/decks/" + w.deck().id() + "/publication", publication(w), q(w.version()))));
         // materials
         rows.add(Row.of("GET /decks/{deckId}/items", w -> get("/decks/" + w.deck().id() + "/items")));
         rows.add(Row.of("GET /decks/{deckId}/items/{memberKey}", w -> get("/decks/" + w.deck().id() + "/items/" + w.deck().material().member())));
@@ -315,7 +326,7 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         List<String> parts = new ArrayList<>();
         parts.add(jdbc.sql("SELECT to_jsonb(d)::text FROM app_learning.deck d WHERE deck_id = :deck").param("deck", deck).query(String.class).single());
         for (String table : new String[] {"deck_revision", "deck_head_item", "deck_item_change", "deck_item_exemplar", "deck_head_exercise", "exercise_revision",
-                "deck_exercise_change", "memory_objective", "study_session", "editing_draft", "capture_note", "deck_publication", "deck_access_grant",
+                "deck_exercise_change", "memory_objective", "study_session", "editing_draft", "capture_note", "deck_publication", "deck_publication_event", "deck_access_grant",
                 "generation_session"}) {
             parts.add(table + "=" + jdbc.sql("SELECT count(*) FROM app_learning." + table + " WHERE deck_id = :deck").param("deck", deck).query(Long.class).single());
         }
