@@ -15,7 +15,8 @@ import java.util.UUID;
  * Read-only lookups that resolve what a published manifest points at. Every statement starts from the immutable roots of the published revision (or from
  * keys the manifest itself produced), never from a deck's head or journal, so a later edit of the author cannot change what a non-owner reads.
  *
- * <p>The exercise statement reads the deck-keyed exercise tables as of V51; it is the one place to follow when exercises move to lineage keys (Share/5).
+ * <p>Exercise revisions are lineage rows (V52): they are found by the reading deck's scope and the descriptors of its published manifest, so a
+ * published copy serves the exercises it inherited from its source.
  */
 @Repository
 class PublishedContentRepository {
@@ -87,14 +88,14 @@ class PublishedContentRepository {
     /** One exercise of a published exercises manifest: identity, mechanic, state and the question parts of its content only (the statement selects the prompt and passage, never the answer key, options or reference). */
     record ExerciseRow(UUID exerciseId, UUID descriptorRootId, UUID revisionId, String type, boolean enabled, JsonNode question) { }
 
-    List<ExerciseRow> exercises(UUID deck, Collection<UUID> exercises, Collection<UUID> descriptors) {
+    List<ExerciseRow> exercises(UUID scope, Collection<UUID> exercises, Collection<UUID> descriptors) {
         if (exercises.isEmpty()) return List.of();
         return jdbc.sql("""
                 SELECT r.exercise_id, r.descriptor_root_id, r.revision_id, r.exercise_type, r.enabled,
                        jsonb_build_object('prompt', r.content -> 'prompt', 'passage', r.content -> 'passage') AS question
                   FROM app_learning.exercise_revision r
-                 WHERE r.deck_id = :deck AND r.exercise_id IN (:exercises) AND r.descriptor_root_id IN (:descriptors)
-                """).param("deck", deck).param("exercises", exercises).param("descriptors", descriptors)
+                 WHERE r.reuse_scope_id = :scope AND r.exercise_id IN (:exercises) AND r.descriptor_root_id IN (:descriptors)
+                """).param("scope", scope).param("exercises", exercises).param("descriptors", descriptors)
                 .query((row, ignored) -> new ExerciseRow(row.getObject("exercise_id", UUID.class),
                         row.getObject("descriptor_root_id", UUID.class), row.getObject("revision_id", UUID.class),
                         row.getString("exercise_type"), row.getBoolean("enabled"), json(row.getString("question")))).list();

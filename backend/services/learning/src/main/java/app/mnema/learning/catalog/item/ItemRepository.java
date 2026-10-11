@@ -183,9 +183,9 @@ class ItemRepository {
                     UNION ALL
                     SELECT binding.member_key,NULL::integer,NULL::uuid,1
                       FROM app_learning.deck_head_exercise head
-                      JOIN app_learning.exercise_revision revision ON revision.deck_id=head.deck_id
+                      JOIN app_learning.exercise_revision revision ON revision.reuse_scope_id=head.reuse_scope_id
                        AND revision.exercise_id=head.exercise_id AND revision.revision_id=head.revision_id AND revision.enabled
-                      JOIN app_learning.exercise_content_binding binding ON binding.deck_id=head.deck_id
+                      JOIN app_learning.exercise_content_binding binding ON binding.reuse_scope_id=head.reuse_scope_id
                        AND binding.exercise_id=head.exercise_id AND binding.exercise_revision_id=head.revision_id
                        AND binding.role='ASSESSED'
                      WHERE head.deck_id=:deck
@@ -229,12 +229,14 @@ class ItemRepository {
         if (members.isEmpty()) return result;
         jdbc.sql("""
                 SELECT binding.member_key,count(*)::integer AS exercise_count
-                  FROM app_learning.exercise_content_binding binding
-                  JOIN app_learning.deck_head_exercise head ON head.deck_id=binding.deck_id
+                  FROM app_learning.deck d
+                  JOIN app_learning.exercise_content_binding binding ON binding.reuse_scope_id=d.reuse_scope_id
+                   AND binding.role='ASSESSED' AND binding.member_key IN (:members)
+                  JOIN app_learning.deck_head_exercise head ON head.deck_id=d.deck_id
                    AND head.exercise_id=binding.exercise_id AND head.revision_id=binding.exercise_revision_id
-                  JOIN app_learning.exercise_revision revision ON revision.deck_id=head.deck_id
+                  JOIN app_learning.exercise_revision revision ON revision.reuse_scope_id=head.reuse_scope_id
                    AND revision.exercise_id=head.exercise_id AND revision.revision_id=head.revision_id AND revision.enabled
-                 WHERE binding.deck_id=:deck AND binding.role='ASSESSED' AND binding.member_key IN (:members)
+                 WHERE d.deck_id=:deck
                  GROUP BY binding.member_key
                 """).param("deck", deck).param("members", members)
                 .query((row, ignored) -> result.put(row.getObject("member_key", UUID.class), row.getInt("exercise_count")))
@@ -247,10 +249,12 @@ class ItemRepository {
         if (members.isEmpty()) return 0;
         return jdbc.sql("""
                 SELECT count(*)::integer
-                  FROM app_learning.exercise_content_binding binding
-                  JOIN app_learning.deck_head_exercise head ON head.deck_id=binding.deck_id
+                  FROM app_learning.deck d
+                  JOIN app_learning.exercise_content_binding binding ON binding.reuse_scope_id=d.reuse_scope_id
+                   AND binding.role='ASSESSED' AND binding.member_key IN (:members)
+                  JOIN app_learning.deck_head_exercise head ON head.deck_id=d.deck_id
                    AND head.exercise_id=binding.exercise_id AND head.revision_id=binding.exercise_revision_id
-                 WHERE binding.deck_id=:deck AND binding.role='ASSESSED' AND binding.member_key IN (:members)
+                 WHERE d.deck_id=:deck
                 """).param("deck", deck).param("members", members).query(Integer.class).single();
     }
 

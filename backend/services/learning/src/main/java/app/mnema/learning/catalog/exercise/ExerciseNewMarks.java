@@ -30,9 +30,11 @@ public class ExerciseNewMarks {
 
     /** Marks a just-published exercise; a repeat (the exercise was re-published or the approval replayed) renews the mark. */
     public void mark(UUID owner, UUID deck, UUID exercise) {
+        // the mark carries the scope of the deck it belongs to, read from the owner's deck row
         jdbc.sql("""
-                INSERT INTO app_learning.exercise_new_mark(deck_id,exercise_id,owner_id,marked_at)
-                VALUES (:deck,:exercise,:owner,statement_timestamp())
+                INSERT INTO app_learning.exercise_new_mark(deck_id,reuse_scope_id,exercise_id,owner_id,marked_at)
+                SELECT d.deck_id,d.reuse_scope_id,:exercise,d.owner_id,statement_timestamp()
+                  FROM app_learning.deck d WHERE d.deck_id=:deck AND d.owner_id=:owner
                 ON CONFLICT (deck_id,exercise_id) DO UPDATE SET marked_at=EXCLUDED.marked_at
                 """).param("deck", deck).param("exercise", exercise).param("owner", owner).update();
     }

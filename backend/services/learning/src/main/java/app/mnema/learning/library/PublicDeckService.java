@@ -35,7 +35,7 @@ import java.util.function.Supplier;
  * checks the kill switch (off: 404 as if the route did not exist), takes a place in the abuse limit (before any lookup, so a flood of unknown codes is
  * limited too), resolves {@link DeckAccess} and only then reads, always from the immutable roots of the published revision: never the deck's head, its
  * drafts, its journal or any other deck of the lineage. The answers carry no editing metadata and no answer keys; media is not served here (Share/9).
- * A semaphore ({@code max-concurrent}) is tried BEFORE the transaction opens, so excess reads fail fast with 503 and never queue for a connection. Resolution and every SQL lookup are read-only transactions with a ten-second bound; storage reads run in their own short transactions (they take row locks); the titles of a page come from the cache in one statement, and the titles that had to be derived are cached afterwards in a short transaction of their own.
+ * Two semaphores are tried BEFORE the transaction opens ({@code max-concurrent} places in all, of which guests may hold at most one less), so excess reads fail fast with 503 and never queue for a connection and a signed-in viewer always has a place. Resolution and every SQL lookup are read-only transactions with a ten-second bound; storage reads run in their own short transactions (they take row locks); the titles of a page come from the cache in one statement, and the titles that had to be derived are cached as the last step inside the permit, in a short transaction of their own.
  *
  * <p>Outcomes are counted as {@code mnema_public_deck_requests_total{route,outcome}} (ok, not_found, invite_only, rate_limited, busy, disabled), the 404/403/429
  * figures of architecture section 14.
@@ -58,6 +58,7 @@ public class PublicDeckService {
     private final TransactionTemplate transaction;
     private final TransactionTemplate cacheWrite;
     private final Semaphore bulkhead;
+    private final Semaphore guestBulkhead;
 
     PublicDeckService(PublicRouteSettings settings, PublicReadLimiter limiter, DeckAccess access, ManifestPages manifests,
                       PublishedContentRepository content, ItemPreviews previews, ImmutableStorage storage, MeterRegistry meters,
@@ -77,6 +78,8 @@ public class PublicDeckService {
         this.cacheWrite = new TransactionTemplate(transactions);
         this.cacheWrite.setTimeout(5);
         this.bulkhead = new Semaphore(settings.maxConcurrent);
+        // guests may hold all but one place: the last one is always free for a signed-in viewer
+        this.guestBulkhead = new Semaphore(settings.maxConcurrent - 1);
     }
 
     public ObjectNode summary(Viewer viewer, String code) {
@@ -93,14 +96,12 @@ public class PublicDeckService {
     }
 
     public ObjectNode items(Viewer viewer, String code, String limit, String cursor) {
-        List<PublishedContentRepository.NewTitle> derived = new ArrayList<>();
-        UUID[] scopeOfDerived = new UUID[1];
-        ObjectNode result = serve("items", viewer, code, read -> {
+        return serve("items", viewer, code, read -> {
+            List<PublishedContentRepository.NewTitle> derived = new ArrayList<>();
             DeckRef.Published published = read.revision();
             int size = PublicCursor.pageSize(limit);
             int start = start(PublicCursor.decode(cursor, 'i'), published);
             UUID scope = read.deck().scopeId();
-            scopeOfDerived[0] = scope;
             List<Entry> entries = manifests.members(scope, published.membersRootId(), published.memberCount(), start, size);
             Map<String, PublishedContentRepository.ItemRevision> revisions = new HashMap<>();
             sql(() -> content.itemRevisions(scope, entries.stream().map(Entry::key).toList(),
@@ -123,17 +124,17 @@ public class PublicDeckService {
                 items.addObject().put("memberKey", entry.key().toString()).put("itemRevisionId", revision.revisionId().toString())
                         .put("ordinal", start + index).put("title", title);
             }
+            // Last step inside the permit: the cache write holds a connection too, so it is bounded by the bulkhead like every other step.
+            if (!derived.isEmpty()) {
+                try {
+                    cacheWrite.executeWithoutResult(status -> content.storeTitles(scope, derived));
+                } catch (RuntimeException failure) {
+                    // a cache that could not be filled is filled by the next reader; the page was already read
+                    LOG.warn("public_title_cache_failed error_type={}", failure.getClass().getSimpleName());
+                }
+            }
             return next(page, 'i', published, start + entries.size());
         });
-        if (!derived.isEmpty()) {
-            try {
-                cacheWrite.executeWithoutResult(status -> content.storeTitles(scopeOfDerived[0], derived));
-            } catch (RuntimeException failure) {
-                // a cache that could not be filled is filled by the next reader; the page was already read
-                LOG.warn("public_title_cache_failed error_type={}", failure.getClass().getSimpleName());
-            }
-        }
-        return result;
     }
 
     public ObjectNode item(Viewer viewer, String code, String member) {
@@ -163,7 +164,7 @@ public class PublicDeckService {
             int start = start(PublicCursor.decode(cursor, 'e'), published.revisionId(), published.exerciseCount());
             List<Entry> entries = manifests.exercises(read.deck().scopeId(), published.exercisesRootId(), published.exerciseCount(), start, size);
             Map<String, PublishedContentRepository.ExerciseRow> rows = new HashMap<>();
-            sql(() -> content.exercises(read.deck().deckId(), entries.stream().map(Entry::key).toList(),
+            sql(() -> content.exercises(read.deck().scopeId(), entries.stream().map(Entry::key).toList(),
                             entries.stream().map(entry -> entry.target().objectId()).toList()))
                     .forEach(row -> rows.put(pair(row.exerciseId(), row.descriptorRootId()), row));
             ObjectNode result = page(code, published.exerciseCount(), "exercises");
@@ -186,14 +187,25 @@ public class PublicDeckService {
             count(route, "disabled");
             throw new ResourceNotFoundException();
         }
-        try {
-            limiter.admit(viewer);
-        } catch (RateLimitedException failure) {
-            count(route, "rate_limited");
-            throw failure;
+        // A signed-in viewer was admitted by the filter of the public chain before Identity was asked (one token cannot drive unlimited
+        // Identity round trips); only guests are counted here.
+        if (viewer.isGuest()) {
+            try {
+                limiter.admit(viewer);
+            } catch (RateLimitedException failure) {
+                count(route, "rate_limited");
+                throw failure;
+            }
         }
-        // Before a connection or a transaction is asked for: a flood of public reads is refused here, it never queues for the pool.
+        // Before a connection or a transaction is asked for: a flood of public reads is refused here, it never queues for the pool. A guest also
+        // needs a place of the guest share, so guests alone can never take the last place.
+        boolean guest = viewer.isGuest();
+        if (guest && !guestBulkhead.tryAcquire()) {
+            count(route, "busy");
+            throw new PublicReadBusyException();
+        }
         if (!bulkhead.tryAcquire()) {
+            if (guest) guestBulkhead.release();
             count(route, "busy");
             throw new PublicReadBusyException();
         }
@@ -218,6 +230,7 @@ public class PublicDeckService {
             throw failure;
         } finally {
             bulkhead.release();
+            if (guest) guestBulkhead.release();
         }
     }
 

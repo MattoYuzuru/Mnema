@@ -1271,8 +1271,8 @@ Today every scope has exactly one deck; a copy (Share/10) will add a second deck
 - **Lineage rows** `learning_item`, `item_revision`, `item_preview`, `content_media_ref` are keyed `(reuse_scope_id,
   member_key[, revision_id])`. Their `deck_id`, `deck_revision_id`, `deck_sequence`, `owner_id` are the **origin** of the
   revision (the deck whose command wrote it), never "belongs to deck D". `item_revision` keeps `UNIQUE (deck_id,
-  member_key, item_sequence)` (origin numbers stay linear until Updates/2, #441) and a temporary
-  `item_revision_origin_key` for the exercise bindings until Share/5.
+  member_key, item_sequence)` (origin numbers stay linear until Updates/2, #441). The temporary
+  `item_revision_origin_key` that the exercise bindings used is gone since V52 (Share/5).
 - **Per-deck rows** `deck_head_item`, `deck_item_change`, `deck_item_exemplar`, `editing_draft`, `capture_note` carry
   `reuse_scope_id` (FK `(deck_id, reuse_scope_id) -> deck`) and reach lineage rows through it. Every `INSERT` of such a
   row writes the deck's scope.
@@ -1281,8 +1281,11 @@ Today every scope has exactly one deck; a copy (Share/10) will add a second deck
   `deckId`, `deckRevisionId`, `deckVersion` and timestamps from the reading deck's head/journal rows.
 - **Revision visibility** (one rule, `ItemRevisionVisibility`): revision R of member M is visible to deck D iff R is D's
   head for M or D's `deck_item_change` has a row that published R (`revision_id`). It is one SQL fragment, not a database
-  function, so every caller's plan stays a plain index probe and the rule changes in one place (Share/5 adds revisions
-  pinned by D's exercise bindings). Used by `ItemRepository.revision`, `AuthoringRepository.ownsBase`,
+  function, so every caller's plan stays a plain index probe and the rule changes in one place. Since Share/5 `visibleToStudy`
+  adds, for the Study material read only (`StudySessionRepository.material`), a revision pinned by a binding of one of D's
+  **head** exercises (an inherited exercise quotes the material revision it was written against, which predates the copy's journal).
+  `ItemService.read`, draft bases (`ownsBase`) and generation admission keep `visibleTo` (head, published, replaced): a
+  pinned-only revision is an opaque 404 there. Used by `ItemRepository.revision`, `AuthoringRepository.ownsBase`,
   `GenerationRepository.itemRevisionExists`, `StudySessionRepository.material`; `ExerciseRepository.itemRevision` is its
   head branch (bindings only target a current head). A copy therefore never reads the source's later revisions or the
   source's history before the copy, and the source never reads a copy's revision.
@@ -1297,6 +1300,66 @@ Today every scope has exactly one deck; a copy (Share/10) will add a second deck
   `LineageSharedScopeIntegrationTest` and the `Lineage*IntegrationTest` classes of `catalog.authoring`,
   `catalog.exercise`, `generation`, `study.session` (two decks in one scope through the real services),
   `StorageGcIntegrationTest.anObjectHeldOnlyByADomainForeignKeyIsDeferredInsteadOfRetriedForever`.
+
+### Exercises, objectives and Study on the lineage (Share/5, #427, migration `V52__lineage_exercises.sql`)
+
+Objective and exercise identities, revisions, bindings and exercise media references are lineage rows too; the reading deck
+reaches them through its heads. Progress keys do not change: `(account_id, deck_id, objective_id)`, where `deck_id` is the learner's
+own deck.
+
+- **Lineage rows** `memory_objective`, `objective_revision`, `exercise_definition`, `exercise_revision`,
+  `exercise_content_binding`, `exercise_media_ref` are keyed `(reuse_scope_id, ...)` (`UNIQUE (reuse_scope_id, objective_id)`,
+  `(reuse_scope_id, objective_key)`, `(reuse_scope_id, member_key, objective_id)`, `(reuse_scope_id, exercise_id)`; revision
+  primary keys `(reuse_scope_id, <identity>, revision_id)`). `deck_id` on them is the **origin** (the deck whose command wrote
+  the row); `UNIQUE (deck_id, objective_id, objective_sequence)` and `(deck_id, exercise_id, exercise_sequence)` stay until
+  Updates/2 (#441). Bindings reference item, exercise and objective revisions by lineage; the assessed objective must belong to the
+  assessed material of the same lineage (`exercise_binding_objective_guard` compares the scope).
+- **Per-deck rows** `objective_head`, `deck_head_exercise`, `deck_exercise_change`, `exercise_new_mark`, and in Study
+  `study_candidate_generation`, `study_candidate`, `study_policy_assignment` carry the deck's `reuse_scope_id`
+  (FK `(deck_id, reuse_scope_id) -> deck`). **Every `INSERT` of such a row writes the deck's scope.**
+- **Study FK chain** (the large tables get no column and no backfill). `study_presentation` has a composite FK to the
+  `study_candidate` row that carries exactly the copied `exercise_id`, `exercise_revision_id`, `objective_id`,
+  `objective_revision_id` (`study_candidate_presentation_key`); the candidate reaches the lineage rows through its scope. A replay copies the
+  same candidate coordinates. `study_evidence` is tied to its presentation by the insert guard `study_evidence_presentation_guard`
+  (through the attempt tombstone: same account, deck, objective and objective revision) because a foreign key would need a new column
+  on an immutable table. The guard requires a SCHEDULED attempt recorded as ASSESSED (a later dispute turns the tombstone to
+  NOT_ASSESSED, so the status is checked at insert only), the same account, deck, objective and objective revision as the
+  presentation, and that revision to be the one the presented exercise revision's ASSESSED binding names. V52 verifies the
+  existing rows by the same chain (without the status) and fails closed on a mismatch.
+- **Progress is the learner's deck's.** "Already attempted this exercise" (`AssessmentRepository.attemptedExercise`, the
+  first-attempt strictness cap) is keyed by the deck too: a source and a copy share exercise ids, also when one account owns both.
+  The progress page (`StudyProgressRepository.page`) cuts the page of heads first and finds each material's exercises from the
+  bindings of the deck's scope by `(scope, member)`; its cost is a page, not the Deck.
+- **Candidates come from the pinned manifest.** `StudySessionService.advancePreparation` reads the Deck revision's
+  `exercises_root_id` (`ExerciseManifestReader`, counted tree, leaf key = `exercise_id`, target = the descriptor of the published
+  revision) from the ordinal `scanned_count`, resolves each entry to its revision through `(scope, exercise_id,
+  descriptor_root_id)` and its ASSESSED binding (`StudySessionRepository.sourceBatch`, one primary-key probe per entry), and appends
+  candidates in manifest order. There is no UUID cursor (`source_cursor` is dropped) and no "revision at the author's
+  `deck_sequence`" lookup; `exercise_revision_snapshot_seek` is gone. A generation that was still `PREPARING` at the V52 deploy is a
+  cache: the migration deletes its partial candidates and resets its counters, so the next poll rebuilds it from ordinal 0
+  (`READY` generations are untouched).
+- **Issuing is the reading deck's.** `CURRENT_MATERIALS` checks every binding's material against the reading deck's
+  `deck_head_item`; a copy that deleted a material no longer issues the exercises assessed on or quoting it. Restart reads the
+  deck's `objective_head` rows, never all objectives of the lineage. Lists, counts, hub aggregates, AI context and admission start at
+  the deck's `deck_head_exercise` / `objective_head`.
+- **Revision visibility by id** (`ExerciseRevisionVisibility`, the twin of the item rule): an exercise revision is visible to deck
+  D iff it is D's head or D's `deck_exercise_change` published or replaced it. An objective revision is never read by its own id:
+  `objectiveOf` derives it from a visible exercise revision, and `GenerationRepository.objectiveTitle` accepts only D's objective
+  head or a revision D itself wrote.
+- **Media.** `exercise_media_ref.asset_owner_id` owns the asset (FK to `media_asset`); the writer may be another account. The
+  owner-only attach rule stays until Share/9 (#431). `exercise_media_ready(scope, exercise, revision)` has no actor or deck filter and
+  **fails closed**: the revision must exist, and every asset its content declares (`assetId` anywhere in `content`) must have a READY
+  reference of the declared kind; a missing reference row is "not ready" (no `COALESCE(..., TRUE)`), a text-only revision is ready. V52 reports with a `NOTICE` how many existing revisions declare an asset that no reference pins (they flip to not ready).
+- **Migration.** V52 is one transaction with `lock_timeout`, guards disabled only around the backfill and checked enabled at the end,
+  one `UPDATE` per row (a second update would re-check the row's foreign keys), `SET CONSTRAINTS ALL IMMEDIATE` before the
+  `ALTER`s (pending deferred events raise 55006), and a constraint list generated from `pg_constraint` (7 FKs onto `exercise_revision`).
+  The Share/5 copy fixture (`SharedScopeFixture.copy`) also copies the exercise and objective heads, which Share/10 will do in the
+  materialization job.
+- Tests: `LineageExercisesMigrationIntegrationTest` (V51 data incl. thousands of heads, progress byte-identical, guards, exact
+  constraint inventory), `LineageStudyIntegrationTest` (a copy studies its inherited exercises from the manifest, replay,
+  practice, restart, independent progress, authoring on inherited materials), `LineageExerciseVisibilityIntegrationTest`,
+  `LineageExerciseContextIntegrationTest`, `LineageExerciseMediaIntegrationTest` (fail-closed readiness for every place a mechanic holds
+  media), `LineageAttemptIntegrationTest` (same-account source and copy), `StudyProgressScaleIntegrationTest` (10k materials / 30k exercises).
 
 ### Deck access: levels, grants and the read-only path (Share/7, #429, migration `V53__deck_access.sql`)
 
@@ -1328,8 +1391,9 @@ the running application and fails when a new one has no row).
   is not revealed). A malformed code is `NOT_FOUND` without a lookup; a real lookup is one unique-index probe plus the deck key (and one grant probe for
   `INVITE`), identical for unknown and private codes. `INVITE_ONLY` is `403 DECK_INVITE_ONLY` (`ApiErrorCode`, house schema) with no deck data.
 - **Routes** (`PublicDeckController`, `GET`/`HEAD` only, `/api/public/decks/{code}`, `/items?limit&cursor`, `/items/{memberKey}`, `/exercises?limit&cursor`).
-  `PublicDeckService` checks the kill switch, takes a place in the limiter, tries the **bulkhead** (a `Semaphore`, `max-concurrent`, default 4,
-  `tryAcquire` before any transaction or connection; the excess read is refused at once with `503 PUBLIC_READ_BUSY` and `Retry-After: 1`), resolves access
+  `PublicDeckService` checks the kill switch, takes a place in the limiter, tries the **bulkhead** (two `Semaphore`s: `max-concurrent` places, default 3, of which guests may hold at most one less so a place is always free for a signed-in
+  viewer; `tryAcquire` before any transaction or connection; the excess read is refused at once with `503 PUBLIC_READ_BUSY` and `Retry-After: 1`; the title-cache
+  write is the last step inside the permit), resolves access
   in one short read-only transaction and reads **only the immutable roots of the published revision**. Every SQL lookup is a read-only transaction with a
   10-second bound of its own; storage reads (which take `FOR KEY SHARE` row locks, forbidden in a read-only transaction) run in their own short
   transactions, so no connection is held across the whole read: the members/exercises manifests through `CountedPages` (`ManifestPages`, O(log N + P) per page), the item
@@ -1350,9 +1414,13 @@ the running application and fails when a new one has no row).
 - **Limits and switch.** `PublicReadLimiter`: fixed one-minute windows on the monotonic clock (`System.nanoTime`) in memory of the instance. Three tables: guests per
   client network (`ClientAddresses.resolveNetwork`: IPv4 as is, IPv6 as its /64, `X-Forwarded-For` only from `learning.trusted-proxy-cidrs`), IPv6 guests per /48
   (`resolveCoarseNetwork`; a request must pass both, so rotating /64s inside a site is bounded) and accounts (a table of its own: guests never starve a signed-in
-  viewer). Defaults 120 / 600 (/48) / 600 / 600 a minute. Every request counts, found or not; a refused request charges nothing; `Retry-After` is the real remaining
+  viewer; an account is admitted by `PublicAccountLimitFilter` in the public chain BEFORE `CurrentIdentityFilter` asks Identity, so one token cannot drive unlimited
+  `/userinfo` round trips; the service counts only guests). Defaults 120 / 600 (/48) / 600 / 600 a minute. Every request counts, found or not; a refused request charges nothing; `Retry-After` is the real remaining
   time of the refusing window. Each table is bounded (`max-tracked`): when the guest table is full, new guest keys are folded into one shared overflow bucket with its
-  own cap (`overflow-per-minute`) instead of being refused one by one; only a new ACCOUNT finds a full account table refused (429). It is not database-backed like `PromoAttempts` on purpose: promo attempts are
+  own cap (`overflow-per-minute`) instead of being refused one by one; only a new ACCOUNT finds a full account table refused (429). Limiter events are counted on `mnema_public_deck_requests_total{route="limiter"}` as `guest_table_full`, `overflow_bucket` and `account_table_full`.
+  **Connection budget.** The bulkhead bounds the pool use of public reads but the pool is shared with the private API and the job executor, so `PublicRouteConnectionBudget`
+  fails the start (public routes enabled) when `max-concurrent` + `learning.jobs.max-concurrency` (worker/all roles, jobs enabled) leave fewer than 3 connections of the
+  effective Hikari pool. It is not database-backed like `PromoAttempts` on purpose: promo attempts are
   rare writes that must be exact across instances, while this sits before every public read (~25 rps at peak in scenario H) and a database write per read would turn
   the cheapest request into the most expensive one and give a flood a write amplifier; the price is a limit per instance. Kill switch
   `learning.community.public-routes.enabled=false` (default): 404 as if absent. **Logs:** the public code is a credential, so `ApiExceptionHandler` logs the route

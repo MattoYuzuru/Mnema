@@ -107,6 +107,30 @@ describe('ToastService', () => {
         expect(toasts.queuedCount()).toBe(0);
     });
 
+    it('replaces an identical echo instead of stacking it, and keeps different ones apart', () => {
+        toasts.echo('Ссылка скопирована');
+        toasts.echo('Ссылка скопирована');
+        toasts.echo('Ссылка скопирована');
+        expect(toasts.visible().map(toast => toast.text)).toEqual(['Ссылка скопирована']);
+        toasts.echo('Другое');
+        expect(toasts.visible().map(toast => toast.text)).toEqual(['Другое', 'Ссылка скопирована']);
+    });
+
+    it('shows an echoed error in a quiet zone and with «только значок», keeps it until closed, and replaces a repeat', () => {
+        quiet.set(true);
+        preferences.setDuringStudy('BADGE_ONLY');
+        TestBed.tick();
+        toasts.notify('dropped', 'Уведомление', 'ERROR', null);
+        toasts.echoError('Не удалось');
+        toasts.echoError('Не удалось');
+        expect(toasts.visible().map(toast => [toast.text, toast.severity, toast.echo, toast.durationMs])).toEqual([['Не удалось', 'ERROR', true, null]]);
+        vi.advanceTimersByTime(60_000);
+        expect(toasts.visible()).toHaveLength(1);
+        const [error] = toasts.visible();
+        toasts.close(error.id);
+        expect(toasts.visible()).toEqual([]);
+    });
+
     it('shows at once with «сразу» and drops toasts with «только значок»', () => {
         quiet.set(true);
         preferences.setDuringStudy('IMMEDIATE');

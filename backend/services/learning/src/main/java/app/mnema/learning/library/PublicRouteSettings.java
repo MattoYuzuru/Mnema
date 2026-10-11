@@ -11,7 +11,8 @@ import org.springframework.stereotype.Component;
  *       (rotating /64s inside a site must not mint fresh budgets); {@code overflow-per-minute}: the one shared budget of every guest key that finds the
  *       guest table full; {@code account-per-minute}: a signed-in viewer.</li>
  *   <li>{@code max-tracked}: the size bound of each limiter table (guests, /48 networks, accounts are separate tables).</li>
- *   <li>{@code max-concurrent}: reads served at the same time by the instance; the next one is refused at once with 503 instead of queueing for a connection.</li>
+ *   <li>{@code max-concurrent} [3, 2-64]: reads served at the same time by the instance; the next one is refused at once with 503 instead of queueing for a
+ *       connection. Guests may hold at most {@code max-concurrent - 1} of them, so one place is always left for a signed-in viewer.</li>
  * </ul>
  */
 @Component
@@ -30,9 +31,9 @@ final class PublicRouteSettings {
                         @Value("${learning.community.public-routes.overflow-per-minute:600}") int overflowPerMinute,
                         @Value("${learning.community.public-routes.account-per-minute:600}") int accountPerMinute,
                         @Value("${learning.community.public-routes.max-tracked:50000}") int maxTracked,
-                        @Value("${learning.community.public-routes.max-concurrent:4}") int maxConcurrent) {
+                        @Value("${learning.community.public-routes.max-concurrent:3}") int maxConcurrent) {
         if (outside(guestPerMinute, 1, 100_000) || outside(coarsePerMinute, 1, 1_000_000) || outside(overflowPerMinute, 1, 1_000_000)
-                || outside(accountPerMinute, 1, 100_000) || outside(maxTracked, 100, 1_000_000) || outside(maxConcurrent, 1, 64)) {
+                || outside(accountPerMinute, 1, 100_000) || outside(maxTracked, 100, 1_000_000) || outside(maxConcurrent, 2, 64)) {
             throw new IllegalArgumentException("Invalid public route settings");
         }
         this.enabled = enabled;

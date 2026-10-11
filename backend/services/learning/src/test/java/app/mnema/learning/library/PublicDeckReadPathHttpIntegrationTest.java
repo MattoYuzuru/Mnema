@@ -62,7 +62,7 @@ class PublicDeckReadPathHttpIntegrationTest extends PostgresIntegrationTest {
         registry.add("learning.community.public-routes.coarse-per-minute", () -> 100_000);
         registry.add("learning.community.public-routes.overflow-per-minute", () -> 100_000);
         registry.add("learning.community.public-routes.account-per-minute", () -> 100_000);
-        registry.add("learning.community.public-routes.max-concurrent", () -> 1);
+        registry.add("learning.community.public-routes.max-concurrent", () -> 2);
     }
 
     private HttpResponse<String> get(String path) {
@@ -103,6 +103,9 @@ class PublicDeckReadPathHttpIntegrationTest extends PostgresIntegrationTest {
                 assertThat(body.path("retryAfter").longValue()).isEqualTo(1);
                 assertThat(busy.body()).doesNotContain("Путь чтения");
             }
+            // guests hold at most max-concurrent - 1 places: the last one is still free for a signed-in viewer
+            HttpResponse<String> account = HttpIdentityFixture.send(port, "GET", "/public/decks/" + code, HttpIdentityFixture.reader(UUID.randomUUID()), null, Map.of());
+            assertThat(account.statusCode()).as(account.body()).isEqualTo(200);
             // the owner's private API is not behind the public bulkhead
             assertThat(HttpIdentityFixture.send(port, "GET", "/decks", HttpIdentityFixture.reader(UUID.randomUUID()), null, Map.of()).statusCode()).isEqualTo(200);
 
@@ -122,6 +125,34 @@ class PublicDeckReadPathHttpIntegrationTest extends PostgresIntegrationTest {
             Mockito.reset(content);
         }
         assertThat(get("/public/decks/" + code + "/items").statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void theTitleCacheWriteHoldsThePermitSoItIsBoundedByTheBulkheadToo() throws Exception {
+        String code = publish(3);
+        CountDownLatch inStore = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Mockito.doAnswer(invocation -> {
+            inStore.countDown();
+            if (!release.await(20, TimeUnit.SECONDS)) throw new IllegalStateException("never released");
+            return invocation.callRealMethod();
+        }).when(content).storeTitles(any(), anyList());
+        try {
+            CompletableFuture<HttpResponse<String>> writing = CompletableFuture.supplyAsync(() -> get("/public/decks/" + code + "/items"));
+            assertThat(inStore.await(20, TimeUnit.SECONDS)).isTrue();
+            // the page is read, the cache is being written, and the permit is still held: a second guest is refused
+            HttpResponse<String> busy = get("/public/decks/" + code);
+            assertThat(busy.statusCode()).as(busy.body()).isEqualTo(503);
+            assertThat(JSON.readTree(busy.body()).path("code").stringValue(null)).isEqualTo("PUBLIC_READ_BUSY");
+            release.countDown();
+            HttpResponse<String> page = writing.get(20, TimeUnit.SECONDS);
+            assertThat(page.statusCode()).isEqualTo(200);
+            assertThat(JSON.readTree(page.body()).path("items")).hasSize(3);
+        } finally {
+            release.countDown();
+            Mockito.reset(content);
+        }
+        assertThat(get("/public/decks/" + code).statusCode()).isEqualTo(200);
     }
 
     @Test

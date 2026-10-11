@@ -387,6 +387,19 @@ class PublicDeckHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void aPublishedCopyServesTheExercisesItInheritedThroughTheLineage() {
+        Deck source = fixtures.deck(UUID.randomUUID(), "Источник с упражнением");
+        SharedScopeFixture shared = new SharedScopeFixture(decks, items, storage, jdbc, transactions);
+        SharedScopeFixture.Copy copy = shared.copy(source.id(), UUID.randomUUID());
+        String code = fixtures.publishAt(new Deck(copy.owner(), copy.deckId(), null, null), DeckVisibility.LINK);
+
+        JsonNode page = json(get("/public/decks/" + code + "/exercises", null));
+        assertThat(page.path("total").intValue()).isEqualTo(1);
+        assertThat(page.path("exercises").get(0).path("exerciseId").stringValue(null)).isEqualTo(source.exercise().toString());
+        assertThat(page.toString()).doesNotContain(LibraryFixtures.SECRET_ANSWER).doesNotContain(LibraryFixtures.SECRET_REFERENCE);
+    }
+
+    @Test
     void readingOneDecksPublishedRevisionNeverExposesRowsOfAnotherDeckOfTheSameLineage() {
         SharedScopeFixture shared = new SharedScopeFixture(decks, items, storage, jdbc, transactions);
         SharedScopeFixture.Scenario scenario = shared.fork();
@@ -420,6 +433,26 @@ class PublicDeckHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(copyEdit).isNotEqualTo(scenario.material().revision());
         assertThat(json(get("/public/decks/" + copyCode + "/items/" + scenario.material().member(), null)).path("document").toString())
                 .doesNotContain("copy edit after publication");
+    }
+
+    @Test
+    void movingAPublicDeckToLinkChangesTheLinkOverHttp() {
+        Deck deck = fixtures.deck(owner, "Ротация");
+        String oldCode = fixtures.publishAt(deck, DeckVisibility.PUBLIC);
+        assertThat(json(get("/public/decks/" + oldCode, null)).path("slug").stringValue(null)).isEqualTo("rotatsiya");
+        String newCode = fixtures.level(deck, DeckVisibility.LINK);
+        assertThat(newCode).isNotEqualTo(oldCode);
+        for (String suffix : new String[] {"", "/items", "/exercises", "/items/" + deck.material().member()}) {
+            problem(get("/public/decks/" + oldCode + suffix, null), 404, "RESOURCE_NOT_FOUND");
+            problem(get("/public/decks/" + oldCode + suffix, other), 404, "RESOURCE_NOT_FOUND");
+            assertThat(get("/public/decks/" + newCode + suffix, null).statusCode()).as(suffix).isEqualTo(200);
+        }
+        JsonNode summary = json(get("/public/decks/" + newCode, other));
+        assertThat(summary.path("visibility").stringValue(null)).isEqualTo("LINK");
+        assertThat(summary.propertyNames()).doesNotContain("slug");
+        // raising it again keeps the new link
+        assertThat(fixtures.level(deck, DeckVisibility.PUBLIC)).isEqualTo(newCode);
+        assertThat(json(get("/public/decks/" + newCode, null)).path("access").stringValue(null)).isEqualTo("PUBLIC");
     }
 
     @Test

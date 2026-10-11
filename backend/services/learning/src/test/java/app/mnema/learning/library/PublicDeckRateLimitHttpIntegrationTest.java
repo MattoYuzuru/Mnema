@@ -122,6 +122,32 @@ class PublicDeckRateLimitHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void oneTokenCannotDriveUnlimitedIdentityRoundTrips() throws Exception {
+        String path = "/public/decks/" + code;
+        String token = HttpIdentityFixture.reader(UUID.randomUUID());
+        int before = HttpIdentityFixture.userInfoCalls();
+        int refused = 0;
+        for (int index = 0; index < 12; index++) {
+            HttpResponse<String> response = HttpIdentityFixture.send(port, "GET", path, token, null, Map.of());
+            if (response.statusCode() == 429) {
+                limited(response);
+                refused++;
+            } else {
+                assertThat(response.statusCode()).isEqualTo(200);
+            }
+        }
+        // the account limit (4) is applied before /userinfo is asked: the refused requests cost Identity nothing
+        assertThat(refused).isEqualTo(8);
+        assertThat(HttpIdentityFixture.userInfoCalls() - before).isEqualTo(4);
+        // a token that is not valid is refused by the resource server before it reaches the limiter or Identity
+        int calls = HttpIdentityFixture.userInfoCalls();
+        for (int index = 0; index < 10; index++) {
+            assertThat(HttpIdentityFixture.send(port, "GET", path, "garbage", null, Map.of()).statusCode()).isEqualTo(401);
+        }
+        assertThat(HttpIdentityFixture.userInfoCalls()).isEqualTo(calls);
+    }
+
+    @Test
     void anUntrustedForwardedHeaderCannotMintFreshBudgets() throws Exception {
         // the test peer is a trusted proxy, so the header counts here; a client address that is not a proxy gets its own budget either way.
         String path = "/public/decks/" + code;

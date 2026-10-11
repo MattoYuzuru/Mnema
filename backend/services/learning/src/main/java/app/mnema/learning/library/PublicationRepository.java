@@ -194,7 +194,7 @@ class PublicationRepository {
             UNION ALL
             SELECT 'exercise' AS kind, h.exercise_id AS subject
               FROM nc JOIN app_learning.exercise_media_ref r ON r.asset_id = nc.asset_id
-              JOIN app_learning.deck_head_exercise h ON h.exercise_id = r.exercise_id AND h.revision_id = r.exercise_revision_id
+              JOIN app_learning.deck_head_exercise h ON h.reuse_scope_id = r.reuse_scope_id AND h.exercise_id = r.exercise_id AND h.revision_id = r.exercise_revision_id
              WHERE h.deck_id = :deck
              LIMIT :limit
             """;

@@ -1,6 +1,7 @@
 package app.mnema.learning.library;
 
 import app.mnema.learning.platform.api.RateLimitedException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -15,8 +16,15 @@ class PublicReadLimiterTest {
     /** A hand-driven monotonic clock; its zero is arbitrary, as {@link System#nanoTime}'s. */
     private final AtomicLong clock = new AtomicLong(-7 * SECOND);
 
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+
     private PublicReadLimiter limiter(int guest, int coarse, int overflow, int account, int tracked) {
-        return new PublicReadLimiter(new PublicRouteSettings(true, guest, coarse, overflow, account, tracked, 4), clock::get);
+        return new PublicReadLimiter(new PublicRouteSettings(true, guest, coarse, overflow, account, tracked, 3), clock::get, meters);
+    }
+
+    private double events(String outcome) {
+        var counter = meters.find("mnema_public_deck_requests_total").tags("route", "limiter", "outcome", outcome).counter();
+        return counter == null ? 0 : counter.count();
     }
 
     private static long retryAfter(Runnable action) {
@@ -142,13 +150,49 @@ class PublicReadLimiterTest {
     @Test
     void settingsOutsideTheirBoundsFailAtStartup() {
         int[][] bad = {{0, 1, 1, 1, 100, 4}, {1, 0, 1, 1, 100, 4}, {1, 1, 0, 1, 100, 4}, {1, 1, 1, 0, 100, 4}, {100_001, 1, 1, 1, 100, 4},
-                {1, 1, 1, 100_001, 100, 4}, {1, 1, 1, 1, 99, 4}, {1, 1, 1, 1, 1_000_001, 4}, {1, 1, 1, 1, 100, 0}, {1, 1, 1, 1, 100, 65}};
+                {1, 1, 1, 100_001, 100, 4}, {1, 1, 1, 1, 99, 4}, {1, 1, 1, 1, 1_000_001, 4}, {1, 1, 1, 1, 100, 0}, {1, 1, 1, 1, 100, 1}, {1, 1, 1, 1, 100, 65}};
         for (int[] values : bad) {
             assertThatThrownBy(() -> new PublicRouteSettings(true, values[0], values[1], values[2], values[3], values[4], values[5]))
                     .isInstanceOf(IllegalArgumentException.class);
         }
-        PublicRouteSettings defaults = new PublicRouteSettings(false, 120, 600, 600, 600, 50_000, 4);
+        PublicRouteSettings defaults = new PublicRouteSettings(false, 120, 600, 600, 600, 50_000, 3);
         assertThat(defaults.enabled).isFalse();
-        assertThat(defaults.maxConcurrent).isEqualTo(4);
+        assertThat(defaults.maxConcurrent).isEqualTo(3);
+        assertThat(new PublicRouteSettings(true, 1, 1, 1, 1, 100, 2).maxConcurrent).isEqualTo(2);
+    }
+
+    @Test
+    void tableFullAndOverflowUseAreCountedSeparately() {
+        PublicReadLimiter limiter = limiter(5, 1_000, 2, 5, 100);
+        for (int index = 0; index < 100; index++) limiter.admit(Viewer.guest("n" + index));
+        assertThat(events("guest_table_full")).isZero();
+        assertThat(events("overflow_bucket")).isZero();
+        limiter.admit(Viewer.guest("new-1"));
+        limiter.admit(Viewer.guest("new-2"));
+        // the third is refused by the overflow cap: the table was full (an event), but the bucket was not used
+        assertThatThrownBy(() -> limiter.admit(Viewer.guest("new-3"))).isInstanceOf(RateLimitedException.class);
+        assertThat(events("guest_table_full")).isEqualTo(3);
+        assertThat(events("overflow_bucket")).isEqualTo(2);
+        // a known guest and an account touch neither
+        limiter.admit(Viewer.guest("n1"));
+        limiter.admit(Viewer.account(UUID.randomUUID(), null));
+        assertThat(events("guest_table_full")).isEqualTo(3);
+        for (int index = 0; index < 99; index++) limiter.admit(Viewer.account(UUID.randomUUID(), null));
+        assertThat(events("account_table_full")).isZero();
+        assertThatThrownBy(() -> limiter.admit(Viewer.account(UUID.randomUUID(), null))).isInstanceOf(RateLimitedException.class);
+        assertThat(events("account_table_full")).isEqualTo(1);
+    }
+
+    @Test
+    void aSweepNeverDetachesTheWindowOfTheRequestThatTriggeredIt() {
+        PublicReadLimiter limiter = limiter(2, 1_000, 1_000, 5, 100);
+        for (int index = 0; index < 100; index++) limiter.admit(Viewer.guest("n" + index));
+        clock.addAndGet(61 * SECOND);
+        // the table is full of expired windows: this request sweeps them, then its own window must live on in the table
+        Viewer known = Viewer.guest("n0");
+        limiter.admit(known);
+        limiter.admit(known);
+        assertThat(limiter.trackedGuests()).isEqualTo(1);
+        assertThatThrownBy(() -> limiter.admit(known)).isInstanceOf(RateLimitedException.class);
     }
 }

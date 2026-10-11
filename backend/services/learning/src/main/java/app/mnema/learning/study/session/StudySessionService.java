@@ -42,6 +42,7 @@ public class StudySessionService {
     private final StudySessionRepository repository;
     private final CommandReceiptService receipts;
     private final NativeStorageBatches nativeBatches;
+    private final ExerciseManifestReader manifest;
     private final LearningCapabilities capabilities;
     private final ExerciseNewMarks newMarks;
     // MATCH order must not be reproducible from identifiers a client holds.
@@ -52,6 +53,7 @@ public class StudySessionService {
         this.repository = repository;
         this.receipts = receipts;
         this.nativeBatches = new NativeStorageBatches(storage);
+        this.manifest = new ExerciseManifestReader(storage);
         this.capabilities = capabilities;
         this.newMarks = newMarks;
     }
@@ -210,12 +212,20 @@ public class StudySessionService {
         return repository.generation(deck.deckId(), deck.exercisesRootId()).orElseThrow();
     }
 
+    /**
+     * One bounded step of candidate preparation: the next manifest entries after {@code scanned_count} (an ordinal into the
+     * pinned exercises root), their pinned revisions and ASSESSED bindings. Every entry must resolve; disabled revisions are
+     * scanned but are not candidates.
+     */
     private StudySessionRepository.Generation advancePreparation(StudySessionRepository.Session session, Instant now) {
         StudySessionRepository.Generation generation = repository.generationForUpdate(session.deckId(),
                 session.generationId()).orElseThrow(IllegalStateException::new);
         if (!generation.status().equals("PREPARING")) return generation;
-        List<StudySessionRepository.SourceExercise> sources = repository.sourceBatch(generation,
+        List<StudySessionRepository.ManifestEntry> entries = manifest.entries(generation.scopeId(),
+                generation.exercisesRootId(), generation.expectedExerciseCount(), generation.scannedCount(),
                 BoundedCandidatePlanner.PREPARATION_LIMIT);
+        List<StudySessionRepository.SourceExercise> sources = repository.sourceBatch(generation, entries);
+        if (sources.size() != entries.size()) throw new IllegalStateException("Candidate source projection is inconsistent");
         int candidate = generation.candidateCount();
         for (StudySessionRepository.SourceExercise source : sources) {
             if (source.enabled()) repository.insertCandidate(generation.generationId(), candidate++, generation, source);
@@ -227,8 +237,7 @@ public class StudySessionService {
         if (!ready && (sources.isEmpty() || totalScanned > generation.expectedExerciseCount())) {
             throw new IllegalStateException("Candidate source projection is inconsistent");
         }
-        UUID cursor = sources.isEmpty() ? generation.sourceCursor() : sources.getLast().exerciseId();
-        repository.advanceGeneration(generation, cursor, scanned, enabled, ready, now);
+        repository.advanceGeneration(generation, scanned, enabled, ready, now);
         return repository.generationForUpdate(session.deckId(), generation.generationId()).orElseThrow();
     }
 

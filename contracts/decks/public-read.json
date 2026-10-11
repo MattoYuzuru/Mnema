@@ -27,14 +27,15 @@
       "coarsePerMinute": 600,
       "overflowPerMinute": 600,
       "accountPerMinute": 600,
-      "scope": "per instance: a guest per client network (IPv4 address, IPv6 /64) and, for IPv6, all guests of one /48 together; guests that find the guest table full share one overflow bucket; a signed-in viewer per account (a separate table, never starved by guests)",
+      "scope": "per instance: a guest per client network (IPv4 address, IPv6 /64) and, for IPv6, all guests of one /48 together; guests that find the guest table full share one overflow bucket; a signed-in viewer per account (a separate table, never starved by guests); an account is admitted before Identity is asked about its token, so one token cannot drive unlimited Identity round trips",
       "status": 429
     },
     "bulkhead": {
-      "maxConcurrent": 4,
+      "maxConcurrent": 3,
+      "guestMaxConcurrent": 2,
       "status": 503,
       "retryAfterSeconds": 1,
-      "note": "reads served at once per instance; the next one is refused immediately instead of waiting for a connection"
+      "note": "reads served at once per instance; guests may hold all but one place, so one is always free for a signed-in viewer; the next read is refused immediately instead of waiting for a connection"
     }
   },
   "invariants": [

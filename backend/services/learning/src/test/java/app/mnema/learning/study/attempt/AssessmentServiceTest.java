@@ -133,7 +133,7 @@ class AssessmentServiceTest {
     void theAnswerIsRecordedWithTheStrictnessOfTheObjectivesState(int level, int streak, long sequence, boolean attempted, String expected) {
         AttemptRepository.Presentation presentation = presentation("SCHEDULED", 0, textContent("Вопрос"));
         when(assessments.state(actor, deck, objective)).thenReturn(Optional.of(state(0, level, streak, sequence)));
-        when(assessments.attemptedExercise(actor, exercise, 0)).thenReturn(attempted);
+        when(assessments.attemptedExercise(actor, deck, exercise, 0)).thenReturn(attempted);
 
         Optional<AttemptService.SubmitResult> result = service.begin(actor, deck, session, presentation, command(presentation),
                 new byte[32], new AttemptCommand.TextResponse("ответ"), NOW);

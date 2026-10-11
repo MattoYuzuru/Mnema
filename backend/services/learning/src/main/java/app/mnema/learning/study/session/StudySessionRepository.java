@@ -20,20 +20,22 @@ import java.util.UUID;
 class StudySessionRepository {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     // Current membership gates new issuance; immutable bindings and issued presentations remain valid.
+    // The READING deck's heads decide (a lineage row has no deck of its own): a copy that deleted a material no longer issues
+    // the exercises that are assessed on or quote it, whatever the source still has.
     private static final String CURRENT_MATERIALS = """
             AND NOT EXISTS (
                 SELECT 1 FROM app_learning.exercise_content_binding binding
-                 WHERE binding.deck_id=selected.deck_id AND binding.exercise_id=selected.exercise_id
+                 WHERE binding.reuse_scope_id=selected.reuse_scope_id AND binding.exercise_id=selected.exercise_id
                    AND binding.exercise_revision_id=selected.revision_id
                    AND NOT EXISTS (
                        SELECT 1 FROM app_learning.deck_head_item item
-                        WHERE item.deck_id=binding.deck_id AND item.member_key=binding.member_key
+                        WHERE item.deck_id=:deck AND item.member_key=binding.member_key
                    )
             )
             """;
     // A revision is issuable only while its media is ready and its evaluator's capability is available.
     private static final String ISSUABLE_REVISION = CURRENT_MATERIALS + """
-            AND app_learning.exercise_media_ready(:actor,selected.deck_id,selected.exercise_id,selected.revision_id)
+            AND app_learning.exercise_media_ready(selected.reuse_scope_id,selected.exercise_id,selected.revision_id)
             AND (selected.evaluator_policy ->> 'id' <> 'ai-semantic' OR :aiAvailable)
             """;
     private static final String PRESENTATION_SELECT = """
@@ -50,11 +52,14 @@ class StudySessionRepository {
 
     StudySessionRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
 
-    record DeckHead(UUID deckId, UUID ownerId, UUID revisionId, long sequence, UUID exercisesRootId,
+    record DeckHead(UUID deckId, UUID ownerId, UUID scopeId, UUID revisionId, long sequence, UUID exercisesRootId,
                     int exerciseCount) { }
-    record Generation(UUID deckId, UUID generationId, UUID ownerId, UUID deckRevisionId, long deckSequence,
-                      UUID exercisesRootId, String status, UUID sourceCursor, int scannedCount, int candidateCount,
+    /** {@code scannedCount} is the ordinal, in the pinned exercises manifest, of the next entry to scan. */
+    record Generation(UUID deckId, UUID scopeId, UUID generationId, UUID ownerId, UUID deckRevisionId, long deckSequence,
+                      UUID exercisesRootId, String status, int scannedCount, int candidateCount,
                       int expectedExerciseCount, long rowVersion) { }
+    /** One entry of the exercises manifest: the exercise and the descriptor object its pinned revision published. */
+    record ManifestEntry(UUID exerciseId, UUID descriptorRootId) { }
     record SourceExercise(UUID exerciseId, UUID exerciseRevisionId, boolean enabled, UUID objectiveId,
                           UUID objectiveRevisionId, UUID memberKey) { }
     record Candidate(int ordinal, UUID exerciseId, UUID exerciseRevisionId, String type, UUID objectiveId,
@@ -78,13 +83,14 @@ class StudySessionRepository {
 
     private static final RowMapper<DeckHead> DECK = (row, ignored) -> new DeckHead(
             row.getObject("deck_id", UUID.class), row.getObject("owner_id", UUID.class),
-            row.getObject("head_revision_id", UUID.class), row.getLong("row_version"),
+            row.getObject("reuse_scope_id", UUID.class), row.getObject("head_revision_id", UUID.class), row.getLong("row_version"),
             row.getObject("exercises_root_id", UUID.class), row.getInt("exercise_count"));
     private static final RowMapper<Generation> GENERATION = (row, ignored) -> new Generation(
-            row.getObject("deck_id", UUID.class), row.getObject("generation_id", UUID.class),
-            row.getObject("owner_id", UUID.class), row.getObject("deck_revision_id", UUID.class),
-            row.getLong("deck_sequence"), row.getObject("exercises_root_id", UUID.class), row.getString("status"),
-            row.getObject("source_cursor", UUID.class), row.getInt("scanned_count"), row.getInt("candidate_count"),
+            row.getObject("deck_id", UUID.class), row.getObject("reuse_scope_id", UUID.class),
+            row.getObject("generation_id", UUID.class), row.getObject("owner_id", UUID.class),
+            row.getObject("deck_revision_id", UUID.class), row.getLong("deck_sequence"),
+            row.getObject("exercises_root_id", UUID.class), row.getString("status"),
+            row.getInt("scanned_count"), row.getInt("candidate_count"),
             row.getInt("expected_exercise_count"), row.getLong("row_version"));
     private static final RowMapper<Session> SESSION = (row, ignored) -> new Session(
             row.getObject("account_id", UUID.class), row.getObject("session_id", UUID.class),
@@ -113,7 +119,7 @@ class StudySessionRepository {
 
     Optional<DeckHead> deck(UUID actor, UUID deck) {
         return jdbc.sql("""
-                SELECT d.deck_id,d.owner_id,d.head_revision_id,d.row_version,r.exercises_root_id,r.exercise_count
+                SELECT d.deck_id,d.owner_id,d.reuse_scope_id,d.head_revision_id,d.row_version,r.exercises_root_id,r.exercise_count
                   FROM app_learning.deck d JOIN app_learning.deck_revision r
                     ON r.deck_id=d.deck_id AND r.revision_id=d.head_revision_id
                  WHERE d.owner_id=:actor AND d.deck_id=:deck AND d.deleted_at IS NULL
@@ -136,12 +142,13 @@ class StudySessionRepository {
 
     void insertGeneration(DeckHead deck, UUID generation, Instant now) {
         jdbc.sql("""
-                INSERT INTO app_learning.study_candidate_generation(deck_id,generation_id,owner_id,deck_revision_id,
-                    deck_sequence,exercises_root_id,status,source_cursor,scanned_count,candidate_count,
+                INSERT INTO app_learning.study_candidate_generation(deck_id,reuse_scope_id,generation_id,owner_id,
+                    deck_revision_id,deck_sequence,exercises_root_id,status,scanned_count,candidate_count,
                     expected_exercise_count,row_version,created_at,ready_at)
-                VALUES (:deck,:generation,:owner,:revision,:sequence,:root,:status,NULL,0,0,:count,0,:now,:ready)
+                VALUES (:deck,:scope,:generation,:owner,:revision,:sequence,:root,:status,0,0,:count,0,:now,:ready)
                 ON CONFLICT (deck_id,exercises_root_id) DO NOTHING
-                """).param("deck", deck.deckId()).param("generation", generation).param("owner", deck.ownerId())
+                """).param("deck", deck.deckId()).param("scope", deck.scopeId()).param("generation", generation)
+                .param("owner", deck.ownerId())
                 .param("revision", deck.revisionId()).param("sequence", deck.sequence())
                 .param("root", deck.exercisesRootId()).param("status", deck.exerciseCount() == 0 ? "READY" : "PREPARING")
                 .param("count", deck.exerciseCount()).param("now", Timestamp.from(now))
@@ -150,49 +157,58 @@ class StudySessionRepository {
                 .update();
     }
 
-    List<SourceExercise> sourceBatch(Generation generation, int limit) {
-        String cursor = generation.sourceCursor() == null ? "" : " AND x.exercise_id > :cursor";
-        var query = jdbc.sql("""
-                SELECT x.exercise_id,r.revision_id AS exercise_revision_id,r.enabled,
-                       b.objective_id,b.objective_revision_id,b.member_key
-                  FROM app_learning.exercise_definition x
-                  JOIN LATERAL (
-                       SELECT revision_id,enabled FROM app_learning.exercise_revision revision
-                        WHERE revision.deck_id=x.deck_id AND revision.exercise_id=x.exercise_id
-                          AND revision.deck_sequence<=:sequence
-                        ORDER BY revision.deck_sequence DESC LIMIT 1
-                  ) r ON TRUE
-                  JOIN app_learning.exercise_content_binding b ON b.deck_id=x.deck_id
-                    AND b.exercise_id=x.exercise_id AND b.exercise_revision_id=r.revision_id AND b.role='ASSESSED'
-                 WHERE x.deck_id=:deck
-                """ + cursor + " ORDER BY x.exercise_id LIMIT :limit")
-                .param("sequence", generation.deckSequence()).param("deck", generation.deckId()).param("limit", limit);
-        if (generation.sourceCursor() != null) query.param("cursor", generation.sourceCursor());
-        return query.query((row, ignored) -> new SourceExercise(row.getObject("exercise_id", UUID.class),
-                row.getObject("exercise_revision_id", UUID.class), row.getBoolean("enabled"),
-                row.getObject("objective_id", UUID.class), row.getObject("objective_revision_id", UUID.class),
-                row.getObject("member_key", UUID.class))).list();
+    /**
+     * The candidate source for manifest entries already read from the pinned exercises root: the exercise revision each
+     * entry's descriptor published (resolved through the lineage by {@code (scope, exercise, descriptor)}, the primary key
+     * prefix plus a handful of revisions per exercise) with its ASSESSED binding, in manifest order. An entry the lineage
+     * cannot resolve is simply absent: the caller treats a short result as an inconsistent projection.
+     */
+    List<SourceExercise> sourceBatch(Generation generation, List<ManifestEntry> entries) {
+        if (entries.isEmpty()) return List.of();
+        // LATERAL with LIMIT 1 pins the plan to one primary-key probe per manifest entry on each table, whatever the size of
+        // the lineage (a hash join over the bindings of the scope would read all of them for every step)
+        return jdbc.sql("""
+                SELECT revision.exercise_id,revision.revision_id AS exercise_revision_id,revision.enabled,
+                       binding.objective_id,binding.objective_revision_id,binding.member_key
+                  FROM unnest(CAST(:exercises AS uuid[]),CAST(:descriptors AS uuid[])) WITH ORDINALITY AS entry(exercise_id,descriptor_id,position)
+                  CROSS JOIN LATERAL (
+                       SELECT r.exercise_id,r.revision_id,r.enabled FROM app_learning.exercise_revision r
+                        WHERE r.reuse_scope_id=:scope AND r.exercise_id=entry.exercise_id AND r.descriptor_root_id=entry.descriptor_id
+                        LIMIT 1) revision
+                  CROSS JOIN LATERAL (
+                       SELECT b.objective_id,b.objective_revision_id,b.member_key FROM app_learning.exercise_content_binding b
+                        WHERE b.reuse_scope_id=:scope AND b.exercise_id=revision.exercise_id
+                          AND b.exercise_revision_id=revision.revision_id AND b.role='ASSESSED' LIMIT 1) binding
+                 ORDER BY entry.position
+                """).param("scope", generation.scopeId())
+                .param("exercises", entries.stream().map(ManifestEntry::exerciseId).toArray(UUID[]::new))
+                .param("descriptors", entries.stream().map(ManifestEntry::descriptorRootId).toArray(UUID[]::new))
+                .query((row, ignored) -> new SourceExercise(row.getObject("exercise_id", UUID.class),
+                        row.getObject("exercise_revision_id", UUID.class), row.getBoolean("enabled"),
+                        row.getObject("objective_id", UUID.class), row.getObject("objective_revision_id", UUID.class),
+                        row.getObject("member_key", UUID.class))).list();
     }
 
     void insertCandidate(UUID generation, int ordinal, Generation owner, SourceExercise source) {
         jdbc.sql("""
-                INSERT INTO app_learning.study_candidate(generation_id,candidate_ordinal,deck_id,exercise_id,
+                INSERT INTO app_learning.study_candidate(generation_id,candidate_ordinal,deck_id,reuse_scope_id,exercise_id,
                     exercise_revision_id,objective_id,objective_revision_id,member_key)
-                VALUES (:generation,:ordinal,:deck,:exercise,:revision,:objective,:objectiveRevision,:member)
+                VALUES (:generation,:ordinal,:deck,:scope,:exercise,:revision,:objective,:objectiveRevision,:member)
                 """).param("generation", generation).param("ordinal", ordinal).param("deck", owner.deckId())
+                .param("scope", owner.scopeId())
                 .param("exercise", source.exerciseId()).param("revision", source.exerciseRevisionId())
                 .param("objective", source.objectiveId()).param("objectiveRevision", source.objectiveRevisionId())
                 .param("member", source.memberKey()).update();
     }
 
-    void advanceGeneration(Generation generation, UUID cursor, int scanned, int candidates, boolean ready, Instant now) {
+    void advanceGeneration(Generation generation, int scanned, int candidates, boolean ready, Instant now) {
         jdbc.sql("""
                 UPDATE app_learning.study_candidate_generation
-                   SET source_cursor=:cursor,scanned_count=scanned_count+:scanned,
+                   SET scanned_count=scanned_count+:scanned,
                        candidate_count=candidate_count+:candidates,status=:status,ready_at=:ready,
                        row_version=row_version+1
                  WHERE deck_id=:deck AND generation_id=:generation AND row_version=:version
-                """).param("cursor", cursor, java.sql.Types.OTHER).param("scanned", scanned)
+                """).param("scanned", scanned)
                 .param("candidates", candidates).param("status", ready ? "READY" : "PREPARING")
                 .param("ready", ready ? now.atOffset(ZoneOffset.UTC) : null, java.sql.Types.TIMESTAMP_WITH_TIMEZONE)
                 .param("deck", generation.deckId()).param("generation", generation.generationId())
@@ -265,13 +281,13 @@ class StudySessionRepository {
                     : "(candidate_ordinal<:start),candidate_ordinal";
         return jdbc.sql("""
                 WITH candidate_window AS MATERIALIZED (
-                    SELECT candidate_ordinal,exercise_id,exercise_revision_id,objective_id,
+                    SELECT reuse_scope_id,candidate_ordinal,exercise_id,exercise_revision_id,objective_id,
                            objective_revision_id,member_key
                       FROM app_learning.study_candidate
                      WHERE generation_id=:generation AND candidate_ordinal>=:start
                      ORDER BY candidate_ordinal LIMIT :limit
                 ), wrapped_window AS MATERIALIZED (
-                    SELECT candidate_ordinal,exercise_id,exercise_revision_id,objective_id,
+                    SELECT reuse_scope_id,candidate_ordinal,exercise_id,exercise_revision_id,objective_id,
                            objective_revision_id,member_key
                       FROM app_learning.study_candidate
                      WHERE generation_id=:generation AND candidate_ordinal<:start
@@ -287,11 +303,11 @@ class StudySessionRepository {
                     SELECT candidate.*
                       FROM app_learning.study_state state
                       JOIN LATERAL (
-                          SELECT choice.candidate_ordinal,choice.exercise_id,choice.exercise_revision_id,
+                          SELECT choice.reuse_scope_id,choice.candidate_ordinal,choice.exercise_id,choice.exercise_revision_id,
                                  choice.objective_id,choice.objective_revision_id,choice.member_key
                             FROM app_learning.study_candidate choice
                             JOIN app_learning.exercise_revision selected
-                              ON selected.deck_id=:deck AND selected.exercise_id=choice.exercise_id
+                              ON selected.reuse_scope_id=choice.reuse_scope_id AND selected.exercise_id=choice.exercise_id
                              AND selected.revision_id=choice.exercise_revision_id
                            WHERE choice.generation_id=:generation AND choice.objective_id=state.objective_id
                              %s
@@ -309,11 +325,11 @@ class StudySessionRepository {
                     SELECT candidate.*
                       FROM app_learning.study_state state
                       JOIN LATERAL (
-                          SELECT choice.candidate_ordinal,choice.exercise_id,choice.exercise_revision_id,
+                          SELECT choice.reuse_scope_id,choice.candidate_ordinal,choice.exercise_id,choice.exercise_revision_id,
                                  choice.objective_id,choice.objective_revision_id,choice.member_key
                             FROM app_learning.study_candidate choice
                             JOIN app_learning.exercise_revision selected
-                              ON selected.deck_id=:deck AND selected.exercise_id=choice.exercise_id
+                              ON selected.reuse_scope_id=choice.reuse_scope_id AND selected.exercise_id=choice.exercise_id
                              AND selected.revision_id=choice.exercise_revision_id
                            WHERE choice.generation_id=:generation AND choice.objective_id=state.objective_id
                              %s
@@ -333,14 +349,14 @@ class StudySessionRepository {
                     UNION ALL SELECT * FROM introduced_unassessed
                 ), available_pool AS (
                     SELECT candidate.* FROM candidate_pool candidate
-                    JOIN app_learning.exercise_revision selected ON selected.deck_id=:deck
+                    JOIN app_learning.exercise_revision selected ON selected.reuse_scope_id=candidate.reuse_scope_id
                      AND selected.exercise_id=candidate.exercise_id
                      AND selected.revision_id=candidate.exercise_revision_id
                     WHERE TRUE
                        %s
                 ), chosen AS (
                     SELECT DISTINCT ON (candidate.objective_id)
-                           candidate.candidate_ordinal,candidate.exercise_id,candidate.exercise_revision_id,
+                           candidate.reuse_scope_id,candidate.candidate_ordinal,candidate.exercise_id,candidate.exercise_revision_id,
                            candidate.objective_id,candidate.objective_revision_id,candidate.member_key
                       FROM available_pool candidate
                      ORDER BY candidate.objective_id,candidate.candidate_ordinal
@@ -354,7 +370,7 @@ class StudySessionRepository {
                                ORDER BY chosen.candidate_ordinal) AS novelty_rank
                       FROM chosen
                       JOIN app_learning.exercise_revision revision
-                        ON revision.deck_id=:deck AND revision.exercise_id=chosen.exercise_id
+                        ON revision.reuse_scope_id=chosen.reuse_scope_id AND revision.exercise_id=chosen.exercise_id
                        AND revision.revision_id=chosen.exercise_revision_id
                       LEFT JOIN app_learning.study_state state
                         ON state.account_id=:actor AND state.deck_id=:deck AND state.objective_id=chosen.objective_id
@@ -390,7 +406,7 @@ class StudySessionRepository {
                   FROM app_learning.deck d JOIN app_learning.item_revision r
                     ON r.reuse_scope_id=d.reuse_scope_id AND r.member_key=:member AND r.revision_id=:revision
                  WHERE d.deck_id=:deck
-                """ + " AND " + ItemRevisionVisibility.visibleTo(":deck", "r")).param("deck", deck).param("member", member).param("revision", revision)
+                """ + " AND " + ItemRevisionVisibility.visibleToStudy(":deck", "r")).param("deck", deck).param("member", member).param("revision", revision)
                 .query((row, ignored) -> new Material(row.getObject("member_key", UUID.class),
                         row.getObject("revision_id", UUID.class), row.getObject("reuse_scope_id", UUID.class),
                         row.getObject("content_root_id", UUID.class))).optional();
@@ -420,10 +436,12 @@ class StudySessionRepository {
     }
 
     long ensureState(UUID actor, UUID deck, UUID objective, UUID config, Instant now) {
+        // the assignment carries the scope of the reading deck; the objective is a lineage row of that scope
         jdbc.sql("""
-                INSERT INTO app_learning.study_policy_assignment(account_id,deck_id,objective_id,reducer_config_id,
-                    assigned_at)
-                VALUES (:actor,:deck,:objective,:config,:now)
+                INSERT INTO app_learning.study_policy_assignment(account_id,deck_id,reuse_scope_id,objective_id,
+                    reducer_config_id,assigned_at)
+                SELECT :actor,d.deck_id,d.reuse_scope_id,:objective,:config,:now
+                  FROM app_learning.deck d WHERE d.deck_id=:deck
                 ON CONFLICT (account_id,deck_id,objective_id) DO NOTHING
                 """).param("actor", actor).param("deck", deck).param("objective", objective)
                 .param("config", config).param("now", Timestamp.from(now)).update();

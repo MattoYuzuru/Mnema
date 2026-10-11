@@ -894,9 +894,13 @@ class GenerationRepository {
 
     /** The title of an objective revision of the owner's deck (for the proposal's display), empty when it is gone. */
     Optional<String> objectiveTitle(UUID owner, UUID deck, UUID objective, UUID revision) {
+        // an objective revision is visible to a deck through its objective head or when the deck itself wrote it (origin), never
+        // because it exists in the lineage: a copy does not read the source's other revisions
         return jdbc.sql("SELECT r.descriptor ->> 'title' FROM app_learning.deck d JOIN app_learning.objective_revision r "
-                        + "ON r.deck_id=d.deck_id WHERE d.owner_id=:owner AND d.deleted_at IS NULL AND r.deck_id=:deck "
-                        + "AND r.objective_id=:objective AND r.revision_id=:revision")
+                        + "ON r.reuse_scope_id=d.reuse_scope_id AND r.objective_id=:objective AND r.revision_id=:revision "
+                        + "WHERE d.owner_id=:owner AND d.deleted_at IS NULL AND d.deck_id=:deck AND (r.deck_id=d.deck_id "
+                        + "OR EXISTS(SELECT 1 FROM app_learning.objective_head h WHERE h.deck_id=d.deck_id "
+                        + "AND h.objective_id=r.objective_id AND h.revision_id=r.revision_id))")
                 .param("owner", owner).param("deck", deck).param("objective", objective).param("revision", revision)
                 .query(String.class).optional();
     }

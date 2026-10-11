@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ViewEncapsulation, afterNextRender, computed, input, signal } from '@angular/core';
 
 import { NotificationGlyphComponent } from '../core/notifications/notification-glyph.component';
+import { GlyphComponent } from '../shared/glyph.component';
 import { MailGlyphComponent } from '../shared/mail-glyph.component';
 import { TelegramGlyphComponent } from '../shared/telegram-glyph.component';
 import { contrastGrade, contrastRatio, parseCssColor } from './color-contrast';
@@ -8,7 +9,7 @@ import { PALETTE, SEMANTIC_PAIRS, SPACING_TOKENS } from './styleguide.data';
 import { SgSpecimenComponent } from './sg-specimen.component';
 
 /** Tokens whose resolved value is shown next to a swatch or a scale step. */
-const SIZE_TOKENS = ['--mn-radius', '--mn-touch-min', '--mn-page-width', '--mn-page-gutter', '--mn-workspace-width'] as const;
+const SIZE_TOKENS = ['--mn-radius', '--mn-touch-min', '--mn-glyph-size', '--mn-page-width', '--mn-page-gutter', '--mn-workspace-width'] as const;
 const MOTION_TOKENS = ['--mn-wave-duration', '--mn-list-wave-duration'] as const;
 const FONT_TOKENS = ['--mn-font-display', '--mn-font-body', '--mn-font-mono'] as const;
 
@@ -16,7 +17,7 @@ const FONT_TOKENS = ['--mn-font-display', '--mn-font-body', '--mn-font-mono'] as
 @Component({
     selector: 'app-sg-foundations',
     encapsulation: ViewEncapsulation.None,
-    imports: [SgSpecimenComponent, NotificationGlyphComponent, TelegramGlyphComponent, MailGlyphComponent],
+    imports: [SgSpecimenComponent, NotificationGlyphComponent, TelegramGlyphComponent, MailGlyphComponent, GlyphComponent],
     templateUrl: './sg-foundations.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
