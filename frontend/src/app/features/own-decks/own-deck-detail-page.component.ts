@@ -24,6 +24,7 @@ import { DeckHubApiService } from './hub/deck-hub-api.service';
 import { DeckInsightsComponent, InsightsState } from './hub/deck-insights.component';
 import { DeckMaterialsComponent } from './hub/deck-materials.component';
 import { DeckWorkshopsComponent } from '../generation/deck-workshops.component';
+import { DeckModerationComponent } from './moderation/deck-moderation.component';
 import { DeckRecoveryContext, OwnDeckRecoveryService } from './own-deck-recovery.service';
 import { ForkApiService } from './fork/fork-api.service';
 import { FORK_POLL_LIMIT, FORK_POLL_MIN_GAP_MS, forkPollDelay } from './fork/fork-poll';
@@ -41,7 +42,7 @@ import {
 @Component({
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
-        DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent,
+        DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent, DeckModerationComponent,
         CopyOriginComponent, CopyStatusComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',

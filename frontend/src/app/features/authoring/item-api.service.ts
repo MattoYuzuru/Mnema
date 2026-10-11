@@ -24,6 +24,8 @@ import {
     requireEntity,
     requireInstant,
     requireObject,
+    requireObjectWith,
+    requireTakenDown,
     requireVersion
 } from './authoring.models';
 
@@ -174,14 +176,17 @@ function parseItemDetail(value: unknown, current: boolean): ItemDetail {
 
 function parseSummary(value: unknown, withCount: boolean): ItemSummary {
     const keys = ['memberKey', 'itemRevisionId', 'itemVersion', 'ordinal', 'formatVersion', 'createdAt', 'updatedAt', 'title', 'exemplar'];
-    const object = requireObject(value, withCount ? [...keys, 'exerciseCount'] : keys);
+    const object = requireObjectWith(value, withCount ? [...keys, 'exerciseCount'] : keys, ['unavailable']);
     if (typeof object['title'] !== 'string' || Array.from(object['title']).length > 240) {
         throw new AuthoringProtocolError('Invalid material title.');
     }
     if (typeof object['exemplar'] !== 'boolean') throw new AuthoringProtocolError('Invalid exemplar flag.');
+    const unavailable = requireTakenDown(object['unavailable']);
+    // A taken-down row carries nothing of the content, the title included.
+    if (unavailable && object['title'] !== '') throw new AuthoringProtocolError('A taken-down material carries a title.');
     return {
         ...parseRecordSummary(object), ordinal: requireOrdinal(object['ordinal'], false), title: object['title'] as string,
-        exerciseCount: withCount ? requireCount(object['exerciseCount'], 100_000) : null, exemplar: object['exemplar']
+        exerciseCount: withCount ? requireCount(object['exerciseCount'], 100_000) : null, exemplar: object['exemplar'], unavailable
     };
 }
 

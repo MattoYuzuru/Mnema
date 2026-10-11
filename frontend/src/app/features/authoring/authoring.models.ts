@@ -1,3 +1,5 @@
+import { HttpErrorResponse } from '@angular/common/http';
+
 import { NativeDocument } from '../../content/native-document';
 import { isCanonicalCommandId, isCanonicalEntityId, isCanonicalVersion } from '../own-decks/own-deck.models';
 
@@ -24,6 +26,11 @@ export interface ItemSummary extends ItemRecordSummary {
     readonly title: string;
     readonly exerciseCount: number | null;
     readonly exemplar: boolean;
+    /**
+     * The revision was taken down after a complaint (Share/15): the row keeps its identity and place, the title is empty and the
+     * material cannot be read (`410`). The owner can replace or delete it without reading it.
+     */
+    readonly unavailable: boolean;
 }
 
 /** How many materials may carry the «Эталон» flag in one deck, and how many do now. */
@@ -122,6 +129,11 @@ export interface CaptureConversionAcknowledgement {
     readonly publication: ItemAcknowledgement;
 }
 
+/** `410 CONTENT_UNAVAILABLE`: the revision was taken down after a complaint (Share/15) and cannot be read by anybody. */
+export function isTakenDown(error: unknown): boolean {
+    return error instanceof HttpErrorResponse && error.status === 410;
+}
+
 export class AuthoringProtocolError extends Error {
     constructor(message: string) {
         super(message);
@@ -137,6 +149,24 @@ export function requireObject(value: unknown, exactKeys: readonly string[]): Rec
         throw new AuthoringProtocolError('Unexpected response shape.');
     }
     return object;
+}
+
+/** Like {@link requireObject}, with keys that may be absent (additive fields such as `unavailable`). */
+export function requireObjectWith(value: unknown, requiredKeys: readonly string[], optionalKeys: readonly string[]): Record<string, unknown> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new AuthoringProtocolError('Expected object.');
+    const object = value as Record<string, unknown>;
+    const keys = Object.keys(object);
+    if (!requiredKeys.every(key => keys.includes(key)) || keys.some(key => !requiredKeys.includes(key) && !optionalKeys.includes(key))) {
+        throw new AuthoringProtocolError('Unexpected response shape.');
+    }
+    return object;
+}
+
+/** The additive taken-down marker: absent (not blocked) or exactly `true`. */
+export function requireTakenDown(value: unknown): boolean {
+    if (value === undefined) return false;
+    if (value !== true) throw new AuthoringProtocolError('Invalid unavailable marker.');
+    return true;
 }
 
 export function requireEntity(value: unknown): string {

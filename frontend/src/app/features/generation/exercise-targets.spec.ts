@@ -12,7 +12,7 @@ import { ids } from './generation-test-data';
 const key = (index: number) => `44444444-4444-4444-8444-${String(index).padStart(12, '0')}`;
 const revision = (index: number) => `55555555-5555-4555-8555-${String(index).padStart(12, '0')}`;
 const row = (index: number, exerciseCount: number | null = 0): ItemSummary => ({ memberKey: key(index), itemRevisionId: revision(index), itemVersion: '1',
-    ordinal: index, formatVersion: 1, createdAt: '2026-09-12T12:00:00Z', updatedAt: '2026-09-12T12:00:00Z', title: `Материал ${index}`, exerciseCount, exemplar: false });
+    ordinal: index, formatVersion: 1, createdAt: '2026-09-12T12:00:00Z', updatedAt: '2026-09-12T12:00:00Z', title: `Материал ${index}`, exerciseCount, exemplar: false, unavailable: false });
 const page = (from: number, count: number, total: number): ItemPage => ({ deckId: ids.deckId, deckRevisionId: ids.deckRevision, deckVersion: '7', total,
     exemplars: { count: 0, limit: 10 }, items: Array.from({ length: count }, (_, index) => row(from + index)), nextCursor: from + count < total ? `c${from + count}` : null });
 const detail = (index: number, text = `Текст ${index}`): ItemDetail => ({ memberKey: key(index), itemRevisionId: revision(index), itemVersion: '1', formatVersion: 1,

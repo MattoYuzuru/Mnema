@@ -28,6 +28,8 @@
       </div>
     </header>
 
+    <app-deck-moderation [deckId]="deck.deckId" />
+
     @if (recovered()) {
       <p class="notice compact" role="status">Черновик восстановлен из этой вкладки.</p>
     }

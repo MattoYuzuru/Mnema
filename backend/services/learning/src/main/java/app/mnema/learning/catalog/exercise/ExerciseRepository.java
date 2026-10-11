@@ -1,5 +1,6 @@
 package app.mnema.learning.catalog.exercise;
 
+import app.mnema.learning.moderation.ContentTakedowns;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -16,6 +17,8 @@ import java.util.UUID;
 @Repository
 class ExerciseRepository {
     private static final JsonMapper JSON = JsonMapper.builder().build();
+    /** Whether the exercise revision the row stands for is taken down (Share/15): the one predicate of {@link ContentTakedowns}. */
+    private static final String UNAVAILABLE = ContentTakedowns.blockedExercise("r.reuse_scope_id", "r.exercise_id", "r.revision_id");
     private final JdbcClient jdbc;
 
     ExerciseRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
@@ -27,7 +30,7 @@ class ExerciseRepository {
                         String title, Instant createdAt, Instant updatedAt) { }
     record ExerciseRow(UUID exerciseId, UUID revisionId, long sequence, int ordinal, String type, boolean enabled,
                        JsonNode content, JsonNode answerKey, JsonNode evaluator, UUID descriptorRootId,
-                       Instant createdAt, Instant updatedAt) { }
+                       Instant createdAt, Instant updatedAt, boolean unavailable) { }
     record ExerciseListRow(ExerciseRow exercise, ObjectiveRow objective) { }
     /** The ASSESSED binding: the subject material and the objective revision it evidences. */
     record SubjectRow(UUID memberKey, UUID itemRevisionId, UUID objectiveId, UUID objectiveRevisionId) { }
@@ -53,7 +56,7 @@ class ExerciseRepository {
             row.getBoolean("enabled"), json(row.getString("content")), json(row.getString("answer_key")),
             json(row.getString("evaluator_policy")),
             row.getObject("descriptor_root_id", UUID.class), row.getTimestamp("created_at").toInstant(),
-            row.getTimestamp("updated_at").toInstant());
+            row.getTimestamp("updated_at").toInstant(), row.getBoolean("unavailable"));
     private static final RowMapper<ExerciseListRow> EXERCISE_LIST = (row, ignored) -> new ExerciseListRow(
             EXERCISE.mapRow(row, ignored), new ObjectiveRow(row.getObject("objective_id", UUID.class),
                     row.getObject("objective_key", UUID.class), row.getObject("member_key", UUID.class),
@@ -150,12 +153,13 @@ class ExerciseRepository {
                 + "AND c.exercise_id=x.exercise_id AND c.previous_revision_id=r.revision_id ORDER BY c.deck_sequence DESC LIMIT 1))";
         var query = jdbc.sql("""
                 SELECT x.exercise_id,r.revision_id,r.exercise_sequence,%s AS ordinal,r.exercise_type,r.enabled,
-                       r.content,r.answer_key,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at
+                       r.content,r.answer_key,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at,
+                       /*UNAVAILABLE*/ AS unavailable
                   FROM app_learning.deck d JOIN app_learning.exercise_definition x
                     ON x.reuse_scope_id=d.reuse_scope_id AND x.exercise_id=:exercise
                   %s
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND d.deck_id=:deck
-                """.formatted(ordinal, revisionJoin)
+                """.formatted(ordinal, revisionJoin).replace("/*UNAVAILABLE*/", UNAVAILABLE)
                 + (revision == null ? "" : " AND " + ExerciseRevisionVisibility.visibleTo(":deck", "r")))
                 .param("actor", actor).param("deck", deck).param("exercise", exercise);
         if (revision != null) query.param("revision", revision);
@@ -165,9 +169,10 @@ class ExerciseRepository {
     /** One page of the deck's exercise roster in order: every read starts at the deck's heads. */
     List<ExerciseListRow> page(UUID actor, UUID deck, UUID member, int start, int limit) {
         String memberFilter = member == null ? "" : " AND b.member_key=:member";
-        var query = jdbc.sql("""
+        var query = jdbc.sql(("""
                 SELECT x.exercise_id,r.revision_id,r.exercise_sequence,h.ordinal,r.exercise_type,r.enabled,
                        r.content,r.answer_key,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at,
+                       /*UNAVAILABLE*/ AS unavailable,
                        o.objective_id,o.objective_key,o.member_key,
                        objective.revision_id AS objective_revision_id,objective.objective_sequence,
                        objective.descriptor ->> 'title' AS objective_title,o.created_at AS objective_created_at,
@@ -185,7 +190,7 @@ class ExerciseRepository {
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND h.deck_id=:deck AND h.ordinal>=:start
                 """ + memberFilter + """
                  ORDER BY h.ordinal LIMIT :limit
-                """).param("actor", actor).param("deck", deck).param("start", start).param("limit", limit);
+                """).replace("/*UNAVAILABLE*/", UNAVAILABLE)).param("actor", actor).param("deck", deck).param("start", start).param("limit", limit);
         if (member != null) query.param("member", member);
         return query.query(EXERCISE_LIST).list();
     }

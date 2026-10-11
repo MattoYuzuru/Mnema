@@ -19,6 +19,8 @@ import java.util.UUID;
  * <ul>
  *   <li>A deleted deck resolves to {@link Denial#NOT_FOUND} for everyone, the owner included (the owner's own routes answer for themselves).</li>
  *   <li>The owner resolves to {@link AccessLevel#OWNER} at any level, by code or by id.</li>
+ *   <li>A deck HIDDEN by a complaint decision (Share/15, {@code deck_publication.hidden_by_moderation}) resolves to {@link Denial#NOT_FOUND} for everybody but its owner,
+ *       by code and by id, at every level (an invitation deck's {@link Denial#INVITE_ONLY} would confirm that it exists).</li>
  *   <li>The public code is the only entry point of a non-owner, and a non-owner who has not been granted never resolves by deck id.
  *       A non-owner needs a published revision at every level: without one the answer is {@code NOT_FOUND}.</li>
  *   <li>By code: {@code PUBLIC} gives {@link AccessLevel#PUBLIC}, {@code LINK} gives {@link AccessLevel#LINK} (guests included),
@@ -66,7 +68,8 @@ public class DeckAccess {
     /** The one decision by code: what a viewer is, given the deck, and whether he holds a grant (asked only for an invitation deck). */
     private static Resolution decide(Viewer viewer, DeckRef deck, java.util.function.BooleanSupplier granted) {
         if (viewer.accountId() != null && viewer.accountId().equals(deck.ownerId())) return Resolution.granted(AccessLevel.OWNER, deck);
-        if (deck.published() == null) return Resolution.denied(Denial.NOT_FOUND);
+        // HIDDEN by a complaint decision (Share/15): exactly the answer of an unknown code, at every level, for everybody but the owner.
+        if (deck.published() == null || deck.hidden()) return Resolution.denied(Denial.NOT_FOUND);
         return switch (deck.visibility()) {
             case PRIVATE -> Resolution.denied(Denial.NOT_FOUND);
             case LINK -> Resolution.granted(AccessLevel.LINK, deck);
@@ -83,7 +86,7 @@ public class DeckAccess {
         if (found.isEmpty()) return Resolution.denied(Denial.NOT_FOUND);
         DeckRef deck = found.orElseThrow();
         if (viewer.accountId().equals(deck.ownerId())) return Resolution.granted(AccessLevel.OWNER, deck);
-        if (deck.published() != null && deck.visibility() == DeckVisibility.INVITE && granted(viewer, deck)) {
+        if (deck.published() != null && !deck.hidden() && deck.visibility() == DeckVisibility.INVITE && granted(viewer, deck)) {
             return Resolution.granted(AccessLevel.GRANTEE, deck);
         }
         return Resolution.denied(Denial.NOT_FOUND);

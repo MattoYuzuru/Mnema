@@ -1,5 +1,6 @@
 package app.mnema.learning.generation;
 
+import app.mnema.learning.moderation.ContentTakedowns;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -58,7 +59,9 @@ class ContextRepository {
             + "EXISTS(SELECT 1 FROM app_learning.deck_item_exemplar e WHERE e.deck_id=h.deck_id AND e.member_key=h.member_key) AS starred "
             + "FROM app_learning.deck_head_item h JOIN app_learning.item_revision r ON r.reuse_scope_id=h.reuse_scope_id "
             + "AND r.member_key=h.member_key AND r.revision_id=h.revision_id LEFT JOIN app_learning.item_preview p "
-            + "ON p.reuse_scope_id=h.reuse_scope_id AND p.member_key=h.member_key AND p.revision_id=h.revision_id WHERE h.deck_id=:deck";
+            + "ON p.reuse_scope_id=h.reuse_scope_id AND p.member_key=h.member_key AND p.revision_id=h.revision_id WHERE h.deck_id=:deck "
+            // the legal takedown by lineage (Share/15): a material whose head revision is taken down is not part of the AI context
+            + "AND NOT " + ContentTakedowns.blockedItem("r.reuse_scope_id", "r.member_key", "r.revision_id");
 
     private static Head head(java.sql.ResultSet row) throws java.sql.SQLException {
         return new Head(row.getObject("member_key", UUID.class), row.getObject("revision_id", UUID.class),
@@ -157,7 +160,8 @@ class ContextRepository {
                         + "JOIN app_learning.deck_head_exercise he ON he.deck_id=d.deck_id AND he.exercise_id=b.exercise_id "
                         + "AND he.revision_id=b.exercise_revision_id JOIN app_learning.exercise_revision er ON er.reuse_scope_id=he.reuse_scope_id "
                         + "AND er.exercise_id=he.exercise_id AND er.revision_id=he.revision_id AND er.enabled "
-                        + "WHERE d.deck_id=:deck ORDER BY he.ordinal DESC LIMIT :limit")
+                        + "WHERE d.deck_id=:deck AND NOT " + ContentTakedowns.blockedExercise("er.reuse_scope_id", "er.exercise_id", "er.revision_id")
+                        + " ORDER BY he.ordinal DESC LIMIT :limit")
                 .param("deck", deck).param("member", member).param("limit", limit)
                 .query((row, ignored) -> new ExerciseLine(row.getString("exercise_type"), row.getString("content"))).list();
     }
@@ -183,7 +187,8 @@ class ContextRepository {
         String function = schema.get() + ".similarity(p.title,:title)";
         return jdbc.sql("SELECT h.member_key,p.title," + function + " AS score FROM app_learning.deck_head_item h "
                         + "JOIN app_learning.item_preview p ON p.reuse_scope_id=h.reuse_scope_id AND p.member_key=h.member_key "
-                        + "AND p.revision_id=h.revision_id WHERE h.deck_id=:deck AND " + function + ">=:threshold "
+                        + "AND p.revision_id=h.revision_id WHERE h.deck_id=:deck AND " + function + ">=:threshold AND NOT "
+                        + ContentTakedowns.blockedItem("h.reuse_scope_id", "h.member_key", "h.revision_id") + " "
                         + "ORDER BY score DESC,h.member_key LIMIT 1")
                 .param("deck", deck).param("title", title).param("threshold", threshold)
                 .query((row, ignored) -> new Similar(row.getObject("member_key", UUID.class), row.getString("title"),

@@ -13,7 +13,7 @@ let nextHoldId = 0;
     selector: 'app-hold-to-delete-button',
     host: { '(document:pointerdown)': 'cancelOutside($event)' },
     template: `
-      <button type="button" class="hold-button" [class.holding]="holding()" [disabled]="disabled()" [attr.aria-pressed]="armed()"
+      <button type="button" class="hold-button" [class.holding]="holding()" [disabled]="disabled() && !focusable()" [attr.aria-disabled]="disabled() && focusable() ? 'true' : null" [attr.aria-pressed]="armed()"
         [attr.aria-describedby]="consequence() ? consequenceId : null"
         [style.--hold-x.px]="waveX()" [style.--hold-y.px]="waveY()" [style.--hold-size.px]="waveSize()"
         (click)="onClick()" (pointerdown)="onPointerDown($event)" (pointerup)="stopHold()"
@@ -32,6 +32,8 @@ let nextHoldId = 0;
 export class HoldToDeleteButtonComponent {
     readonly label = input.required<string>();
     readonly disabled = input(false);
+    /** While `disabled`, stay in the focus order (`aria-disabled`, every action still refused) instead of dropping out with the `disabled` attribute. */
+    readonly focusable = input(false);
     /** What the deletion removes, in words; empty when the label already says it. */
     readonly consequence = input('');
     readonly confirmed = output<void>();

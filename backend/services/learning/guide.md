@@ -1707,6 +1707,99 @@ Package `app.mnema.learning.fork` (`ForkController`, `ForkService`, `ForkReposit
 - Tests: `ForkHttpIntegrationTest` (the copy command and its answers, access matrix, idempotency, one live copy and a race, heads equal to the published manifest with 25 materials in slices of 10, independence both ways, Study of a ready copy, copy of a copy, detach, `myCopy`, `fork` in reads, a source that goes dark),
   `ForkPreparingGuardHttpIntegrationTest` (every route, the strangers, reads, delete/detach/retry while preparing, the database net, failed/retry/purged job, the cap), `ForkMaterializationJobIntegrationTest` (a 1 000-material deck copied with a worker killed in the middle of the third slice and resumed; one account at a time; a copy deleted while queued; a broken manifest),
   `ForkUnpublishedContentIntegrationTest` (security acceptance of the Share/9 review; NC for a real copy), `ForkSchemaIntegrationTest` (V57 guards and indexes), `ForkThrottleHttpIntegrationTest` (the window: 429 and `Retry-After`, deleted copies count, an existing copy still answered, parallel requests for different sources do not overshoot), the cap race in `ForkPreparingGuardHttpIntegrationTest`, `ForkDisabledHttpIntegrationTest`, `ForkCommandTest`, `ForkSettingsTest`, `ForkLinkTest`, `OwnerOnlyRoutesHttpIntegrationTest` (two rows), `JobTestAccess` (the public hand of the package-private executor for the tests).
+### Complaints, hiding and legal takedown (Share/15, #437, migration `V58__complaints_and_takedowns.sql`)
+
+Package `app.mnema.learning.moderation` (`ContentTakedowns`, `ComplaintService`, `ComplaintAdminService`, `ComplaintController`, `ComplaintAdminController`) and, for the deck side,
+`app.mnema.learning.library` (`DeckModeration`, `PublishedUnits`); wire contract [`contracts/moderation`](../../../contracts/moderation/README.md), architecture
+[community decks §11](../../../docs/architecture/community-decks.md#11-безопасность-пдн-модерация-cd-9). Complaints are filed by any signed-in account that can read the target and
+decided by the console owner (admin client token); a decision hides the deck from everybody but its owner (`HIDDEN`) or takes revisions of its units down in the whole lineage (`TAKEN_DOWN`).
+
+- **Data.** `content_complaint` (target snapshot: deck id and public code, or profile account id and login; closed `reason`; optional text of at most 1000 characters; `reporter_id`; `status`
+  OPEN to DECIDED once; `decision`; `due_at = created_at + 30 days`; `retain_until = created_at + 3 years`; **no foreign keys** to deck or Identity data, so the record outlives a deleted deck and an
+  account purge). A partial unique index allows one OPEN complaint per (reporter, target) and is the backstop of the idempotent filing. `content_takedown (reuse_scope_id, unit_kind ITEM|EXERCISE, unit_key,
+  revision_id, complaint_id)` is unique per `(scope, kind, revision)`, immutable (no update, delete or truncate) and pins its complaint by a foreign key. `content_takedown_asset (reuse_scope_id, asset_id,
+  takedown_id)` (immutable) holds the media assets of the named revisions, recorded by the decision from `content_media_ref` / `exercise_media_ref`. `content_takedown_journal` is the append-only record of every
+  decision. Guard triggers: a complaint changes only OPEN to DECIDED once; truncate is refused.
+- **Retention and the purge contract for #409** (enforced by the schema; the purge job itself is open work). A DECIDED complaint past `retain_until` may be (a) deleted, when no takedown references it, or (b)
+  **anonymised**: `reporter_text = NULL` and `reporter_id = '00000000-0000-0000-0000-000000000000'`, in one `UPDATE` that changes nothing else, through the same guard trigger. (b) is the only way to end the retention of
+  a complaint with a standing takedown (the foreign key refuses its deletion) and it keeps the target snapshot, the reason, the decision and the dates. Journal rows are deletable after their own `retain_until`; they hold the
+  operator's account id and no reporter data. Before `retain_until` nothing but the OPEN to DECIDED transition is possible, anonymisation included. The same applies to the `reporter_id` of the daily limit: an anonymised
+  complaint is outside every window. `deck_publication.hidden_by_moderation` + `hidden_at` (one CHECK keeps them together) is the HIDDEN flag, not a deck column
+  (`deck_head_guard`) and not part of the owner's publication command: **republishing, changing the level or rotating the code never clears it**. Setting or clearing it bumps the publication row version
+  (the guard trigger demands it; an open publication editor gets 412 and reloads) and appends one `deck_publication_event` for the catalog projector (epic 3). `admin_audit.action` accepts
+  `COMPLAINT_DECIDE` and `COMPLAINT_UNHIDE`.
+- **Filing.** `POST /api/public/decks/{code}/complaints` is on the public chain (the only other write below `/public` besides Share/13's; `learning.write`, a guest is 401; the code is redacted from logs by
+  `loggablePath`); `POST /api/public/profiles/{username}/complaints` is on the private chain. Kill switch `learning.community.complaints.enabled` (**default `true`**: the button must work before the first
+  public deck; the deck route is also a child of `learning.community.public-routes.enabled`, off by default), checked BEFORE the body is read. The deck is resolved by `DeckAccess` with the reporter as viewer:
+  everything but a readable deck (unknown, private, rotated, never published, deleted, HIDDEN, an invitation deck without a grant) is the same opaque 404; the owner is 400. A profile is resolved through
+  `ProfileDirectory.accountOf` OUTSIDE any transaction, under a lookup budget of its own (`ProfileLookupLimiter`: `learning.community.complaints.profile-lookups-per-reporter-per-minute` 5 and
+  `…-per-instance-per-minute` 10), **never the grants' budget**: Identity limits that public lookup per network (60 a minute), the grants take up to 40 of it per instance, so complaint traffic cannot starve an owner
+  granting access (with N instances behind one address divide both caps by N). The open-complaint probe by login comes BEFORE the budget and the Identity call, so a silent repeat costs no lookup; unknown, malformed
+  and hidden are one 404, the reporter's own login 400. The text refuses control characters other than line feed and tab and every Unicode FORMAT character (bidi overrides and isolates, zero-width space and joiners, the
+  byte order mark, the soft hyphen), so the operator reads what the reporter wrote; this also refuses the zero-width joiner of emoji sequences. The
+  transaction is: the reporter's advisory lock, the open-complaint probe (a repeat is the same `202 {status: RECEIVED}`, nothing written, nothing counted), the daily limit (`reporter-per-day`, default 10 NEW
+  complaints in a rolling 24 hours, then 429 with the real `Retry-After`) and the insert. The reporter is told nothing about the decision.
+- **HIDDEN.** `DeckAccess` answers `NOT_FOUND` for any non-owner when the flag is set (by code and by id, at every level, `INVITE_ONLY` included, so even the 403 cannot confirm the deck): the public
+  summary, items, exercises, media, access requests and complaint filing all follow. `InviteService.redeemOnce` refuses a hidden deck to everybody but its owner. Copies are untouched. `:unhide` works only for a complaint decided `HIDDEN` and only while the deck is hidden: anything else is `409 COMPLAINT_NOT_HIDDEN` (a deck hidden by a `TAKEN_DOWN` with `hide`
+  is lifted by a complaint decided `HIDDEN`, whose decision on an already hidden deck is recorded and can then unhide). The owner reads and edits as before
+  and gets `GET /api/decks/{deckId}/moderation` (`DeckModeration.notice`: the flag and the counts of HEAD units that are taken down right now) and a `DECK_HIDDEN` notification.
+- **Console** (`/api/admin/complaints`, `AdminConsoleAccess.require` = the owner AND the `mnema-admin-web` token): the queue (OPEN by `due_at, complaint_id`; DECIDED by `decided_at DESC`; keyset pages over the
+  partial indexes, `overdue` is a server flag), the detail, the unit picker (`PublishedUnits`: the manifests of the deck's PUBLISHED revision, with `takenDown`), `:decide`, `:unhide` and the journal. A decision
+  is ONE transaction: the complaint row locked, then the publication row (`DeckModeration.lockPublication`, so the published revision cannot move), then the units resolved under both locks (`PublishedUnits.publishedRevisions`: ONE
+  traversal of each manifest for every unit that names no revision, never a scan per unit; an explicit `revisionId` must be a revision of that unit in the deck's lineage), DECIDED once, the effect applied, the media assets
+  of the named revisions recorded, a journal row, an `admin_audit` row, and the notification as the last write. A complaint has one decision: the same decision
+  again is `changed: false` (a `TAKEN_DOWN` may add units, a `HIDDEN` hides again after an unhide), another is `409 COMPLAINT_DECIDED`. `ACCOUNT_REFERRED` (profiles) writes nothing to Identity. Lock order: complaint
+  row, publication row, the recipient's notification cursor.
+- **The takedown predicate.** ONE question, asked by every reader about the revision it is about to serve: `ContentTakedowns.blockedItem / blockedExercise` (SQL fragments, a unique-index probe on
+  `(reuse_scope_id, unit_kind, revision_id)`; `blockedExerciseOfDeck` reaches the scope through the deck for rows that carry none) and the Java forms `item / exercise / items / exercises`. A copy shares the lineage
+  rows of its source, so the source deck, every copy whose head still IS the named revision and every published copy of it are blocked together; a copy whose learner edited the unit holds another revision
+  and is unaffected, as is any unit nobody named. Readers that enforce it (a reader that is not in this list does not):
+
+  | Reader | Where | On a blocked revision |
+  |---|---|---|
+  | public item read | `PublicDeckService.item` | `410 CONTENT_UNAVAILABLE` |
+  | public items / exercises pages | `PublicDeckService.items / exercises` | entry kept with `unavailable: true`, empty title / prompt, no content read |
+  | owner item read (source and copy, head or by revision id) | `ItemRepository` column `unavailable`, `ItemService.read` | 410 |
+  | owner item list | `ItemService.listed` | row kept with `unavailable: true`, `title: ""` |
+  | owner exercise read / list | `ExerciseRepository` column `unavailable`, `ExerciseService.read / list` | 410; row kept with `unavailable`, objective title blank |
+  | titles everywhere (progress page, speech hints, AI outlines, plan and exercise contexts) | `ItemPreviews.title` | `""` (one statement answers both the cache and the predicate) |
+  | Study issuing | `StudySessionRepository.ISSUABLE_REVISION` | an exercise whose revision is blocked, or that QUOTES a blocked material revision (CONTEXT binding), is skipped (`ContentTakedowns.blockedExerciseOrQuote`); applied at issuing, so a cached candidate generation needs no rebuild |
+  | Study resume / replay / reveal | `pendingPresentations`, `presentations`, `pendingForReveal` | a frozen presentation is not shown, resumed, replayed, nor does it answer a transcript or hint reveal once the SAME rule (`blockedPresentation`: its exercise, or a material it quotes) holds |
+  | Study attempt on an issued presentation | `AttemptRepository.presentation` (same rule) | the presentation is gone (404): it is neither graded nor answered with its reference. A repeat of an answer already recorded replays its stored receipt first (the receipt lookup precedes the presentation) |
+  | an answer being ASSESSED | `AssessmentRepository.expireBlocked` (run by `AssessmentService.expireOverdue`, the deadline sweeper) | ends as `UNAVAILABLE` / `CONTENT_UNAVAILABLE` on the next sweep (answer text dropped); a grade that arrives for a gone presentation is discarded the same way, never a 500 |
+  | Study quoted text | `StudySessionRepository.material` | a blocked revision is not loaded; if a takedown commits between choosing a candidate and loading its quote the candidate is SKIPPED (nothing of it was written), not a 500 |
+  | AI context | `ContextRepository` (outline, starred, closest, similar-title, exercises not to repeat), `ItemService.read` for pinned and revised materials, the `PinnedMaterials` cache | left out; the read is a `ResourceNotFoundException` subclass, so callers that tolerate an absent material do; a cache hit re-checks the predicate and drops the entry |
+  | speech hints | `SpeechInputRepository.deckHeads` | left out |
+  | public media | `MediaCatalog.Grant.PUBLISHED` | **asset-level**: an asset recorded in `content_takedown_asset` for this deck's lineage is not served by any revision of it |
+  | copy owner's media (playback, variants) | `MediaCatalog.Grant.COPY` (`heads(..., reading)`) | only non-blocked head references count, and a recorded asset is not served by any head of the lineage |
+  | offline media manifest | `MediaManifestCatalog.current` | blocked head units and recorded assets add nothing |
+  | the owner of the upload | `MediaCatalog.Grant.OWNER` | a recorded asset is not played by its owner either, in whichever deck it appears (`blockedAssetAnywhere`): the dispute is about that content. Deviation from "under the source scope": a disputed upload is one file |
+
+  **Media takedown is by asset and lineage.** The decision records the assets of the named revisions (`content_takedown_asset`); a copy whose learner edited the material but kept the disputed image does not serve it, and
+  neither does an edit of the source. A copy that dropped the image has nothing to serve; what the learner uploaded himself is a different asset and plays. An asset only referenced by an UNNAMED revision is untouched.
+  **Accepted risk:** text trivially re-saved by the owner is a new revision and is not blocked; the remedy for a repeat offender is `HIDDEN`, not more takedown machinery.
+  **Signed media URLs already issued live out their TTL:** 10 minutes on the public route (`learning.community.public-media.url-ttl`) and up to 2 hours on the owner's routes (`learning.media.playback.url-ttl` and the
+  offline manifest); a takedown stops new links, not links already handed out.
+
+  Not covered, on purpose: the attach validation of an edit (`IN_HEADS_OF_DECK` keeps seeing every head, so a learner can keep an inherited asset in a new revision; serving it is blocked above); writes (a blocked unit can
+  be replaced or deleted without being read); Study's media readiness (an exercise whose image was recorded but whose revision was not named is issued with a broken image); the catalog (epic 3 reads
+  `hidden_by_moderation`). The metric `mnema_content_unavailable_total{reader}` counts the public readers only.
+- **Notifications** (`NotificationKind`, [`contracts/notifications`](../../../contracts/notifications/README.md)): `DECK_HIDDEN {deckId}` and `DECK_CONTENT_TAKEN_DOWN {deckId, materialCount, exerciseCount}` (WARNING, route
+  `DECK`) to the owner of the deck, only when the decision changed something (keys `deck-moderation:{deckId}:hidden:{millis}` / `…:takedown:{journalId}`). Never to the reporter or to the owners of copies.
+  **The frontend `notification-presenter` needs a sentence for each new kind**, or `notifications-contract.spec.ts` fails.
+- **Load.** Zero decks or no complaint ever: every reader adds an empty-table unique-index probe per served revision (the SQL forms are `EXISTS` inside the statement that selects the revision, a list page adds one
+  statement for its revision ids on the public path); nothing is scanned. Scenario H (5k public decks, a viral deck with 20k copies, ~25 rps of public reads): a takedown is O(units named) rows, never O(copies):
+  the 20k copies are blocked by the same row; filing is a reporter lock, three index reads of the reporter's own rows and one insert, so a flood is bounded by the per-reporter limit and the per-account public limit;
+  the queue and the journal are keyset pages of 50 over partial indexes (`AdminAudit`'s shape); the picker is O(page) of the manifest; the owner notice is two index-bounded counts from the lineage's takedown rows.
+- **Open items / deviations.** (1) **Follow-up L1: a takedown lift ledger.** There is no lift route (rows are immutable); a lift needs its own command, an append-only ledger and a predicate that honours it. (2) **Follow-up L9: a
+  per-target cap on complaints** (many reporters can file against one deck; each is bounded by the daily limit, none by the target). (3) The text predicate acts on REVISIONS: re-saving the same disputed text is a new revision
+  and needs a new decision naming it, or `HIDDEN`; media is blocked by asset (above). (4) The retention purge (3 years) is not implemented; the schema enforces its contract (above, TODO #409). (5) `ACCOUNT_REFERRED`
+  records a hand-off only. (6) `contracts/notifications` is a shared file edited by this change. (7) The owner's own media block is global for the file, not only under the source scope.
+- Tests: `ComplaintLookupBudgetHttpIntegrationTest` (complaint lookups never spend the grant budget; a repeat costs no lookup), `ProfileLookupLimiterTest`, `ComplaintHttpIntegrationTest` (filing matrix, strict bodies, daily limit and concurrency, profiles through Identity, console access, queue paging and overdue, every decision, HIDDEN on every public route, the
+  invitation redeem, the takedown as the source / an unchanged copy / an edited copy / a published reader, the picker, journal and audit, notifications), `ComplaintDisabledHttpIntegrationTest`, the complaint case of
+  `PublicDeckDisabledHttpIntegrationTest`, `ContentTakedownReadersIntegrationTest` (owner reads of items and exercises in the source, an unchanged copy and an edited copy; Study at issuing, resume and quoting),
+  `ContentTakedownMediaIntegrationTest`, `ContentTakedownContextIntegrationTest`, `ContentTakedownSpeechHintsIntegrationTest`, `ComplaintSchemaIntegrationTest` (constraints, triggers, retention, the plans of the
+  predicate and the queue), `DeckAccessIntegrationTest.aDeckHiddenByModeration…`, `ComplaintCommandsTest`, and the new rows of `OwnerOnlyRoutesHttpIntegrationTest`.
 
 ## Notification center
 

@@ -46,7 +46,7 @@ describe('StyleguidePageComponent', () => {
     it('renders the real app components and classes', () => {
         for (const selector of [
             'app-hold-to-delete-button', 'app-segmented-choice', 'app-toggletip', 'app-usage-meter', 'app-mnema-select', 'app-choice-list',
-            'app-batch-pager', 'app-tag-input', 'app-access-level', 'app-copy-mark', 'app-copy-origin', 'app-copy-status section.notice.error', 'app-copy-status section.notice:not(.error)', 'app-publication-block', '.checklist > .checklist-item[data-state=failed]', 'app-access-screen section.access h4', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-mail-glyph', 'app-glyph[data-glyph=colonnade]', 'app-action-menu [role=menu][popover]', 'app-share-button button', 'app-public-deck-card article', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'button.generate-cta', 'button.button.primary',
+            'app-batch-pager', 'app-tag-input', 'app-access-level', 'app-copy-mark', 'app-copy-origin', 'app-copy-status section.notice.error', 'app-copy-status section.notice:not(.error)', 'app-publication-block', '.checklist > .checklist-item[data-state=failed]', 'app-access-screen section.access h4', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-mail-glyph', 'app-glyph[data-glyph=colonnade]', 'app-action-menu [role=menu][popover]', 'app-share-button button', 'app-public-deck-card article', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'app-unavailable-note .title', 'app-moderation-notice section.notice.warning h2', 'button.generate-cta', 'button.button.primary',
             '.check-field > .check-row', '.settings-row.is-switch', '.settings-row.is-switch.is-live', 'fieldset.check-group > legend', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
         ]) {
             expect(root.querySelector(selector), selector).not.toBeNull();
@@ -260,5 +260,43 @@ describe('StyleguidePageComponent', () => {
         root.querySelector<HTMLButtonElement>('app-ai-prompt-window .window-close')!.click();
         fixture.detectChanges();
         expect(root.querySelector('app-ai-prompt-window')).toBeNull();
+    });
+
+    it('catalogues the unavailable row and the moderation notice with their states', () => {
+        const notes = [...root.querySelectorAll<HTMLElement>('#status app-unavailable-note')];
+        expect(notes.map(note => note.querySelector('.title')!.textContent)).toEqual(['Материал недоступен', 'Материал недоступен', 'Упражнение недоступно']);
+        expect(notes[0].querySelectorAll('button, a')).toHaveLength(0);
+        expect([...notes[1].querySelectorAll('a, button')].map(action => action.textContent!.trim())).toEqual(['Заменить', 'Удалить…']);
+        const notices = [...root.querySelectorAll<HTMLElement>('#status app-moderation-notice')];
+        expect(notices).toHaveLength(3);
+        expect(notices[0].textContent).toContain('Колода скрыта из Сообщества');
+        expect(notices[1].textContent).toContain('Снято: 2 материала и 1 упражнение.');
+        expect(notices[2].textContent).toContain('Колода скрыта из Сообщества');
+        expect(notices[2].textContent).toContain('Снято: 3 упражнения.');
+    });
+
+    it('opens the complaint window of the catalogue: a reason is needed, then «404» shows the gone state and closes it', async () => {
+        const wait = async (): Promise<void> => { await new Promise(resolve => setTimeout(resolve, 450)); await fixture.whenStable(); fixture.detectChanges(); };
+        const toasts = TestBed.inject(ToastService);
+        const failure = vi.spyOn(toasts, 'echoError');
+        const open = [...root.querySelectorAll<HTMLButtonElement>('#menus button.button')].find(button => button.textContent?.includes('Показать окно жалобы'))!;
+        expect(root.querySelector('app-complaint-dialog')).toBeNull();
+        open.click();
+        fixture.detectChanges();
+        const dialog = root.querySelector<HTMLDialogElement>('app-complaint-dialog dialog')!;
+        expect(dialog.querySelector('h2')!.textContent).toBe('Пожаловаться на колоду');
+        expect(dialog.querySelectorAll('input[type=radio]')).toHaveLength(5);
+        dialog.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+        fixture.detectChanges();
+        expect(dialog.querySelector('.field-error')!.textContent).toBe('Выберите причину.');
+        dialog.querySelector<HTMLInputElement>('input[type=radio]')!.click();
+        const field = dialog.querySelector<HTMLTextAreaElement>('textarea')!;
+        field.value = '404';
+        field.dispatchEvent(new Event('input'));
+        dialog.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+        fixture.detectChanges();
+        await wait();
+        expect(failure).toHaveBeenCalledWith('Колода больше недоступна');
+        expect(root.querySelector('app-complaint-dialog')).toBeNull();
     });
 });

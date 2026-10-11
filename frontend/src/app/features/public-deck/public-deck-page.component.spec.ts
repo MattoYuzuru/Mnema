@@ -9,7 +9,10 @@ import { Subject, of, throwError } from 'rxjs';
 import contract from '../../../../../contracts/decks/public-read.json';
 import { AuthService, AuthStatus } from '../../auth.service';
 import { AuthorCardsService } from '../../author-cards.service';
+import { ToastService } from '../../core/notifications/toast.service';
 import { AutoLoadComponent } from '../../shared/auto-load.component';
+import { ComplaintApiService } from '../../shared/complaint-api.service';
+import { ComplaintFailure } from '../../shared/complaint.models';
 import { SHARE_MENU_ITEM, ShareLinkService } from '../../shared/share-link.service';
 import { PublicDeckApiService } from './public-deck-api.service';
 import { PublicDeckPageComponent } from './public-deck-page.component';
@@ -37,6 +40,7 @@ describe('PublicDeckPageComponent', () => {
     let restore: ReturnType<typeof vi.fn>;
     let authors: { card: ReturnType<typeof vi.fn>; avatarUrl: ReturnType<typeof vi.fn> };
     let sharing: { share: ReturnType<typeof vi.fn> };
+    let complaints: { fileDeck: ReturnType<typeof vi.fn>; fileProfile: ReturnType<typeof vi.fn> };
     let harness: RouterTestingHarness;
 
     const meta = (name: string) => document.head.querySelector<HTMLMetaElement>(`meta[name=${name}]`);
@@ -53,13 +57,15 @@ describe('PublicDeckPageComponent', () => {
         api.exercises.mockReturnValue(of(parsePublicExercisePage(contract.exercises.page.response, PUBLIC.code, 50)));
         authors = { card: vi.fn().mockResolvedValue(AUTHOR), avatarUrl: vi.fn().mockReturnValue('https://identity.test/profiles/x/avatar') };
         sharing = { share: vi.fn().mockResolvedValue('copied') };
+        complaints = { fileDeck: vi.fn().mockReturnValue(of(undefined)), fileProfile: vi.fn() };
         TestBed.configureTestingModule({ providers: [
             provideRouter([{ matcher: publicDeckMatcher, component: PublicDeckPageComponent }, { path: 'login', children: [] }, { path: 'decks', children: [] }, { path: '', children: [] }]),
             provideHttpClient(), provideHttpClientTesting(),
             { provide: PublicDeckApiService, useValue: api },
             { provide: AuthService, useValue: { status, restore } },
             { provide: AuthorCardsService, useValue: authors },
-            { provide: ShareLinkService, useValue: sharing }
+            { provide: ShareLinkService, useValue: sharing },
+            { provide: ComplaintApiService, useValue: complaints }
         ] });
     });
 
@@ -95,17 +101,17 @@ describe('PublicDeckPageComponent', () => {
 
         it('has no Study, no editing and no Workshop, and no node ids', () => {
             const labels = [...root().querySelectorAll('a, button')].map(element => element.textContent?.trim());
-            for (const forbidden of ['Учить', 'Изменить', 'Редактировать', 'Мастерская', 'Добавить материал', 'Пожаловаться']) {
+            for (const forbidden of ['Учить', 'Изменить', 'Редактировать', 'Мастерская', 'Добавить материал']) {
                 expect(labels.some(label => label?.includes(forbidden)), forbidden).toBe(false);
             }
             expect(root().querySelector('[data-node-id]')).toBeNull();
         });
 
-        it('offers «Поделиться» as a button and in the «⋯» menu, and nothing else in the menu', () => {
+        it('offers «Поделиться» as a button and, for a reader, «Пожаловаться» in the «⋯» menu, and nothing else', () => {
             expect([...root().querySelectorAll('button')].map(button => button.textContent?.trim())).toContain('Поделиться');
             const menu = root().querySelector('app-action-menu')!;
             expect(menu.querySelector('button.trigger')?.getAttribute('aria-label')).toBe(`Действия с колодой «${PUBLIC.title}»`);
-            expect([...menu.querySelectorAll('[role=menuitem]')].map(item => item.textContent?.trim())).toEqual(['Поделиться']);
+            expect([...menu.querySelectorAll('[role=menuitem]')].map(item => item.textContent?.trim())).toEqual(['Поделиться', 'Пожаловаться']);
         });
 
         it('shares the canonical address with the slug', async () => {
@@ -155,6 +161,74 @@ describe('PublicDeckPageComponent', () => {
             expect(meta('referrer')).toBeNull();
             // the shell's default, whatever the web server had put into the document for the deck's address
             expect(meta('robots')?.getAttribute('content')).toBe('index,follow');
+        });
+    });
+
+    describe('«Пожаловаться»', () => {
+        const menuItem = (label: string): HTMLButtonElement =>
+            [...root().querySelectorAll<HTMLButtonElement>('app-action-menu [role=menuitem]')].find(item => item.textContent?.trim() === label)!;
+        const dialog = (): HTMLDialogElement | null => root().querySelector('app-complaint-dialog dialog');
+        const choose = (reason: string): void => {
+            [...dialog()!.querySelectorAll<HTMLInputElement>('input[type=radio]')].find(radio => radio.closest('label')?.textContent?.trim() === reason)!.click();
+        };
+        const send = async (): Promise<void> => {
+            dialog()!.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+            await settle();
+        };
+
+        it('sends a guest to sign in with this very view as the return address, and opens nothing', async () => {
+            api.summary.mockReturnValue(of(PUBLIC));
+            await open(publicUrl);
+            const navigate = vi.spyOn(router(), 'navigate');
+            menuItem('Пожаловаться').click();
+            await settle();
+            expect(navigate).toHaveBeenCalledWith(['/login'], { queryParams: { returnUrl: publicUrl } });
+            expect(router().url).toBe(`/login?returnUrl=${encodeURIComponent(publicUrl)}`);
+            expect(complaints.fileDeck).not.toHaveBeenCalled();
+        });
+
+        it('does not offer it to the owner of the deck', async () => {
+            status.set('authenticated');
+            api.summary.mockReturnValue(of({ ...PUBLIC, access: 'OWNER' } satisfies PublicDeck));
+            await open(publicUrl);
+            expect([...root().querySelectorAll('app-action-menu [role=menuitem]')].map(item => item.textContent?.trim())).toEqual(['Поделиться']);
+        });
+
+        it('opens the dialog for a signed-in reader, names the deck and files the reason and the text', async () => {
+            status.set('authenticated');
+            api.summary.mockReturnValue(of(PUBLIC));
+            await open(publicUrl);
+            const echo = vi.spyOn(TestBed.inject(ToastService), 'echo');
+            menuItem('Пожаловаться').click();
+            await settle();
+            expect(dialog()).not.toBeNull();
+            expect(dialog()!.getAttribute('aria-labelledby')).toBe(dialog()!.querySelector('h2')!.id);
+            expect(dialog()!.querySelector('h2')!.textContent).toBe('Пожаловаться на колоду');
+            expect(dialog()!.textContent).toContain(PUBLIC.title);
+            choose('Спам или реклама');
+            const field = dialog()!.querySelector<HTMLTextAreaElement>('textarea')!;
+            field.value = '  Это реклама  ';
+            field.dispatchEvent(new Event('input'));
+            await send();
+            expect(complaints.fileDeck).toHaveBeenCalledWith(PUBLIC.code, 'SPAM', '  Это реклама  ');
+            expect(echo).toHaveBeenCalledWith('Жалоба отправлена');
+            expect(dialog()).toBeNull();
+        });
+
+        it('asks the page for the deck again when the complaint finds it gone', async () => {
+            status.set('authenticated');
+            api.summary.mockReturnValueOnce(of(PUBLIC)).mockReturnValueOnce(throwError(() => new PublicDeckFailure('not-found')));
+            complaints.fileDeck.mockReturnValue(throwError(() => new ComplaintFailure('not-found')));
+            await open(publicUrl);
+            const failure = vi.spyOn(TestBed.inject(ToastService), 'echoError');
+            menuItem('Пожаловаться').click();
+            await settle();
+            choose('Другое');
+            await send();
+            expect(failure).toHaveBeenCalledWith('Колода больше недоступна');
+            expect(dialog()).toBeNull();
+            expect(api.summary).toHaveBeenCalledTimes(2);
+            expect(root().querySelector('app-access-screen h1')?.textContent).toBe('Колода не найдена');
         });
     });
 
@@ -373,6 +447,19 @@ describe('PublicDeckPageComponent', () => {
             await open(`${publicUrl}?material=${MEMBER}`);
             expect(root().querySelector('h1')?.textContent).toBe(PUBLIC.title);
             expect(root().querySelector('app-public-material [role=status]')?.textContent).toContain('Такого материала в этой колоде нет');
+            expect(root().querySelector('a.back-link')).not.toBeNull();
+        });
+
+        it('is a calm «Материал недоступен» for a material taken down after a complaint (410), not a failure', async () => {
+            api.summary.mockReturnValue(of(PUBLIC));
+            api.material.mockReturnValue(throwError(() => new PublicDeckFailure('removed')));
+            await open(`${publicUrl}?material=${MEMBER}`);
+            expect(root().querySelector('h1')?.textContent).toBe(PUBLIC.title);
+            const heading = root().querySelector('app-public-material h2')!;
+            expect(heading.textContent).toBe('Материал недоступен');
+            expect(heading.getAttribute('tabindex')).toBe('-1');
+            expect(root().querySelector('app-public-material [role=status]')?.textContent).toContain('снят по жалобе');
+            expect(root().querySelector('app-public-material [role=alert], app-public-material button')).toBeNull();
             expect(root().querySelector('a.back-link')).not.toBeNull();
         });
     });

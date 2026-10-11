@@ -20,7 +20,7 @@ import { materialsText } from './deck-hub.text';
             <button class="button" type="button" (click)="generate.emit()">Упражнения с ИИ для выбранных</button>
           }
           <app-hold-to-delete-button [label]="'Удалить выбранные · ' + count()" [consequence]="consequence()"
-            [disabled]="deleteDisabled()" (confirmed)="deleteConfirmed.emit()" />
+            [disabled]="deleteDisabled()" [focusable]="true" (confirmed)="deleteConfirmed.emit()" />
           <button class="button quiet" type="button" (click)="clear.emit()">Снять выбор</button>
         </div>
         @if (hint()) { <p class="hint">{{ hint() }}</p> }

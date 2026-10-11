@@ -310,6 +310,54 @@
         "createdAt": "2026-10-11T10:05:00Z",
         "expiresAt": "2026-11-10T10:05:00Z"
       }
+    },
+    "DECK_HIDDEN": {
+      "severity": "WARNING",
+      "route": "DECK",
+      "producer": "complaint decisions of the owner console (Share/15, #437)",
+      "when": "The console owner decided HIDDEN on a complaint about the deck (or TAKEN_DOWN with hide) and the deck was not hidden before. A repeat that changes nothing publishes nothing. Never sent to the reporter or to the owners of copies.",
+      "params": {
+        "deckId": "uuid: the owner's deck; the notice itself is GET /api/decks/{deckId}/moderation"
+      },
+      "dedupeKey": "deck-moderation:{deckId}:hidden:{decision time in epoch milliseconds}",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-000000000032",
+        "seq": "50",
+        "kind": "DECK_HIDDEN",
+        "severity": "WARNING",
+        "params": {
+          "deckId": "11111111-1111-4111-8111-111111111111"
+        },
+        "route": "DECK",
+        "createdAt": "2026-10-12T09:30:00Z",
+        "expiresAt": "2026-11-11T09:30:00Z"
+      }
+    },
+    "DECK_CONTENT_TAKEN_DOWN": {
+      "severity": "WARNING",
+      "route": "DECK",
+      "producer": "complaint decisions of the owner console (Share/15, #437)",
+      "when": "A legal takedown named units of the author's deck and at least one takedown row is new. The counts are the NEW materials and exercises of that decision. Never sent to the reporter or to the owners of copies (their hub shows the notice from GET /api/decks/{deckId}/moderation).",
+      "params": {
+        "deckId": "uuid",
+        "materialCount": "integer >= 0: materials newly taken down by the decision",
+        "exerciseCount": "integer >= 0: exercises newly taken down by the decision"
+      },
+      "dedupeKey": "deck-moderation:{deckId}:takedown:{journalId of the decision}",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-000000000033",
+        "seq": "51",
+        "kind": "DECK_CONTENT_TAKEN_DOWN",
+        "severity": "WARNING",
+        "params": {
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "materialCount": 2,
+          "exerciseCount": 1
+        },
+        "route": "DECK",
+        "createdAt": "2026-10-12T09:30:00Z",
+        "expiresAt": "2026-11-11T09:30:00Z"
+      }
     }
   },
   "endpoints": [

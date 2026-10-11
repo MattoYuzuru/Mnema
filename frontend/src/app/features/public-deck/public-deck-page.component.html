@@ -85,10 +85,14 @@
           </div>
           <div class="share">
             <app-share-button [url]="shareUrl()" [title]="current.title" />
-            <app-action-menu [label]="menuLabel()" [items]="menuItems" (chosen)="menuChosen($event)" />
+            <app-action-menu [label]="menuLabel()" [items]="menuItems()" (chosen)="menuChosen($event)" />
           </div>
         </header>
         @if (menuFallback(); as link) { <app-share-link-field [url]="link" [label]="'Ссылка на колоду «' + current.title + '»'" /> }
+        @if (complaintOpen()) {
+          <app-complaint-dialog target="deck" [subject]="current.code" [subjectName]="current.title"
+            (filed)="complaintOpen.set(false)" (gone)="complaintGone()" (dismissed)="complaintOpen.set(false)" />
+        }
 
         <div class="primary-slot">
           @if (isOwner()) {

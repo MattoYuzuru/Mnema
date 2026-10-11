@@ -27,6 +27,16 @@
       <app-promo-popup [campaign]="campaign" (accepted)="closePopup()" (dismissed)="closePopup()" (declined)="closePopup()" />
     }
   </app-sg-specimen>
+  <app-sg-specimen title="Окно жалобы" selector="<app-complaint-dialog>"
+    when="«Пожаловаться» на публичную колоду (пункт меню «⋯» чужой колоды) и на профиль: модальный <dialog>, почти на весь экран телефона. Причина: группа переключателей из пяти вариантов (авторские права, личные данные, запрещённое содержимое, спам, другое), под ней живая подсказка к выбранной; текст необязательный, до 1000 знаков, со счётчиком. «Отправить жалобу» без причины возвращает фокус на причину. Успех: окно закрывается, фокус остаётся на «⋯», звучит «Жалоба отправлена». Любой выход (Esc, «×», «Отмена», успех) сначала закрывает нативное окно, потом сообщает странице, поэтому фокус не теряется. Колоды больше нет (404): «Колода больше недоступна». Слишком много жалоб (429): «Попробуйте позже», текст остаётся. Esc, «×» и «Отмена» закрывают; пока жалоба уходит, окно ждёт ответа. Гостю окна нет: он идёт на вход и возвращается на страницу. В образце текст «404» и «429» показывает эти ответы."
+    [tokens]="['--mn-sheet', '--mn-ink', '--mn-rule', '--mn-danger']"
+    usage='<app-complaint-dialog target="deck" [subject]="deck.code" [subjectName]="deck.title" (filed)="open.set(false)" (gone)="recheck()" (dismissed)="open.set(false)" />'>
+    <button type="button" class="button" (click)="openComplaint()">Показать окно жалобы</button>
+    @if (complaintOpen()) {
+      <app-complaint-dialog target="deck" subject="Kq7xT3mNpR" subjectName="Английский: путешествия (образец)"
+        (filed)="closeComplaint()" (gone)="closeComplaint()" (dismissed)="closeComplaint()" />
+    }
+  </app-sg-specimen>
   <app-sg-specimen title="Меню действий «⋯»" selector="<app-action-menu>"
     when="Действия над объектом, которых не нужно показывать всегда (колода в списке, карточке, хабе): «Поделиться», «Пожаловаться». Кнопка называется по объекту («Действия с колодой «…»»): сама по себе «⋯» ничего не говорит. Меню на нативном popover: клик вне и Esc закрывают, фокус возвращается на кнопку. Enter, Пробел и ↓ открывают и ставят фокус на первый пункт, ↑ — на последний; ↑ ↓ Home End ходят по пунктам, буква переходит к пункту на неё (та же буква ещё раз — к следующему такому); Tab закрывает меню. Недоступные пункты пропускаются. Только действия, которые уже работают: пунктов «на вырост» нет. Примеры ниже — образцы, а не готовые экраны."
     [tokens]="['--mn-ink', '--mn-sheet', '--mn-soft', '--mn-danger', '--mn-touch-min', '--mn-glyph-size']"
@@ -94,6 +104,34 @@
       <app-access-level level="invite" />
       <app-access-level level="link" />
       <app-access-level level="public" />
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Недоступный материал" selector="<app-unavailable-note>"
+    when="Строка списка, чей материал или упражнение сняты по жалобе (Share/15). Строка остаётся на своём месте с номером; слова «Материал недоступен» и «снят по жалобе» говорят, что случилось, цвет и значок ничего не добавляют. Читателю публичной колоды больше ничего не предлагается. Автору заметка подсказывает, что можно сделать, а действия кладутся внутрь: «Заменить» (ссылка на редактор с чистой страницей на том же месте) и «Удалить…» (выбирает строку и переносит фокус на кнопку «Удалить выбранные» панели с удержанием). Для упражнения то же: «Упражнение недоступно», действие «Удалить упражнение N»."
+    [tokens]="['--mn-muted', '--mn-rule']"
+    usage='<app-unavailable-note audience="owner">
+  <a class="button small" [routerLink]="editLink" [queryParams]="{ ordinal: 3, replace: revisionId }" aria-label="Заменить материал 4">Заменить</a>
+  <button class="button small" type="button" aria-label="Удалить материал 4">Удалить…</button>
+</app-unavailable-note>'>
+    <div class="sg-stack">
+      <app-unavailable-note />
+      <app-unavailable-note audience="owner">
+        <a class="button small" href="#status" aria-label="Заменить материал 4">Заменить</a>
+        <button class="button small" type="button" aria-label="Удалить материал 4">Удалить…</button>
+      </app-unavailable-note>
+      <app-unavailable-note subject="exercise" audience="owner">
+        <button class="button small" type="button" aria-label="Удалить упражнение 2">Удалить</button>
+      </app-unavailable-note>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Заметка о модерации" selector="<app-moderation-notice>"
+    when="Хаб колоды, когда после жалобы колоду скрыли из Сообщества («Колода скрыта из Сообщества») или сняли часть её содержимого («Материалы сняты по жалобе», с числом материалов и упражнений). Заметка с заголовком «Модерация» (на него ведёт ссылка уведомления) стоит под шапкой хаба; у чистой колоды её нет. Она называет только то, что случилось с колодой, но не жалобу и не того, кто пожаловался. Копии других людей остаются у них."
+    [tokens]="['--mn-caution', '--mn-ink']"
+    usage='<app-moderation-notice [hiddenFromCommunity]="notice.hiddenByModeration" [materials]="notice.takenDown.materials" [exercises]="notice.takenDown.exercises" />'>
+    <div class="sg-stack">
+      <app-moderation-notice [hiddenFromCommunity]="true" />
+      <app-moderation-notice [materials]="2" [exercises]="1" />
+      <app-moderation-notice [hiddenFromCommunity]="true" [exercises]="3" />
     </div>
   </app-sg-specimen>
   <app-sg-specimen title="Метка копии" selector="<app-copy-mark>"

@@ -9,7 +9,8 @@ import java.util.UUID;
 
 record ItemRecord(UUID deckId, UUID memberKey, UUID revisionId, long itemSequence,
                   UUID publishedDeckRevisionId, long publishedDeckVersion, Integer ordinal,
-                  UUID scopeId, UUID contentRootId, UUID descriptorRootId, Instant createdAt, Instant updatedAt) {
+                  UUID scopeId, UUID contentRootId, UUID descriptorRootId, Instant createdAt, Instant updatedAt,
+                  boolean unavailable) {
     ObjectNode summary(Integer selectedOrdinal) {
         return JsonNodeFactory.instance.objectNode().put("memberKey", memberKey.toString())
                 .put("itemRevisionId", revisionId.toString()).put("itemVersion", Long.toString(itemSequence))

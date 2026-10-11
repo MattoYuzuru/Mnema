@@ -8,13 +8,13 @@ import { PublicDeckFailure, PublicMaterialDocument, publicFailureOf } from './pu
 import { readFailureText } from './public-deck.text';
 import { PublicMediaPlaybackApi } from './public-media-playback.api';
 
-type Phase = 'loading' | 'ready' | 'missing' | 'error';
+type Phase = 'loading' | 'ready' | 'missing' | 'removed' | 'error';
 
 /**
  * One material of a public deck, drawn by the same native renderer as Browse: read-only, no node ids, no Workshop overlays.
  * Its media is resolved through the public media route ({@link PublicMediaPlaybackApi}); until that route answers, a file
  * shows the renderer's «unavailable» state instead of a broken image. A material that is not in the published manifest is a
- * calm «not found» with the way back to the list.
+ * calm «not found» with the way back to the list; one taken down after a complaint (`410`) is a calm «Материал недоступен».
  */
 @Component({
     selector: 'app-public-material',
@@ -26,6 +26,10 @@ type Phase = 'loading' | 'ready' | 'missing' | 'error';
         @case ('missing') {
           <h2 #heading id="public-material-heading" class="position" tabindex="-1">Материал не найден</h2>
           <div class="notice" role="status"><p>Такого материала в этой колоде нет. Возможно, автор его убрал.</p></div>
+        }
+        @case ('removed') {
+          <h2 #heading id="public-material-heading" class="position" tabindex="-1">Материал недоступен</h2>
+          <div class="notice" role="status"><p>Этот материал снят по жалобе, поэтому его нельзя открыть. Остальные материалы колоды доступны.</p></div>
         }
         @case ('error') {
           <h2 #heading id="public-material-heading" class="position" tabindex="-1">Не удалось загрузить материал</h2>
@@ -106,7 +110,7 @@ export class PublicMaterialComponent {
                 const failure = publicFailureOf(error);
                 this.failure.set(failure);
                 if (failure.kind === 'invite-only') { this.gone.emit(failure); return; }
-                this.phase.set(failure.kind === 'not-found' ? 'missing' : 'error');
+                this.phase.set(failure.kind === 'not-found' ? 'missing' : failure.kind === 'removed' ? 'removed' : 'error');
             }
         });
     }

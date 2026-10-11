@@ -45,6 +45,8 @@ export interface PublicMaterial {
     readonly itemRevisionId: string;
     readonly ordinal: number;
     readonly title: string;
+    /** The revision was taken down after a complaint (Share/15): the entry keeps its place, the title is empty and it cannot be opened. */
+    readonly unavailable: boolean;
 }
 
 export interface PublicMaterialPage {
@@ -71,6 +73,8 @@ export interface PublicExercise {
     readonly enabled: boolean;
     /** A plain-text summary of the question (at most 200 code points), `null` when the question has no plain text. */
     readonly prompt: string | null;
+    /** Taken down after a complaint (Share/15): the prompt is empty and nothing of the exercise is shown. */
+    readonly unavailable: boolean;
 }
 
 export interface PublicExercisePage {
@@ -81,7 +85,7 @@ export interface PublicExercisePage {
 }
 
 /** What went wrong with a public read, in the words the screens need. */
-export type PublicDeckFailureKind = 'not-found' | 'invite-only' | 'rate-limited' | 'busy' | 'stale' | 'unavailable';
+export type PublicDeckFailureKind = 'not-found' | 'invite-only' | 'rate-limited' | 'busy' | 'stale' | 'removed' | 'unavailable';
 
 export class PublicDeckFailure extends Error {
     /** Seconds the server asked the client to wait (`Retry-After`), when it said so. */
@@ -94,7 +98,8 @@ export class PublicDeckFailure extends Error {
 /**
  * Classifies a failed public read. 404 is one answer for an unknown, private, rotated, deleted or unpublished deck;
  * 403 is `invite-only` only when the problem says `DECK_INVITE_ONLY` (a valid token without scope is `ACCESS_DENIED`
- * and is not an invitation screen); 429 and 503 carry the delay; 412 is a cursor of an older publication.
+ * and is not an invitation screen); 429 and 503 carry the delay; 412 is a cursor of an older publication; 410 is a material taken down
+ * after a complaint (`CONTENT_UNAVAILABLE`, Share/15).
  */
 export function publicFailureOf(error: unknown): PublicDeckFailure {
     if (error instanceof PublicDeckFailure) return error;
@@ -103,6 +108,7 @@ export function publicFailureOf(error: unknown): PublicDeckFailure {
     switch (error.status) {
         case 404: return new PublicDeckFailure('not-found');
         case 403: return new PublicDeckFailure(code === 'DECK_INVITE_ONLY' ? 'invite-only' : 'unavailable');
+        case 410: return new PublicDeckFailure('removed');
         case 412: return new PublicDeckFailure('stale');
         case 429: return new PublicDeckFailure('rate-limited', retryAfterOf(error));
         case 503: return new PublicDeckFailure(code === 'PUBLIC_READ_BUSY' ? 'busy' : 'unavailable', retryAfterOf(error));
@@ -149,6 +155,13 @@ function count(value: unknown, maximum: number): number {
 function entity(value: unknown): string {
     if (typeof value !== 'string' || !isCanonicalEntityId(value)) throw new PublicDeckFailure('unavailable');
     return value.toLowerCase();
+}
+
+/** The additive marker of a taken-down entry: absent (not blocked) or exactly `true`. */
+function taken(value: unknown): boolean {
+    if (value === undefined) return false;
+    if (value !== true) throw new PublicDeckFailure('unavailable');
+    return true;
 }
 
 function cursor(value: unknown): string | null {
@@ -205,9 +218,12 @@ export function parsePublicMaterialPage(value: unknown, code: string, limit: num
     sameCode(f['code'], code);
     if (!Array.isArray(f['items']) || f['items'].length > limit) throw new PublicDeckFailure('unavailable');
     const items = f['items'].map((entry): PublicMaterial => {
-        const item = exact(entry, ['memberKey', 'itemRevisionId', 'ordinal', 'title']);
+        const item = exact(entry, ['memberKey', 'itemRevisionId', 'ordinal', 'title'], ['unavailable']);
+        const unavailable = taken(item['unavailable']);
+        const title = text(item['title'], 400, true);
+        if (unavailable && title !== '') throw new PublicDeckFailure('unavailable');
         return { memberKey: entity(item['memberKey']), itemRevisionId: entity(item['itemRevisionId']),
-            ordinal: count(item['ordinal'], 99_999), title: text(item['title'], 400, true) };
+            ordinal: count(item['ordinal'], 99_999), title, unavailable };
     });
     return { code, total: count(f['total'], 100_000), items, nextCursor: cursor(f['nextCursor']) };
 }
@@ -226,13 +242,14 @@ export function parsePublicExercisePage(value: unknown, code: string, limit: num
     sameCode(f['code'], code);
     if (!Array.isArray(f['exercises']) || f['exercises'].length > limit) throw new PublicDeckFailure('unavailable');
     const exercises = f['exercises'].map((entry): PublicExercise => {
-        const item = exact(entry, ['exerciseId', 'exerciseRevisionId', 'ordinal', 'type', 'enabled', 'prompt']);
+        const item = exact(entry, ['exerciseId', 'exerciseRevisionId', 'ordinal', 'type', 'enabled', 'prompt'], ['unavailable']);
+        const unavailable = taken(item['unavailable']);
         if (typeof item['type'] !== 'string' || !/^[A-Z][A-Z_]{0,39}$/u.test(item['type']) || typeof item['enabled'] !== 'boolean') {
             throw new PublicDeckFailure('unavailable');
         }
         return { exerciseId: entity(item['exerciseId']), exerciseRevisionId: entity(item['exerciseRevisionId']),
             ordinal: count(item['ordinal'], 999_999), type: item['type'], enabled: item['enabled'],
-            prompt: item['prompt'] === null ? null : text(item['prompt'], 200 + 1, true) };
+            prompt: item['prompt'] === null ? null : text(item['prompt'], 200 + 1, true), unavailable };
     });
     return { code, total: count(f['total'], 1_000_000), exercises, nextCursor: cursor(f['nextCursor']) };
 }

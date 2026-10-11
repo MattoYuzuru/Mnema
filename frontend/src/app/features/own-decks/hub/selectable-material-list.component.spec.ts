@@ -12,7 +12,7 @@ describe('SelectableMaterialListComponent', () => {
         memberKey: `44444444-4444-4444-8444-${String(index).padStart(12, '0')}`,
         itemRevisionId: `55555555-5555-4555-8555-${String(index).padStart(12, '0')}`,
         itemVersion: '0', ordinal: index, formatVersion: 1, createdAt: '2026-09-12T12:00:00Z', updatedAt: '2026-09-14T08:00:00Z',
-        title: `Материал ${index + 1}`, exerciseCount: index % 3, exemplar: false, ...overrides
+        title: `Материал ${index + 1}`, exerciseCount: index % 3, exemplar: false, unavailable: false, ...overrides
     });
     const rows = [0, 1, 2, 3, 4].map(index => row(index));
     let fixture: ComponentFixture<SelectableMaterialListComponent>;
@@ -216,5 +216,50 @@ describe('SelectableMaterialListComponent', () => {
         expect(root().querySelector('app-auto-load [role=alert]')?.textContent).toContain('Загруженные остались на месте');
         root().querySelector<HTMLButtonElement>('app-auto-load button')!.click();
         expect(requests).toBe(2);
+    });
+
+    describe('a material taken down after a complaint (Share/15)', () => {
+        const blocked = row(1, { title: '', unavailable: true, exerciseCount: 0 });
+
+        it('keeps the row in its place with the number, says it is unavailable in words and has no link, no star and no exercise count', () => {
+            open([row(0), blocked, row(2)], 3);
+            const li = root().querySelectorAll('ul.item-list > li.item-row')[1];
+            expect(li.classList.contains('is-unavailable')).toBe(true);
+            expect(li.querySelector('.folio')?.textContent?.trim()).toBe('2');
+            expect(li.querySelector('a.row-link')).toBeNull();
+            expect(li.querySelector('.star')).toBeNull();
+            expect(li.querySelector('.count')).toBeNull();
+            expect(li.querySelector('app-unavailable-note .title')?.textContent).toBe('Материал недоступен');
+            expect(li.querySelector('app-unavailable-note .hint')?.textContent).toContain('снят по жалобе');
+            expect(li.querySelector('time')?.getAttribute('datetime')).toBe('2026-09-14T08:00:00Z');
+            expect(root().querySelectorAll('li .star')).toHaveLength(2);
+        });
+
+        it('names the checkbox by the position, never by a title it does not have', () => {
+            open([blocked], 1);
+            expect(checkbox(0).getAttribute('aria-label')).toBe('Выбрать «Материал 2 недоступен»');
+        });
+
+        it('offers «Заменить» as a link to the editor with the position and the revision the list showed, named by the position', () => {
+            open([blocked], 1);
+            const link = root().querySelector<HTMLAnchorElement>('app-unavailable-note a.button')!;
+            expect(link.textContent?.trim()).toBe('Заменить');
+            expect(link.getAttribute('aria-label')).toBe('Заменить материал 2');
+            expect(link.getAttribute('href')).toBe(`/decks/${deckId}/materials/${blocked.memberKey}/edit?ordinal=1&replace=${blocked.itemRevisionId}`);
+        });
+
+        it('reports «Удалить…» without deleting anything, and the row stays selectable like the others', () => {
+            const component = open([row(0), blocked], 2);
+            const removed: ItemSummary[] = [];
+            component.removeUnavailable.subscribe(item => removed.push(item));
+            const button = root().querySelector<HTMLButtonElement>('app-unavailable-note button')!;
+            expect(button.textContent?.trim()).toBe('Удалить…');
+            expect(button.getAttribute('aria-label')).toBe('Удалить материал 2');
+            button.click();
+            expect(removed).toEqual([blocked]);
+            checkbox(1).click();
+            fixture.detectChanges();
+            expect(selection.isSelected(blocked.memberKey)).toBe(true);
+        });
     });
 });

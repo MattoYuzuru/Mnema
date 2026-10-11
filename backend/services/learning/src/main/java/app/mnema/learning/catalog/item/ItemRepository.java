@@ -1,6 +1,7 @@
 package app.mnema.learning.catalog.item;
 
 import app.mnema.learning.catalog.content.pages.CountedPageTypes.Profile;
+import app.mnema.learning.moderation.ContentTakedowns;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -17,6 +18,9 @@ import java.util.UUID;
 @Repository
 class ItemRepository {
     private static final Profile MEMBERS = Profile.members(ItemService.MAX_MEMBERS);
+    /** Whether the revision the row stands for is taken down (Share/15): the one predicate of {@link ContentTakedowns}. */
+    private static final String HEAD_UNAVAILABLE = ContentTakedowns.blockedItem("p.reuse_scope_id", "p.member_key", "p.revision_id");
+    private static final String REVISION_UNAVAILABLE = ContentTakedowns.blockedItem("r.reuse_scope_id", "r.member_key", "r.revision_id");
     private final JdbcClient jdbc;
 
     ItemRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
@@ -38,7 +42,7 @@ class ItemRepository {
             row.getObject("ordinal", Integer.class),
             row.getObject("reuse_scope_id", UUID.class), row.getObject("content_root_id", UUID.class),
             row.getObject("descriptor_root_id", UUID.class), row.getTimestamp("item_created_at").toInstant(),
-            row.getTimestamp("updated_at").toInstant());
+            row.getTimestamp("updated_at").toInstant(), row.getBoolean("unavailable"));
 
     Optional<DeckHead> deck(UUID actor, UUID deck) {
         return jdbc.sql("""
@@ -65,13 +69,14 @@ class ItemRepository {
                 SELECT p.deck_id,p.member_key,p.revision_id,p.item_sequence,NULL::INTEGER AS ordinal,
                        d.head_revision_id AS deck_revision_id,d.row_version AS deck_sequence,
                        p.reuse_scope_id,
-                       r.content_root_id,r.descriptor_root_id,i.created_at AS item_created_at,p.updated_at
+                       r.content_root_id,r.descriptor_root_id,i.created_at AS item_created_at,p.updated_at,
+                       /*HEAD_UNAVAILABLE*/ AS unavailable
                   FROM app_learning.deck d JOIN app_learning.deck_head_item p ON p.deck_id=d.deck_id
                   JOIN app_learning.item_revision r ON r.reuse_scope_id=p.reuse_scope_id AND r.member_key=p.member_key
                     AND r.revision_id=p.revision_id
                   JOIN app_learning.learning_item i ON i.reuse_scope_id=p.reuse_scope_id AND i.member_key=p.member_key
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND p.deck_id=:deck AND p.member_key=:member
-                """).param("actor", actor).param("deck", deck).param("member", member).query(ITEM).optional();
+                """.replace("/*HEAD_UNAVAILABLE*/", HEAD_UNAVAILABLE)).param("actor", actor).param("deck", deck).param("member", member).query(ITEM).optional();
     }
 
     /** Whether the lineage already has a material with this key (the key is unique per scope, not per deck). */
@@ -95,7 +100,8 @@ class ItemRepository {
                        COALESCE(c.deck_revision_id,g.revision_id) AS deck_revision_id,
                        COALESCE(c.deck_sequence,g.sequence) AS deck_sequence,
                        COALESCE(c.to_ordinal,pc.from_ordinal) AS ordinal,r.reuse_scope_id,r.content_root_id,r.descriptor_root_id,
-                       i.created_at AS item_created_at,COALESCE(cr.created_at,h.updated_at,g.created_at) AS updated_at
+                       i.created_at AS item_created_at,COALESCE(cr.created_at,h.updated_at,g.created_at) AS updated_at,
+                       /*REVISION_UNAVAILABLE*/ AS unavailable
                   FROM app_learning.deck d
                   JOIN app_learning.item_revision r ON r.reuse_scope_id=d.reuse_scope_id AND r.member_key=:member
                     AND r.revision_id=:revision
@@ -111,7 +117,7 @@ class ItemRepository {
                        AND replaced.previous_revision_id=r.revision_id
                      ORDER BY replaced.deck_sequence,replaced.change_ordinal LIMIT 1) pc ON TRUE
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND d.deck_id=:deck
-                """ + " AND " + ItemRevisionVisibility.visibleTo(":deck", "r"))
+                """.replace("/*REVISION_UNAVAILABLE*/", REVISION_UNAVAILABLE) + " AND " + ItemRevisionVisibility.visibleTo(":deck", "r"))
                 .param("actor", actor).param("deck", deck).param("member", member).param("revision", revision)
                 .query(ITEM).optional();
     }
@@ -327,13 +333,14 @@ class ItemRepository {
                 SELECT p.deck_id,p.member_key,p.revision_id,p.item_sequence,NULL::INTEGER AS ordinal,
                        d.head_revision_id AS deck_revision_id,d.row_version AS deck_sequence,
                        p.reuse_scope_id,
-                       r.content_root_id,r.descriptor_root_id,i.created_at AS item_created_at,p.updated_at
+                       r.content_root_id,r.descriptor_root_id,i.created_at AS item_created_at,p.updated_at,
+                       /*HEAD_UNAVAILABLE*/ AS unavailable
                   FROM app_learning.deck d JOIN app_learning.deck_head_item p ON p.deck_id=d.deck_id
                   JOIN app_learning.item_revision r ON r.reuse_scope_id=p.reuse_scope_id AND r.member_key=p.member_key
                     AND r.revision_id=p.revision_id
                   JOIN app_learning.learning_item i ON i.reuse_scope_id=p.reuse_scope_id AND i.member_key=p.member_key
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND p.deck_id=:deck AND p.member_key IN (:members)
-                """).param("actor", actor).param("deck", deck).param("members", members)
+                """.replace("/*HEAD_UNAVAILABLE*/", HEAD_UNAVAILABLE)).param("actor", actor).param("deck", deck).param("members", members)
                 .query(ITEM).list();
     }
 

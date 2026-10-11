@@ -113,6 +113,14 @@ TODO(#409; owner: account-purge/legal workstream): decide the journal retention 
 both actor/resource links, Learning command receipts and bot note/command/audit actor UUIDs in the
 purge and backup inventory before enabling the corresponding deletion claim.
 
+## Complaints
+
+The console queue of complaints about public decks and profiles, the hiding and legal-takedown decisions and their journal are under
+`/api/admin/complaints` (owner and the `mnema-admin-web` token, like every route above; no new permission flag, the navigation entry follows `owner: true`).
+The contract is [`contracts/moderation`](../moderation/README.md). Every decision also appends to the Learning journal above as
+`COMPLAINT_DECIDE` (resource: the complaint id) or `COMPLAINT_UNHIDE`; the full record (time, actor, action, target snapshot, number of units) is
+`content_takedown_journal`, listed by `GET /api/admin/complaints/journal`. Neither carries text typed by a reporter.
+
 ## Promo creation safety
 
 `POST /api/admin/promo-codes` requires `Idempotency-Key` (canonical command UUID v4/v7) and an explicit

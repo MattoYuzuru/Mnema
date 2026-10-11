@@ -119,8 +119,8 @@ describe('Public deck wire contract (contracts/decks/public-read.json)', () => {
 
     it('parses exercise summaries that carry no answers, options or authoring titles', () => {
         const page = parsePublicExercisePage(contract.exercises.page.response, code, 50);
-        expect(page.exercises[0]).toEqual({ ...contract.exercises.page.response.exercises[0] });
-        expect(Object.keys(page.exercises[0]).sort()).toEqual(['enabled', 'exerciseId', 'exerciseRevisionId', 'ordinal', 'prompt', 'type']);
+        expect(page.exercises[0]).toEqual({ ...contract.exercises.page.response.exercises[0], unavailable: false });
+        expect(Object.keys(page.exercises[0]).sort()).toEqual(['enabled', 'exerciseId', 'exerciseRevisionId', 'ordinal', 'prompt', 'type', 'unavailable']);
         expect(page.exercises[0].prompt!.length).toBeLessThanOrEqual(contract.constants.promptMaxCodePoints + 1);
         const withKey = { ...contract.exercises.page.response, exercises: [{ ...contract.exercises.page.response.exercises[0], answer: 'x' }] };
         expect(() => parsePublicExercisePage(withKey, code, 50)).toThrow(PublicDeckFailure);

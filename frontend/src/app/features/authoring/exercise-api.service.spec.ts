@@ -144,4 +144,27 @@ describe('ExerciseApiService', () => {
         request.flush(null, { status: 204, statusText: 'No Content', headers: { 'Cache-Control': 'private, no-store' } });
         await expect(deletion).resolves.not.toThrow();
     });
+
+    describe('taken down after a complaint (Share/15)', () => {
+        const list = (exercises: unknown[]) => {
+            const memberKey = detail.objective.memberKey;
+            const result = firstValueFrom(api.list(deckId, memberKey));
+            http.expectOne(`/api/decks/${deckId}/exercises?memberKey=${memberKey}&limit=20`).flush({
+                deckId, deckRevisionId: detail.deckRevisionId, deckVersion: '6', total: exercises.length, exercises, nextCursor: null }, { headers });
+            return result;
+        };
+        const blocked = { ...summary, unavailable: true, objective: { ...summary.objective, title: '' } };
+
+        it('keeps the row of a blocked exercise with its identity and an empty objective title', async () => {
+            const page = await list([blocked, { ...summary, exerciseId: '00000000-0000-4000-8000-0000000000e2' }]);
+            expect(page.exercises[0]).toMatchObject({ exerciseId, unavailable: true, objective: { title: '' } });
+            expect(page.exercises[1].unavailable).toBe(false);
+        });
+
+        it('still refuses a blank objective title on an ordinary row, and any marker but true', async () => {
+            await expect(list([{ ...summary, objective: { ...summary.objective, title: '' } }])).rejects.toThrowError(AuthoringProtocolError);
+            await expect(list([{ ...blocked, unavailable: false }])).rejects.toThrowError(AuthoringProtocolError);
+            await expect(list([{ ...blocked, objective: { ...summary.objective, title: 'Спорное' } }])).rejects.toThrowError(AuthoringProtocolError);
+        });
+    });
 });

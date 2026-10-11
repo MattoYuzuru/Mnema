@@ -3,6 +3,7 @@ import { isAdminHost } from './app.config';
 import type { AdminPromosPageComponent } from './features/admin/admin-promos-page.component';
 import type { AdminUsersPageComponent } from './features/admin/admin-users-page.component';
 import type { AdminSupportPageComponent } from './features/admin/admin-support-page.component';
+import type { AdminComplaintDetailPageComponent } from './features/admin/admin-complaint-detail-page.component';
 import { HomePageComponent } from './home-page.component';
 import { LoginPageComponent } from './login-page.component';
 import { PrivacyPageComponent } from './privacy-page.component';
@@ -20,6 +21,7 @@ const lazyCanLeaveEventEditor: CanDeactivateFn<ManageEventsPageComponent> = (...
 
 const lazyCanLeaveAdminPromos: CanDeactivateFn<AdminPromosPageComponent> = component => import('./features/admin/admin-promos-page.component').then(module => module.canLeaveAdminPromos(component));
 const lazyCanLeaveAdminUsers: CanDeactivateFn<AdminUsersPageComponent> = component => import('./features/admin/admin-users-page.component').then(module => module.canLeaveAdminUsers(component));
+const lazyCanLeaveAdminComplaint: CanDeactivateFn<AdminComplaintDetailPageComponent> = component => import('./features/admin/admin-complaint-detail-page.component').then(module => module.canLeaveAdminComplaint(component));
 const lazyCanLeaveAdminSupport: CanDeactivateFn<AdminSupportPageComponent> = component => import('./features/admin/admin-support-page.component').then(module => module.canLeaveAdminSupport(component));
 
 const lazyCanLeaveItemEditor: CanDeactivateFn<ItemEditorPageComponent> = (...args) =>
@@ -62,6 +64,9 @@ export function ownerRoutes(adminHost: boolean): Routes {
                 { path: 'events', canDeactivate: [lazyCanLeaveEventEditor], loadComponent: () => import('./features/events/manage-events-page.component').then(module => module.ManageEventsPageComponent) },
                 { path: 'support', canDeactivate: [lazyCanLeaveAdminSupport], loadComponent: () => import('./features/admin/admin-support-page.component').then(module => module.AdminSupportPageComponent) },
                 { path: 'support/:ticketId', canDeactivate: [lazyCanLeaveAdminSupport], loadComponent: () => import('./features/admin/admin-support-page.component').then(module => module.AdminSupportPageComponent) },
+                { path: 'complaints', loadComponent: () => import('./features/admin/admin-complaints-page.component').then(module => module.AdminComplaintsPageComponent) },
+                { path: 'complaints/journal', loadComponent: () => import('./features/admin/admin-complaint-journal-page.component').then(module => module.AdminComplaintJournalPageComponent) },
+                { path: 'complaints/:complaintId', canDeactivate: [lazyCanLeaveAdminComplaint], loadComponent: () => import('./features/admin/admin-complaint-detail-page.component').then(module => module.AdminComplaintDetailPageComponent) },
                 { path: 'audit', loadComponent: () => import('./features/admin/admin-audit-page.component').then(module => module.AdminAuditPageComponent) }
             ] }
     ] : [{ path: 'manage/events', canActivate: [authGuard], canDeactivate: [lazyCanLeaveEventEditor], data: { standalone: true },

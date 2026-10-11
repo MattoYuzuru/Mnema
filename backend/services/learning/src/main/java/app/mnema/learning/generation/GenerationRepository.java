@@ -97,6 +97,13 @@ class GenerationRepository {
                 .param("deck", deck).param("owner", owner).query(Boolean.class).single();
     }
 
+    /** Whether a legal takedown (Share/15) names this material revision in the lineage of the deck: a cached read of it must not be served. */
+    boolean itemTakenDown(UUID deck, UUID member, UUID revision) {
+        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck d WHERE d.deck_id=:deck AND "
+                        + app.mnema.learning.moderation.ContentTakedowns.blockedItem("d.reuse_scope_id", ":member", ":revision") + ")")
+                .param("deck", deck).param("member", member).param("revision", revision).query(Boolean.class).single();
+    }
+
     /** Serializes the admission of one owner, so two creates cannot both pass the active-session limit. */
     void lockAdmission(UUID owner) {
         jdbc.sql("SELECT 1 FROM (SELECT pg_advisory_xact_lock(hashtextextended('generation.admission:' || :owner, 0))) lock")

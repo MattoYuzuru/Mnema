@@ -20,7 +20,7 @@ describe('DeckMaterialsComponent', () => {
     const row = (index: number, overrides: Partial<ItemSummary> = {}): ItemSummary => ({
         memberKey: key(index), itemRevisionId: `55555555-5555-4555-8555-${String(index).padStart(12, '0')}`, itemVersion: '0',
         ordinal: index, formatVersion: 1, createdAt: '2026-09-12T12:00:00Z', updatedAt: '2026-09-12T12:00:00Z',
-        title: `Материал ${index + 1}`, exerciseCount: index % 2, exemplar: false, ...overrides
+        title: `Материал ${index + 1}`, exerciseCount: index % 2, exemplar: false, unavailable: false, ...overrides
     });
     const page = (from: number, count: number, total: number, overrides: Partial<ItemPage> = {}): ItemPage => ({
         deckId, deckRevisionId: revisionId, deckVersion: '7', total, exemplars: { count: 1, limit: 10 },
@@ -340,7 +340,7 @@ describe('DeckMaterialsComponent', () => {
             expect(api.previewDeletion).toHaveBeenCalledWith(deckId, revisionId, { itemIds: [key(0), key(1)] });
             const consequence = bar()!.querySelector('.consequence')!;
             expect(consequence.textContent).toBe(hub.bulkDelete.clientMessages.holdToDeleteConsequence.replace('7 материалов', '2 материала'));
-            expect(bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!.disabled).toBe(false);
+            expect(bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!.hasAttribute('aria-disabled')).toBe(false);
         });
 
         it('keeps deletion unavailable while the consequences are being counted, and debounces rapid selection changes', async () => {
@@ -350,7 +350,7 @@ describe('DeckMaterialsComponent', () => {
             checkbox(1).click();
             await settle(100);
             expect(api.previewDeletion).not.toHaveBeenCalled();
-            expect(bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!.disabled).toBe(true);
+            expect(bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!.getAttribute('aria-disabled')).toBe('true');
             expect(bar()!.querySelector('.hint')?.textContent).toContain('Считаем');
             await settle(300);
             expect(api.previewDeletion).toHaveBeenCalledTimes(1);
@@ -450,7 +450,7 @@ describe('DeckMaterialsComponent', () => {
             await select(0);
             expect(bar()!.querySelector('.hint')?.textContent).toContain('Ничего не удалено');
             expect(root().querySelector('.note')?.textContent).toContain('Обновите список');
-            expect(bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!.disabled).toBe(true);
+            expect(bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!.getAttribute('aria-disabled')).toBe('true');
             api.previewDeletion.mockReturnValueOnce(throwError(() => http(500)));
             await select(1);
             expect(bar()!.querySelector('.hint')?.textContent).toContain('Не удалось посчитать последствия');
@@ -469,7 +469,7 @@ describe('DeckMaterialsComponent', () => {
             await settle(300);
             expect(api.previewDeletion).not.toHaveBeenCalled();
             expect(bar()!.querySelector('.hint')?.textContent).toContain('не больше 500');
-            expect(bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!.disabled).toBe(true);
+            expect(bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!.getAttribute('aria-disabled')).toBe('true');
             expect(bar()!.querySelector('.count')?.textContent?.trim()).toBe('Выбрано 600 материалов');
         });
 
@@ -493,7 +493,7 @@ describe('DeckMaterialsComponent', () => {
             await settle(300);
             expect(api.previewDeletion).not.toHaveBeenCalled();
             expect(bar()!.querySelector('.hint')?.textContent).toContain('не больше 100');
-            expect(bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!.disabled).toBe(true);
+            expect(bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!.getAttribute('aria-disabled')).toBe('true');
             // Dropping below the limit makes it deletable again.
             root().querySelector<HTMLInputElement>('.select-all input')!.click();
             await settle();
@@ -581,6 +581,59 @@ describe('DeckMaterialsComponent', () => {
             slow.next(page(0, 20, 50));
             await settle();
             expect(rows()).toHaveLength(3);
+        });
+    });
+
+    describe('a material taken down after a complaint (Share/15)', () => {
+        const blockedPage = (): ItemPage => page(0, 3, 3, { items: [row(0), row(1, { title: '', unavailable: true }), row(2)] });
+
+        it('draws the blocked row as unavailable with «Заменить» and «Удалить…» and keeps its place in the list', async () => {
+            await open(of(blockedPage()));
+            const li = rows()[1];
+            expect(li.querySelector('app-unavailable-note')).not.toBeNull();
+            expect(li.querySelector('a.row-link')).toBeNull();
+            expect(Array.from(li.querySelectorAll('app-unavailable-note a, app-unavailable-note button')).map(item => item.textContent?.trim())).toEqual(['Заменить', 'Удалить…']);
+            expect(rows()).toHaveLength(3);
+        });
+
+        it('«Удалить…» selects exactly that row and moves the focus to the delete button of the bar, which stays focusable until the preview is back', async () => {
+            await open(of(blockedPage()));
+            document.body.append(root());
+            await select(0);
+            const remove = buttonWith('Удалить…')!;
+            remove.focus();
+            remove.click();
+            fixture.detectChanges();
+            const hold = bar()!.querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!;
+            expect(checkbox(0).checked).toBe(false);
+            expect(checkbox(1).checked).toBe(true);
+            expect(hold.disabled).toBe(false);
+            expect(hold.getAttribute('aria-disabled')).toBe('true');
+            expect(document.activeElement).toBe(hold);
+            await settle(300);
+            expect(root().querySelector('app-bulk-action-bar')!.textContent).toContain('Выбрано 1 материал');
+            expect(api.previewDeletion).toHaveBeenLastCalledWith(deckId, revisionId, { itemIds: [blockedPage().items[1].memberKey] });
+            expect(hold.hasAttribute('aria-disabled')).toBe(false);
+            expect(document.activeElement).toBe(hold);
+            expect(api.deleteMany).not.toHaveBeenCalled();
+        });
+
+        it('announces the row action in its own region, also when the count of the selection does not change, and never says where on the page', async () => {
+            await open(of(blockedPage()));
+            const say = () => root().querySelectorAll('[role=status].sr-only')[1].textContent;
+            await select(1);
+            buttonWith('Удалить…')!.click();
+            await settle(100);
+            expect(say()).toBe('Выбран материал 2. Удалите его кнопкой «Удалить выбранные».');
+            await settle(1500);
+            expect(root().querySelectorAll('[role=status].sr-only')[0].textContent).toBe('Выбрано 1 материал.');
+            expect(say()).toBe('Выбран материал 2. Удалите его кнопкой «Удалить выбранные».');
+            buttonWith('Удалить…')!.click();
+            fixture.detectChanges();
+            expect(say()).toBe('');
+            await settle(100);
+            expect(say()).toContain('Выбран материал 2');
+            expect(say()).not.toContain('внизу');
         });
     });
 });

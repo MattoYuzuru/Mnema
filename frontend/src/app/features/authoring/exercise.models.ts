@@ -30,6 +30,8 @@ export interface ExerciseSummary {
      * or answered yet. Absent from the wire means «not new».
      */
     readonly isNew: boolean;
+    /** Taken down after a complaint (Share/15): the row keeps its identity, the objective title is empty and the exercise cannot be read (`410`). */
+    readonly unavailable: boolean;
 }
 
 export interface ExercisePage {

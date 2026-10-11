@@ -3,6 +3,7 @@ import { map } from 'rxjs';
 
 import { MECHANIC_LABELS } from '../own-decks/hub/deck-hub.text';
 import { AutoLoadComponent } from '../../shared/auto-load.component';
+import { UnavailableNoteComponent } from '../../shared/unavailable-note.component';
 import { Mechanic } from '../../content/exercise/exercise-content.models';
 import { PublicDeckApiService } from './public-deck-api.service';
 import { PublicDeckFailure, PublicExercise } from './public-deck.models';
@@ -15,7 +16,7 @@ import { PublicPager } from './public-pager';
  */
 @Component({
     selector: 'app-public-exercises-list',
-    imports: [AutoLoadComponent],
+    imports: [AutoLoadComponent, UnavailableNoteComponent],
     template: `
       <section class="list" aria-labelledby="public-exercises-heading">
         <h2 id="public-exercises-heading" #heading>Упражнения <span class="count">· {{ pager.total() }}</span></h2>
@@ -35,8 +36,11 @@ import { PublicPager } from './public-pager';
             }
             <ol #rows class="rows" role="list" [hidden]="pager.rows().length === 0">
               @for (exercise of pager.rows(); track exercise.exerciseId) {
-                <li class="item-row exercise-row">
+                <li class="item-row exercise-row" [class.is-unavailable]="exercise.unavailable">
                   <span class="folio" aria-hidden="true">{{ exercise.ordinal + 1 }}</span>
+                  @if (exercise.unavailable) {
+                    <app-unavailable-note subject="exercise" />
+                  } @else {
                   <div class="copy">
                     <p class="kind">
                       <span class="stamp"><span class="visually-hidden">Тип: </span>{{ typeLabel(exercise) }}</span>
@@ -44,6 +48,7 @@ import { PublicPager } from './public-pager';
                     </p>
                     <p class="prompt" [class.empty]="exercise.prompt === null">{{ exercise.prompt ?? 'Вопрос без текстового описания.' }}</p>
                   </div>
+                  }
                 </li>
               }
             </ol>

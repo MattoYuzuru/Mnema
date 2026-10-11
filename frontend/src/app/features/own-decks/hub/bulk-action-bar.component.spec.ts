@@ -38,7 +38,8 @@ describe('BulkActionBarComponent', () => {
     it('passes the consequence to the hold button and shows why deletion is unavailable', () => {
         open({ consequence: 'Удалит 7 материалов и 15 упражнений. История занятий сохранится.', deleteDisabled: true, hint: 'Считаем…' });
         const hold = root().querySelector<HTMLButtonElement>('app-hold-to-delete-button button')!;
-        expect(hold.disabled).toBe(true);
+        expect(hold.getAttribute('aria-disabled')).toBe('true');
+        expect(hold.disabled).toBe(false);
         expect(hold.getAttribute('aria-describedby')).toBe(root().querySelector('.consequence')?.id);
         expect(root().querySelector('.consequence')?.textContent).toContain('15 упражнений');
         expect(root().querySelector('.hint')?.textContent).toBe('Считаем…');

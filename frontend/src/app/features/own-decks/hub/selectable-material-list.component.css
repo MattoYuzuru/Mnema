@@ -33,6 +33,7 @@
     contain-intrinsic-block-size: auto calc(4.5rem - 1rem - 1px);
     --mn-wave-fill: var(--mn-soft);
 }
+.item-row.is-unavailable { min-block-size: 4.5rem; content-visibility: visible; }
 .item-row.selected { border-inline-start-color: var(--mn-ink); background: color-mix(in srgb, var(--mn-soft) 55%, transparent); }
 .item-row:has(.row-link:focus-visible) { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
 .folio { color: var(--mn-ink); font: 1.6rem/1 var(--mn-font-display, Georgia, serif); text-align: end; }

@@ -200,6 +200,21 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return response(ApiErrorCode.MEDIA_STORAGE_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
     }
 
+    @ExceptionHandler(ContentUnavailableException.class)
+    ResponseEntity<Object> handleContentUnavailable(ContentUnavailableException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.CONTENT_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(ComplaintNotHiddenException.class)
+    ResponseEntity<Object> handleComplaintNotHidden(ComplaintNotHiddenException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.COMPLAINT_NOT_HIDDEN, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(ComplaintDecidedException.class)
+    ResponseEntity<Object> handleComplaintDecided(ComplaintDecidedException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.COMPLAINT_DECIDED, request.getRequestURI(), new HttpHeaders());
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     ResponseEntity<Object> handleResourceNotFound(ResourceNotFoundException exception, HttpServletRequest request) {
         return response(ApiErrorCode.RESOURCE_NOT_FOUND, request.getRequestURI(), new HttpHeaders());

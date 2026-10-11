@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 
 import { AutoLoadComponent } from '../../shared/auto-load.component';
+import { UnavailableNoteComponent } from '../../shared/unavailable-note.component';
 import { PublicDeckApiService } from './public-deck-api.service';
 import { PublicDeckFailure, PublicMaterial } from './public-deck.models';
 import { readFailureText, RESTART_NOTICE } from './public-deck.text';
@@ -21,7 +22,7 @@ const MAX_AUTO_PAGES = 20;
  */
 @Component({
     selector: 'app-public-materials-list',
-    imports: [RouterLink, AutoLoadComponent],
+    imports: [RouterLink, AutoLoadComponent, UnavailableNoteComponent],
     template: `
       <section class="list" aria-labelledby="public-materials-heading">
         <h2 id="public-materials-heading" #heading>Материалы <span class="count">· {{ pager.total() }}</span></h2>
@@ -40,9 +41,13 @@ const MAX_AUTO_PAGES = 20;
             }
             <ol #rows class="rows" role="list" [hidden]="pager.rows().length === 0">
               @for (item of pager.rows(); track item.memberKey) {
-                <li class="item-row" [attr.data-member-key]="item.memberKey">
+                <li class="item-row" [class.is-unavailable]="item.unavailable" [attr.data-member-key]="item.memberKey">
                   <span class="folio" aria-hidden="true">{{ item.ordinal + 1 }}</span>
-                  <a class="row-link" [routerLink]="[]" [queryParams]="{ material: item.memberKey }">{{ titleOf(item) }}</a>
+                  @if (item.unavailable) {
+                    <app-unavailable-note />
+                  } @else {
+                    <a class="row-link" [routerLink]="[]" [queryParams]="{ material: item.memberKey }">{{ titleOf(item) }}</a>
+                  }
                 </li>
               }
             </ol>
@@ -73,12 +78,17 @@ export class PublicMaterialsListComponent {
         row => row.memberKey, inject(DestroyRef), failure => this.gone.emit(failure));
     protected readonly restartNotice = computed(() => this.pager.restarted() && this.pager.phase() === 'ready' ? RESTART_NOTICE : '');
 
-    /** The materials before and after the open one among the rows read so far; `null` where the list does not know one (yet). */
+    /**
+     * The materials before and after the open one among the rows read so far; `null` where the list does not know one (yet). A material
+     * taken down after a complaint cannot be opened, so it is never offered as a neighbour: the nearest readable one is.
+     */
     readonly neighbors = computed(() => {
         const key = this.openKey();
         const rows = this.pager.rows();
         const index = key === null ? -1 : rows.findIndex(row => row.memberKey === key);
-        return { previous: index > 0 ? rows[index - 1] : null, next: index >= 0 ? rows[index + 1] ?? null : null };
+        if (index < 0) return { previous: null, next: null };
+        const before = rows.slice(0, index).filter(row => !row.unavailable);
+        return { previous: before[before.length - 1] ?? null, next: rows.slice(index + 1).find(row => !row.unavailable) ?? null };
     });
 
     private autoPages = 0;
@@ -96,7 +106,8 @@ export class PublicMaterialsListComponent {
             if (key !== this.autoKey) { this.autoKey = key; this.autoPages = 0; }
             if (key === null || this.pager.phase() !== 'ready' || this.pager.cursor() === null || this.pager.loadingMore() || this.pager.moreFailed()) return;
             const index = rows.findIndex(row => row.memberKey === key);
-            if ((index === -1 || index === rows.length - 1) && this.autoPages < MAX_AUTO_PAGES) {
+            const lastReadable = index >= 0 && !rows.slice(index + 1).some(row => !row.unavailable);
+            if ((index === -1 || lastReadable) && this.autoPages < MAX_AUTO_PAGES) {
                 this.autoPages++;
                 untracked(() => this.pager.next());
             }

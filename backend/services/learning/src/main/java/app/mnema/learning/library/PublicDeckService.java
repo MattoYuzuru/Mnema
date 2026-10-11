@@ -5,6 +5,7 @@ import app.mnema.learning.catalog.content.pages.CountedPageTypes.Entry;
 import app.mnema.learning.catalog.content.storage.NativeSnapshotDecoder;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
 import app.mnema.learning.fork.ForkService;
+import app.mnema.learning.moderation.ContentTakedowns;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
@@ -24,6 +25,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -54,10 +56,11 @@ public class PublicDeckService {
     private final TransactionTemplate transaction;
     private final TransactionTemplate cacheWrite;
     private final ForkService forks;
+    private final ContentTakedowns takedowns;
 
     PublicDeckService(PublicReadAdmission admission, DeckAccess access, ManifestPages manifests,
                       PublishedContentRepository content, ItemPreviews previews, ImmutableStorage storage,
-                      PlatformTransactionManager transactions, ForkService forks) {
+                      PlatformTransactionManager transactions, ForkService forks, ContentTakedowns takedowns) {
         this.admission = admission;
         this.access = access;
         this.manifests = manifests;
@@ -71,6 +74,7 @@ public class PublicDeckService {
         this.cacheWrite = new TransactionTemplate(transactions);
         this.cacheWrite.setTimeout(5);
         this.forks = forks;
+        this.takedowns = takedowns;
     }
 
     public ObjectNode summary(Viewer viewer, String code) {
@@ -103,6 +107,8 @@ public class PublicDeckService {
             sql(() -> content.itemRevisions(scope, entries.stream().map(Entry::key).toList(),
                             entries.stream().map(entry -> entry.target().objectId()).toList()))
                     .forEach(revision -> revisions.put(pair(revision.memberKey(), revision.descriptorRootId()), revision));
+            // the legal takedown (Share/15): a revision a decision names keeps its place and ordinal and nothing of its content, not even the title
+            Set<UUID> blocked = sql(() -> takedowns.items(scope, revisions.values().stream().map(PublishedContentRepository.ItemRevision::revisionId).toList()));
             // one statement for the cached titles of the whole page; only a miss reads (and later caches) the document
             Map<String, String> cached = sql(() -> content.cachedTitles(scope, entries.stream().map(Entry::key).toList(),
                     revisions.values().stream().map(PublishedContentRepository.ItemRevision::revisionId).toList()));
@@ -112,6 +118,12 @@ public class PublicDeckService {
                 Entry entry = entries.get(index);
                 PublishedContentRepository.ItemRevision revision = revisions.get(pair(entry.key(), entry.target().objectId()));
                 if (revision == null) throw new IllegalStateException("Published member projection is inconsistent");
+                if (blocked.contains(revision.revisionId())) {
+                    takedowns.count("public_list");
+                    items.addObject().put("memberKey", entry.key().toString()).put("itemRevisionId", revision.revisionId().toString())
+                            .put("ordinal", start + index).put("title", "").put("unavailable", true);
+                    continue;
+                }
                 String title = cached.get(pair(entry.key(), revision.revisionId()));
                 if (title == null) {
                     title = previews.derive(scope, revision.contentRootId());
@@ -144,6 +156,11 @@ public class PublicDeckService {
             PublishedContentRepository.ItemRevision revision = sql(() -> content.itemRevisions(scope, List.of(memberKey),
                     List.of(located.descriptorRootId()))).stream().findFirst()
                     .orElseThrow(() -> new IllegalStateException("Published member projection is inconsistent"));
+            // the legal takedown (Share/15): the revision the published manifest holds is blocked in the source and in every published copy of it
+            if (sql(() -> takedowns.item(scope, memberKey, revision.revisionId()))) {
+                takedowns.count("public_item");
+                throw new app.mnema.learning.platform.api.ContentUnavailableException();
+            }
             NativeSnapshotDecoder decoder = new NativeSnapshotDecoder(new ObjectRef(scope, revision.contentRootId()));
             while (!decoder.isComplete()) nativeBatches.readNext(decoder);
             ObjectNode result = JsonNodeFactory.instance.objectNode().put("code", code).put("memberKey", memberKey.toString())
@@ -163,12 +180,19 @@ public class PublicDeckService {
             sql(() -> content.exercises(read.deck().scopeId(), entries.stream().map(Entry::key).toList(),
                             entries.stream().map(entry -> entry.target().objectId()).toList()))
                     .forEach(row -> rows.put(pair(row.exerciseId(), row.descriptorRootId()), row));
+            Set<UUID> blocked = sql(() -> takedowns.exercises(read.deck().scopeId(), rows.values().stream().map(PublishedContentRepository.ExerciseRow::revisionId).toList()));
             ObjectNode result = page(code, published.exerciseCount(), "exercises");
             ArrayNode exercises = (ArrayNode) result.get("exercises");
             for (int index = 0; index < entries.size(); index++) {
                 Entry entry = entries.get(index);
                 PublishedContentRepository.ExerciseRow row = rows.get(pair(entry.key(), entry.target().objectId()));
                 if (row == null) throw new IllegalStateException("Published exercise projection is inconsistent");
+                if (blocked.contains(row.revisionId())) {
+                    takedowns.count("public_list");
+                    exercises.addObject().put("exerciseId", row.exerciseId().toString()).put("exerciseRevisionId", row.revisionId().toString())
+                            .put("ordinal", start + index).put("type", row.type()).put("enabled", row.enabled()).put("prompt", "").put("unavailable", true);
+                    continue;
+                }
                 exercises.addObject().put("exerciseId", row.exerciseId().toString())
                         .put("exerciseRevisionId", row.revisionId().toString()).put("ordinal", start + index)
                         .put("type", row.type()).put("enabled", row.enabled())
