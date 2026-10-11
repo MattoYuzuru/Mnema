@@ -83,7 +83,7 @@ describe('Personal data policy page', () => {
         expect(recipients).toContain('файлы (изображения, аудио, видео), которые вы прикрепляете к материалам');
         expect(recipients).toContain('обрабатываются на сервере Mnema, внешним сервисам обработки файлы не передаются');
         expect(recipients).toContain('удаляется из хранилища автоматически примерно через 7 дней');
-        expect(recipients).toContain('При удалении аккаунта по вашему запросу аватар и файлы удаляются вместе с ним');
+        expect(recipients).toContain('При удалении аккаунта аватар и загруженные файлы удаляются вместе с ним');
         expect(recipients).not.toContain('сейчас не предоставляется');
         expect(recipients).toContain('Telegram FZ-LLC');
         expect(recipients).not.toContain('Telegram хранит');
