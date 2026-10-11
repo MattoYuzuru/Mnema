@@ -32,6 +32,14 @@ describe('SegmentedChoiceComponent', () => {
         expect(root.querySelectorAll('.mark[aria-hidden="true"]').length).toBe(3);
     });
 
+    it('can keep the legend for assistive technology without drawing it', () => {
+        const visible = create().nativeElement as HTMLElement;
+        expect(visible.querySelector('legend')?.classList.contains('visually-hidden')).toBe(false);
+        const hidden = create('AUTO', { legendHidden: true }).nativeElement as HTMLElement;
+        expect(hidden.querySelector('legend')?.classList.contains('visually-hidden')).toBe(true);
+        expect(hidden.querySelector('fieldset > legend')?.textContent?.trim()).toBe('Подробность');
+    });
+
     it('describes the fieldset by a polite live hint that follows the selection', () => {
         const fixture = create();
         const root = fixture.nativeElement as HTMLElement;

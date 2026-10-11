@@ -22,7 +22,7 @@ let nextGroup = 0;
     template: `
       <fieldset class="segmented" [disabled]="disabled()" [attr.aria-describedby]="describedBy() === null ? hintId : hintId + ' ' + describedBy()"
         [attr.aria-invalid]="invalid() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null">
-        <legend>{{ legend() }}</legend>
+        <legend [class.visually-hidden]="legendHidden()">{{ legend() }}</legend>
         <div class="row">
           <div class="segments">
             @for (option of options(); track option.value) {
@@ -44,6 +44,8 @@ let nextGroup = 0;
 })
 export class SegmentedChoiceComponent<T extends string = string> {
     readonly legend = input.required<string>();
+    /** The legend names the group for assistive technology but is not drawn (a row of a list where the title above already says what is chosen). */
+    readonly legendHidden = input(false);
     readonly options = input.required<readonly SegmentedOption<T>[]>();
     /** The selected value; `null` while nothing is selected. */
     readonly value = model<T | null>(null);

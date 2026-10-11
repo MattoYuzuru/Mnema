@@ -18,7 +18,7 @@ import { ImageSearchPanelComponent } from './image-search-panel.component';
 import { ImageVariantsComponent } from './image-variants.component';
 import { SelectionTarget, clearTarget, endRect, paintTarget, readSelection, runBetween } from './selection-targets';
 import { EditMemo, WorkshopSessionStore } from './workshop-session.store';
-import { DiffParagraph, blocksOf, diffLines, hasChanges, isMediaKind } from './word-diff';
+import { DiffParagraph, blocksOf, diffLines, hasChanges, isMediaKind } from '../../content/word-diff';
 
 /** The blocks of the current revision a review (the strip under them) is about, in order. */
 interface ReviewBase {

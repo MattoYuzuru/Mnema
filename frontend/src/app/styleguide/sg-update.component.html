@@ -1,0 +1,146 @@
+<section class="sg-section" id="update" aria-labelledby="update-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="update-title">Обновление копии</h2>
+  <p class="sg-lede">Экран обзора обновления от автора (Updates/5): сводка, вкладки по классам, строка на каждую единицу и сравнение «Сейчас у вас» | «Вариант автора».
+    Всё собрано из общих элементов и фикстур, без сервера. Изменение всегда названо словом: цвет, подчёркивание или зачёркивание его только поддерживают.</p>
+
+  <app-sg-specimen title="Значок «Есть обновление» и закрытый источник" selector="<app-update-badge>, <app-unavailable-note subject=&quot;source&quot;>"
+    when="Карточка копии в «Моих колодах» и хаб копии, когда автор опубликовал новое: значок из слов («Есть обновление»), а не просто точка; ромбик рядом скрыт от скринридера. Значок читается вместе с названием карточки и не объявляется сам, чтобы список не шумел. Если автор закрыл исходную колоду, вместо значка стоит заметка «Источник больше недоступен» с утверждённым предложением."
+    [tokens]="['--mn-ink', '--mn-on-ink', '--mn-font-mono', '--mn-muted']"
+    usage='<app-update-badge />
+<app-unavailable-note subject="source" />'>
+    <div class="sg-stack">
+      <p class="sg-inline">Испанские глаголы <app-update-badge /></p>
+      <app-unavailable-note subject="source" />
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Сводка обновления" selector="<app-update-summary>"
+    when="Верх экрана обзора. Одна строка словами со склонением («+12 материалов, +30 упражнений, 5 исправлений, 2 конфликта, 3 удалено автором»), пустые части не пишутся; «Что нового» автора (до 500 символов), если есть; главное действие «Принять всё безопасное» и строка, что оно берёт и чего не трогает. Когда безопасного нет, кнопка aria-disabled и строка говорит об этом; пока идёт запрос, кнопка aria-busy и сохраняет фокус. Результат озвучивает область role=status страницы, не блок."
+    [tokens]="['--mn-ink', '--mn-muted', '--mn-sheet', '--mn-rule', '--mn-font-display']"
+    usage='<app-update-summary [counts]="counts" [note]="whatsNew" [busy]="accepting()" (acceptSafe)="acceptSafe()" />'>
+    <div class="sg-stack">
+      <app-update-summary [counts]="fullCounts" [note]="news" [busy]="accepting()" [headingLevel]="3" (acceptSafe)="acceptSafe()" />
+      <p class="hint" role="status">@if (accepted()) { Образец: безопасные изменения приняты. }</p>
+      <app-update-summary [counts]="singleCounts" [headingLevel]="3" />
+      <app-update-summary [counts]="riskyCounts" [headingLevel]="3" />
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Вкладки с числом" selector="<app-count-tabs>"
+    when="Классы изменений на экране обзора: «Новое», «Исправления», «Конфликты», «Удалено автором», у каждой число. Это шаблон APG tabs с автоматическим выбором: стрелки двигают фокус и выбор, Home и End уходят к краям, в Tab-порядке только выбранная вкладка. Выбранная вкладка отмечена толстой линией и жирным текстом, не только цветом. Панель страница рисует сама: role=tabpanel, id из panelId(), имя из tabId() (ссылка на компонент в шаблоне). Раньше вкладок в продукте не было, этот компонент их единственная реализация."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-muted', '--mn-focus']"
+    usage='<app-count-tabs #tabsRef label="Классы изменений" [tabs]="tabs" [(value)]="tab" />
+<div role="tabpanel" [id]="tabsRef.panelId(tab())" [attr.aria-labelledby]="tabsRef.tabId(tab())">…</div>'>
+    <app-count-tabs #tabsRef label="Классы изменений" [tabs]="tabs" [(value)]="tab" />
+    <div role="tabpanel" tabindex="0" class="sg-panel" [id]="tabsRef.panelId(tab())" [attr.aria-labelledby]="tabsRef.tabId(tab())">
+      <p class="hint">Здесь строки класса «{{ tabLabel(tab()) }}».</p>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Колонки сравнения" selector="<app-compare-columns>, <app-compared-document>"
+    when="Раскрытая строка обновления. Слева «Сейчас у вас», справа «Вариант автора», каждая колонка со своим заголовком, порядок чтения от вашей к авторской. Содержимое рисует тот же renderer, что и Browse: изменённый блок помечен по стабильному id узла и подписан штампом («Изменено», «Добавлено», «Удалено автором»), а слова в изменённом абзаце показаны как удалённые и добавленные. Нет вашей стороны: «Нет у вас», автор убрал: «Автор удалил». Пока контейнер уже 44 rem, показана одна сторона и переключатель из сегментов; от 44 rem колонки стоят рядом, переключатель уходит. Движения нет совсем."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-field-border', '--mn-selection', '--mn-soft']"
+    usage='<app-compare-columns [mineAbsent]="false" [authorAbsent]="false">
+  <app-compared-document compare-mine side="mine" [document]="mine" [counterpart]="author" />
+  <app-compared-document compare-author side="author" [document]="author" [counterpart]="mine" />
+</app-compare-columns>'>
+    <div class="sg-stack">
+      <h4 class="sg-group">Широкий контейнер: колонки рядом</h4>
+      <app-compare-columns [headingLevel]="5">
+        <app-compared-document compare-mine side="mine" [document]="mineMaterial" [counterpart]="authorMaterial" [assetSources]="assetSources" />
+        <app-compared-document compare-author side="author" [document]="authorMaterial" [counterpart]="mineMaterial" [assetSources]="assetSources" />
+      </app-compare-columns>
+      <h4 class="sg-group">Узкий контейнер (телефон): переключатель</h4>
+      <div class="sg-narrow">
+        <app-compare-columns [headingLevel]="5">
+          <app-compared-document compare-mine side="mine" [document]="mineRemoved" [counterpart]="authorRemoved" />
+          <app-compared-document compare-author side="author" [document]="authorRemoved" [counterpart]="mineRemoved" />
+        </app-compare-columns>
+      </div>
+      <h4 class="sg-group">Нового у вас нет</h4>
+      <app-compare-columns [headingLevel]="5" [mineAbsent]="true">
+        <app-compared-document compare-author side="author" [document]="newMaterial" />
+      </app-compare-columns>
+      <h4 class="sg-group">Автор удалил</h4>
+      <app-compare-columns [headingLevel]="5" [authorAbsent]="true">
+        <app-compared-document compare-mine side="mine" [document]="authorRemoved" />
+      </app-compare-columns>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Изменённые слова" selector="<app-word-diff>"
+    when="Слова, изменившиеся в тексте, по разбору из content/word-diff (тому же, что в Мастерской). Удалённое: тег del, зачёркнуто; добавленное: тег ins, подчёркнуто; перед каждым скрытое «удалено:» или «добавлено:», поэтому скринридер слышит изменение без цвета. В режиме forced-colors линии остаются, добавленное берёт цвет ссылки. side=mine оставляет то, что есть у вас (слова автора не показываются), side=author: вариант автора."
+    [tokens]="['--mn-danger', '--mn-ink', '--mn-soft']"
+    usage='<app-word-diff [paragraphs]="diff" side="both" />'>
+    <div class="sg-stack">
+      <p class="hint">Всё вместе</p>
+      <app-word-diff [paragraphs]="exerciseDiff" />
+      <p class="hint">Только ваша сторона</p>
+      <app-word-diff [paragraphs]="exerciseDiff" side="mine" />
+      <p class="hint">Только вариант автора</p>
+      <app-word-diff [paragraphs]="exerciseDiff" side="author" />
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Строка единицы обновления" selector="<app-update-unit-row>"
+    when="Одна единица плана: материал, упражнение, цель, описание колоды или порядок материалов. Слева вид (знак и слово), штамп класса словами, название в одну строку, при зависимости пояснение «Нужен материал «…». Он будет добавлен вместе с этим.». Решение читателя: сегменты, потому что у каждого класса два ответа с глаголами, а не «да/нет»: «Принять» и «Не брать»; «Оставить моё» (по умолчанию) и «Взять вариант автора»; «Оставить у себя» (по умолчанию) и «Удалить и у меня». Кнопка «Сравнить» с aria-expanded открывает сравнение внутри строки."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-muted', '--mn-font-mono']"
+    usage='<app-update-unit-row #row [headingLevel]="4" [unit]="unit" [(choice)]="choice">
+  @if (row.expanded()) {
+    <app-compare-columns>…</app-compare-columns>
+  }
+</app-update-unit-row>'>
+    <div class="sg-unit-list">
+      <app-update-unit-row #fix [headingLevel]="4" [unit]="materialUnit">
+        @if (fix.expanded()) {
+          <app-compare-columns [headingLevel]="5">
+            <app-compared-document compare-mine side="mine" [document]="mineMaterial" [counterpart]="authorMaterial" [assetSources]="assetSources" />
+            <app-compared-document compare-author side="author" [document]="authorMaterial" [counterpart]="mineMaterial" [assetSources]="assetSources" />
+          </app-compare-columns>
+        }
+      </app-update-unit-row>
+      <app-update-unit-row #conflict [headingLevel]="4" [unit]="exerciseUnit" [(choice)]="exerciseChoice">
+        @if (conflict.expanded()) {
+          <app-compare-columns [headingLevel]="5">
+            <app-word-diff compare-mine [paragraphs]="exerciseDiff" side="mine" />
+            <app-word-diff compare-author [paragraphs]="exerciseDiff" side="author" />
+          </app-compare-columns>
+        }
+      </app-update-unit-row>
+      <app-update-unit-row #removed [headingLevel]="4" [unit]="removedUnit">
+        @if (removed.expanded()) {
+          <app-compare-columns [headingLevel]="5" [authorAbsent]="true">
+            <app-compared-document compare-mine side="mine" [document]="authorRemoved" />
+          </app-compare-columns>
+        }
+      </app-update-unit-row>
+      <app-update-unit-row #fresh [headingLevel]="4" [unit]="newUnit">
+        @if (fresh.expanded()) {
+          <app-compare-columns [headingLevel]="5" [mineAbsent]="true">
+            <app-compared-document compare-author side="author" [document]="newMaterial" />
+          </app-compare-columns>
+        }
+      </app-update-unit-row>
+      <app-update-unit-row [headingLevel]="4" [unit]="newExerciseUnit" />
+      <app-update-unit-row [headingLevel]="4" [unit]="againUnit" />
+      <app-update-unit-row #order [headingLevel]="4" [unit]="orderUnit">
+        @if (order.expanded()) {
+          <app-compare-columns [headingLevel]="5">
+            <ol compare-mine class="sg-order">@for (title of orderMine; track title) { <li>{{ title }}</li> }</ol>
+            <ol compare-author class="sg-order">@for (title of orderAuthor; track title) { <li>{{ title }}</li> }</ol>
+          </app-compare-columns>
+        }
+      </app-update-unit-row>
+      <app-update-unit-row #description [headingLevel]="4" [unit]="descriptionUnit">
+        @if (description.expanded()) {
+          <app-compare-columns [headingLevel]="5">
+            <app-word-diff compare-mine [paragraphs]="descriptionDiff" side="mine" />
+            <app-word-diff compare-author [paragraphs]="descriptionDiff" side="author" />
+          </app-compare-columns>
+        }
+      </app-update-unit-row>
+      <app-update-unit-row [headingLevel]="4" [unit]="goalUnit" />
+    </div>
+  </app-sg-specimen>
+</section>

@@ -1,4 +1,4 @@
-import { isMediaKind } from './word-diff';
+import { isMediaKind } from '../../content/word-diff';
 
 /** The blocks a selection of the material touches, widened to whole top-level blocks. */
 export interface SelectionTarget {

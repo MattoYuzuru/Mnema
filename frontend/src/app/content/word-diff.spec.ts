@@ -1,4 +1,4 @@
-import { documentOf, nativeNode } from '../../content/rendering/native-renderer.fixtures';
+import { documentOf, nativeNode } from './rendering/native-renderer.fixtures';
 import { blocksOf, diffLines, hasChanges, isMediaKind } from './word-diff';
 
 const paragraph = (text: string, id?: string) => nativeNode('paragraph', {}, [nativeNode('text', { text, marks: [] })], { id });
