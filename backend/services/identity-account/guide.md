@@ -151,7 +151,7 @@ unless their flag is on (blank values are `null` too) and `avatarPresent` is `fa
 `GET /me/public-profile` (bearer or session) → `{enabled,showDisplayName,showAvatar,showBio,
 textVersion,publishReady,updatedAt}`; no row yet is all `false` with `updatedAt:null`.
 `publishReady` = enabled and a profile username (the account is active by authentication);
-future deck publication requires it. `PUT` replaces all five fields
+deck publication in Learning (Share/8) requires it, through the `/userinfo` claim `mnema_public_profile` (see "Canonical API and security"). `PUT` replaces all five fields
 `{enabled,showDisplayName,showAvatar,showBio,textVersion}`; the body is parsed strictly (exact
 field set, JSON booleans/string, no coercion; otherwise 400 `invalid_request`).
 
@@ -189,6 +189,18 @@ empty, more than 50, duplicate or non-canonical ids; 400 `invalid_request`) are 
 before they count. A malformed username is the same 404 and does count. Cost: one PK lookup
 per card, one `account_id = ANY(...)` query per batch and one unique-index lookup per
 username; no consent rows means every public read is a single lookup returning 404.
+
+**Consumers and what a withdrawal does elsewhere.** The browser reads author cards through the batch route (up to 50 ids per
+request, `AuthorCardsService`) and by username. Learning is a second client of the same public routes, without a
+credential: `GET /profiles/{id}` for the author line of a link preview (Share/14, 150 ms deadline, a card or a 404 cached 60 s),
+`GET /profiles/by-username/{u}` for access grants by login (Share/13) and for profile complaints (Share/15). Every Learning
+call arrives from one address, so all of them spend the **one** by-username bucket of that client key, which is 60 per
+15-minute window (`RateLimits`), not per minute; Learning's per-minute caps (runtime policy index) only bound bursts, and Learning
+returns an Identity `429` as its own `429`. A withdrawal hides the author in cards and the avatar within the cache
+lifetime (60 s) and flips `mnema_public_profile` to `false` at once, but it does **not** change a deck that is already public:
+the deck stays public without a byline (owner decision 2026-10-11, Learning guide "Publication and the topic directory");
+only publishing again (becoming public, or a new published version) needs the consent. The switch and its three checkboxes are
+the shared `.settings-row.is-switch.is-live` with `fieldset.check-group` ([styleguide](../../../docs/frontend/styleguide.md)).
 
 ## Abuse protection and sign-in availability
 

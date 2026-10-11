@@ -15,7 +15,7 @@ import java.util.function.LongSupplier;
  * <ul>
  *   <li>per owner ({@code learning.community.grants.owner-lookups-per-minute}, default 10): one owner can neither enumerate logins nor spend the shared budget;</li>
  *   <li>per instance ({@code learning.community.grants.instance-lookups-per-minute}, default 40): the lookup is Identity's public endpoint, which limits per NETWORK
- *       (60 a minute), and every Learning call comes from the same address, so all owners of all instances behind that address share that one budget. The
+ *       (60 per 15 minutes; these per-minute caps only bound bursts, a sustained rate above about 4 a minute meets Identity's 429), and every Learning call comes from the same address, so all owners of all instances behind that address share that one budget. The
  *       instance cap keeps this instance below it and leaves headroom for the others; with N instances behind one address, set it to about 40 / N.</li>
  * </ul>
  * A lookup is admitted only when both windows have room, and then it takes a place in both. {@code Retry-After} is the rest of the window that refused. The owner

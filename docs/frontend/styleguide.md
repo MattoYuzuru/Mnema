@@ -4,7 +4,7 @@ artifact:
   type: production-frontend-guide
   status: current
   created_at: "2026-10-05"
-  updated_at: "2026-10-12"
+  updated_at: "2026-10-11"
   scope: "Angular web UI; living styleguide /styleguide and rules for shared elements"
 ---
 

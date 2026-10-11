@@ -52,6 +52,14 @@ oversized and lying output), `MediaJobDirectoriesTest`, and the opt-in
 - Database: fresh Flyway history at `classpath:db/learning/migration`, owned schema
   `app_learning`, `baseline-on-migrate=false`. It never scans a legacy migration
   directory.
+- Community decks (epic [#419](https://github.com/MattoYuzuru/Mnema/issues/419), canon:
+  [product](../../../docs/product/community-decks.md), [architecture](../../../docs/architecture/community-decks.md),
+  [evidence per task](../../../docs/engineering/evidence/community-decks/epic-1/README.md)): background jobs ("Background jobs (#428)"),
+  the storage lineage (Share/4, 5), deck access, publication, media of someone else's deck, invitations, link previews, copies and
+  complaints are the last subsections of "Content and authoring contract". Everything public is off by
+  default (`learning.community.public-routes.enabled`, `…public-media.enabled`, `…forks.enabled`); only
+  `learning.community.complaints.enabled` is on. Keys, limits and metrics: [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
+  The public-profile consent and the author cards live in Identity ([guide](../identity-account/guide.md#public-profile-consent-and-author-cards)).
 - AI layer (Epic #77): run 2 delivered the notification center, the usage ledger (`app.mnema.learning.usage`), the MBM
   compiler (`generation.mbm`), the `code_block` node and the provider foundation (`app.mnema.learning.ai`, below); run 3 adds
   generation sessions, steps and the text draft (`app.mnema.learning.generation`, "Generation sessions (#287)" below).
@@ -1266,7 +1274,7 @@ capacity evidence.
 
 Material identity and revisions are keyed by the **lineage**, the deck's immutable `reuse_scope_id`
 ([community decks architecture §4](../../../docs/architecture/community-decks.md#4-линия-неизменяемые-строки-cd-1)).
-Today every scope has exactly one deck; a copy (Share/10) will add a second deck to a scope, and these rules make that safe.
+A scope starts with one deck; a copy (Share/10, "«Добавить к себе»" below) adds a further deck to the same scope, and these rules make that safe.
 
 - **Lineage rows** `learning_item`, `item_revision`, `item_preview`, `content_media_ref` are keyed `(reuse_scope_id,
   member_key[, revision_id])`. Their `deck_id`, `deck_revision_id`, `deck_sequence`, `owner_id` are the **origin** of the
@@ -1353,8 +1361,8 @@ own deck.
 - **Migration.** V52 is one transaction with `lock_timeout`, guards disabled only around the backfill and checked enabled at the end,
   one `UPDATE` per row (a second update would re-check the row's foreign keys), `SET CONSTRAINTS ALL IMMEDIATE` before the
   `ALTER`s (pending deferred events raise 55006), and a constraint list generated from `pg_constraint` (7 FKs onto `exercise_revision`).
-  The Share/5 copy fixture (`SharedScopeFixture.copy`) also copies the exercise and objective heads, which Share/10 will do in the
-  materialization job.
+  The Share/5 copy fixture (`SharedScopeFixture.copy`) also copies the exercise and objective heads, which Share/10 does in the
+  materialization job (`ForkMaterializer`).
 - Tests: `LineageExercisesMigrationIntegrationTest` (V51 data incl. thousands of heads, progress byte-identical, guards, exact
   constraint inventory), `LineageStudyIntegrationTest` (a copy studies its inherited exercises from the manifest, replay,
   practice, restart, independent progress, authoring on inherited materials), `LineageExerciseVisibilityIntegrationTest`,
@@ -1428,8 +1436,7 @@ the running application and fails when a new one has no row).
   [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 - **Load.** Zero decks published: a request is one unique-index miss. Scenario H (~25 rps peak): the code lookup is an index probe, pages are O(log N + P),
   one material is a traversal of the manifest's leaf pages (as the owner's single-item read; a candidate for a key-addressed manifest in the copy-on-write step, §13).
-  **Deploy order:** V52 (Share/5, exercises/objectives lineage) must be merged and released BEFORE V53 ships; the exercise statement below depends on its keys.
-  Open items: the exercise statement of `PublishedContentRepository` reads the deck-keyed exercise tables as of V51 and is the one query to re-key when exercises move to lineage keys (Share/5).
+  **Deploy order (done):** V52 (Share/5, exercises/objectives lineage) was released before V53; the exercise statement of `PublishedContentRepository` has read the lineage keys `(reuse_scope_id, exercise_id, descriptor_root_id)` since Share/5.
   The owner's deck JSON reports the real level since Share/8 (below).
 - Tests: `DeckAccessIntegrationTest` (resolution matrix over every level/state/viewer by code and by id, rotation rules (all 16 pairs), CAS, grants, schema constraints, code
   collision), `PublicDeckHttpIntegrationTest` (every route × the matrix, 403 without data and indistinguishable 404s, published vs head, shared lineage scope,
@@ -1522,7 +1529,7 @@ deck, as derived variants only; a guest gets the media of the published MATERIAL
   transaction (publishing stays possible and the set is exact), logs `published_media_drift deck_id=… disagreements=…` (the deck id, nothing of its content) and counts
   `mnema_published_media_drift_total`. An over-count on an asset the step did not touch is not found until a step touches it. `PublishedMediaIntegrationTest` also runs seeded random sequences of
   creates, saves, deletes, publishes and level changes and compares the set with a recompute from the head after every publish (no repair may be needed).
-  Limit: a journal that does not record a head change (a future materialization of a copy or an applied upstream update, Updates/2 #441) must write its journal rows or call `advance` itself.
+  Limit: a journal that does not record a head change (an applied upstream update, epic 2 [#420](https://github.com/MattoYuzuru/Mnema/issues/420); the materialization of a copy of Share/10 needs none, see below) must write its journal rows or call `advance` itself.
 - **Indexes and plans.** `deck_scope_owner(reuse_scope_id, owner_id) WHERE deleted_at IS NULL` serves the copy owner's lookup. The statement PINS its join order instead of trusting the planner: the
   references of the asset (a subquery fenced with `OFFSET 0`, `content_media_ref_asset` / `exercise_media_ref_asset`) drive a `JOIN LATERAL` lookup of the viewer's decks of that lineage (also
   fenced; the lineage index or his deck list, a few decks times the few references of one asset) and only then does each head get a primary-key probe; a planner that flattened it could start from
@@ -1603,8 +1610,8 @@ Package `app.mnema.learning.library` (`InviteService`, `AccessRequestService`, `
   (`learning.community.grants.owner-lookups-per-minute` / `instance-lookups-per-minute`; both fixed windows in memory) - then **`ProfileDirectory.accountOf`** OUTSIDE any transaction (the Identity public-profile
   lookup `GET /api/accounts/profiles/by-username/{u}` over the bounded `IdentityHttp`, no credential sent, nothing cached, the answer trusted only when it names the asked login), then a short write
   transaction. Unknown, malformed and hidden are one `404`; the owner's own login is 400; Identity `429` is `429 RATE_LIMITED` with its `Retry-After`, any other failure `503 IDENTITY_UNAVAILABLE` and nothing is
-  granted. **Shared budget:** Identity limits this lookup per NETWORK (60 a minute) and all Learning instances call from one address, so every owner of every instance shares that budget; the instance cap keeps
-  one instance below it, and with N instances behind one address it should be set to about 40 / N. The grant is idempotent, closes a waiting request as `APPROVED` without a notification and, being the owner's
+  granted. **Shared budget:** Identity limits this lookup per NETWORK (60 per 15-minute window, `RateLimits`; not per minute) and all Learning instances call from one address, so every owner of every instance shares that budget; Learning's per-minute caps bound bursts but cannot keep
+  a sustained rate under the Identity window, so the Identity `429` is passed through (below), and with N instances behind one address the instance cap should be set to about 40 / N. The grant is idempotent, closes a waiting request as `APPROVED` without a notification and, being the owner's
   deliberate act, lifts the revocation block. `DELETE …/grants/{id}`: the request row is taken first (an upsert of a `REJECTED` row with `revoked_at`, only when the grant existed - for a person who never
   asked it is created, but not counted in the 24-hour window), then the grant is deleted, so the next read is refused at once and a live invitation link cannot undo it for 30 days; copies stay (Share/10);
   idempotent. A deck holds at most 1000 grants (`AccessRepository.GRANT_LIMIT`, `422` with `limit`), counted under the deck's grants advisory lock by every way in.
@@ -1619,7 +1626,7 @@ Package `app.mnema.learning.library` (`InviteService`, `AccessRequestService`, `
   the requester's advisory lock, key and index-range reads of the requester's own rows, one upsert and (at most once a day per deck) one notification; the author's list and the counts are index ranges bounded by the
   page or by 1000; a deck asked a million times holds one row per asker and notifies once a day. No statement scans a table and none is proportional to the number of readers or copies; `AccessSchemaIntegrationTest`
   EXPLAINs the hot statements.
-- **Open items / deviations.** (1) The Identity login lookup shares one 60-per-minute network budget for the whole Learning instance set (the per-owner and per-instance caps keep each instance below it); if grants by login become popular, give Learning a trusted-proxy identity there or
+- **Open items / deviations.** (1) The Identity login lookup shares one 60-per-15-minutes network budget for the whole Learning instance set (the per-owner and per-instance per-minute caps only bound bursts; a sustained rate above about 4 a minute meets the Identity `429`); if grants by login become popular, give Learning a trusted-proxy identity there or
   a service-to-service endpoint. (2) `DECK_ACCESS_REQUESTED` is per UTC calendar day, not a rolling 24 hours. (3) Approving a request of a PRIVATE deck grants without notifying. (4) A person an owner revokes who never asked gets a `REJECTED` request row (the record of the revocation); a deck's requests table is therefore not only asks. (5) The migration is `V56`, after Share/9's `V55`; Flyway does not apply versions out of order, so it ships after `V55`.
 - Tests: `DeckAccessHttpIntegrationTest` (shapes of `access.json`, the one-time token, every failing token the same 404, downgrade keeps grants, scopes and guests, strict bodies, token never in a log, the request
   flow, requests off, the 429, revoking a grant, grants by login for public profiles only, the stranger never reaches Identity, Identity 429/503, owner-only), `AccessServiceIntegrationTest` (moving clock: expiry, one-time,
@@ -1694,7 +1701,7 @@ Package `app.mnema.learning.fork` (`ForkController`, `ForkService`, `ForkReposit
   `deck_head_item`/`deck_head_exercise`/`objective_head` of a preparing copy and any advance of its head revision unless the transaction named itself with `set_config('mnema.fork_materializing', <deck id>, true)` (only the job does; naming another deck does not help). Reads stay open: the hub shows
   `fork.preparing`, `memberCount`/`exerciseCount` are the counts being prepared and `ItemService.list` answers an empty page (its `total` names the count). `ForkPreparingGuardHttpIntegrationTest` takes the route inventory from the running application and sends every non-GET route.
 - **Read model.** The owner's deck JSON (detail and list items, not the acknowledgements) carries `fork`: `null`, or `{upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached}`. `DeckRepository` joins `deck_fork` and the job's state; `ForkReadModel` resolves the sources of a whole page for the copier
-  through `DeckAccess.resolveAll` (the same decision as `resolve(viewer, code)`, one statement for the decks and one for the grants; no query per copy, nothing written) with the code he stored, so `sourceAvailable` goes false when the source is deleted, made private, or its code rotated, and the code and title are then null. **Availability is resolved by the stored upstream code:** after a rotation (any lowering of the level) the copy reads "source unavailable" even though the source exists and the copier could be allowed to read it again by its new code. Re-linking (updating `upstream_code`) is **epic 2 (updates, #441)**; until then the copy simply keeps working without updates. `GET /api/public/decks/{code}` gains `myCopy` for a signed-in viewer
+  through `DeckAccess.resolveAll` (the same decision as `resolve(viewer, code)`, one statement for the decks and one for the grants; no query per copy, nothing written) with the code he stored, so `sourceAvailable` goes false when the source is deleted, made private, or its code rotated, and the code and title are then null. **Availability is resolved by the stored upstream code:** after a rotation (any lowering of the level) the copy reads "source unavailable" even though the source exists and the copier could be allowed to read it again by its new code. Re-linking (updating `upstream_code`) is **epic 2 (updates, [#420](https://github.com/MattoYuzuru/Mnema/issues/420))**; until then the copy simply keeps working without updates. `GET /api/public/decks/{code}` gains `myCopy` for a signed-in viewer
   (`null` or `{deckId, preparing}`; one probe of `deck_scope_owner`); a guest's summary is unchanged. `POST fork:detach` sets `detached_at` once.
 - **Media and lineage.** The copy shares the source's lineage rows and reads media through the `COPY` grant, which is decided by the copy's own heads; since the heads are the published manifest, an asset only an unpublished revision uses is 404 on playback, variant download and the offline manifest.
   A copy's first publication rebuilds `published_media` from its heads (O(head)); materialization writes no journal rows and needs none (the Share/9 limit about a journal that does not record a head change concerns a head moved AFTER a publication, which a preparing copy cannot have: it cannot publish).
@@ -1707,6 +1714,7 @@ Package `app.mnema.learning.fork` (`ForkController`, `ForkService`, `ForkReposit
 - Tests: `ForkHttpIntegrationTest` (the copy command and its answers, access matrix, idempotency, one live copy and a race, heads equal to the published manifest with 25 materials in slices of 10, independence both ways, Study of a ready copy, copy of a copy, detach, `myCopy`, `fork` in reads, a source that goes dark),
   `ForkPreparingGuardHttpIntegrationTest` (every route, the strangers, reads, delete/detach/retry while preparing, the database net, failed/retry/purged job, the cap), `ForkMaterializationJobIntegrationTest` (a 1 000-material deck copied with a worker killed in the middle of the third slice and resumed; one account at a time; a copy deleted while queued; a broken manifest),
   `ForkUnpublishedContentIntegrationTest` (security acceptance of the Share/9 review; NC for a real copy), `ForkSchemaIntegrationTest` (V57 guards and indexes), `ForkThrottleHttpIntegrationTest` (the window: 429 and `Retry-After`, deleted copies count, an existing copy still answered, parallel requests for different sources do not overshoot), the cap race in `ForkPreparingGuardHttpIntegrationTest`, `ForkDisabledHttpIntegrationTest`, `ForkCommandTest`, `ForkSettingsTest`, `ForkLinkTest`, `OwnerOnlyRoutesHttpIntegrationTest` (two rows), `JobTestAccess` (the public hand of the package-private executor for the tests).
+
 ### Complaints, hiding and legal takedown (Share/15, #437, migration `V58__complaints_and_takedowns.sql`)
 
 Package `app.mnema.learning.moderation` (`ContentTakedowns`, `ComplaintService`, `ComplaintAdminService`, `ComplaintController`, `ComplaintAdminController`) and, for the deck side,
@@ -1733,7 +1741,7 @@ decided by the console owner (admin client token); a decision hides the deck fro
   public deck; the deck route is also a child of `learning.community.public-routes.enabled`, off by default), checked BEFORE the body is read. The deck is resolved by `DeckAccess` with the reporter as viewer:
   everything but a readable deck (unknown, private, rotated, never published, deleted, HIDDEN, an invitation deck without a grant) is the same opaque 404; the owner is 400. A profile is resolved through
   `ProfileDirectory.accountOf` OUTSIDE any transaction, under a lookup budget of its own (`ProfileLookupLimiter`: `learning.community.complaints.profile-lookups-per-reporter-per-minute` 5 and
-  `…-per-instance-per-minute` 10), **never the grants' budget**: Identity limits that public lookup per network (60 a minute), the grants take up to 40 of it per instance, so complaint traffic cannot starve an owner
+  `…-per-instance-per-minute` 10), **never the grants' budget**: Identity limits that public lookup per network (60 per 15-minute window of `RateLimits`), the grants take up to 40 a minute of it per instance, so complaint traffic cannot starve an owner
   granting access (with N instances behind one address divide both caps by N). The open-complaint probe by login comes BEFORE the budget and the Identity call, so a silent repeat costs no lookup; unknown, malformed
   and hidden are one 404, the reporter's own login 400. The text refuses control characters other than line feed and tab and every Unicode FORMAT character (bidi overrides and isolates, zero-width space and joiners, the
   byte order mark, the soft hyphen), so the operator reads what the reporter wrote; this also refuses the zero-width joiner of emoji sequences. The

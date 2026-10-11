@@ -4,7 +4,7 @@ artifact:
   type: evidence-index
   title: "Engineering evidence index"
   status: current
-  updated_at: "2026-10-10"
+  updated_at: "2026-10-11"
   owners: ["project-owner"]
 ---
 
@@ -21,7 +21,7 @@ of the former two-column exercise editor are likewise historical.
 
 ## Community decks
 
-- [Эпик 1: фундамент, доступ и копии](./community-decks/epic-1/README.md) — evidence задач эпика #419, начиная с прототипа линии хранения (Share/3).
+- [Эпик 1: фундамент, доступ и копии](./community-decks/epic-1/README.md) — evidence задач эпика #419: PR, коммиты, миграции V49–V58, состояние production и проверка каждой задачи, включая прототип линии хранения (Share/3).
 
 ## Owner console
 

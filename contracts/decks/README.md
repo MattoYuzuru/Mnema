@@ -422,7 +422,7 @@ bytes and invalid Unicode are 400. The state after the command is **exactly the 
   with one relaxation: the public profile and the media items gate only the **exposure**, i.e. becoming `PUBLIC` and a
   `publish` while `PUBLIC`. A benign edit of a deck that is already public (tags, `requestsEnabled`, topic, language, level)
   is not blocked by a withdrawn consent. Withdrawing the consent hides the author at once (Identity: the card answers like
-  an unknown account); whether the deck itself is then demoted is an **open owner decision**.
+  an unknown account); the deck itself stays public without a byline (owner decision 2026-10-11).
 - **Becoming public needs the head.** The media check reads the deck head while readers get the published revision. A
   command that makes the deck `PUBLIC` (from any other level) while the published revision is not the head must therefore
   carry `publish` for that head; otherwise it is 400 `PUBLICATION_REQUIRED` and nothing is written. `GET` still lists the

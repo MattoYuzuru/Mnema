@@ -11,7 +11,7 @@ import java.util.function.LongSupplier;
 /**
  * The budget of the Identity profile lookups that profile complaints make (Share/15): fixed one-minute windows on the monotonic clock, in memory of the instance,
  * with TWO caps, per reporter and per instance. It is deliberately not the budget of the grants by login ({@code LoginLookupLimiter}): Identity limits that public
- * lookup per NETWORK (60 a minute) and every Learning call comes from one address, so complaint traffic must never starve an owner granting access. The defaults
+ * lookup per NETWORK (60 per 15 minutes) and every Learning call comes from one address, so complaint traffic must never starve an owner granting access. The defaults
  * keep the two instance caps (grants 40, complaints 10) below the shared 60; with N instances behind one address divide both by N.
  * A lookup is admitted only when both windows have room. {@code Retry-After} is the rest of the window that refused. The reporter table is bounded: when it is
  * full of live windows a new reporter is refused rather than the memory grown.
