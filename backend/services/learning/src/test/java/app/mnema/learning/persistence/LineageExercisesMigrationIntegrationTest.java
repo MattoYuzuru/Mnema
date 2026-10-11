@@ -259,7 +259,7 @@ class LineageExercisesMigrationIntegrationTest extends PostgresIntegrationTest {
     private static final String INVENTORY = """
             deck_exercise_change deck_exercise_change_deck_id_deck_revision_id_deck_sequenc_fkey FOREIGN KEY (deck_id, deck_revision_id, deck_sequence) REFERENCES deck_revision(deck_id, revision_id, sequence) DEFERRABLE INITIALLY DEFERRED
             deck_exercise_change deck_exercise_change_deck_scope_fkey FOREIGN KEY (deck_id, reuse_scope_id) REFERENCES deck(deck_id, reuse_scope_id)
-            deck_exercise_change deck_exercise_change_pkey PRIMARY KEY (deck_id, deck_revision_id)
+            deck_exercise_change deck_exercise_change_pkey PRIMARY KEY (deck_id, deck_revision_id, exercise_id)
             deck_exercise_change deck_exercise_change_previous_fkey FOREIGN KEY (reuse_scope_id, exercise_id, previous_revision_id) REFERENCES exercise_revision(reuse_scope_id, exercise_id, revision_id) DEFERRABLE INITIALLY DEFERRED
             deck_exercise_change deck_exercise_change_revision_fkey FOREIGN KEY (reuse_scope_id, exercise_id, revision_id) REFERENCES exercise_revision(reuse_scope_id, exercise_id, revision_id) DEFERRABLE INITIALLY DEFERRED
             deck_head_exercise deck_head_exercise_deck_id_ordinal_key UNIQUE (deck_id, ordinal) DEFERRABLE INITIALLY DEFERRED
@@ -282,7 +282,6 @@ class LineageExercisesMigrationIntegrationTest extends PostgresIntegrationTest {
             exercise_new_mark exercise_new_mark_exercise_fkey FOREIGN KEY (reuse_scope_id, exercise_id) REFERENCES exercise_definition(reuse_scope_id, exercise_id)
             exercise_new_mark exercise_new_mark_pkey PRIMARY KEY (deck_id, exercise_id)
             exercise_revision exercise_revision_deck_id_deck_revision_id_deck_sequence_fkey FOREIGN KEY (deck_id, deck_revision_id, deck_sequence) REFERENCES deck_revision(deck_id, revision_id, sequence) DEFERRABLE INITIALLY DEFERRED
-            exercise_revision exercise_revision_deck_id_exercise_id_exercise_sequence_key UNIQUE (deck_id, exercise_id, exercise_sequence)
             exercise_revision exercise_revision_exercise_fkey FOREIGN KEY (reuse_scope_id, exercise_id) REFERENCES exercise_definition(reuse_scope_id, exercise_id)
             exercise_revision exercise_revision_lineage_id_key UNIQUE (reuse_scope_id, revision_id)
             exercise_revision exercise_revision_lineage_sequence_key UNIQUE (reuse_scope_id, exercise_id, revision_id, exercise_sequence)
@@ -300,7 +299,6 @@ class LineageExercisesMigrationIntegrationTest extends PostgresIntegrationTest {
             objective_head objective_head_pkey PRIMARY KEY (deck_id, objective_id)
             objective_head objective_head_revision_fkey FOREIGN KEY (reuse_scope_id, objective_id, revision_id, objective_sequence) REFERENCES objective_revision(reuse_scope_id, objective_id, revision_id, objective_sequence) DEFERRABLE INITIALLY DEFERRED
             objective_revision objective_revision_deck_id_deck_revision_id_deck_sequence_fkey FOREIGN KEY (deck_id, deck_revision_id, deck_sequence) REFERENCES deck_revision(deck_id, revision_id, sequence) DEFERRABLE INITIALLY DEFERRED
-            objective_revision objective_revision_deck_id_objective_id_objective_sequence_key UNIQUE (deck_id, objective_id, objective_sequence)
             objective_revision objective_revision_lineage_id_key UNIQUE (reuse_scope_id, revision_id)
             objective_revision objective_revision_lineage_sequence_key UNIQUE (reuse_scope_id, objective_id, revision_id, objective_sequence)
             objective_revision objective_revision_objective_fkey FOREIGN KEY (reuse_scope_id, objective_id) REFERENCES memory_objective(reuse_scope_id, objective_id)

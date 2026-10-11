@@ -92,7 +92,8 @@ class ItemRepository {
      * One revision by id, only when it is visible to the deck ({@link ItemRevisionVisibility}). Deck identity, the
      * deck revision and version and the timestamp come from the reading deck's journal row (or, for a revision the deck
      * inherited without a journal row, from its head row and its first revision), never from the origin columns. The
-     * ordinal of an inherited revision the deck has since replaced is the position the deck's replacing change recorded.
+     * ordinal of an inherited revision the deck has since replaced is the position the deck's replacing change recorded. A revision the deck adopted
+     * more than once (a combined publication may re-adopt an older revision, Updates/2) is read from its NEWEST publishing row.
      */
     Optional<ItemRecord> revision(UUID actor, UUID deck, UUID member, UUID revision) {
         return jdbc.sql("""
@@ -107,9 +108,12 @@ class ItemRepository {
                     AND r.revision_id=:revision
                   JOIN app_learning.learning_item i ON i.reuse_scope_id=r.reuse_scope_id AND i.member_key=r.member_key
                   JOIN app_learning.deck_revision g ON g.deck_id=d.deck_id AND g.sequence=0
-                  LEFT JOIN app_learning.deck_item_change c ON c.deck_id=d.deck_id AND c.member_key=r.member_key
-                    AND c.revision_id=r.revision_id
-                  LEFT JOIN app_learning.deck_revision cr ON cr.deck_id=c.deck_id AND cr.revision_id=c.deck_revision_id
+                  LEFT JOIN LATERAL (SELECT published.deck_revision_id,published.deck_sequence,published.to_ordinal
+                     FROM app_learning.deck_item_change published
+                     WHERE published.deck_id=d.deck_id AND published.member_key=r.member_key
+                       AND published.revision_id=r.revision_id
+                     ORDER BY published.deck_sequence DESC,published.change_ordinal DESC LIMIT 1) c ON TRUE
+                  LEFT JOIN app_learning.deck_revision cr ON cr.deck_id=d.deck_id AND cr.revision_id=c.deck_revision_id
                   LEFT JOIN app_learning.deck_head_item h ON h.deck_id=d.deck_id AND h.member_key=r.member_key
                     AND h.revision_id=r.revision_id
                   LEFT JOIN LATERAL (SELECT replaced.from_ordinal FROM app_learning.deck_item_change replaced

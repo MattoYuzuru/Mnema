@@ -147,8 +147,10 @@ class ExerciseRepository {
                 + "LEFT JOIN app_learning.deck_head_exercise h ON h.deck_id=d.deck_id AND h.exercise_id=x.exercise_id";
         // a revision's position: the one its own publication recorded, else the head's, else (an exercise the deck removed, or
         // a revision inherited before the deck's journal began) the position its removal recorded
+        // (a revision the deck adopted more than once, Updates/2, has several publishing rows: the newest one answers)
         String ordinal = revision == null ? "h.ordinal" : "COALESCE((SELECT c.ordinal FROM app_learning.deck_exercise_change c "
-                + "WHERE c.deck_id=d.deck_id AND c.exercise_id=x.exercise_id AND c.revision_id=r.revision_id),h.ordinal,"
+                + "WHERE c.deck_id=d.deck_id AND c.exercise_id=x.exercise_id AND c.revision_id=r.revision_id "
+                + "ORDER BY c.deck_sequence DESC LIMIT 1),h.ordinal,"
                 + "(SELECT c.ordinal FROM app_learning.deck_exercise_change c WHERE c.deck_id=d.deck_id "
                 + "AND c.exercise_id=x.exercise_id AND c.previous_revision_id=r.revision_id ORDER BY c.deck_sequence DESC LIMIT 1))";
         var query = jdbc.sql("""

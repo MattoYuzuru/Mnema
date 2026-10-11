@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * V51 (Share/4, #426) on data written at the V49 shape: every per-deck row gets its deck's scope, the media reference keeps
  * the asset owner, all constraints are validated and the immutability guards are enabled again. The second test fixes the exact
- * set of key constraints of the item tables, so the next change (Updates/2 drops the per-deck sequence key) has to change it
- * consciously. Share/5 (V52) dropped {@code item_revision_origin_key} together with the bindings' deck keys.
+ * set of key constraints of the item tables, so the next change has to change it
+ * consciously (Updates/2, V60, dropped the per-origin-deck sequence key). Share/5 (V52) dropped {@code item_revision_origin_key} together with the bindings' deck keys.
  */
 class LineageItemsMigrationIntegrationTest extends PostgresIntegrationTest {
     private final UUID owner1 = UUID.randomUUID();
@@ -175,7 +175,6 @@ class LineageItemsMigrationIntegrationTest extends PostgresIntegrationTest {
             item_preview item_preview_revision_fkey FOREIGN KEY (reuse_scope_id, member_key, revision_id) REFERENCES item_revision(reuse_scope_id, member_key, revision_id) ON DELETE CASCADE
             item_revision item_revision_deck_id_deck_revision_id_deck_sequence_fkey FOREIGN KEY (deck_id, deck_revision_id, deck_sequence) REFERENCES deck_revision(deck_id, revision_id, sequence) DEFERRABLE INITIALLY DEFERRED
             item_revision item_revision_deck_id_member_key_deck_revision_id_key UNIQUE (deck_id, member_key, deck_revision_id)
-            item_revision item_revision_deck_id_member_key_item_sequence_key UNIQUE (deck_id, member_key, item_sequence)
             item_revision item_revision_item_fkey FOREIGN KEY (reuse_scope_id, member_key) REFERENCES learning_item(reuse_scope_id, member_key)
             item_revision item_revision_lineage_id_key UNIQUE (reuse_scope_id, revision_id)
             item_revision item_revision_lineage_sequence_key UNIQUE (reuse_scope_id, member_key, revision_id, item_sequence)
