@@ -184,6 +184,16 @@ export class OwnDecksStore {
         return this.detailRefreshPromise;
     }
 
+    /**
+     * Shows what the server just answered about the copy's state (the `fork:retry` answer) without waiting for the next read; the
+     * read that follows remains the truth. Ignored when another deck is open.
+     */
+    applyFork(deckId: string, change: { readonly preparing: boolean; readonly failed: boolean }): void {
+        const state = this.detailSignal();
+        if (state.phase !== 'ready' || state.deck === null || state.deck.deckId !== deckId || state.deck.fork == null) return;
+        this.detailSignal.set({ ...state, deck: { ...state.deck, fork: { ...state.deck.fork, ...change } } });
+    }
+
     recoverMutation(pending: PendingDeckCommand): void {
         if (!canStartNewMutation(this.mutationSignal())) return;
         if (pending.operation === 'save' && this.detailSignal().deckId !== pending.deckId) return;

@@ -24,6 +24,11 @@ import { GlyphComponent } from './glyph.component';
       app-glyph { --mn-glyph-size: 1rem; }
       .label, .state { min-inline-size: 0; overflow-wrap: anywhere; }
       .state { display: inline-flex; gap: .4rem; font-weight: 600; }
+      /* On a narrow screen the state takes its own line, so a wrapped line never starts with the separator. */
+      @media (max-width: 30rem) {
+        .state { flex: 1 0 100%; }
+        .sep { display: none; }
+      }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
 })

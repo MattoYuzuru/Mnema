@@ -92,7 +92,8 @@ describe('CopyStatusComponent', () => {
         const { root } = status({ state: 'preparing', summary: '40 материалов · 12 упражнений' });
         const section = root.querySelector('section')!;
         expect(section.getAttribute('aria-labelledby')).toBe(root.querySelector('h2')!.id);
-        expect(section.getAttribute('aria-busy')).toBe('true');
+        // Busy is said by the buttons that are busy, never by the block: a polling page is not a busy region.
+        expect(section.hasAttribute('aria-busy')).toBe(false);
         expect(root.querySelector('h2')!.textContent).toBe('Готовим колоду…');
         expect(root.querySelector('.line')!.textContent).toBe('В копии будет: 40 материалов · 12 упражнений.');
         expect(root.querySelector('.hint')!.textContent).toBe('Страница обновится сама, когда колода будет готова.');

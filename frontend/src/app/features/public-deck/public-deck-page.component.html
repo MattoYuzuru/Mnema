@@ -2,7 +2,7 @@
   @switch (phase()) {
     @case ('loading') {
       <h1 class="plain-title" tabindex="-1">Колода</h1>
-      <p class="hint" role="status">Загружаем колоду…</p>
+      <p class="hint" role="status">{{ redeeming() ? text.accepting : 'Загружаем колоду…' }}</p>
     }
     @case ('not-found') {
       <app-access-screen heading="Колода не найдена" eyebrow="Колода">
@@ -19,10 +19,12 @@
     @case ('invite-only') {
       <app-access-screen heading="Колода доступна по приглашению" eyebrow="Колода">
         <p>Автор открыл эту колоду только приглашённым. Попросите доступ, и автор увидит ваш запрос.</p>
+        @if (!signedIn() && invitePending()) { <p class="invite-note">{{ text.signInToAccept }}</p> }
         @if (request.state() === 'sent' || request.state() === 'withdrawing') {
           <p class="request-sent" tabindex="-1">{{ text.requestSent }}</p>
         }
         <p class="hint request-notice" role="status">{{ request.notice() }}</p>
+        @if (request.error(); as problem) { <p class="notice error request-error" role="alert">{{ problem }}</p> }
         @if (!signedIn()) {
           <a access-actions class="button primary" routerLink="/login" [queryParams]="{ returnUrl: returnUrl() }">Войти</a>
         } @else if (request.state() === 'idle' || request.state() === 'sending') {

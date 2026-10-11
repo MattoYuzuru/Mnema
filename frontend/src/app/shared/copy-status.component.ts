@@ -17,7 +17,7 @@ let nextStatus = 0;
     selector: 'app-copy-status',
     imports: [NgTemplateOutlet],
     template: `
-      <section class="notice" [class.error]="state() === 'failed'" [attr.aria-labelledby]="headingId" [attr.aria-busy]="state() === 'preparing' && !stalled() ? 'true' : null">
+      <section class="notice" [class.error]="state() === 'failed'" [attr.aria-labelledby]="headingId">
         <ng-template #heading>{{ title() }}</ng-template>
         @switch (headingLevel()) {
           @case (3) { <h3 [id]="headingId" tabindex="-1" class="subsection-heading"><ng-container [ngTemplateOutlet]="heading" /></h3> }

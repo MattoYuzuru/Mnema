@@ -15,6 +15,8 @@ export interface AccessRequestHooks {
     sent(): void;
     /** 404: the code is gone (rotated or closed); the screen becomes «Колода не найдена». */
     gone(): void;
+    /** The request was taken back (the screen puts the focus on «Запросить доступ», which replaced the button that was pressed). */
+    withdrawn(): void;
     /** 400: there is nothing to ask for (the viewer can read the deck now); the screen reads the deck again. */
     readable(): void;
 }
@@ -26,8 +28,10 @@ export interface AccessRequestHooks {
  */
 export class AccessRequestFlow {
     readonly state = signal<AccessRequestState>('idle');
-    /** A plain sentence for the last attempt that did not change the state («Запрос отменён.», a limit, a lost connection). */
+    /** A status sentence for what just happened without a problem («Запрос отменён.»); spoken politely. */
     readonly notice = signal<string | null>(null);
+    /** A plain sentence for an attempt that failed (a limit, a wait, a lost connection); spoken at once, drawn as an error notice. */
+    readonly error = signal<string | null>(null);
 
     constructor(
         private readonly api: AccessApiService,
@@ -38,12 +42,14 @@ export class AccessRequestFlow {
     reset(): void {
         this.state.set('idle');
         this.notice.set(null);
+        this.error.set(null);
     }
 
     send(code: string): void {
         if (this.state() !== 'idle') return;
         this.state.set('sending');
         this.notice.set(null);
+        this.error.set(null);
         this.run(() => this.api.requestAccess(code), {
             next: () => this.sent(),
             error: error => {
@@ -54,9 +60,9 @@ export class AccessRequestFlow {
                 this.state.set('idle');
                 if (failure?.status === 404) this.hooks.gone();
                 else if (failure?.status === 400) this.hooks.readable();
-                else if (failure?.status === 422) this.notice.set(PUBLIC_ACTION_TEXT.requestLimit);
-                else if (failure?.status === 429) this.notice.set(`Слишком много запросов. ${longWaitText(publicFailureOf(error).retryAfter)}`);
-                else this.notice.set(PUBLIC_ACTION_TEXT.requestFailed);
+                else if (failure?.status === 422) this.error.set(PUBLIC_ACTION_TEXT.requestLimit);
+                else if (failure?.status === 429) this.error.set(`Слишком много запросов. ${longWaitText(publicFailureOf(error).retryAfter)}`);
+                else this.error.set(PUBLIC_ACTION_TEXT.requestFailed);
             }
         });
     }
@@ -65,10 +71,12 @@ export class AccessRequestFlow {
         if (this.state() !== 'sent') return;
         this.state.set('withdrawing');
         this.notice.set(null);
+        this.error.set(null);
         this.run(() => this.api.withdrawRequest(code), {
             next: () => {
                 this.state.set('idle');
                 this.notice.set(PUBLIC_ACTION_TEXT.requestWithdrawn);
+                this.hooks.withdrawn();
             },
             error: error => {
                 if (accessFailureOf(error)?.status === 404) {
@@ -77,7 +85,7 @@ export class AccessRequestFlow {
                     return;
                 }
                 this.state.set('sent');
-                this.notice.set(PUBLIC_ACTION_TEXT.requestWithdrawFailed);
+                this.error.set(PUBLIC_ACTION_TEXT.requestWithdrawFailed);
             }
         });
     }
@@ -85,6 +93,7 @@ export class AccessRequestFlow {
     private sent(): void {
         this.state.set('sent');
         this.notice.set(null);
+        this.error.set(null);
         this.hooks.sent();
     }
 

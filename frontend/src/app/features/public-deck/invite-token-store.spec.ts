@@ -1,4 +1,4 @@
-import { INVITE_STORAGE_KEY, INVITE_TTL_MS, clearInvite, stashInvite, takeInvite } from './invite-token-store';
+import { INVITE_STORAGE_KEY, INVITE_TTL_MS, clearInvite, peekInvite, stashInvite, takeInvite } from './invite-token-store';
 
 const TOKEN = 'q3Jx0u5QmW8bYk2LzTn7VdPaE1sGcH4rFiOe6NhA9Ug';
 
@@ -31,6 +31,18 @@ describe('the guest invitation token store', () => {
             expect(takeInvite(sessionStorage, 'Kq7xT3mNpR', 10), bad).toBeNull();
             expect(sessionStorage.getItem(INVITE_STORAGE_KEY), bad).toBeNull();
         }
+    });
+
+    it('peeks without consuming: true only for a fresh entry of this deck', () => {
+        stashInvite(sessionStorage, TOKEN, 'Kq7xT3mNpR', 0);
+        expect(peekInvite(sessionStorage, 'Kq7xT3mNpR', 10)).toBe(true);
+        expect(peekInvite(sessionStorage, 'Kq7xT3mNpR', 10)).toBe(true);
+        expect(peekInvite(sessionStorage, 'Zp4WcA8vQe', 10)).toBe(false);
+        expect(peekInvite(sessionStorage, 'Kq7xT3mNpR', INVITE_TTL_MS + 1)).toBe(false);
+        expect(sessionStorage.getItem(INVITE_STORAGE_KEY)).not.toBeNull();
+        expect(peekInvite(null, 'Kq7xT3mNpR')).toBe(false);
+        sessionStorage.setItem(INVITE_STORAGE_KEY, 'garbage');
+        expect(peekInvite(sessionStorage, 'Kq7xT3mNpR')).toBe(false);
     });
 
     it('stores nothing that is not a token, and survives missing or throwing storage', () => {

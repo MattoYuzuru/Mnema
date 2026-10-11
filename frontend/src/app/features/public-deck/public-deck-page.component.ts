@@ -23,7 +23,7 @@ import { accessFailureOf } from '../own-decks/access/access.models';
 import { ForkApiService } from '../own-decks/fork/fork-api.service';
 import { forkFailureOf, newForkCommandId } from '../own-decks/fork/fork.models';
 import { AccessRequestFlow } from './access-request-flow';
-import { INVITE_TOKEN, clearInvite, stashInvite, takeInvite } from './invite-token-store';
+import { INVITE_TOKEN, clearInvite, peekInvite, stashInvite, takeInvite } from './invite-token-store';
 import { PublicDeckApiService } from './public-deck-api.service';
 import {
     LEVEL_LABELS,
@@ -88,6 +88,10 @@ export class PublicDeckPageComponent {
     protected readonly copying = signal(false);
     /** The plain sentence for the last copy attempt that did not succeed. */
     protected readonly copyNotice = signal<string | null>(null);
+    /** A guest arrived by an invitation link (or one still waits for the sign-in): the screen says what signing in is for. */
+    protected readonly invitePending = signal(false);
+    /** The invitation is being redeemed (the loading line says so instead of «Загружаем колоду…»). */
+    protected readonly redeeming = signal(false);
 
     private readonly route = inject(ActivatedRoute);
     private readonly router = inject(Router);
@@ -146,6 +150,7 @@ export class PublicDeckPageComponent {
     protected readonly request = new AccessRequestFlow(this.access, this.destroyRef, {
         sent: () => afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('.request-sent')?.focus(), { injector: this.injector }),
         gone: () => this.fail(new PublicDeckFailure('not-found')),
+        withdrawn: () => afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('app-access-screen .actions button')?.focus(), { injector: this.injector }),
         readable: () => void this.load(this.code())
     });
 
@@ -259,6 +264,8 @@ export class PublicDeckPageComponent {
         this.menuFallback.set(null);
         this.copying.set(false);
         this.copyNotice.set(null);
+        this.invitePending.set(false);
+        this.redeeming.set(false);
         this.request.reset();
         this.stopCountdown();
         this.meta.indexable(false);
@@ -293,10 +300,14 @@ export class PublicDeckPageComponent {
                     clearInvite(this.sessionStore());
                 } else {
                     stashInvite(this.sessionStore(), typed, code);
+                    this.invitePending.set(true);
                 }
             }
         }
-        if (!this.signedIn()) return null;
+        if (!this.signedIn()) {
+            if (peekInvite(this.sessionStore(), code)) this.invitePending.set(true);
+            return null;
+        }
         // A token that was kept for another deck is not used for this one.
         if (this.inviteToken?.code !== code) this.inviteToken = null;
         if (this.inviteToken === null) {
@@ -312,9 +323,11 @@ export class PublicDeckPageComponent {
 
     /** Exchanges the invitation for the deck's current code, then reads the deck under that code. */
     private redeem(token: string, code: string, sequence: number): void {
+        this.redeeming.set(true);
         this.subscription = this.access.redeem(token).subscribe({
             next: current => {
                 if (sequence !== this.sequence) return;
+                this.redeeming.set(false);
                 this.inviteToken = null;
                 if (current === code) { this.readSummary(code, sequence); return; }
                 // Another code: the route change loads the deck under it.
@@ -322,6 +335,7 @@ export class PublicDeckPageComponent {
             },
             error: (error: unknown) => {
                 if (sequence !== this.sequence) return;
+                this.redeeming.set(false);
                 const failure = accessFailureOf(error);
                 if (failure?.status === 404 || failure?.status === 422) this.inviteToken = null;
                 if (failure?.status === 422 && failure.code === 'RESOURCE_LIMIT_EXCEEDED') {

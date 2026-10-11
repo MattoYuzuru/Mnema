@@ -39,6 +39,18 @@ export function takeInvite(storage: Storage | null, code: string, now: number = 
     }
 }
 
+/** Whether a usable token for `code` waits in the store. Reads only: nothing is deleted and nothing is returned. */
+export function peekInvite(storage: Storage | null, code: string, now: number = Date.now()): boolean {
+    if (storage === null) return false;
+    try {
+        const raw = storage.getItem(INVITE_STORAGE_KEY);
+        const entry = raw === null ? null : parse(raw);
+        return entry !== null && entry.code === code && now >= entry.createdAt && now - entry.createdAt <= INVITE_TTL_MS;
+    } catch {
+        return false;
+    }
+}
+
 export function clearInvite(storage: Storage | null): void {
     try { storage?.removeItem(INVITE_STORAGE_KEY); } catch { /* nothing to clear */ }
 }

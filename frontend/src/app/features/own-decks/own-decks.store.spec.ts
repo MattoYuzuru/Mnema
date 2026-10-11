@@ -120,6 +120,25 @@ describe('OwnDecksStore', () => {
         expect(vi.mocked(api.list).mock.calls).toEqual([[null], [null], [null]]);
     });
 
+    describe('applyFork (the answer of fork:retry)', () => {
+        const failed = { ...fixtureDeck, fork: { upstreamCode: 'Kq7xT3mNpR', upstreamTitle: 'Источник', sourceAvailable: true, preparing: true, failed: true, detached: false } };
+
+        it('shows the new state of the open copy at once, and ignores another deck, an ordinary deck and a closed hub', () => {
+            store.applyFork(failed.deckId, { preparing: true, failed: false });
+            expect(store.detailState().phase).toBe('idle');
+            api.detail.mockReturnValueOnce(of(failed));
+            store.openDeck(failed.deckId);
+            store.applyFork('33333333-3333-4333-8333-333333333333', { preparing: true, failed: false });
+            expect(store.detailState().deck?.fork?.failed).toBe(true);
+            store.applyFork(failed.deckId, { preparing: true, failed: false });
+            expect(store.detailState().deck?.fork).toEqual({ ...failed.fork, preparing: true, failed: false });
+            api.detail.mockReturnValueOnce(of(fixtureDeck));
+            store.openDeck(fixtureDeck.deckId);
+            store.applyFork(fixtureDeck.deckId, { preparing: true, failed: false });
+            expect(store.detailState().deck?.fork ?? null).toBeNull();
+        });
+    });
+
     describe('refreshDetail (the copy being prepared, a detach)', () => {
         const preparing = { ...fixtureDeck, fork: { upstreamCode: 'Kq7xT3mNpR', upstreamTitle: 'Источник', sourceAvailable: true, preparing: true, failed: false, detached: false } };
         const ready = { ...preparing, fork: { ...preparing.fork, preparing: false } };

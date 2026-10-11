@@ -271,6 +271,32 @@ describe('the actions of the public deck view: copy, invitation, access request'
             expect(JSON.stringify({ ...localStorage })).not.toContain(TOKEN);
         });
 
+        it('tells an invited guest what signing in is for, next to the unchanged approved sentence, and says nothing to anyone else', async () => {
+            status.set('anonymous');
+            api.summary.mockReturnValue(throwError(() => new PublicDeckFailure('invite-only')));
+            const note = () => screen()?.querySelector('.invite-note')?.textContent;
+            await open(`/d/${INVITE.code}`);
+            expect(note()).toBeUndefined();
+            await open(inviteUrl(INVITE.code));
+            expect(note()).toBe('Войдите, чтобы принять приглашение.');
+            expect(screen()?.querySelector('.message p')?.textContent).toBe('Автор открыл эту колоду только приглашённым. Попросите доступ, и автор увидит ваш запрос.');
+            // Reloaded without the query: the stash alone is enough, and looking at it consumes nothing.
+            await open(`/d/${INVITE.code}`);
+            expect(note()).toBe('Войдите, чтобы принять приглашение.');
+            expect(sessionStorage.getItem(INVITE_STORAGE_KEY)).not.toBeNull();
+            status.set('authenticated');
+            accessApi.redeem.mockReturnValue(NEVER);
+            await open(`/d/${INVITE.code}`);
+            expect(root().querySelector('.invite-note')).toBeNull();
+        });
+
+        it('says «Принимаем приглашение…» while the invitation is being redeemed', async () => {
+            accessApi.redeem.mockReturnValue(NEVER);
+            await open(inviteUrl());
+            expect(root().querySelector('[role=status]')?.textContent).toBe('Принимаем приглашение…');
+            expect(text()).not.toContain('Загружаем колоду…');
+        });
+
         it('spends the stashed token once after the sign-in returns: deleted before the request, never redeemed twice', async () => {
             status.set('anonymous');
             api.summary.mockReturnValue(throwError(() => new PublicDeckFailure('invite-only')));
@@ -390,6 +416,7 @@ describe('the actions of the public deck view: copy, invitation, access request'
             expect(root().querySelector('.request-notice')?.textContent).toBe('Запрос отменён.');
             expect(root().querySelector('.request-notice')?.getAttribute('role')).toBe('status');
             expect(screenActions()).toEqual(['Запросить доступ', 'На главную']);
+            expect(document.activeElement).toBe(button('Запросить доступ'));
         });
 
         it('keeps the request when taking it back fails', async () => {
@@ -401,7 +428,9 @@ describe('the actions of the public deck view: copy, invitation, access request'
             button('Отменить запрос').click();
             await settle();
             expect(asked()).not.toBeNull();
-            expect(root().querySelector('.request-notice')?.textContent).toBe('Не удалось отменить запрос. Повторите.');
+            expect(root().querySelector('.request-error')?.textContent).toBe('Не удалось отменить запрос. Повторите.');
+            expect(root().querySelector('.request-error')?.getAttribute('role')).toBe('alert');
+            expect(root().querySelector('.request-error')?.classList.contains('notice')).toBe(true);
         });
 
         it('answers an author who turned requests off (403 DECK_INVITE_ONLY, or an empty 403) exactly like a request that was sent', async () => {
@@ -421,7 +450,8 @@ describe('the actions of the public deck view: copy, invitation, access request'
             button('Запросить доступ').click();
             await settle();
             expect(asked()).toBeNull();
-            expect(root().querySelector('.request-notice')?.textContent).toBe('Не удалось отправить запрос. Проверьте соединение и повторите.');
+            expect(root().querySelector('.request-error')?.textContent).toBe('Не удалось отправить запрос. Проверьте соединение и повторите.');
+            expect(root().querySelector('.request-notice')?.textContent).toBe('');
             expect(screenActions()).toEqual(['Запросить доступ', 'На главную']);
         });
 
@@ -437,7 +467,8 @@ describe('the actions of the public deck view: copy, invitation, access request'
                 accessApi.requestAccess.mockReturnValueOnce(throwError(() => error));
                 button('Запросить доступ').click();
                 await settle();
-                expect(root().querySelector('.request-notice')?.textContent, sentence).toBe(sentence);
+                expect(root().querySelector('.request-error')?.textContent, sentence).toBe(sentence);
+                expect(root().querySelector('.request-error')?.getAttribute('role')).toBe('alert');
                 expect(asked()).toBeNull();
             }
         });

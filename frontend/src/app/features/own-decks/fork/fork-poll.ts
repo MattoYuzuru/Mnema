@@ -11,3 +11,6 @@ export const FORK_POLL_LIMIT = 150;
 export function forkPollDelay(attempt: number): number {
     return FORK_POLL_STEPS_MS[Math.min(Math.max(0, Math.trunc(attempt)), FORK_POLL_STEPS_MS.length)] ?? FORK_POLL_CAP_MS;
 }
+
+/** A tab that becomes visible asks at once, but never more often than this (the first step of the backoff). */
+export const FORK_POLL_MIN_GAP_MS = FORK_POLL_STEPS_MS[0];

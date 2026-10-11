@@ -58,7 +58,8 @@ describe('OwnDeckDetailPageComponent', () => {
             reapplyConflict: vi.fn().mockName("OwnDecksStore.reapplyConflict"),
             clearMutation: vi.fn().mockName("OwnDecksStore.clearMutation"),
             recoverMutation: vi.fn().mockName("OwnDecksStore.recoverMutation"),
-            refreshDetail: vi.fn().mockName('OwnDecksStore.refreshDetail').mockResolvedValue(undefined)
+            refreshDetail: vi.fn().mockName('OwnDecksStore.refreshDetail').mockResolvedValue(undefined),
+            applyFork: vi.fn().mockName('OwnDecksStore.applyFork')
         });
         forkApi = spyObj<ForkApiService>({ retry: vi.fn().mockName('ForkApiService.retry'), detach: vi.fn().mockName('ForkApiService.detach') });
         recovery = spyObj<OwnDeckRecoveryService>({
@@ -477,6 +478,53 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(root().querySelector('app-copy-status .hint')!.textContent).toBe('Страница обновится сама, когда колода будет готова.');
             });
 
+            it('puts the focus on the heading when «Проверить снова» disappears', async () => {
+                document.body.append(root());
+                await vi.advanceTimersByTimeAsync(20_000 + FORK_POLL_LIMIT * 10_000);
+                fixture.detectChanges();
+                button('Проверить снова').focus();
+                button('Проверить снова').click();
+                await vi.advanceTimersByTimeAsync(0);
+                fixture.detectChanges();
+                await vi.advanceTimersByTimeAsync(0);
+                expect(document.activeElement).toBe(root().querySelector('app-copy-status h2'));
+                root().remove();
+            });
+
+            it('looks at once when the tab becomes visible again, no more often than the first backoff step', async () => {
+                Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+                const calls = () => store.refreshDetail.mock.calls.length;
+                await vi.advanceTimersByTimeAsync(100);
+                document.dispatchEvent(new Event('visibilitychange'));
+                await vi.advanceTimersByTimeAsync(0);
+                expect(calls()).toBe(1);
+                document.dispatchEvent(new Event('visibilitychange'));
+                await vi.advanceTimersByTimeAsync(0);
+                expect(calls()).toBe(1);
+                await vi.advanceTimersByTimeAsync(1500);
+                document.dispatchEvent(new Event('visibilitychange'));
+                await vi.advanceTimersByTimeAsync(0);
+                expect(calls()).toBeGreaterThanOrEqual(2);
+                const before = calls();
+                Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+                await vi.advanceTimersByTimeAsync(2000);
+                document.dispatchEvent(new Event('visibilitychange'));
+                await vi.advanceTimersByTimeAsync(0);
+                expect(calls()).toBe(before);
+            });
+
+            it('puts the focus on the title when a copy is seen for the first time and nothing has the focus', async () => {
+                document.body.append(root());
+                (document.activeElement as HTMLElement | null)?.blur();
+                const other = '33333333-3333-4333-8333-333333333333';
+                detail.set({ phase: 'ready', deckId: other, failure: null, deck: { ...deck, deckId: other, fork: states.preparing } });
+                fixture.detectChanges();
+                await vi.advanceTimersByTimeAsync(0);
+                fixture.detectChanges();
+                expect(document.activeElement).toBe(root().querySelector('h1'));
+                root().remove();
+            });
+
             it('can be deleted through the shared deck delete, and the failure of the delete is said under the block', async () => {
                 decksApi.delete.mockReturnValue(throwError(() => new Error('offline')));
                 fixture.componentInstance.deleteDeck({ ...deck, fork: states.preparing });
@@ -510,11 +558,31 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(forkApi.retry).toHaveBeenCalledTimes(1);
                 answer.next({ deckId: deck.deckId, preparing: true, failed: false });
                 await vi.advanceTimersByTimeAsync(0);
+                // The answer itself is shown at once; the read that follows confirms it.
+                expect(store.applyFork).toHaveBeenCalledWith(deck.deckId, { preparing: true, failed: false });
                 expect(store.refreshDetail).toHaveBeenCalledTimes(1);
                 await show(states.preparing);
                 expect(root().querySelector('app-copy-status h2')!.textContent).toBe('Готовим колоду…');
+                expect(live()).toBe('Повторяем подготовку.');
                 await vi.advanceTimersByTimeAsync(1500);
                 expect(store.refreshDetail).toHaveBeenCalledTimes(2);
+            });
+
+            it('puts the focus on the heading of the block that replaced «Повторить», and leaves it alone when the button stays', async () => {
+                document.body.append(root());
+                forkApi.retry.mockReturnValueOnce(of({ deckId: deck.deckId, preparing: true, failed: false }));
+                // As in the app: the read stores the new state before it resolves.
+                store.refreshDetail.mockImplementationOnce(() => {
+                    detail.set({ phase: 'ready', deckId: deck.deckId, failure: null, deck: { ...deck, memberCount: 40, exerciseCount: 12, fork: states.preparing } });
+                    return Promise.resolve();
+                });
+                button('Повторить').focus();
+                button('Повторить').click();
+                await vi.advanceTimersByTimeAsync(0);
+                fixture.detectChanges();
+                await vi.advanceTimersByTimeAsync(0);
+                expect(document.activeElement).toBe(root().querySelector('app-copy-status h2'));
+                root().remove();
             });
 
             it('says plainly when the retry could not be sent, and lets the owner press it again', async () => {
@@ -542,6 +610,9 @@ describe('OwnDeckDetailPageComponent', () => {
                 fixture.detectChanges();
                 await vi.advanceTimersByTimeAsync(0);
                 expect(panel()!.getAttribute('aria-labelledby')).toBe('detach-title');
+                // The confirm button is described by the consequence, so it is read together with the button's name.
+                const confirm = [...panel()!.querySelectorAll('button')][0];
+                expect(root().querySelector(`#${confirm.getAttribute('aria-describedby')}`)!.textContent).toBe(panel()!.querySelector('p')!.textContent);
                 expect(panel()!.querySelector('h2')!.textContent).toBe('Отвязать от автора?');
                 expect(panel()!.querySelector('p')!.textContent).toBe('Копия останется у вас со всем, что в ней есть. Обновления от автора приходить не будут, и вернуть связь потом нельзя.');
                 expect([...panel()!.querySelectorAll('button')].map(item => item.textContent?.trim())).toEqual(['Отвязать от автора', 'Отмена']);

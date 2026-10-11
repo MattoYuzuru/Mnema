@@ -92,9 +92,9 @@
       @if (confirmingDetach()) {
         <section class="notice warning detach-confirm" aria-labelledby="detach-title" (keydown.escape)="cancelDetach()">
           <h2 id="detach-title" class="subsection-heading" tabindex="-1">{{ copyText.detachTitle }}</h2>
-          <p>{{ copyText.detachBody }}</p>
+          <p id="detach-body">{{ copyText.detachBody }}</p>
           <div class="actions">
-            <button type="button" class="button" [attr.aria-busy]="detaching() ? 'true' : null" [attr.aria-disabled]="detaching() ? 'true' : null" (click)="confirmDetach(deck)">{{ detaching() ? copyText.detaching : copyText.detach }}</button>
+            <button type="button" class="button" aria-describedby="detach-body" [attr.aria-busy]="detaching() ? 'true' : null" [attr.aria-disabled]="detaching() ? 'true' : null" (click)="confirmDetach(deck)">{{ detaching() ? copyText.detaching : copyText.detach }}</button>
             <button type="button" class="button quiet" [disabled]="detaching()" (click)="cancelDetach()">{{ copyText.cancel }}</button>
           </div>
           @if (detachError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }

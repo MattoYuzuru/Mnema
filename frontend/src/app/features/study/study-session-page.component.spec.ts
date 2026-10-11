@@ -651,6 +651,20 @@ describe('StudySessionPageComponent', () => {
         fixture.detectChanges();
         expect(page().textContent).toContain('Колода ещё готовится. Загляните сюда позже.');
         expect(page().textContent).not.toContain('Не удалось начать Study-сессию.');
+        // «Начать заново» cannot succeed before the copy is ready: the way out is the hub that explains.
+        const buttons = [...page().querySelectorAll('.notice button')].map(button => button.textContent?.trim());
+        expect(buttons).not.toContain('Начать заново');
+        expect(page().querySelector<HTMLAnchorElement>('.notice a.button')?.textContent?.trim()).toBe('К колоде');
+    });
+
+    it('keeps «Начать заново» for any other start failure', () => {
+        api.start.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+        fixture = TestBed.createComponent(StudySessionPageComponent);
+        fixture.detectChanges();
+        fixture.componentInstance.startScheduled('QUICK');
+        fixture.detectChanges();
+        expect([...page().querySelectorAll('.notice button')].map(button => button.textContent?.trim())).toContain('Начать заново');
+        expect(page().querySelector('.notice a.button')).toBeNull();
     });
 
     // ------------------------------------------------------------------------------------------

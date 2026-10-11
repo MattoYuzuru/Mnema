@@ -26,7 +26,7 @@ import { DeckMaterialsComponent } from './hub/deck-materials.component';
 import { DeckWorkshopsComponent } from '../generation/deck-workshops.component';
 import { DeckRecoveryContext, OwnDeckRecoveryService } from './own-deck-recovery.service';
 import { ForkApiService } from './fork/fork-api.service';
-import { FORK_POLL_LIMIT, forkPollDelay } from './fork/fork-poll';
+import { FORK_POLL_LIMIT, FORK_POLL_MIN_GAP_MS, forkPollDelay } from './fork/fork-poll';
 import { ForkProgress, forkProgressOf } from './fork/fork.models';
 import {
     OwnDecksStore,
@@ -140,6 +140,7 @@ export class OwnDeckDetailPageComponent {
     private announced: { readonly deckId: string; readonly progress: ForkProgress | 'none' } | null = null;
     private pollTimer: ReturnType<typeof setTimeout> | null = null;
     private pollAttempt = 0;
+    private lastPollAt = 0;
     private polledDeckId: string | null = null;
 
     constructor() {
@@ -182,7 +183,17 @@ export class OwnDeckDetailPageComponent {
             error: () => this.generationAvailable.set(CAPABILITIES_UNAVAILABLE.aiGeneration.available)
         });
 
-        this.destroyRef.onDestroy(() => this.stopPolling());
+        const document = this.element.nativeElement.ownerDocument;
+        const onVisible = (): void => {
+            // The tab is back: look now instead of waiting out the timer, within the same bounds and no more often than the first step.
+            if (document.visibilityState === 'hidden' || this.copyState() !== 'preparing' || this.pollStalled()
+                || Date.now() - this.lastPollAt < FORK_POLL_MIN_GAP_MS) return;
+            if (this.pollTimer !== null) clearTimeout(this.pollTimer);
+            this.pollTimer = null;
+            void this.poll();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        this.destroyRef.onDestroy(() => { document.removeEventListener('visibilitychange', onVisible); this.stopPolling(); });
         effect(() => {
             const deck = this.store.detailState().deck;
             untracked(() => this.announceCopyState(deck));
@@ -249,9 +260,14 @@ export class OwnDeckDetailPageComponent {
         this.retrying.set(true);
         this.retryError.set(null);
         this.forks.retry(deck.deckId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-            next: () => {
+            next: answer => {
+                // The answer already says the copy is being prepared again: show it and start watching, then confirm with a read.
                 this.resetPolling();
-                void this.store.refreshDetail().then(() => this.retrying.set(false));
+                this.store.applyFork(deck.deckId, { preparing: answer.preparing, failed: answer.failed });
+                void this.store.refreshDetail().then(() => {
+                    this.retrying.set(false);
+                    this.focusStatusHeadingIfLost();
+                });
             },
             error: () => {
                 this.retryError.set(COPY_TEXT.retryFailed);
@@ -264,6 +280,7 @@ export class OwnDeckDetailPageComponent {
     checkCopyAgain(): void {
         this.resetPolling();
         void this.poll();
+        this.focusStatusHeadingIfLost();
     }
 
     askDetach(): void {
@@ -397,17 +414,31 @@ export class OwnDeckDetailPageComponent {
         const previous = this.announced?.deckId === deck.deckId ? this.announced.progress : null;
         this.announced = { deckId: deck.deckId, progress };
         if (progress === previous) return;
-        if (progress === 'preparing') this.liveMessage.set(COPY_TEXT.preparing);
-        else if (progress === 'failed') this.liveMessage.set(`${COPY_TEXT.failed}.`);
+        if (progress === 'preparing') {
+            this.liveMessage.set(previous === 'failed' ? COPY_TEXT.retried : COPY_TEXT.preparing);
+            // Arriving from «Добавить к себе»: the focus is on nothing, so it goes to the title that names the copy.
+            if (previous === null) this.focusHeadingIfLost('h1');
+        } else if (progress === 'failed') this.liveMessage.set(`${COPY_TEXT.failed}.`);
         else if (progress === 'ready' && (previous === 'preparing' || previous === 'failed')) {
             this.liveMessage.set(COPY_TEXT.ready);
             // The statistics were read while the copy was empty.
             this.loadInsights(deck.deckId);
-            afterNextRender(() => {
-                const active = this.element.nativeElement.ownerDocument.activeElement;
-                if (active === null || active === this.element.nativeElement.ownerDocument.body) this.element.nativeElement.querySelector<HTMLElement>('h1')?.focus();
-            }, { injector: this.injector });
+            this.focusHeadingIfLost('h1');
         }
+    }
+
+    /** The pressed button went away with its state: the focus goes to the heading of the status block that replaced it. */
+    private focusStatusHeadingIfLost(): void {
+        this.focusHeadingIfLost('app-copy-status [tabindex="-1"]');
+    }
+
+    private focusHeadingIfLost(selector: string): void {
+        afterNextRender(() => {
+            const document = this.element.nativeElement.ownerDocument;
+            if (document.activeElement === null || document.activeElement === document.body || !document.activeElement.isConnected) {
+                this.element.nativeElement.querySelector<HTMLElement>(selector)?.focus();
+            }
+        }, { injector: this.injector });
     }
 
     private startPolling(deckId: string): void {
@@ -441,6 +472,7 @@ export class OwnDeckDetailPageComponent {
         // A hidden tab does not ask; the next check comes at the same pace once it is visible again.
         if (this.element.nativeElement.ownerDocument.visibilityState !== 'hidden') {
             this.pollAttempt += 1;
+            this.lastPollAt = Date.now();
             if (this.pollAttempt > FORK_POLL_LIMIT) {
                 this.pollStalled.set(true);
                 return;
