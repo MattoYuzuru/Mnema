@@ -19,6 +19,8 @@ describe('StyleguidePageComponent', () => {
         fixture.detectChanges();
     });
 
+    afterEach(() => { vi.useRealTimers(); });
+
     it('has one h1 and a section with a heading for every entry of the sidebar', () => {
         expect(root.querySelectorAll('h1:not([role=presentation])')).toHaveLength(1);
         const ids = SECTION_GROUPS.flatMap(group => group.sections.map(section => section.id));
@@ -46,7 +48,7 @@ describe('StyleguidePageComponent', () => {
     it('renders the real app components and classes', () => {
         for (const selector of [
             'app-hold-to-delete-button', 'app-segmented-choice', 'app-toggletip', 'app-usage-meter', 'app-mnema-select', 'app-choice-list',
-            'app-batch-pager', 'app-tag-input', 'app-access-level', 'app-copy-mark', 'app-copy-origin', 'app-copy-status section.notice.error', 'app-copy-status section.notice:not(.error)', 'app-publication-block', '.checklist > .checklist-item[data-state=failed]', 'app-access-screen section.access h4', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-mail-glyph', 'app-glyph[data-glyph=colonnade]', 'app-action-menu [role=menu][popover]', 'app-share-button button', 'app-public-deck-card article', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'app-unavailable-note .title', 'app-moderation-notice section.notice.warning h2', 'button.generate-cta', 'button.button.primary',
+            'app-batch-pager', 'app-tag-input', 'app-access-level', 'app-copy-mark', 'app-copy-origin', 'app-copy-status section.notice.error', 'app-copy-status section.notice:not(.error)', 'app-publication-block', '.checklist > .checklist-item[data-state=failed]', 'app-access-screen section.access h4', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-update-badge', 'app-update-summary', 'app-count-tabs [role=tablist]', 'app-compare-columns', 'app-compared-document', 'app-word-diff ins', 'app-word-diff del', 'app-update-unit-row', 'app-telegram-glyph', 'app-mail-glyph', 'app-glyph[data-glyph=colonnade]', 'app-action-menu [role=menu][popover]', 'app-share-button button', 'app-public-deck-card article', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'app-unavailable-note .title', 'app-moderation-notice section.notice.warning h2', 'button.generate-cta', 'button.button.primary',
             '.check-field > .check-row', '.settings-row.is-switch', '.settings-row.is-switch.is-live', 'fieldset.check-group > legend', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
         ]) {
             expect(root.querySelector(selector), selector).not.toBeNull();
@@ -273,6 +275,41 @@ describe('StyleguidePageComponent', () => {
         expect(notices[1].textContent).toContain('Снято: 2 материала и 1 упражнение.');
         expect(notices[2].textContent).toContain('Колода скрыта из Сообщества');
         expect(notices[2].textContent).toContain('Снято: 3 упражнения.');
+    });
+
+    it('catalogues the update review: the badge and the closed source, the tabs with counts, the columns and the unit rows', () => {
+        const section = root.querySelector<HTMLElement>('#update')!;
+        expect(section.querySelector('app-update-badge')?.textContent).toContain('Есть обновление');
+        expect(section.querySelector('app-unavailable-note .title')?.textContent).toBe('Источник больше недоступен');
+        const tabs = [...section.querySelectorAll<HTMLButtonElement>('[role=tab]')];
+        expect(tabs.map(tab => tab.textContent!.replace(/\s+/gu, ' ').trim())).toEqual(['Новое: 12', 'Исправления: 5', 'Конфликты: 2', 'Удалено автором: 3']);
+        expect(tabs[2]!.getAttribute('aria-selected')).toBe('true');
+        tabs[0]!.click();
+        fixture.detectChanges();
+        expect(section.querySelector('[role=tabpanel]')?.textContent).toContain('«Новое»');
+        const columns = [...section.querySelectorAll<HTMLElement>('app-compare-columns')];
+        expect(columns.length).toBeGreaterThanOrEqual(4);
+        expect(columns[0]!.querySelectorAll('.column')).toHaveLength(2);
+        expect(columns[2]!.querySelector('.absent')?.textContent).toContain('Нет у вас');
+        expect(section.querySelector('app-word-diff ins .visually-hidden')?.textContent).toBe('добавлено: ');
+    });
+
+    it('opens a unit row of the catalogue into its comparison, and runs «Принять всё безопасное» on demo data', () => {
+        vi.useFakeTimers();
+        const section = root.querySelector<HTMLElement>('#update')!;
+        const row = section.querySelector<HTMLElement>('app-update-unit-row')!;
+        expect(row.querySelector('app-compare-columns')).toBeNull();
+        row.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click();
+        fixture.detectChanges();
+        expect(row.querySelector('app-compare-columns .column')).not.toBeNull();
+        const accept = [...section.querySelectorAll<HTMLButtonElement>('app-update-summary button.primary')][0]!;
+        accept.click();
+        fixture.detectChanges();
+        expect(accept.getAttribute('aria-busy')).toBe('true');
+        vi.advanceTimersByTime(1300);
+        fixture.detectChanges();
+        expect(accept.getAttribute('aria-busy')).toBeNull();
+        expect(section.querySelector('[role=status]')?.textContent).toContain('безопасные изменения приняты');
     });
 
     it('opens the complaint window of the catalogue: a reason is needed, then «404» shows the gone state and closes it', async () => {
