@@ -38,7 +38,8 @@ let nextSummary = 0;
 /**
  * The top of the update review screen: what the author changed in numbers, the author's «Что нового» when there is one, and the one
  * primary action «Принять всё безопасное» with a line that says what it touches («Берём новое и исправления того, что вы не меняли»)
- * and what it does not («Ваши правки и удаления не трогаем»). The line describes the button (`aria-describedby`). While the request
+ * and what it does not («Ваши правки и удаления не трогаем»). With `pendingNote` a second line says that the reader's picks on conflicts and
+ * deletions are applied by «Применить выбранное», not by this button. The line describes the button (`aria-describedby`). While the request
  * runs the button is `aria-busy` and `aria-disabled` but keeps the focus; with nothing safe to accept it is `aria-disabled` and the
  * line says so. The block is a plain section with a heading (`headingLevel`, 2 by default), not a live region: the page announces
  * the result of the action once in its own `role="status"`.
@@ -59,9 +60,10 @@ let nextSummary = 0;
           </div>
         }
         <div class="action">
-          <button type="button" class="button primary" [attr.aria-describedby]="noteId" [attr.aria-busy]="busy() ? 'true' : null"
+          <button type="button" class="button primary" [attr.aria-describedby]="pendingNote() ? noteId + ' ' + pendingId : noteId" [attr.aria-busy]="busy() ? 'true' : null"
             [attr.aria-disabled]="busy() || !hasSafe() ? 'true' : null" (click)="accept()">{{ busy() ? text.accepting : text.acceptSafe }}</button>
           <p class="hint" [id]="noteId">{{ hasSafe() ? text.acceptSafeNote : text.nothingSafe }}</p>
+          @if (pendingNote()) { <p class="hint" [id]="pendingId">{{ text.picksWaiting }}</p> }
         </div>
       </section>
     `,
@@ -86,12 +88,18 @@ export class UpdateSummaryComponent {
     /** «Принять всё безопасное» was pressed and the request is on its way. */
     readonly busy = input(false);
     readonly headingLevel = input<2 | 3>(2);
+    /**
+     * The reader has picked something on a conflict, a unit changed again or a deletion. «Принять всё безопасное» does not send those
+     * picks; a line next to it says which button does.
+     */
+    readonly pendingNote = input(false);
     /** The reader pressed «Принять всё безопасное». */
     readonly acceptSafe = output<void>();
 
     protected readonly text = UPDATE_TEXT;
     protected readonly headingId = `mn-update-summary-${nextSummary}`;
-    protected readonly noteId = `mn-update-summary-${nextSummary++}-note`;
+    protected readonly noteId = `mn-update-summary-${nextSummary}-note`;
+    protected readonly pendingId = `mn-update-summary-${nextSummary++}-pending`;
     protected readonly line = computed(() => summaryLine(this.counts()));
     /** Safe is what is new and what corrects a unit the reader did not change. */
     protected readonly hasSafe = computed(() => {

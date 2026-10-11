@@ -1,6 +1,8 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
+import { documentOf, nativeNode } from '../content/rendering/native-renderer.fixtures';
+import { MediaPlaybackApi } from '../content/rendering/media-playback.api';
 import { CompareColumnsComponent } from './compare-columns.component';
 
 import { ComparedDocumentComponent } from './compared-document.component';
@@ -26,6 +28,55 @@ describe('ComparedDocumentComponent', () => {
         const added = host.querySelector(`[data-change='added']`)!;
         expect(added.querySelector('.stamp')?.textContent).toBe('Добавлено');
         expect(host.querySelector('hr')).not.toBeNull();
+    });
+
+    describe('where the media comes from', () => {
+        const assetId = '31901995-16ea-4f8b-8301-5d8e03004c72';
+        const picture = documentOf([nativeNode('image', { assetId, alt: 'Схема' })]);
+        const ready = { assetId, state: 'READY', playback: { url: 'https://storage.example/ready.webp', mimeType: 'image/webp', expiresAt: '2099-01-01T00:00:00Z' }, poster: null, download: null };
+
+        it('draws the files named in assetSources by default, and asks the playback API for nothing', () => {
+            const read = vi.fn().mockName('MediaPlaybackApi.read');
+            TestBed.configureTestingModule({ providers: [{ provide: MediaPlaybackApi, useValue: { read } }] });
+            const fixture = TestBed.createComponent(ComparedDocumentComponent);
+            fixture.componentRef.setInput('document', picture);
+            fixture.componentRef.setInput('side', 'author');
+            fixture.componentRef.setInput('assetSources', { [assetId]: 'https://storage.example/given.webp' });
+            fixture.detectChanges();
+            expect(fixture.nativeElement.querySelector('img').getAttribute('src')).toBe('https://storage.example/given.webp');
+            expect(fixture.nativeElement.querySelector('app-native-media-surface')).toBeNull();
+            expect(read).not.toHaveBeenCalled();
+        });
+
+        it('hands the document to the media surface when it is told whose files they are, and the surface reads them through the provided API', async () => {
+            const read = vi.fn().mockName('MediaPlaybackApi.read').mockResolvedValue(ready);
+            TestBed.configureTestingModule({ providers: [{ provide: MediaPlaybackApi, useValue: { read } }] });
+            const fixture = TestBed.createComponent(ComparedDocumentComponent);
+            fixture.componentRef.setInput('document', picture);
+            fixture.componentRef.setInput('side', 'mine');
+            fixture.componentRef.setInput('mediaAudience', 'owner');
+            fixture.detectChanges();
+            await new Promise<void>(resolve => setTimeout(resolve, 0));
+            await fixture.whenStable();
+            fixture.detectChanges();
+            expect(read).toHaveBeenCalledWith(assetId);
+            expect(fixture.nativeElement.querySelector('app-native-media-surface')).not.toBeNull();
+            expect(fixture.nativeElement.querySelector('img').getAttribute('src')).toBe('https://storage.example/ready.webp');
+        });
+
+        it('keeps the marks and the stamps of a comparison when the media surface draws the document', () => {
+            TestBed.configureTestingModule({ providers: [{ provide: MediaPlaybackApi, useValue: { read: vi.fn().mockResolvedValue(ready) } }] });
+            const fixture = TestBed.createComponent(ComparedDocumentComponent);
+            fixture.componentRef.setInput('document', AUTHOR);
+            fixture.componentRef.setInput('counterpart', MINE);
+            fixture.componentRef.setInput('side', 'author');
+            fixture.componentRef.setInput('mediaAudience', 'public');
+            fixture.detectChanges();
+            const host = fixture.nativeElement as HTMLElement;
+            expect(host.querySelector(`[data-change='changed'] ins`)?.textContent).toContain('устойчивые');
+            expect(host.querySelector(`[data-change='added'] .stamp`)?.textContent).toBe('Добавлено');
+            expect(host.querySelector<HTMLElement>(`[data-node-id='${nodeId(4)}']`)?.classList.contains('is-target')).toBe(true);
+        });
     });
 
     it('keeps an untouched paragraph as the renderer draws it, marked by nothing', () => {

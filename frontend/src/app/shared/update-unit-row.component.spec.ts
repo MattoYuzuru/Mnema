@@ -7,7 +7,7 @@ import { UpdateUnitRowComponent, UpdateUnitView, choicesFor } from './update-uni
 @Component({
     imports: [UpdateUnitRowComponent],
     template: `
-      <app-update-unit-row #row [unit]="unit()" [(choice)]="choice" [headingLevel]="level()">
+      <app-update-unit-row #row [unit]="unit()" [(choice)]="choice" [headingLevel]="level()" [locked]="locked()" [lockNote]="lockNote()">
         @if (row.expanded()) { <p id="compare-body">Сравнение</p> }
       </app-update-unit-row>`
 })
@@ -15,6 +15,8 @@ class HostComponent {
     readonly unit = signal<UpdateUnitView>({ id: 'u1', kind: 'material', title: 'Спряжение ser и estar', class: 'fix' });
     readonly choice = signal<UpdateChoice | null>(null);
     readonly level = signal<3 | 4>(3);
+    readonly locked = signal(false);
+    readonly lockNote = signal<string | null>(null);
 }
 
 describe('UpdateUnitRowComponent', () => {
@@ -68,13 +70,16 @@ describe('UpdateUnitRowComponent', () => {
         expect(root.querySelector('h3')).toBeNull();
     });
 
-    it('offers the answers of each class and starts a conflict and a deletion on the safe one', () => {
+    it('offers the answers of each class and starts a conflict, a unit changed again and a deletion on the safe one', () => {
         expect(choicesFor('new').map(option => option.label)).toEqual(['Принять', 'Не брать']);
-        expect(choicesFor('changed-again').map(option => option.label)).toEqual(['Принять', 'Не брать']);
+        expect(choicesFor('changed-again').map(option => option.label)).toEqual(['Оставить моё', 'Взять вариант автора']);
         expect(choicesFor('fix').map(option => option.label)).toEqual(['Принять', 'Не брать']);
         const conflict = create({ class: 'conflict' });
         expect(conflict.radios().map(radio => radio.labels![0]!.textContent!.trim())).toEqual(['Оставить моё', 'Взять вариант автора']);
         expect(conflict.radios().map(radio => radio.checked)).toEqual([true, false]);
+        const again = create({ class: 'changed-again' });
+        expect(again.radios().map(radio => radio.labels![0]!.textContent!.trim())).toEqual(['Оставить моё', 'Взять вариант автора']);
+        expect(again.radios().map(radio => radio.checked)).toEqual([true, false]);
         const deleted = create({ class: 'deleted' });
         expect(deleted.radios().map(radio => radio.labels![0]!.textContent!.trim())).toEqual(['Оставить у себя', 'Удалить и у меня']);
         expect(deleted.radios().map(radio => radio.checked)).toEqual([true, false]);
@@ -87,6 +92,55 @@ describe('UpdateUnitRowComponent', () => {
         fixture.detectChanges();
         expect(host.choice()).toBe('accept');
         expect(radios().map(radio => radio.checked)).toEqual([true, false]);
+    });
+
+    it('keeps a locked decision in the focus order but refuses every change', () => {
+        const { fixture, radios, host, root } = create({ class: 'fix' });
+        host.choice.set('accept');
+        host.locked.set(true);
+        fixture.detectChanges();
+        expect(root.querySelector('fieldset')!.getAttribute('aria-busy')).toBe('true');
+        expect(radios().every(radio => !radio.disabled)).toBe(true);
+        radios()[1]!.click();
+        fixture.detectChanges();
+        expect(host.choice()).toBe('accept');
+        expect(radios().map(radio => radio.checked)).toEqual([true, false]);
+        host.locked.set(false);
+        fixture.detectChanges();
+        radios()[1]!.click();
+        fixture.detectChanges();
+        expect(host.choice()).toBe('skip');
+    });
+
+    it('says why a decision is fixed, under the decision, with a word and a glyph, and describes the group by it', () => {
+        const { fixture, host, root } = create({ class: 'fix' });
+        expect(root.querySelector('.lock-reason')).toBeNull();
+        host.choice.set('accept');
+        host.locked.set(true);
+        host.lockNote.set('Нужно для «Упражнение 2», которое вы принимаете, поэтому берём вместе с ним.');
+        fixture.detectChanges();
+        const reason = root.querySelector<HTMLElement>('.decision .lock-reason')!;
+        expect(reason.querySelector('.stamp')!.textContent!.trim()).toBe('Обязательно');
+        expect(reason.querySelector('.stamp app-glyph')!.getAttribute('aria-hidden')).toBe('true');
+        expect(reason.textContent).toContain('Нужно для «Упражнение 2»');
+        expect(reason.previousElementSibling!.tagName).toBe('APP-SEGMENTED-CHOICE');
+        const described = root.querySelector('fieldset')!.getAttribute('aria-describedby')!.split(' ');
+        expect(described).toHaveLength(2);
+        expect(described[1]).toBe(reason.id);
+        host.lockNote.set(null);
+        host.locked.set(false);
+        fixture.detectChanges();
+        expect(root.querySelector('.lock-reason')).toBeNull();
+        expect(root.querySelector('fieldset')!.getAttribute('aria-describedby')!.split(' ')).toHaveLength(1);
+    });
+
+    it('has a live region that stays empty in any number of rows until the reader changes one', () => {
+        const fixtures = Array.from({ length: 10 }, () => create({ class: 'conflict' }));
+        for (const { root } of fixtures) expect(root.querySelector('[aria-live]')!.textContent).toBe('');
+        const last = fixtures[fixtures.length - 1]!;
+        last.radios()[1]!.click();
+        last.fixture.detectChanges();
+        expect(last.root.querySelector('[aria-live]')!.textContent).toBe('Ваша версия будет заменена вариантом автора.');
     });
 
     it('records the pick of a conflict and a deletion', () => {

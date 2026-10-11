@@ -194,9 +194,11 @@ describe('ExerciseBuilderPageComponent', () => {
             expect(root().textContent).toContain('Что сначала');
             expect(root().textContent).toContain('Сначала без упражнений');
             expect(root().textContent).toContain('Все выбранные поровну');
-            expect(root().querySelector('.hint[aria-live=polite]')).not.toBeNull();
+            expect(root().querySelector('app-segmented-choice .hint')).not.toBeNull();
+            expect(root().querySelector('app-segmented-choice .hint[aria-live=polite]')!.textContent).toBe('');
             radio('BALANCED').click();
             fixture.detectChanges();
+            expect(root().querySelector('app-segmented-choice .hint[aria-live=polite]')!.textContent).not.toBe('');
             await settle(ESTIMATE_DEBOUNCE_MS);
             expect(lastSpec().settings.priority).toBe('BALANCED');
         });

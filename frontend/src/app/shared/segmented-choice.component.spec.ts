@@ -40,35 +40,58 @@ describe('SegmentedChoiceComponent', () => {
         expect(hidden.querySelector('fieldset > legend')?.textContent?.trim()).toBe('Подробность');
     });
 
-    it('describes the fieldset by a polite live hint that follows the selection', () => {
+    it('describes the fieldset by a visible static hint, then by a live region that was there from the first render and carries the text only after a change', () => {
         const fixture = create();
         const root = fixture.nativeElement as HTMLElement;
         const fieldset = root.querySelector('fieldset')!;
-        const hint = root.querySelector<HTMLElement>(`#${fieldset.getAttribute('aria-describedby')}`)!;
-        expect(hint.getAttribute('aria-live')).toBe('polite');
-        expect(hint.textContent).toBe('Мнема выберет объём по заметке.');
+        const live = root.querySelector<HTMLElement>('[aria-live="polite"]')!;
+        // First render: the live region exists and is empty; the explanation is a plain paragraph that describes the group.
+        expect(live.textContent).toBe('');
+        const staticHint = root.querySelector<HTMLElement>(`#${fieldset.getAttribute('aria-describedby')}`)!;
+        expect(staticHint).not.toBe(live);
+        expect(staticHint.getAttribute('aria-live')).toBeNull();
+        expect(staticHint.textContent).toBe('Мнема выберет объём по заметке.');
 
         radios(root)[1].click();
         fixture.detectChanges();
         expect(fixture.componentInstance.value()).toBe('BRIEF');
-        expect(root.querySelector(`#${fieldset.getAttribute('aria-describedby')}`)).toBe(hint);
-        expect(hint.textContent).toBe('Определение и один пример.');
+        // The same live element now carries the text and describes the group; the plain paragraph is gone.
+        expect(root.querySelector('[aria-live="polite"]')).toBe(live);
+        expect(fieldset.getAttribute('aria-describedby')).toBe(live.id);
+        expect(root.contains(staticHint)).toBe(false);
+        expect(live.textContent).toBe('Определение и один пример.');
 
         radios(root)[2].click();
         fixture.detectChanges();
         expect(fixture.componentInstance.value()).toBe('FULL');
-        expect(hint.textContent).toBe('');
+        expect(live.textContent).toBe('');
     });
 
-    it('keeps an empty live region while nothing is selected and emits the new value', () => {
+    it('keeps an empty hint while nothing is selected and emits the new value', () => {
         const fixture = create(null);
         const root = fixture.nativeElement as HTMLElement;
         expect(radios(root).some(input => input.checked)).toBe(false);
+        expect(root.querySelector('.hint')?.textContent).toBe('');
         expect(root.querySelector('[aria-live="polite"]')?.textContent).toBe('');
         const emitted: (string | null)[] = [];
         fixture.componentInstance.value.subscribe(value => emitted.push(value));
         radios(root)[0].click();
         expect(emitted).toEqual(['AUTO']);
+    });
+
+    it('draws a live region that stays empty in any number of groups until the reader changes one', () => {
+        const fixtures = Array.from({ length: 12 }, () => create('AUTO'));
+        const roots = fixtures.map(fixture => fixture.nativeElement as HTMLElement);
+        for (const root of roots) {
+            expect(root.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
+            expect(root.querySelector('[aria-live]')!.textContent).toBe('');
+        }
+        // TestBed keeps only the newest root in the document, which a radio needs to fire its change.
+        const last = roots.length - 1;
+        radios(roots[last]!)[1].click();
+        fixtures[last]!.detectChanges();
+        expect(roots.filter(root => root.querySelector('[aria-live]')!.textContent !== '')).toEqual([roots[last]]);
+        expect(roots[last]!.querySelector('[aria-live]')!.textContent).toBe('Определение и один пример.');
     });
 
     it('uses a supplied group name and generates distinct ones otherwise', () => {
@@ -115,15 +138,15 @@ describe('SegmentedChoiceComponent', () => {
         expect(fixture.componentInstance.value()).toBe('BRIEF');
     });
 
-    it('names an error that describes the group and marks it invalid, after its own live hint', () => {
+    it('names an error that describes the group and marks it invalid, after its own hint', () => {
         const fixture = create(null, { describedBy: 'reason-error', invalid: true });
         const group = (fixture.nativeElement as HTMLElement).querySelector('fieldset')!;
-        expect(group.getAttribute('aria-describedby')).toMatch(/^mn-segmented-\d+-hint reason-error$/u);
+        expect(group.getAttribute('aria-describedby')).toMatch(/^mn-segmented-\d+-static-hint reason-error$/u);
         expect(group.getAttribute('aria-invalid')).toBe('true');
         fixture.componentRef.setInput('describedBy', null);
         fixture.componentRef.setInput('invalid', false);
         fixture.detectChanges();
-        expect(group.getAttribute('aria-describedby')).toMatch(/^mn-segmented-\d+-hint$/u);
+        expect(group.getAttribute('aria-describedby')).toMatch(/^mn-segmented-\d+-static-hint$/u);
         expect(group.hasAttribute('aria-invalid')).toBe(false);
     });
 });

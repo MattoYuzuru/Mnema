@@ -76,7 +76,9 @@ describe('TextAnswerEditorComponent', () => {
         expect(hint.textContent).toContain('должен совпасть полностью');
         radios[1].click();
         fixture.detectChanges();
-        expect(hint.textContent).toContain('Это не проверка смысла');
+        const live = root.querySelector<HTMLElement>(`#${group.getAttribute('aria-describedby')}`)!;
+        expect(live.getAttribute('aria-live')).toBe('polite');
+        expect(live.textContent).toContain('Это не проверка смысла');
         const trigger = root.querySelector('app-toggletip button')!;
         expect(trigger.getAttribute('aria-label')).toBe('Подробнее: режимы сравнения ответа');
         expect(root.querySelector(`#${trigger.getAttribute('popovertarget')}`)?.getAttribute('popover')).toBe('auto');
