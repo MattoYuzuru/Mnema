@@ -29,6 +29,15 @@ class LoggablePathTest {
     }
 
     @Test
+    void theLinkPreviewRoutesOfADeckNeverLogItsCode() {
+        MockHttpServletRequest mapped = request("/api/public/meta/decks/Kq7xT3mNpR/head");
+        mapped.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/public/meta/decks/{code}/head");
+        assertThat(ApiExceptionHandler.loggablePath(mapped)).isEqualTo("/api/public/meta/decks/{code}/head");
+        assertThat(ApiExceptionHandler.loggablePath(request("/api/public/meta/decks/Kq7xT3mNpR/head"))).isEqualTo("/api/public/meta/decks/{code}/head");
+        assertThat(ApiExceptionHandler.loggablePath(request("/api/public/meta/decks/Kq7xT3mNpR"))).isEqualTo("/api/public/meta/decks/{code}");
+    }
+
+    @Test
     void otherPathsAreLoggedAsTheyAre() {
         MockHttpServletRequest request = request("/api/decks/11111111-1111-4111-8111-111111111111/items");
         request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/decks/{deckId}/items");

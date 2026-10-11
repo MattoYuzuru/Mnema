@@ -1391,7 +1391,7 @@ the running application and fails when a new one has no row).
   is not revealed). A malformed code is `NOT_FOUND` without a lookup; a real lookup is one unique-index probe plus the deck key (and one grant probe for
   `INVITE`), identical for unknown and private codes. `INVITE_ONLY` is `403 DECK_INVITE_ONLY` (`ApiErrorCode`, house schema) with no deck data.
 - **Routes** (`PublicDeckController`, `GET`/`HEAD` only, `/api/public/decks/{code}`, `/items?limit&cursor`, `/items/{memberKey}`, `/exercises?limit&cursor`).
-  `PublicDeckService` checks the kill switch, takes a place in the limiter, tries the **bulkhead** (two `Semaphore`s: `max-concurrent` places, default 3, of which guests may hold at most one less so a place is always free for a signed-in
+  `PublicDeckService` checks the kill switch, takes a place in the limiter, tries the **bulkhead** (all three are `PublicReadAdmission` since Share/14, shared with the link-preview routes) (two `Semaphore`s: `max-concurrent` places, default 3, of which guests may hold at most one less so a place is always free for a signed-in
   viewer; `tryAcquire` before any transaction or connection; the excess read is refused at once with `503 PUBLIC_READ_BUSY` and `Retry-After: 1`; the title-cache
   write is the last step inside the permit), resolves access
   in one short read-only transaction and reads **only the immutable roots of the published revision**. Every SQL lookup is a read-only transaction with a
@@ -1626,6 +1626,39 @@ Package `app.mnema.learning.library` (`InviteService`, `AccessRequestService`, `
   revoked, **concurrent redemptions never exceed `max_uses`**, 20 active invitations and pruning, once-a-day notification and the UTC day boundary, 30-day silence, 20 open and 5 a day, grant/approve/revoke, lists),
   `AccessSchemaIntegrationTest`, `InviteLogRedactionIntegrationTest`, `AccessCommandsTest`, `InviteTokensTest`, `AccessCursorTest`, `LoginLookupLimiterTest`, the kill-switch case of
   `PublicDeckDisabledHttpIntegrationTest`, the owner-only table, and the notification kinds in `NotificationUnitTest` / `NotificationContractTest`.
+
+### Link previews (Share/14, #436)
+
+Package `app.mnema.learning.library` (`PublicMetaController`, `PublicMetaService`, `Preview`, `PreviewHead`, `PreviewText`, shared `PublicReadAdmission`), contract
+[`contracts/decks/public-meta.json`](../../../contracts/decks/public-meta.json), operations and the web server side
+[link previews](../../../docs/operations/link-previews.md) (nginx SSI, [architecture section 9](../../../docs/architecture/community-decks.md#9-ссылки-og-rate-limits-cd-10)).
+No migration. The web server asks for the card of `/d/{code}[/{slug}]` and puts it into `index.html`; Learning owns every fact in it.
+
+- **Routes** (`GET`/`HEAD`, `/api/public/meta/...`, the `/public/meta/**` matcher of the same optional-bearer `publicDecks` chain): `decks/{code}` and `profiles/{username}`
+  (JSON `{kind, title, description, canonical, robots, image, author|null}`), and `.../head` (the same card as an HTML fragment of `<head>`). No query parameter changes an answer. The fragment is
+  served as `text/plain;charset=UTF-8` with `Content-Security-Policy: default-src 'none'; sandbox` (it is reachable on the application origin; the web server's SSI prints its bytes whatever the type)
+  and carries `X-Mnema-Preview: card|generic`, for a PUBLIC deck `X-Mnema-Canonical: /d/{code}/{slug}` (the web server compares it with the requested path and redirects, so one cached answer per
+  code serves both) and for the generic card `X-Robots-Tag: noindex`. `Cache-Control: public, max-age=300` on success (problems stay `no-store`). The viewer is always a guest
+  (`Viewer.guest(network, coarse)` from `ClientAddresses`, `X-Forwarded-For` only from `learning.trusted-proxy-cidrs`), so the answer never depends on a token (a present token is validated by the chain, then not used).
+- **One admission, one bulkhead.** `PublicReadAdmission` is the kill switch, the guest limiter and the bulkhead place of `PublicDeckService.serve`, extracted so that deck reads and previews share it; its bulkhead is the single
+  `PublicReadBulkhead` bean that the media route (`PublicMediaService`, which keeps its own limiter, switch and metrics) also uses, so deck reads, previews and media together never hold more than `max-concurrent` places and
+  `PublicRouteConnectionBudget` still describes the pool use. The place is held for the database lookup only (`DeckAccess.resolve` for a guest in a 2-second read-only transaction), never across the Identity call. Metric:
+  `mnema_public_deck_requests_total{route="meta",outcome}` with `ok` (public card), `generic`, `disabled`, `rate_limited`, `busy`.
+- **No oracle.** `Resolution` is granted at level `PUBLIC` with a published revision, or the answer is `Preview.generic(origin)`: `GENERIC`, `noindex`, `canonical: null`, `author: null`,
+  the same bytes for LINK, INVITE, private, rotated, deleted, unknown, malformed and never-published codes, and for a profile without a public card. A signed-in owner gets the guest card too.
+  The slug is `DeckSlug.of(published title)`; `canonical = {origin}/d/{code}/{slug}`. The origin is `learning.community.public-origin` (`MNEMA_PUBLIC_BASE_URL`, `PublicMetaService.origin`:
+  https, or http on a loopback host, no path; blank is `https://mnema.app`; invalid fails at startup).
+- **Text and markup.** `PreviewText.plain` makes one line (whitespace and control characters become a space; bidirectional formatting characters U+200E/F, U+202A-202E, U+2066-2069 and U+061C are dropped), `limit` cuts on a word boundary with an ellipsis (title 120, description 200 code
+  points; blank falls back to `Колода` / `Колода на Mnema.`). `PreviewHead` is the only code that writes markup: fixed `title`/`meta`/`link` tags, every value through `escape`
+  (`& < > " '` become character references), so a title like `"><script>` cannot leave its attribute or open a tag, a comment or an SSI directive. The tag set mirrors the default block of
+  `frontend/src/index.html` (a test compares them). With an author the shown description is `Автор: {name} (@login). {description}`.
+- **Author.** `platform.security.AuthorCards` (`IdentityAuthorCards`): Identity's public card (`/api/accounts/profiles/{id}` and `/by-username/{login}`, no credential) through an
+  `IdentityHttp` of its own with `learning.identity.author-card-timeout` (150 ms) and `author-card-concurrency` (8); a card or a 404 is cached 60 s (bounded), a timeout, 5xx, 429 or a malformed
+  or foreign body is a failure remembered for 5 s (neither a card nor a known absence). Names and bio are made one bounded line. A failure leaves `author: null`; it never fails or delays the preview beyond the deadline.
+- **Logs.** The deck code is a credential: `ApiExceptionHandler.loggablePath` redacts it on `/public/meta/decks/` too.
+- Tests: `PublicMetaHttpIntegrationTest` (public card, every other state identical byte for byte, hostile, bidirectional and oversized texts, author present/absent/failing/slow, canonical header, fragment type and CSP, HEAD, profile card, write
+  methods, invalid bearer), `PublicDeckDisabledHttpIntegrationTest` and `PublicDeckRateLimitHttpIntegrationTest` (switch and shared budget), `PublicMetaContractFixtureTest`, `PreviewTextTest`,
+  `PreviewHeadTest`, `PublicMetaOriginTest`, `IdentityAuthorCardsTest`, `LoggablePathTest`.
 
 ## Notification center
 

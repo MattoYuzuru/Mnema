@@ -211,7 +211,7 @@ export class PublicDeckPageComponent {
         this.phase.set('ready');
         this.meta.indexable(deck.visibility === 'PUBLIC');
         this.meta.title(deck.title);
-        // The slug belongs to PUBLIC decks only; a wrong or missing one is replaced (the 301 for crawlers is Share/14).
+        // The slug belongs to PUBLIC decks only; a wrong or missing one is replaced (crawlers get a 301 from the web server, Share/14).
         if ((this.routeSlug() ?? null) !== deck.slug) {
             void this.router.navigate(canonicalPath(deck), { replaceUrl: true, queryParamsHandling: 'preserve' });
         }

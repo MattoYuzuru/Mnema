@@ -3,6 +3,9 @@ set -eu
 
 OUT="${MNEMA_APP_CONFIG_OUT:-/usr/share/nginx/html/app-config.js}"
 SECURITY_HEADERS="${MNEMA_SECURITY_HEADERS_OUT:-/etc/nginx/conf.d/security-headers.inc}"
+OG_META="${MNEMA_OG_META_OUT:-/etc/nginx/conf.d/mnema-og-meta.inc}"
+OG_META_UPSTREAM="${MNEMA_OG_META_UPSTREAM:-}"
+OG_META_RESOLVER="${MNEMA_OG_META_RESOLVER:-}"
 APP_ENV="${MNEMA_APP_ENV:-development}"
 PUBLIC_ORIGIN="${MNEMA_PUBLIC_ORIGIN:-}"
 AUTH_ORIGIN="${MNEMA_AUTH_SERVER_URL:-}"
@@ -63,6 +66,47 @@ NGINX
   esac
 
   mv "$security_tmp" "$SECURITY_HEADERS"
+  trap - EXIT HUP INT TERM
+}
+
+# Link previews (docs/operations/link-previews.md): where nginx asks Learning for the head of /d/{code}. Empty switches the feature off.
+# The values go into nginx syntax, so they are validated to a bare host:port and an IPv4 address; nothing else can reach the file.
+write_og_meta() {
+  og_tmp="${OG_META}.tmp.$$"
+  trap 'rm -f "$og_tmp"' EXIT HUP INT TERM
+  : > "$og_tmp"
+  if [ -n "$OG_META_UPSTREAM" ]; then
+    og_host=${OG_META_UPSTREAM%:*}
+    og_port=${OG_META_UPSTREAM##*:}
+    case "$OG_META_UPSTREAM" in *:*) ;; *) fail "MNEMA_OG_META_UPSTREAM must be host:port" ;; esac
+    case "$og_host" in
+      "" | *[!A-Za-z0-9.-]* | .* | *. | *..* | -*) fail "MNEMA_OG_META_UPSTREAM host must contain only letters, digits, dots and hyphens" ;;
+    esac
+    case "$og_port" in
+      "" | *[!0-9]* | ??????* | 0*) fail "MNEMA_OG_META_UPSTREAM port must be a number from 1 to 65535" ;;
+    esac
+    [ "$og_port" -le 65535 ] || fail "MNEMA_OG_META_UPSTREAM port must be a number from 1 to 65535"
+    printf 'set $mnema_meta_upstream "%s";\n' "$OG_META_UPSTREAM" >> "$og_tmp"
+  fi
+  if [ -n "$OG_META_RESOLVER" ]; then
+    og_octets=0
+    og_old_ifs=$IFS
+    IFS=.
+    # shellcheck disable=SC2086
+    set -- $OG_META_RESOLVER
+    IFS=$og_old_ifs
+    for og_octet in "$@"; do
+      og_octets=$((og_octets + 1))
+      # one to three digits, no leading zero (ambiguous: octal for some parsers), at most 255
+      case "$og_octet" in
+        "" | *[!0-9]* | ????* | 0?*) fail "MNEMA_OG_META_RESOLVER must be an IPv4 address" ;;
+      esac
+      [ "$og_octet" -le 255 ] || fail "MNEMA_OG_META_RESOLVER must be an IPv4 address"
+    done
+    [ "$og_octets" -eq 4 ] || fail "MNEMA_OG_META_RESOLVER must be an IPv4 address"
+    printf 'resolver %s valid=10s ipv6=off;\n' "$OG_META_RESOLVER" >> "$og_tmp"
+  fi
+  mv "$og_tmp" "$OG_META"
   trap - EXIT HUP INT TERM
 }
 
@@ -136,3 +180,4 @@ append_string_override "supportTelegramUsername" "$SUPPORT_USERNAME"
 append_bool_override "showEmailVerificationWarning" "${MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING:-}"
 
 write_security_headers
+write_og_meta

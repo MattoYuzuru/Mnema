@@ -52,7 +52,9 @@ class PublicDeckDisabledHttpIntegrationTest extends PostgresIntegrationTest {
         Deck deck = fixtures.deck(owner, "Выключено");
         String code = fixtures.publishAt(deck, DeckVisibility.PUBLIC);
         for (String path : new String[] {"/public/decks/" + code, "/public/decks/" + code + "/items", "/public/decks/" + code + "/items/" + deck.material().member(),
-                "/public/decks/" + code + "/exercises", "/public/decks/AAAAAAAAAA"}) {
+                "/public/decks/" + code + "/exercises", "/public/decks/AAAAAAAAAA",
+                // the link-preview routes share the switch: off means 404 even for a real PUBLIC deck's code
+                "/public/meta/decks/" + code, "/public/meta/decks/" + code + "/head", "/public/meta/profiles/anna.k", "/public/meta/profiles/anna.k/head"}) {
             for (String bearer : new String[] {null, HttpIdentityFixture.reader(owner), HttpIdentityFixture.reader(UUID.randomUUID())}) {
                 HttpResponse<String> response = HttpIdentityFixture.send(port, "GET", path, bearer, null, Map.of());
                 assertThat(response.statusCode()).as(path).isEqualTo(404);
@@ -74,5 +76,7 @@ class PublicDeckDisabledHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(HttpIdentityFixture.send(port, "GET", "/public/decks/" + code, "garbage", null, Map.of()).statusCode()).isEqualTo(401);
         assertThat(meters.find("mnema_public_deck_requests_total").tags("route", "summary", "outcome", "disabled").counter().count()).isGreaterThanOrEqualTo(3);
         assertThat(meters.find("mnema_public_deck_requests_total").tags("route", "summary", "outcome", "ok").counter()).isNull();
+        assertThat(meters.find("mnema_public_deck_requests_total").tags("route", "meta", "outcome", "disabled").counter().count()).isGreaterThanOrEqualTo(12);
+        assertThat(meters.find("mnema_public_deck_requests_total").tags("route", "meta", "outcome", "ok").counter()).isNull();
     }
 }

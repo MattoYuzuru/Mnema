@@ -103,6 +103,10 @@ until both exist; docker.service does not depend on the mount, so without it onl
 credential: the `pull` step uses the job's short-lived token, provided the owner has checked once,
 in the package settings, that Actions access for `MattoYuzuru/Mnema` is *Read*.
 
+`nginx.conf` also carries the link-preview rules ([link previews](link-previews.md)): it is compatible with the running frontend image and
+Learning, so install it before approving, and validate the *staged* file with the running image before the `install` line (the command is in that page) so the
+rollout cannot fail on its syntax.
+
 Install only the files the PR changed; unchanged files already match (the sshd and
 sudoers files need an SSH test from a second session before the first one is closed).
 `runtime.env` and `offsite.env` are private and never in the repository; edit them only
