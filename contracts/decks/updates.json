@@ -1,0 +1,220 @@
+{
+  "contract": "updates-v1",
+  "description": "Shared frontend/backend fixtures for the update plan of a copy (Updates/3, #442): what the author published since the copy's base, unit by unit, against what the copy holds now, and the two sides of one unit for the review screen. Private chain, owner of the copy only, learning.read, every answer is Cache-Control: private, no-store. Both routes only READ: they create no revision, row, pin or job. The shapes below are executable: the integration tests compare real answers with the property sets of these examples. The apply command is a later task (Updates/4); this contract defines the plan it consumes and the decisions table it writes (migration V61).",
+  "constants": {
+    "planPath": "/api/decks/{forkDeckId}/update-plan?cursor=&limit=",
+    "unitPath": "/api/decks/{forkDeckId}/update-plan/units/{kind}/{key}?planVersion=",
+    "defaultLimit": 50,
+    "maxLimit": 100,
+    "titleMaxCodePoints": 160,
+    "states": ["READY", "UP_TO_DATE", "SOURCE_UNAVAILABLE", "DETACHED", "PREPARING"],
+    "kinds": ["METADATA", "MATERIAL", "EXERCISE", "OBJECTIVE", "ORDER"],
+    "kindsNote": "the declaration order is the order of kinds inside one class of the plan; METADATA and ORDER are single units whose key is the copy's own deck id; MATERIAL keys are member keys, EXERCISE keys exercise ids, OBJECTIVE keys objective ids",
+    "classes": ["NEW", "SAFE", "CONFLICT", "DELETED", "ASK_AGAIN"],
+    "classesNote": "the order of the plan: NEW, SAFE, CONFLICT, DELETED, ASK_AGAIN",
+    "reasons": ["BOTH_CHANGED", "DELETED_BY_YOU", "MATERIAL_CHANGED", "MATERIAL_DELETED", "OBJECTIVE_RENAMED", "CHANGED_AFTER_DECISION"],
+    "reasonsNote": "null for NEW, SAFE and DELETED; a CONFLICT has BOTH_CHANGED, DELETED_BY_YOU, MATERIAL_CHANGED, MATERIAL_DELETED or OBJECTIVE_RENAMED; ASK_AGAIN has CHANGED_AFTER_DECISION",
+    "defaultChoices": {"NEW": "ACCEPT", "SAFE": "ACCEPT", "CONFLICT": "KEEP_MINE", "ASK_AGAIN": "KEEP_MINE", "DELETED": "KEEP"},
+    "computeBudget": "learning.updates.plan.compute-budget (PT3S): the time one plan may spend reading documents (fingerprints of units both sides changed, node checks). When it is spent, and past learning.updates.plan.max-fingerprints (200) pairs per plan, the rest is judged cautiously: a pair is assumed to differ (CONFLICT BOTH_CHANGED), nodes are judged missing (CONFLICT MATERIAL_CHANGED); the plan is still answered",
+    "bulkhead": "learning.updates.plan.max-concurrent (2) plan and unit requests per instance; the next is 503 UPDATE_PLAN_BUSY with Retry-After: 1 and the member retryAfter, before anything is computed",
+    "planVersionPattern": "^sha256:[0-9a-f]{64}$",
+    "planVersionNote": "SHA-256 over the copy's head revision, the source's published revision, the copy's base revision and a digest of the copy's recorded decisions: any change of the three heads or of one decision is another plan",
+    "decisionsTable": "app_learning.fork_unit_decision (V61): (deck_id, unit_kind, unit_key) -> decision KEEP_MINE | DECLINE_NEW | KEEP_DELETED | PENDING, the author's state it covers (resolved_upstream_revision_id or resolved_upstream_absent), the unit's own old base of a PENDING unit (pending_base_revision_id or pending_base_absent). Written by Updates/4, read by the plan.",
+    "baseRule": "an apply moves deck_fork.base_revision_id to the plan's upstreamRevisionId and records a PENDING row, with the unit's OLD base, for every listed unit the learner neither accepted nor declined; a unit with a PENDING row keeps comparing the author with its own old base. The badge «Есть обновление» is then (base <> published revision) OR (a PENDING row exists)"
+  },
+  "invariants": [
+    "GET /api/decks/{forkDeckId}/update-plan needs learning.read, is owner-only and read-only (nothing is written, whatever the size of the deck); a deck that is not the caller's live copy, a foreign deck, a deleted copy and an unknown id are one and the same 404 RESOURCE_NOT_FOUND; malformed ids, repeated or malformed query parameters, a limit outside 1..100 and a malformed cursor are 400 INVALID_REQUEST",
+    "state PREPARING (the copy is not materialized yet), DETACHED (the owner detached it) and SOURCE_UNAVAILABLE (the source is deleted, private, hidden by moderation, or its public code was rotated away: the copy is resolved with the code its owner copied by, exactly like `fork.sourceAvailable`) answer 200 with only {state, forkDeckId, units: [], nextCursor: null}: no pins, no summary and nothing about the source",
+    "state UP_TO_DATE answers the pins, planVersion and an all-zero summary with no units: the copy's head holds what the author published (or the author's changes were all decided already). READY lists the units",
+    "the plan is the three-way comparison base B / author's published revision P / copy head H, by units. The author's changes are the frontier diff of the manifests of B and P (cost O(changes), not O(deck)); a unit the author did not change since its base is not on offer, and what the learner changed alone is never listed",
+    "classification (a = the author's state in P, b = the unit's base, c = the copy's head): a = c or a = b: nothing; the author removed what the copy has: DELETED (asked, never applied by «accept all safe»); the author added what the copy has not got: NEW; the author changed it and c = b: SAFE; the author changed it and c has the same learner-relevant content as a (the learner made or reverted to the same edit): SAFE; the learner changed it differently: CONFLICT BOTH_CHANGED; the learner deleted what the author changed: CONFLICT DELETED_BY_YOU. Content is compared by fingerprint (materials: the native document; exercises: type, enabled, content, answerKey, evaluatorPolicy; objectives: title), never by revision id",
+    "an exercise of the author depends on the materials its bindings target: a material the copy has not got that the plan brings (NEW) is a dependency; a material the copy deleted (or declined) makes the exercise a CONFLICT MATERIAL_DELETED; when the copy keeps a head different from the revision the binding pins (the author's exercise may pin a non-head revision, a lineage revision of the author's), the quoted node ids must exist in the copy's head (yes: the exercise stays safe; no: CONFLICT MATERIAL_CHANGED), unless the author's safe fix of that material brings them (then the material is a dependency)",
+    "an exercise depends on the OBJECTIVE unit of its ASSESSED binding when the copy's objective head is another revision than the one the exercise pins. An objective is SAFE when the copy's head is an ancestor of the author's revision by the parent chain (or the copy has no head), or has the same title; otherwise CONFLICT. An exercise whose objective is not SAFE (or was declined) is a CONFLICT OBJECTIVE_RENAMED instead of NEW/SAFE",
+    "METADATA (title and description) and ORDER (the order of materials) are three-way units: SAFE when only the author changed them, CONFLICT BOTH_CHANGED when the learner changed them too (for ORDER: when the learner reordered at all)",
+    "dependsOn lists unit ids (KIND:key) that must be accepted together with the unit; it is empty for materials, deck-wide units and objectives. Updates/4 refuses a selection that accepts a unit without its dependencies",
+    "a recorded decision (KEEP_MINE, DECLINE_NEW, KEEP_DELETED) hides its unit while the author's state is still the one it covers; when the author changes the unit after it, the unit is listed again as ASK_AGAIN (judged from the decision's state as the base) and is never applied by «accept all safe». The exception is a unit whose content now equals the learner's: it is SAFE. A unit with a PENDING row is judged against its own old base",
+    "when the compute budget or the pair bound is spent the classes are only ever more cautious (a SAFE may be reported as a CONFLICT, never the reverse); because the budget is time, two reads of an unchanged state may differ at that margin",
+    "the units the author's change makes unusable are NOT listed: a revision of the author that a legal takedown named, an exercise that quotes such a material",
+    "pages are cut from ONE deterministic order: class (NEW, SAFE, CONFLICT, DELETED, ASK_AGAIN), then kind (METADATA, MATERIAL, EXERCISE, OBJECTIVE, ORDER), then the author's manifest order (removed units after the others, in the base order), then the key. nextCursor is opaque, bound to the copy and to the planVersion it was cut from; a cursor used after the plan changed (a copy edit, a new publication, a decision) is 409 UPDATE_PLAN_STALE and the plan is read again from the first page. summary counts the WHOLE plan, not the page. Each page recomputes the diff (no state is stored)",
+    "GET /api/decks/{forkDeckId}/update-plan/units/{kind}/{key}?planVersion= answers {unitId, kind, key, class, reason, planVersion, mine, author, changedNodeIds}: the two sides of exactly ONE unit of the CURRENT plan. planVersion is required (a malformed or missing one is 400); another planVersion is 409 UPDATE_PLAN_STALE; a unit the current plan does not list (an unknown key, a unit of another kind, a unit already decided) and a copy that is not READY are the opaque 404; an unknown kind is 400. It reads only the revisions the plan names, never a revision by an id from the request",
+    "a side is null when the unit does not exist on that side. MATERIAL: {memberKey, itemRevisionId, document} (the native document of the editor); EXERCISE: {exerciseId, exerciseRevisionId, exerciseVersion, type, enabled, subject, objective, content, answerKey, evaluatorPolicy} (the copier owns the copy and the author published it, so the answer key is included); OBJECTIVE: {objectiveId, objectiveRevisionId, title}; METADATA: {title, description}; ORDER: {moved: [{memberKey, title, from, to}], total, truncated} (from = place in the unit's base manifest, to = place in the manifest of that side; positions and titles are null above 5000 materials, at most 50 are listed). A taken-down revision of the copy's own head is {…ids, unavailable: true} without content",
+    "changedNodeIds (materials only; [] otherwise): the stable node ids whose type, version, attributes or list of children differ between the two documents, plus the nodes only one of them has",
+    "the plan never lists more than the author published and never exposes more than the copier may already read: the source is resolved through DeckAccess with the code the copier used, and the sides are the lineage revisions of the three manifests the plan compared"
+  ],
+  "routes": [
+    {"method": "GET", "path": "/api/decks/{forkDeckId}/update-plan", "scope": "learning.read", "answers": "plan page"},
+    {"method": "GET", "path": "/api/decks/{forkDeckId}/update-plan/units/{kind}/{key}", "scope": "learning.read", "answers": "unit sides"}
+  ],
+  "plan": {
+    "request": "GET /api/decks/33333333-3333-4333-8333-333333333333/update-plan?limit=50",
+    "status": 200,
+    "headers": {"Cache-Control": "private, no-store"},
+    "body": {
+      "state": "READY",
+      "forkDeckId": "33333333-3333-4333-8333-333333333333",
+      "forkHeadRevisionId": "44444444-4444-4444-8444-444444444444",
+      "upstreamRevisionId": "55555555-5555-4555-8555-555555555555",
+      "baseRevisionId": "66666666-6666-4666-8666-666666666666",
+      "planVersion": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "releaseNote": "Добавили 12 глаголов и исправили ударения",
+      "summary": {"newMaterials": 3, "newExercises": 2, "fixes": 5, "conflicts": 1, "deletedByAuthor": 1, "askAgain": 0},
+      "units": [
+        {
+          "unitId": "MATERIAL:77777777-7777-4777-8777-777777777777",
+          "kind": "MATERIAL",
+          "key": "77777777-7777-4777-8777-777777777777",
+          "class": "NEW",
+          "reason": null,
+          "title": "hablar — говорить",
+          "authorRevisionId": "88888888-8888-4888-8888-888888888888",
+          "mineRevisionId": null,
+          "baseRevisionId": null,
+          "dependsOn": [],
+          "defaultChoice": "ACCEPT"
+        },
+        {
+          "unitId": "EXERCISE:99999999-9999-4999-8999-999999999999",
+          "kind": "EXERCISE",
+          "key": "99999999-9999-4999-8999-999999999999",
+          "class": "NEW",
+          "reason": null,
+          "title": "Что значит hablar?",
+          "authorRevisionId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "mineRevisionId": null,
+          "baseRevisionId": null,
+          "dependsOn": ["MATERIAL:77777777-7777-4777-8777-777777777777", "OBJECTIVE:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"],
+          "defaultChoice": "ACCEPT"
+        },
+        {
+          "unitId": "MATERIAL:cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          "kind": "MATERIAL",
+          "key": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          "class": "CONFLICT",
+          "reason": "BOTH_CHANGED",
+          "title": "comer — есть",
+          "authorRevisionId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          "mineRevisionId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          "baseRevisionId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+          "dependsOn": [],
+          "defaultChoice": "KEEP_MINE"
+        },
+        {
+          "unitId": "MATERIAL:12121212-1212-4212-8212-121212121212",
+          "kind": "MATERIAL",
+          "key": "12121212-1212-4212-8212-121212121212",
+          "class": "DELETED",
+          "reason": null,
+          "title": "vivir — жить",
+          "authorRevisionId": null,
+          "mineRevisionId": "13131313-1313-4313-8313-131313131313",
+          "baseRevisionId": "13131313-1313-4313-8313-131313131313",
+          "dependsOn": [],
+          "defaultChoice": "KEEP"
+        }
+      ],
+      "nextCursor": null
+    },
+    "note": "titles are owner-visible text of the revision shown (the author's, or the copy's for a unit the author removed), at most 160 code points, empty for a taken-down revision of the copy and null for the order unit; the summary of a page is that of the whole plan"
+  },
+  "upToDate": {
+    "request": "GET /api/decks/33333333-3333-4333-8333-333333333333/update-plan",
+    "status": 200,
+    "body": {
+      "state": "UP_TO_DATE",
+      "forkDeckId": "33333333-3333-4333-8333-333333333333",
+      "forkHeadRevisionId": "44444444-4444-4444-8444-444444444444",
+      "upstreamRevisionId": "55555555-5555-4555-8555-555555555555",
+      "baseRevisionId": "55555555-5555-4555-8555-555555555555",
+      "planVersion": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "releaseNote": null,
+      "summary": {"newMaterials": 0, "newExercises": 0, "fixes": 0, "conflicts": 0, "deletedByAuthor": 0, "askAgain": 0},
+      "units": [],
+      "nextCursor": null
+    }
+  },
+  "closed": {
+    "request": "GET /api/decks/33333333-3333-4333-8333-333333333333/update-plan",
+    "status": 200,
+    "note": "the same body for PREPARING, DETACHED and SOURCE_UNAVAILABLE, with the state named: nothing about the source",
+    "body": {"state": "SOURCE_UNAVAILABLE", "forkDeckId": "33333333-3333-4333-8333-333333333333", "units": [], "nextCursor": null}
+  },
+  "unit": {
+    "material": {
+      "request": "GET /api/decks/33333333-3333-4333-8333-333333333333/update-plan/units/MATERIAL/cccccccc-cccc-4ccc-8ccc-cccccccccccc?planVersion=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "status": 200,
+      "body": {
+        "unitId": "MATERIAL:cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "kind": "MATERIAL",
+        "key": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "class": "CONFLICT",
+        "reason": "BOTH_CHANGED",
+        "planVersion": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "mine": {"memberKey": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "itemRevisionId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "document": {"formatVersion": 1, "root": {"id": "10101010-1010-4010-8010-101010101010", "type": "doc", "version": 1, "attrs": {}, "content": []}}},
+        "author": {"memberKey": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "itemRevisionId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "document": {"formatVersion": 1, "root": {"id": "10101010-1010-4010-8010-101010101010", "type": "doc", "version": 1, "attrs": {}, "content": []}}},
+        "changedNodeIds": ["20202020-2020-4020-8020-202020202020"]
+      }
+    },
+    "exercise": {
+      "request": "GET /api/decks/33333333-3333-4333-8333-333333333333/update-plan/units/EXERCISE/99999999-9999-4999-8999-999999999999?planVersion=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "status": 200,
+      "body": {
+        "unitId": "EXERCISE:99999999-9999-4999-8999-999999999999",
+        "kind": "EXERCISE",
+        "key": "99999999-9999-4999-8999-999999999999",
+        "class": "NEW",
+        "reason": null,
+        "planVersion": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "mine": null,
+        "author": {
+          "exerciseId": "99999999-9999-4999-8999-999999999999",
+          "exerciseRevisionId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "exerciseVersion": "0",
+          "type": "FREE_RESPONSE",
+          "enabled": true,
+          "subject": {"memberKey": "77777777-7777-4777-8777-777777777777", "itemRevisionId": "88888888-8888-4888-8888-888888888888"},
+          "objective": {"objectiveId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "objectiveRevisionId": "30303030-3030-4030-8030-303030303030", "title": "Спрягать hablar"},
+          "content": {"prompt": [{"kind": "TEXT", "text": "Что значит hablar?"}], "reference": [], "responseInput": "TEXT"},
+          "answerKey": {"kind": "TEXT", "accepted": ["говорить"]},
+          "evaluatorPolicy": {"id": "deterministic-text", "version": "1"}
+        },
+        "changedNodeIds": []
+      }
+    },
+    "objective": {
+      "side": {"objectiveId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "objectiveRevisionId": "30303030-3030-4030-8030-303030303030", "title": "Спрягать hablar"}
+    },
+    "metadata": {
+      "side": {"title": "Испанский язык: базовые глаголы", "description": "Сорок глаголов на каждый день"}
+    },
+    "order": {
+      "side": {"moved": [{"memberKey": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "title": "comer — есть", "from": 7, "to": 2}], "total": 1, "truncated": false}
+    }
+  },
+  "problems": {
+    "notFound": {
+      "status": 404,
+      "body": {"type": "urn:mnema:problem:resource-not-found", "title": "Resource not found", "status": 404, "detail": "The requested resource does not exist.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan", "code": "RESOURCE_NOT_FOUND"}
+    },
+    "invalidRequest": {
+      "status": 400,
+      "body": {"type": "urn:mnema:problem:invalid-request", "title": "Invalid request", "status": 400, "detail": "The request is invalid or cannot be read.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan", "code": "INVALID_REQUEST"}
+    },
+    "busy": {
+      "status": 503,
+      "headers": {"Retry-After": "1"},
+      "body": {"type": "urn:mnema:problem:update-plan-busy", "title": "Update plans busy", "status": 503, "detail": "Too many update plans are being computed right now; retry after the time in Retry-After.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan", "code": "UPDATE_PLAN_BUSY", "retryAfter": 1}
+    },
+    "stale": {
+      "status": 409,
+      "body": {"type": "urn:mnema:problem:update-plan-stale", "title": "Update plan stale", "status": 409, "detail": "The copy or its source changed after the plan was read; read the plan again.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan", "code": "UPDATE_PLAN_STALE"}
+    }
+  },
+  "load": {
+    "zero": "no copy, no work: nothing runs. A plan of an up-to-date copy is two root comparisons (no page read) and a handful of statements",
+    "scenarioH": "the viral source (20k copies) with 10 changed units: each copier's plan reads O(10 · log N) pages per manifest pair, once per request and per copier; nothing is stored, so a thousand copiers cost a thousand independent bounded reads",
+    "measured": "see the guide of the Learning service (Update plan, Updates/3): 1000 materials in the copy, 10 and 100 author changes"
+  },
+  "texts": {
+    "note": "the backend returns codes, flags and the author's text only. The frontend owns every string: tab names «Новое», «Исправления», «Конфликты», «Удалено автором», the columns «Сейчас у вас» | «Вариант автора» and the wording of the reasons."
+  }
+}

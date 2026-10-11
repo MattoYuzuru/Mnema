@@ -596,3 +596,42 @@ duplicated and edits never cross in either direction.
 New: `DECK_PREPARING` (409), `FORK_OWN_DECK` (409) and `FORKS_BUSY` (503, member `retryAfter`, header `Retry-After`). Existing codes keep their status/title/detail
 (`RATE_LIMITED` 429, `RESOURCE_NOT_FOUND` 404, `DECK_INVITE_ONLY` 403, `IDEMPOTENCY_CONFLICT` 409, `INVALID_REQUEST` 400, `RESOURCE_LIMIT_EXCEEDED` 422). Problem text never echoes
 codes, titles or identifiers.
+
+## The update plan of a copy (Updates/3, #442)
+
+What the author published since the copy was made, unit by unit, against what the copy holds now: the plan the review screen shows and the apply command (a later task) consumes.
+Exact examples and executable invariants are in [`updates.json`](updates.json); the architecture is [community decks §7](../../docs/architecture/community-decks.md#7-обновления-cd-5).
+Both routes only **read**: they create no revision, row, pin or job, whatever the size of the deck. Private chain, `learning.read`, owner of the copy only, every answer
+`Cache-Control: private, no-store`.
+
+| Operation | Request | Success |
+|---|---|---|
+| The plan | `GET /api/decks/{forkDeckId}/update-plan?cursor=&limit=` (`limit` 1..100, default 50) | 200 `{state, forkDeckId, forkHeadRevisionId, upstreamRevisionId, baseRevisionId, planVersion, releaseNote, summary, units, nextCursor}` |
+| The two sides of one unit | `GET /api/decks/{forkDeckId}/update-plan/units/{kind}/{key}?planVersion=` | 200 `{unitId, kind, key, class, reason, planVersion, mine, author, changedNodeIds}` |
+
+- **States.** `READY` lists units; `UP_TO_DATE` has the pins and no units; `PREPARING` (the copy is not materialized), `DETACHED` and `SOURCE_UNAVAILABLE` (the source is deleted, private,
+  hidden by moderation, or its code was rotated away: resolved by the code the copier used, like `fork.sourceAvailable`) answer `200 {state, forkDeckId, units: [], nextCursor: null}`
+  and nothing else, nothing about the source. A deck that is not the caller's live copy is the opaque 404.
+- **Units.** `MATERIAL` (key = member key), `EXERCISE` (exercise id; `enabled` is part of the revision), `OBJECTIVE` (objective id), `METADATA` and `ORDER` (the copy's own deck id: the
+  title and description, and the order of materials). A unit has `class` (`NEW`, `SAFE`, `CONFLICT`, `DELETED`, `ASK_AGAIN`), a `reason` for a conflict, a `title` of at most 160 code points
+  (the text of the revision shown: the author's, or the copy's for a unit the author removed; `null` for the order), the lineage revisions of the three sides (`authorRevisionId`,
+  `mineRevisionId`, `baseRevisionId`; for `METADATA` and `ORDER` deck revisions of the source and the copy; `null` is "does not exist there"), `dependsOn` (unit ids that must be accepted
+  with it) and `defaultChoice` (`ACCEPT`, `KEEP_MINE`, `KEEP`).
+- **Classes.** The author added what the copy has not got: `NEW`. The author changed it and the learner did not, or both ended with the same content: `SAFE`. Both changed it differently,
+  or the learner deleted what the author changed, or an exercise cannot work with the learner's materials or objective: `CONFLICT` (the learner's version is the default). The author removed
+  what the copy still has: `DELETED` (asked, never applied by «accept all safe»). A decision was recorded and the author changed the unit after it: `ASK_AGAIN`. Units equal on both sides,
+  units only the learner changed and units the author did not change are not listed.
+- **Pins and staleness.** `planVersion` is the digest of the copy's head, the source's published revision, the base and the recorded decisions. A cursor embeds it: after any change of
+  the copy, the source or a decision the cursor is `409 UPDATE_PLAN_STALE` and the plan is read again; so is a unit request with another `planVersion`. A malformed or foreign cursor
+  and a missing or malformed `planVersion` are 400. `summary` counts the whole plan. A plan reads documents (to tell equal contents from different ones, and for the node check) only inside a time and pair budget; when it is spent the rest is judged cautiously (a conflict) and the plan is still answered. The order of the pages is fixed: class, kind, the author's manifest order, key.
+- **A unit's sides** are the owner-level forms the editor reads: a material's native document, an exercise revision with its content, answer key and evaluator policy (the copier owns
+  the copy and the author published it), an objective's title, the deck's title and description, and the moved materials of the order with their places. `changedNodeIds` is the stable
+  node ids whose text, attributes, type or children differ between the two documents of a material. Only a unit of the **current** plan is readable (the opaque 404 otherwise): the route
+  never reads a revision by an id from the request.
+- **Decisions** (migration V61, written by the apply command): the table `fork_unit_decision` keeps what the learner decided per unit (`KEEP_MINE`, `DECLINE_NEW`, `KEEP_DELETED`, or
+  `PENDING` for a unit left for later, which keeps its own old base when the base of the copy moves to the published revision). The plan reads it; nothing in this contract writes it.
+
+### Codes
+
+New: `UPDATE_PLAN_STALE` (409) and `UPDATE_PLAN_BUSY` (503, member `retryAfter`, header `Retry-After: 1`: the instance computes as many plans as `learning.updates.plan.max-concurrent` allows; nothing was computed, send the request again). Existing codes keep their status/title/detail (`RESOURCE_NOT_FOUND` 404, `INVALID_REQUEST` 400, `AUTHENTICATION_REQUIRED` 401, `ACCESS_DENIED` 403).
+Problem text never echoes titles, codes or identifiers.
