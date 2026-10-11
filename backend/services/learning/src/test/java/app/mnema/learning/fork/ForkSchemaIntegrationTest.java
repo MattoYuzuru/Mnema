@@ -99,9 +99,9 @@ class ForkSchemaIntegrationTest extends PostgresIntegrationTest {
         UUID published = jdbc.sql("SELECT base_revision_id FROM app_learning.deck_fork WHERE deck_id = :d").param("d", copy).query(UUID.class).single();
         worlds.awaitReady(owner, copy);
 
-        // identity columns never change
+        // identity columns never change (the stored code moves only to the source's own current code, the setting is the owner's: see the V62 test below)
         for (String column : new String[] {"owner_id = gen_random_uuid()", "upstream_deck_id = gen_random_uuid()", "base_revision_id = gen_random_uuid()",
-                "upstream_code = 'zzzzzzzzzz'", "forked_at = now() + interval '1 day'", "auto_update = true", "reuse_scope_id = gen_random_uuid()"}) {
+                "upstream_code = 'zzzzzzzzzz'", "forked_at = now() + interval '1 day'", "reuse_scope_id = gen_random_uuid()"}) {
             assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.deck_fork SET " + column + " WHERE deck_id = :d").param("d", copy).update()).as(column)
                     .isInstanceOf(org.springframework.dao.DataAccessException.class);
         }
@@ -156,5 +156,81 @@ class ForkSchemaIntegrationTest extends PostgresIntegrationTest {
             jdbc.sql("SET LOCAL session_replication_role = replica").update();
             jdbc.sql("UPDATE app_learning.deck_fork SET released_at = NULL WHERE deck_id = :d").param("d", first).update();
         })).hasMessageContaining("deck_fork_live");
+    }
+
+    @Test
+    void v62LetsTheCodeMoveOnlyToTheCurrentCodeOfTheSameSourceAndTheSettingOnlyOnAReadyAttachedCopy() {
+        ForkWorlds worlds = worlds();
+        Source source = worlds.source("PUBLIC", 2, 1);
+        Source other = worlds.source("LINK", 2, 1);
+        UUID owner = UUID.randomUUID();
+        UUID copy = worlds.forked(owner, source.code());
+        worlds.awaitReady(owner, copy);
+
+        // the setting: a ready attached copy may change it, both ways
+        assertThat(jdbc.sql("UPDATE app_learning.deck_fork SET auto_update = true WHERE deck_id = :d").param("d", copy).update()).isEqualTo(1);
+        assertThat(jdbc.sql("UPDATE app_learning.deck_fork SET auto_update = false WHERE deck_id = :d").param("d", copy).update()).isEqualTo(1);
+
+        // the code: the source's lowered level rotates it; only that new code is accepted, never another deck's, a made-up one or a stale one
+        String old = source.code();
+        String rotated = worlds.level(source.author(), source.deck(), "LINK");
+        assertThat(rotated).isNotEqualTo(old);
+        for (String code : new String[] {other.code(), "zzzzzzzzzz", "1111111111"}) {
+            assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.deck_fork SET upstream_code = :c WHERE deck_id = :d").param("c", code).param("d", copy).update())
+                    .as(code).hasStackTraceContaining("Invalid deck copy transition");
+        }
+        // the code and the source together cannot be moved to another deck's pair either
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.deck_fork SET upstream_code = :c, upstream_deck_id = :s WHERE deck_id = :d")
+                .param("c", other.code()).param("s", other.deck()).param("d", copy).update()).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThat(jdbc.sql("UPDATE app_learning.deck_fork SET upstream_code = :c WHERE deck_id = :d").param("c", rotated).param("d", copy).update()).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT upstream_code FROM app_learning.deck_fork WHERE deck_id = :d").param("d", copy).query(String.class).single()).isEqualTo(rotated);
+        // the same value is not a change
+        assertThat(jdbc.sql("UPDATE app_learning.deck_fork SET upstream_code = :c WHERE deck_id = :d").param("c", rotated).param("d", copy).update()).isEqualTo(1);
+
+        // a detached copy changes neither
+        assertThat(worlds.send("POST", "/decks/" + copy + "/fork:detach", owner, null, null).statusCode()).isEqualTo(200);
+        worlds.level(source.author(), source.deck(), "PUBLIC");
+        String again = worlds.level(source.author(), source.deck(), "LINK");
+        assertThat(again).isNotEqualTo(rotated);
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.deck_fork SET upstream_code = :c WHERE deck_id = :d").param("c", again).param("d", copy).update())
+                .hasStackTraceContaining("Invalid deck copy transition");
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.deck_fork SET auto_update = true WHERE deck_id = :d").param("d", copy).update())
+                .hasStackTraceContaining("Invalid deck copy transition");
+        // detaching and changing the setting or the code in ONE statement is refused as well
+        UUID second = worlds.forked(owner, other.code());
+        worlds.awaitReady(owner, second);
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.deck_fork SET detached_at = now(), auto_update = true WHERE deck_id = :d").param("d", second).update())
+                .hasStackTraceContaining("Invalid deck copy transition");
+
+        // a copy that is not ready cannot hold the setting (a row made unfinished behind the service's back)
+        UUID third = worlds.forked(owner, worlds.source("LINK", 2, 0).code());
+        worlds.awaitReady(owner, third);
+        UUID base = jdbc.sql("SELECT base_revision_id FROM app_learning.deck_fork WHERE deck_id = :d").param("d", third).query(UUID.class).single();
+        UUID upstream = jdbc.sql("SELECT upstream_deck_id FROM app_learning.deck_fork WHERE deck_id = :d").param("d", third).query(UUID.class).single();
+        String thirdCode = jdbc.sql("SELECT upstream_code FROM app_learning.deck_fork WHERE deck_id = :d").param("d", third).query(String.class).single();
+        jdbc.sql("DELETE FROM app_learning.deck_fork WHERE deck_id = :d").param("d", third).update();
+        insertFork(third, upstream, thirdCode, base);
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.deck_fork SET auto_update = true WHERE deck_id = :d").param("d", third).update())
+                .hasStackTraceContaining("Invalid deck copy transition");
+    }
+
+    @Test
+    void thePartialIndexOfPendingDecisionsAnswersTheBadgeProbeWithoutReadingTheDecisionsOfTheCopy() {
+        assertThat(jdbc.sql("SELECT indexdef FROM pg_indexes WHERE indexname = 'fork_unit_decision_pending'").query(String.class).single())
+                .contains("(deck_id)").contains("decision = 'PENDING'");
+        ForkWorlds worlds = worlds();
+        Source source = worlds.source("LINK", 2, 0);
+        UUID owner = UUID.randomUUID();
+        UUID copy = worlds.forked(owner, source.code());
+        worlds.awaitReady(owner, copy);
+        for (int index = 0; index < 300; index++) worlds.keepMine(copy);
+        worlds.pend(copy);
+        String plan = new org.springframework.transaction.support.TransactionTemplate(transactions).execute(status -> {
+            jdbc.sql("SET LOCAL enable_seqscan = off").update();
+            jdbc.sql("SET LOCAL enable_bitmapscan = off").update();
+            return String.join("\n", jdbc.sql("EXPLAIN SELECT EXISTS (SELECT 1 FROM app_learning.fork_unit_decision u WHERE u.deck_id = :d AND u.decision = 'PENDING')")
+                    .param("d", copy).query(String.class).list());
+        });
+        assertThat(plan).contains("fork_unit_decision_pending");
     }
 }

@@ -201,9 +201,9 @@ class UpdatePlanSchemaIntegrationTest extends PostgresIntegrationTest {
         assertThat(worlds.base(copy.deck())).isEqualTo(third);
         // staying where it is is not a move
         worlds.moveBase(copy.deck(), third);
-        // the rest of the identity still never changes, with or without a base move in the same statement
+        // the rest of the identity still never changes, with or without a base move in the same statement (auto_update left this list in V62: it is the owner's setting)
         for (String column : new String[] {"owner_id = gen_random_uuid()", "upstream_deck_id = gen_random_uuid()", "upstream_code = 'zzzzzzzzzz'", "forked_at = now() + interval '1 day'",
-                "auto_update = true", "reuse_scope_id = gen_random_uuid()", "materialized_at = NULL", "job_id = gen_random_uuid()"}) {
+                "reuse_scope_id = gen_random_uuid()", "materialized_at = NULL", "job_id = gen_random_uuid()"}) {
             assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.deck_fork SET " + column + " WHERE deck_id = :d").param("d", copy.deck()).update()).as(column)
                     .isInstanceOf(DataAccessException.class);
             assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.deck_fork SET base_revision_id = :base, " + column + " WHERE deck_id = :d").param("base", third).param("d", copy.deck()).update())
