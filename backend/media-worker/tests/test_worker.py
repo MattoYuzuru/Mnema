@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import struct
 import subprocess
 import sys
 import tempfile
@@ -65,6 +66,56 @@ def fixture(path, kind):
         ffmpeg(*args)
 
 
+CANARY = "MNEMA-PRIVATE-CANARY-7731"
+GPS_LATITUDE = (55, 45, 21)
+GPS_LONGITUDE = (37, 37, 4)
+
+
+def exif_app1(canary=CANARY):
+    """An APP1 segment with a real EXIF block: Make and Software carrying a canary, Orientation 6 and a GPS IFD (latitude/longitude)."""
+    make = canary.encode() + b"\0"
+    software = (canary + "-SOFTWARE").encode() + b"\0"
+    entries0 = 4
+    gps_entries = 4
+    ifd0_size = 2 + entries0 * 12 + 4
+    gps_offset = 8 + ifd0_size
+    gps_size = 2 + gps_entries * 12 + 4
+    data = 8 + ifd0_size + gps_size
+    make_offset = data
+    software_offset = make_offset + len(make)
+    latitude_offset = software_offset + len(software)
+    longitude_offset = latitude_offset + 24
+
+    def entry(tag, kind, count, value):
+        return struct.pack("<HHII", tag, kind, count, value)
+
+    ifd0 = struct.pack("<H", entries0)
+    ifd0 += entry(0x010F, 2, len(make), make_offset)            # Make
+    ifd0 += entry(0x0112, 3, 1, 6)                              # Orientation: rotate 90
+    ifd0 += entry(0x0131, 2, len(software), software_offset)    # Software
+    ifd0 += entry(0x8825, 4, 1, gps_offset)                     # GPS IFD pointer
+    ifd0 += struct.pack("<I", 0)
+    gps = struct.pack("<H", gps_entries)
+    gps += entry(0x0001, 2, 2, int.from_bytes(b"N\0\0\0", "little"))
+    gps += entry(0x0002, 5, 3, latitude_offset)
+    gps += entry(0x0003, 2, 2, int.from_bytes(b"E\0\0\0", "little"))
+    gps += entry(0x0004, 5, 3, longitude_offset)
+    gps += struct.pack("<I", 0)
+    rational = lambda parts: b"".join(struct.pack("<II", value, 1) for value in parts)
+    tiff = b"II*\0" + struct.pack("<I", 8) + ifd0 + gps + make + software + rational(GPS_LATITUDE) + rational(GPS_LONGITUDE)
+    payload = b"Exif\0\0" + tiff
+    return b"\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload
+
+
+def jpeg_with_exif(path):
+    plain = path.with_suffix(".plain.jpg")
+    fixture(plain, "jpeg")
+    data = plain.read_bytes()
+    plain.unlink()
+    assert data[:2] == b"\xff\xd8"
+    path.write_bytes(data[:2] + exif_app1() + data[2:])
+
+
 class WorkerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -126,6 +177,51 @@ class WorkerTests(unittest.TestCase):
                 self.source.unlink()
                 for child in self.output.iterdir():
                     child.unlink()
+
+
+    def _all_output_bytes(self, result):
+        return [(variant["profile"], (self.output / variant["path"]).read_bytes()) for variant in result["variants"]]
+
+    def _assert_no_private_metadata(self, result, markers):
+        for profile, data in self._all_output_bytes(result):
+            for marker in markers:
+                self.assertNotIn(marker, data, f"{profile} carries {marker!r}")
+
+    def test_derived_image_variants_carry_no_exif_or_gps(self):
+        """Shared media is served to strangers as derived variants: a photo's EXIF (camera, GPS) must not survive the transcode."""
+        jpeg_with_exif(self.source)
+        source = self.source.read_bytes()
+        # the fixture really carries what we claim to strip
+        self.assertIn(CANARY.encode(), source)
+        self.assertIn(b"Exif\0\0", source)
+        result = MediaProcessor(self.runner).process(self.request("image"), self.source, self.output)
+        self.assertEqual([variant["purpose"] for variant in result["variants"]], ["playback", "thumbnail"])
+        self._assert_no_private_metadata(result, [CANARY.encode(), b"Exif", b"EXIF", b"XMP ", b"ICCP", b"GPS", struct.pack("<II", 55, 1)])
+        # and the metadata is not merely hidden from ffprobe: no tags of any kind on the stream or the container
+        for variant in result["variants"]:
+            probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(self.output / variant["path"])],
+                                              check=True, capture_output=True, text=True).stdout)
+            self.assertEqual(probe["format"].get("tags", {}), {})
+            for stream in probe["streams"]:
+                self.assertEqual(stream.get("tags", {}), {})
+
+    def test_derived_video_and_audio_variants_carry_no_location_or_tags(self):
+        location = "+55.7558+037.6173/"
+        ffmpeg("-f", "lavfi", "-i", "testsrc2=s=96x72:r=5:d=0.6", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.6", "-shortest",
+               "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-metadata", f"location={location}", "-metadata", f"title={CANARY}",
+               "-metadata", f"comment={CANARY}", "-metadata:s:v:0", f"handler_name={CANARY}", "-f", "mp4", self.source)
+        source = self.source.read_bytes()
+        self.assertIn(CANARY.encode(), source)
+        result = MediaProcessor(self.runner).process(self.request("video", 300_000), self.source, self.output)
+        self._assert_no_private_metadata(result, [CANARY.encode(), b"+55.7558", b"\xa9xyz", b"location"])
+        for child in self.output.iterdir():
+            child.unlink()
+        self.source.unlink()
+        ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:duration=0.5", "-c:a", "libmp3lame", "-metadata", f"title={CANARY}",
+               "-metadata", f"artist={CANARY}", "-metadata", f"comment={location}", "-id3v2_version", "3", "-f", "mp3", self.source)
+        self.assertIn(CANARY.encode(), self.source.read_bytes())
+        result = MediaProcessor(self.runner).process(self.request("audio", 300_000), self.source, self.output)
+        self._assert_no_private_metadata(result, [CANARY.encode(), b"ID3", b"+55.7558"])
 
     def test_wav_pcm_source_is_accepted_and_transcoded_to_the_playback_variant(self):
         fixture(self.source, "wav")

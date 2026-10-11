@@ -18,7 +18,7 @@ const MAX_RENEW_CHECK_MS = 15 * 60_000;
     selector: 'app-native-media-surface',
     imports: [NativeDocumentRendererComponent],
     template: `<app-native-document-renderer [document]="document()" [assetSources]="sources()"
-        [assetStatuses]="statuses()" [exposeNodeIds]="exposeNodeIds()" [overlay]="overlay()" (assetFailed)="refreshFailed($event)" />`,
+        [assetStatuses]="statuses()" [exposeNodeIds]="exposeNodeIds()" [overlay]="overlay()" [headingOffset]="headingOffset()" (assetFailed)="refreshFailed($event)" />`,
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class NativeMediaSurfaceComponent {
@@ -26,6 +26,13 @@ export class NativeMediaSurfaceComponent {
     /** Workshop only: node ids on the top-level blocks, and what is drawn around them (see the renderer). */
     readonly exposeNodeIds = input(false);
     readonly overlay = input<BlockOverlay | null>(null);
+    /**
+     * Whose files these are. `owner` (the default) speaks to the account that owns them; `public` is a reader of a shared deck,
+     * who is told only that the file is unavailable, never that it «does not belong to this account».
+     */
+    /** Levels the document's headings sit lower than usual (see the renderer); a public material under its own `h2` passes 1. */
+    readonly headingOffset = input(0);
+    readonly audience = input<'owner' | 'public'>('owner');
     readonly sources = signal<Readonly<Record<string, AssetPlaybackSource>>>({});
     readonly statuses = signal<Readonly<Record<string, string>>>({});
 
@@ -100,7 +107,7 @@ export class NativeMediaSurfaceComponent {
                     && (entry.reason.status === 403 || entry.reason.status === 404);
                 if (forbidden) { this.terminal.add(id); this.views.delete(id); }
                 this.readErrors.set(id, forbidden
-                    ? 'Файл недоступен или не принадлежит этому аккаунту.'
+                    ? (this.audience() === 'public' ? 'Файл недоступен.' : 'Файл недоступен или не принадлежит этому аккаунту.')
                     : 'Не удалось проверить файл. Повторим позже.');
             }
         });

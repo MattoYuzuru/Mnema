@@ -16,6 +16,7 @@ import { PublicationBlockComponent } from '../features/own-decks/publication/pub
 import { ItemApiService } from '../features/authoring/item-api.service';
 import { PromoPopupComponent } from '../features/promo/promo-popup.component';
 import { PromoCampaign } from '../features/promo/promo.models';
+import { AccessScreenComponent } from '../shared/access-screen.component';
 import { AccessLevelComponent } from '../shared/access-level.component';
 import { ActionMenuComponent, ActionMenuItem } from '../shared/action-menu.component';
 import { PublicDeckCardComponent } from '../shared/public-deck-card.component';
@@ -69,7 +70,7 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
 @Component({
     selector: 'app-sg-surfaces',
     encapsulation: ViewEncapsulation.None,
-    imports: [SgSpecimenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
+    imports: [SgSpecimenComponent, AccessScreenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
         NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent, AutoLoadComponent,
         AccessLevelComponent, PublicationBlockComponent, AccessPanelComponent],
     providers: [{ provide: PublicationApiService, useClass: DemoPublicationApi }, { provide: ItemApiService, useClass: DemoItemApi },

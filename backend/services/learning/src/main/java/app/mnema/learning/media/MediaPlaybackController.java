@@ -15,7 +15,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Public API only for an authenticated owner's logical asset; S3 locations remain internal. */
+/**
+ * Public API only for an authenticated reader's logical asset: its owner (variants and the original) or the owner of a deck whose heads reference it
+ * (variants only, Share/9); S3 locations remain internal.
+ */
 @RestController
 @RequestMapping(value = "/media-assets", produces = MediaType.APPLICATION_JSON_VALUE)
 public final class MediaPlaybackController {
@@ -41,9 +44,13 @@ public final class MediaPlaybackController {
             var signedPoster = store.read(descriptor.poster().objectKey(), false);
             poster = new SignedSource(signedPoster.url(), signedPoster.expiresAt(), descriptor.poster().mimeType());
         }
-        var original = store.read(descriptor.original().objectKey(), true);
-        return privateOk(new PlaybackView(asset, descriptor.state(), source, poster,
-                new SignedSource(original.url(), original.expiresAt(), descriptor.original().mimeType())));
+        // The original is the owner's alone: the owner of a copy that holds the asset in its heads gets the derived variants and no download.
+        SignedSource download = null;
+        if (descriptor.original() != null) {
+            var original = store.read(descriptor.original().objectKey(), true);
+            download = new SignedSource(original.url(), original.expiresAt(), descriptor.original().mimeType());
+        }
+        return privateOk(new PlaybackView(asset, descriptor.state(), source, poster, download));
     }
 
     /** Offline clients request each pinned variant just in time; URLs never enter a manifest. */

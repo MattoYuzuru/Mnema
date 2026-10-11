@@ -29,13 +29,16 @@ final class MediaPlaybackStore implements AutoCloseable {
                 .credentialsProvider(credentials).build();
     }
 
-    SignedRead read(String key, boolean download) {
+    SignedRead read(String key, boolean download) { return read(key, download, playback.urlTtl()); }
+
+    /** As above with a lifetime of its own (the public route signs for less than the owner's playback). */
+    SignedRead read(String key, boolean download, java.time.Duration ttl) {
         if (!upload.configured()) throw new MediaStorageUnavailableException();
         var request = GetObjectRequest.builder().bucket(upload.bucket).key(key);
         if (download) request.responseContentDisposition("attachment");
         try {
             var signed = signer.presignGetObject(GetObjectPresignRequest.builder()
-                    .signatureDuration(playback.urlTtl()).getObjectRequest(request.build()).build());
+                    .signatureDuration(ttl).getObjectRequest(request.build()).build());
             return new SignedRead(signed.url().toExternalForm(), signed.expiration());
         } catch (software.amazon.awssdk.core.exception.SdkException failure) {
             throw new MediaStorageUnavailableException();

@@ -228,8 +228,9 @@ Someone else's deck is read through its **public code** (10 characters of base58
 read-only path that serves the **published revision**. Exact examples and executable invariants are in
 [`public-read.json`](public-read.json); the architecture is
 [community decks §6](../../docs/architecture/community-decks.md#6-доступ-и-публикация-cd-3-cd-4). Nothing else changes:
-every existing deck, item, exercise, draft, capture, study, generation and media route stays owner-only and answers
-the opaque 404 for any other account, whatever the deck's level.
+every existing deck, item, exercise, draft, capture, study and generation route stays owner-only and answers
+the opaque 404 for any other account, whatever the deck's level. The private media routes keep their owner rule and add exactly one
+reader: the owner of a copy, for the media his own deck's heads reference ([media of a shared deck](#media-of-a-shared-deck-share9-431)).
 
 | Operation | Request | Success |
 |---|---|---|
@@ -237,6 +238,7 @@ the opaque 404 for any other account, whatever the deck's level.
 | Materials | `GET /api/public/decks/{code}/items?limit=&cursor=` | 200, page + nullable `nextCursor` |
 | One material | `GET /api/public/decks/{code}/items/{memberKey}` | 200, native document as pinned by the published manifest |
 | Exercises | `GET /api/public/decks/{code}/exercises?limit=&cursor=` | 200, page of learner-safe summaries + nullable `nextCursor` |
+| Media | `GET /api/public/decks/{code}/media/{assetId}` | 200, `{assetId, state, playback, poster}`: signed links of derived variants ([below](#media-of-a-shared-deck-share9-431)) |
 
 - **Bearer is optional.** No token is a guest; a valid token (scope `learning.read`) identifies the account and is checked
   against Identity exactly like the private API; a present but invalid Bearer token (invalid, expired or revoked) is 401 and is
@@ -258,8 +260,8 @@ the opaque 404 for any other account, whatever the deck's level.
 - **No editing metadata, no answers.** Responses carry no deck id, deck revision or version, draft ids, journal or origin
   data. An exercise is `{exerciseId, exerciseRevisionId, ordinal, type, enabled, prompt}`: `prompt` is a plain-text summary of the question
   (≤ 200 code points, `null` if the question has no plain text); the objective's authoring title is not part of the page, and answer
-  keys, options, references, transcripts, bindings and evaluator policies never leave the server. Media is not served here
-  (Share/9); the document is returned as stored and the owner-only media endpoints keep refusing everyone else.
+  keys, options, references, transcripts, bindings and evaluator policies never leave the server. The document is returned as stored, so its
+  image, audio and video nodes name asset ids; the media itself is read through the media route below, never through the owner's routes.
 - **Limits.** `429 RATE_LIMITED` with `Retry-After` (the real remaining time of the window that refused): a guest is counted per
   client network (IPv4 address, IPv6 /64) and, for IPv6, all guests of one /48 together; guests that find the guest table full share
   one overflow bucket; a signed-in viewer is counted per account in a table of its own, so a flood of guests never starves an
@@ -270,6 +272,44 @@ the opaque 404 for any other account, whatever the deck's level.
   not exist. (A bearer that is present and invalid is still 401, because authentication runs first.)
 - Failure codes: `DECK_INVITE_ONLY` (403, new), `RESOURCE_NOT_FOUND` (404), `INVALID_REQUEST` (400), `VERSION_CONFLICT` (412),
   `RATE_LIMITED` (429), `PUBLIC_READ_BUSY` (503, new), `AUTHENTICATION_REQUIRED` (401), `ACCESS_DENIED` (403, a valid token without `learning.read`).
+
+### Media of a shared deck (Share/9, #431)
+
+`GET /api/public/decks/{code}/media/{assetId}` serves the media of the MATERIALS of the PUBLISHED revision, to guests and to any account, on the same
+optional-bearer chain as the other public routes. Examples and executable shapes: the `media` section of [`public-read.json`](public-read.json).
+
+```json
+{ "assetId": "3c9f1a52-…", "state": "READY",
+  "playback": { "url": "https://…", "expiresAt": "2026-10-11T10:30:00Z", "mimeType": "image/webp" },
+  "poster":   { "url": "https://…", "expiresAt": "2026-10-11T10:30:00Z", "mimeType": "image/webp" } }
+```
+
+- **Exactly four members.** `state` is `READY`, the state of an upload that is still going (`PENDING_UPLOAD`, `VERIFYING`, `PROCESSING`) or `UNAVAILABLE` (a rejected, failed
+  or deleted asset: a non-owner is not told which); `playback` and `poster` are `null` unless `state` is `READY`, and `poster` is `null` for an asset with no poster or thumbnail
+  variant (audio). There is **no** download member, no
+  original, no object key and no EXIF: a non-owner receives **derived variants only** (playback, poster, thumbnail). The media worker re-encodes every variant with
+  `-map_metadata -1` and the pinned FFmpeg 6.1.1 carries no EXIF/GPS from a JPEG into WebP; the worker's tests prove it on a JPEG with GPS, an MP4 with a location and an
+  MP3 with tags. A link is signed offline for `learning.community.public-media.url-ttl` (default ten minutes, shorter than the owner's one-hour playback links), is not stored, and the answer is `Cache-Control: private, no-store`
+  with `Vary: Authorization`.
+- **Who gets a link** is one rule, fail closed: `DeckAccess` grants a level for the deck behind the code (a published revision at the level: `PUBLIC`, `LINK`, an
+  invitation with a grant, the owner at any level) **and** the asset is in the deck's **published set** (`published_media`: the assets that the *materials* of the published
+  revision reference, maintained by the publication command). The media of **exercises is not offered**: the public view shows exercises as plain-text prompts, and an exercise pin
+  does not say whether an asset belongs to the question or to the answer.
+  Everything else is the same `404 RESOURCE_NOT_FOUND`: an unknown or rotated code, a private deck, an invitation-only deck for a viewer without a grant (404 here, unlike the
+  reads), a deck without a published revision, an asset the owner added after the last publication, an asset a republication removed, an exercise-only asset, an asset of another deck, and an
+  unknown asset id. A malformed asset id is 400. Republishing changes the set in the same transaction as the published pointer; a downgrade to `PRIVATE` keeps it.
+- **Limits.** `429 RATE_LIMITED` with the real `Retry-After`. The limits count **requests for signed links, not bytes**: the object store serves the bytes after a link is handed
+  out, so they bound how fast links are minted, not the egress itself (a CDN for derived variants stays a separate decision). A guest is counted per client network (IPv4
+  address, IPv6 /64; unknown codes and assets count too) at 240 a minute, for IPv6 all guests of one /48 together at 1200 (a request must pass both), and all guests
+  together per deck at 3000 a minute; a signed-in viewer is limited per account by the public chain and is never charged to the deck. The bulkhead of the other public reads
+  applies (`503 PUBLIC_READ_BUSY`).
+- **Kill switch.** `learning.community.public-media.enabled` is **false** by default: the route answers 404 as if it did not exist. It also needs
+  `learning.community.public-routes.enabled`. Outcomes are counted on `mnema_public_media_requests_total{outcome}`.
+- **The owner of a copy** reads the media of his own deck on the private routes (`GET /api/media-assets/{assetId}/playback`, `…/variants/{variantId}/download`
+  and the offline manifest `GET /api/decks/{deckId}/media-manifests/current`) for every asset his deck's **head** revisions reference (materials and exercises), whoever owns the asset: derived
+  variants only, `download` is `null` and the manifest lists no `original` variant for an asset he does not own. A deck that is deleted, or a head that no longer holds
+  the asset, stops serving it. Editing a material of a copy may keep an inherited asset (an asset the deck's heads already reference); any other asset must be the
+  editor's own, and an asset of another account that no head holds is `404` on save.
 
 ## Publication and the topic directory (Share/8, #430)
 

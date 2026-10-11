@@ -86,7 +86,7 @@ describe('NativeDocumentRendererComponent', () => {
         const link = host.querySelector('a') as HTMLAnchorElement | null;
         expect(host.querySelectorAll('a').length).toBe(1);
         expect(link?.getAttribute('href')).toBe('https://example.test/source');
-        expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+        expect(link?.getAttribute('rel')).toBe('ugc nofollow noopener noreferrer');
         expect(link?.getAttribute('target')).toBe('_blank');
         expect(link?.querySelector('.native-visually-hidden')?.textContent).toBe(' (откроется в новой вкладке)');
         expect(link?.textContent?.replace(/\s+/g, ' ').trim()).toBe('مصدر آمن ومتابعة (откроется в новой вкладке)');
@@ -294,5 +294,31 @@ describe('NativeDocumentRendererComponent', () => {
         expect(host.querySelector('.native-unsupported')?.textContent).toContain('не поддерживается');
         expect(host.textContent).not.toContain('secret');
         expect(host.querySelector('pre')).toBeNull();
+    });
+
+    it('nests document headings one level lower under a host that has its own h2', () => {
+        fixture.componentRef.setInput('document', documentOf(Array.from({ length: 6 }, (_, index) => nativeNode('heading', { level: index + 1 }, [nativeNode('text', { text: `Level ${index + 1}` })]))));
+        fixture.componentRef.setInput('headingOffset', 1);
+        fixture.detectChanges();
+        const host = fixture.nativeElement as HTMLElement;
+        expect(host.querySelector('h2, h3, h4, h5, h6')).toBeNull();
+        const levels = [...host.querySelectorAll('[role="heading"]')].map(heading => [heading.textContent?.trim(), heading.getAttribute('aria-level')]);
+        expect(levels).toEqual([['Level 1', '3'], ['Level 2', '4'], ['Level 3', '5'], ['Level 4', '6'], ['Level 5', '7'], ['Level 6', '8']]);
+        expect(host.querySelector('.native-heading--1')).not.toBeNull();
+    });
+
+    it('does not read «Файл недоступен.: подпись» when a status already ends in a full stop or an ellipsis', () => {
+        const assetId = '31901995-16ea-4f8b-8301-5d8e03004c72';
+        fixture.componentRef.setInput('document', documentOf([nativeNode('image', { assetId, alt: 'Схема API' })]));
+        fixture.componentRef.setInput('assetStatuses', { [assetId]: 'Файл недоступен.' });
+        fixture.detectChanges();
+        const host = fixture.nativeElement as HTMLElement;
+        expect(host.querySelector('.native-media-pending')?.textContent).toBe('Файл недоступен: Схема API');
+        fixture.componentRef.setInput('assetStatuses', { [assetId]: 'Готовим файл к просмотру…' });
+        fixture.detectChanges();
+        expect(host.querySelector('.native-media-pending')?.textContent).toBe('Готовим файл к просмотру: Схема API');
+        fixture.componentRef.setInput('assetStatuses', {});
+        fixture.detectChanges();
+        expect(host.querySelector('.native-media-pending')?.textContent).toBe('Изображение пока недоступно: Схема API');
     });
 });

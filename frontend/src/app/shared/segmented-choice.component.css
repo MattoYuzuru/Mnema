@@ -16,10 +16,13 @@ legend { padding: 0 0 .4rem; color: var(--mn-ink); font: 700 .95rem/1.3 var(--mn
 .hint { margin-block-start: .5rem; }
 .hint:empty { margin: 0; }
 @media (max-width: 25rem) { .segments { inline-size: 100%; } .segment { flex: 1 1 auto; } }
+/* Forced colours: the selected segment must not rely on a Highlight fill. Chrome draws a Canvas backplate behind text there and
+   the HighlightText label vanished («Мягко» was a white box). Every label stays ButtonText on Canvas; the selection is the filled
+   mark plus a Highlight outline, both system colours. */
 @media (forced-colors: active) {
   .segment { border-color: ButtonText; background: Canvas; color: ButtonText; }
-  .segment:has(:checked) { outline: 2px solid Highlight; background: Highlight; color: HighlightText; }
-  .segment:has(:checked) .mark { border-color: HighlightText; background: HighlightText; box-shadow: none; }
-  .segment:has(:focus-visible) { outline-color: Highlight; }
+  .segment:has(:checked) { outline: 2px solid Highlight; outline-offset: -2px; background: Canvas; color: ButtonText; }
+  .segment:has(:checked) .mark { border-color: Highlight; background: Highlight; box-shadow: none; }
+  .segment:has(:focus-visible) { outline: 3px solid Highlight; outline-offset: 2px; }
   .segment:has(:disabled) { border-color: GrayText; color: GrayText; }
 }
