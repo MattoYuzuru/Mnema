@@ -73,8 +73,8 @@ describe('appRoutes', () => {
     it('guards a lazy owner shell and protects transactional children before leaving', () => {
         const manage = ownerRoutes(true).find(route => route.path === 'manage')!;
         expect(manage.canActivate).toEqual([authGuard]); expect(manage.loadComponent).toBeDefined();
-        expect(manage.children?.map(child => child.path)).toEqual(['', 'users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints', 'complaints/journal', 'complaints/:complaintId', 'audit']);
-        for (const path of ['users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints/:complaintId']) expect(manage.children?.find(child => child.path === path)?.canDeactivate).toHaveLength(1);
+        expect(manage.children?.map(child => child.path)).toEqual(['', 'users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints', 'complaints/journal', 'complaints/:complaintId', 'community', 'audit']);
+        for (const path of ['users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints/:complaintId', 'community']) expect(manage.children?.find(child => child.path === path)?.canDeactivate).toHaveLength(1);
     });
 
     it('keeps the event editor reachable on the learner host outside the owner shell, ahead of it', async () => {
