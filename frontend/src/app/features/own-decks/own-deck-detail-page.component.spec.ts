@@ -22,6 +22,7 @@ import { DeckInsights } from './hub/deck-hub.models';
 import { OwnDecksApiService } from './own-decks-api.service';
 import { ModerationApiService, parseDeckModeration } from './moderation/moderation-api.service';
 import { ForkApiService } from './fork/fork-api.service';
+import { UpdateSeenState } from './update/update-seen-state';
 import type { DeckFork } from './fork/fork.models';
 import { FORK_POLL_LIMIT } from './fork/fork-poll';
 import { PublicationApiService } from './publication/publication-api.service';
@@ -503,28 +504,41 @@ describe('OwnDeckDetailPageComponent', () => {
             const news = () => root().querySelector('app-update-news');
             const links = () => [...root().querySelectorAll<HTMLAnchorElement>('app-update-news a')].map(anchor => [anchor.textContent!.trim(), anchor.getAttribute('href')]);
             const withNotice = (fork: DeckFork, counts: { applied: number; pending: number }): DeckFork => ({ ...fork, lastUpdate: { ...states.updatedAutomatically.lastUpdate!, counts } });
+            const quiet = { ...states.updatedAutomatically, updateAvailable: false };
 
-            it('says what was taken and what waits, under its own heading, with a link to the history (the contract example)', async () => {
-                await show(states.updatedAutomatically);
+            it('says what was taken and what waits, under its own heading, with the time and a text link to the history (the contract example)', async () => {
+                await show(quiet as DeckFork);
                 expect(news()!.querySelector('h2')!.textContent).toBe('Что нового');
                 expect(news()!.querySelector('.line')!.textContent).toBe('Автор обновил колоду, мы взяли 3 изменения автоматически. 2 ждут вашего решения.');
+                expect(news()!.querySelector('time')!.getAttribute('datetime')).toBe(states.updatedAutomatically.lastUpdate!.appliedAt);
                 expect(links()[0]).toEqual(['Посмотреть, что изменилось', `/decks/${deck.deckId}/update/history`]);
+                expect(news()!.querySelector('button, .button.primary')).toBeNull();
                 expect([...root().querySelectorAll('.button.primary')].map(item => item.textContent!.trim())).toEqual(['Учить']);
             });
 
-            it('has exactly one link to the review screen while the update offer is shown (the offer carries it)', async () => {
+            it('sits under the actions, so «Учить» is not pushed down by it', async () => {
+                await show(quiet as DeckFork);
+                const nav = root().querySelector('nav.hub-actions')!;
+                expect(nav.compareDocumentPosition(news()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+                expect(news()!.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+            });
+
+            it('is one block with the update offer, carrying its badge and its one link to the review screen, when the author has something waiting', async () => {
                 await show(states.updatedAutomatically);
-                expect(root().querySelector('section.update-offer')).not.toBeNull();
-                expect(links()).toHaveLength(1);
+                expect(root().querySelector('section.update-offer')).toBeNull();
+                expect(news()!.querySelectorAll('h2')).toHaveLength(1);
+                expect(news()!.querySelector('app-update-badge')!.textContent!.trim()).toBe('Есть обновление');
+                expect(links()).toEqual([['Посмотреть, что изменилось', `/decks/${deck.deckId}/update/history`], ['Посмотреть обновление', `/decks/${deck.deckId}/update`]]);
                 expect(root().querySelectorAll('a[href$="/update"]')).toHaveLength(1);
-                expect(news()!.compareDocumentPosition(root().querySelector('section.update-offer')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+                expect(root().querySelectorAll('app-update-badge')).toHaveLength(1);
+                expect([...root().querySelectorAll('.button.primary')].map(item => item.textContent!.trim())).toEqual(['Учить']);
             });
 
             it('links to the review screen itself when something waits and no offer is shown, and not when nothing waits', async () => {
-                await show(withNotice({ ...states.updatedAutomatically, updateAvailable: false }, { applied: 1, pending: 1 }));
+                await show(withNotice(quiet as DeckFork, { applied: 1, pending: 1 }));
                 expect(news()!.querySelector('.line')!.textContent).toBe('Автор обновил колоду, мы взяли 1 изменение автоматически. 1 ждёт вашего решения.');
                 expect(links()).toEqual([['Посмотреть, что изменилось', `/decks/${deck.deckId}/update/history`], ['Решить, что взять', `/decks/${deck.deckId}/update`]]);
-                await show(withNotice({ ...states.updatedAutomatically, updateAvailable: false }, { applied: 5, pending: 0 }));
+                await show(withNotice(quiet as DeckFork, { applied: 5, pending: 0 }));
                 expect(news()!.querySelector('.line')!.textContent).toBe('Автор обновил колоду, мы взяли 5 изменений автоматически.');
                 expect(links()).toHaveLength(1);
             });
@@ -532,12 +546,25 @@ describe('OwnDeckDetailPageComponent', () => {
             it('is absent once the server stops sending the notice (seen), for an ordinary deck, and for a copy that cannot have one', async () => {
                 await show(states.updateAvailable);
                 expect(news()).toBeNull();
+                expect(root().querySelector('section.update-offer')).not.toBeNull();
                 await show(null);
                 expect(news()).toBeNull();
                 for (const fork of [states.preparing, states.detached]) {
                     await show({ ...fork, lastUpdate: states.updatedAutomatically.lastUpdate });
                     expect(news(), JSON.stringify(fork)).toBeNull();
                 }
+            });
+
+            it('hides at once when this tab has marked the entry seen, and shows the plain offer in its place', async () => {
+                await show(states.updatedAutomatically);
+                expect(news()).not.toBeNull();
+                TestBed.inject(UpdateSeenState).mark(states.updatedAutomatically.lastUpdate!.deckRevisionId);
+                fixture.detectChanges();
+                expect(news()).toBeNull();
+                expect(root().querySelector('section.update-offer')).not.toBeNull();
+                TestBed.inject(UpdateSeenState).unmark(states.updatedAutomatically.lastUpdate!.deckRevisionId);
+                fixture.detectChanges();
+                expect(news()).not.toBeNull();
             });
         });
 
@@ -554,7 +581,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(box().checked).toBe(false);
                 const tip = root().querySelector('.auto-update app-toggletip')!;
                 expect(tip.querySelector('button')!.getAttribute('aria-label')).toBe('Подробнее: автоматический приём обновлений');
-                expect(tip.querySelector('.bubble')!.textContent).toBe('Берём новое и исправления того, что вы не меняли. Конфликты и удаления ждут вашего решения. Любое автоматическое изменение можно вернуть в «Истории обновлений».');
+                expect(tip.querySelector('.bubble')!.textContent).toBe('Берём новое и исправления того, что вы не меняли. Конфликты и удаления ждут вашего решения. Принятое автоматически смотрите в «Истории обновлений». Материал или упражнение можно вернуть, пока вы сами не правили его после обновления.');
                 await show(states.updateAvailable);
                 expect(box().checked).toBe(true);
             });

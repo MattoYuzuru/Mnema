@@ -125,7 +125,10 @@ export class SgUpdateComponent {
     protected readonly confirmText = UPDATE_TEXT.revertAsk.CHANGED('Спряжение ser и estar');
     protected readonly revertText = UPDATE_TEXT.revert;
     protected readonly revertConfirmText = UPDATE_TEXT.revertConfirm;
+    protected readonly withText = UPDATE_TEXT.revertWith.CHANGED('«Вставьте глагол: Yo ___ estudiante»');
+    protected readonly noRepeatText = UPDATE_TEXT.revertNoRepeat;
     protected readonly cancelText = 'Отмена';
+    protected readonly viewUpdate = UPDATE_TEXT.viewUpdate;
     protected readonly newsLook = UPDATE_TEXT.newsLook;
     protected readonly newsDecide = UPDATE_TEXT.newsDecide;
 

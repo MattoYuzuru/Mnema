@@ -8,6 +8,7 @@ import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
 import { ToastService } from '../../../core/notifications/toast.service';
 import { SpyObj, spyObj } from '../../../../testing/mocks';
 import { isCanonicalCommandId } from '../own-deck.models';
+import { UpdateSeenState } from './update-seen-state';
 import type { OwnDeck } from '../own-deck.models';
 import { OwnDecksApiService } from '../own-decks-api.service';
 import { UpdateHistoryApiService } from './update-history-api.service';
@@ -109,8 +110,9 @@ describe('UpdateHistoryPageComponent', () => {
             expect(root().querySelector('p.status')).toBeNull();
             const entries = [...root().querySelectorAll('ol.entries > li > article')];
             expect(entries).toHaveLength(2);
-            expect(entries[0]!.querySelector('.stamp')!.textContent).toBe('Автоматически');
-            expect(entries[1]!.querySelector('.stamp')!.textContent).toBe('Вручную');
+            expect(entries[0]!.querySelector('h2')!.textContent).toBe('Автоматически, 2 часа назад');
+            expect(entries[1]!.querySelector('h2')!.textContent).toMatch(/^Вручную, 01\.09\.2026, \d{2}:\d{2}$/u);
+            expect(entries[0]!.querySelector('.entry-head .stamp')).toBeNull();
             expect(entries[0]!.querySelector('.counts')!.textContent).toBe('Принято изменений: 3. Ждали вашего решения: 2.');
             expect(entries[1]!.querySelector('.counts')!.textContent).toBe('Принято изменений: 1.');
             for (const article of entries) {
@@ -121,13 +123,17 @@ describe('UpdateHistoryPageComponent', () => {
             expect(root().querySelectorAll('h1')).toHaveLength(1);
         });
 
-        it('writes the time as a relative phrase and the exact date in one <time>, and only the exact date for an old entry', async () => {
-            await open(entry(1), entry(2, { appliedAt: '2026-09-01T09:30:00.000Z' }));
-            const times = [...root().querySelectorAll('time')];
-            expect(times[0]!.textContent).toMatch(/^2 часа назад, \d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/u);
-            expect(times[0]!.getAttribute('datetime')).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
-            expect(times[1]!.textContent).toMatch(/^\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/u);
-            expect(times[1]!.getAttribute('datetime')).toBe('2026-09-01T09:30:00.000Z');
+        it('writes the mode and a relative phrase in the heading, the exact date under it, and only the exact date for an old entry', async () => {
+            await open(entry(1), entry(2, { appliedAt: '2026-09-01T09:30:00.000Z', mode: 'MANUAL' }));
+            const headings = [...root().querySelectorAll('h2')];
+            expect(headings[0]!.textContent).toBe('Автоматически, 2 часа назад');
+            expect(headings[0]!.querySelector('time')!.textContent).toBe('2 часа назад');
+            expect(headings[0]!.querySelector('time')!.getAttribute('datetime')).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
+            const exact = [...root().querySelectorAll('.entry > p.when time')];
+            expect(exact).toHaveLength(1);
+            expect(exact[0]!.textContent).toMatch(/^\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/u);
+            expect(headings[1]!.textContent).toMatch(/^Вручную, \d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/u);
+            expect(headings[1]!.querySelector('time')!.getAttribute('datetime')).toBe('2026-09-01T09:30:00.000Z');
         });
 
         it('says each kind of change and each state of a unit in words, and offers «Вернуть как было» only where the server allows it', async () => {
@@ -144,12 +150,14 @@ describe('UpdateHistoryPageComponent', () => {
                 ]
             }));
             const rows = [...root().querySelectorAll('app-update-history-unit')];
-            const stamps = rows.map(row => row.querySelector('.stamp')!.textContent);
-            expect(stamps).toEqual(['Добавлено', 'Исправлено', 'Удалено', 'Исправлено', 'Исправлено', 'Исправлено', 'Исправлено', 'Порядок']);
+            const stamps = rows.map(row => row.querySelector('.stamp')?.textContent ?? null);
+            expect(stamps).toEqual(['Добавлено', 'Исправлено', 'Удалено', 'Исправлено', 'Исправлено', 'Исправлено', 'Исправлено', null]);
             expect(rows.map(row => row.querySelector('.title')!.textContent)).toEqual([
-                'Материал 1', 'Упражнение 2', 'Материал 3', 'Материал 4', 'Упражнение 5', 'Новое название', 'Цель', 'Порядок материалов'
+                'Материал 1', 'Упражнение 2', 'Материал 3', 'Материал 4', 'Упражнение 5', 'Новое название', 'Цель', 'Изменился порядок материалов'
             ]);
             expect(rows.map(row => row.querySelector('.state')?.textContent ?? null)).toEqual([null, null, null, 'Вы уже вернули', 'Вы изменили после обновления', null, null, null]);
+            expect(root().querySelector('ul.units article')).toBeNull();
+            expect(root().querySelectorAll('ul.units > li')).toHaveLength(8);
             expect(revertButtons().map(item => item.getAttribute('aria-label'))).toEqual([
                 'Вернуть как было: «Материал 1»', 'Вернуть как было: «Упражнение 2»', 'Вернуть как было: «Материал 3»'
             ]);
@@ -159,7 +167,7 @@ describe('UpdateHistoryPageComponent', () => {
         it('names a unit without a title by its kind and says when an entry lists only some of its units', async () => {
             await open(entry(1, { units: [unit('EXERCISE', 1, 'REMOVED', { title: '' })], unitsTruncated: true }));
             expect(text('app-update-history-unit .title')).toBe('Упражнение недоступно');
-            expect(text('.entry > p.hint')).toBe('Показаны не все изменения этого обновления.');
+            expect(text('.entry > p.hint:not(.when)')).toBe('Показаны не все изменения этого обновления.');
         });
 
         it('says there were no updates, and offers the review screen only while the author has something waiting', async () => {
@@ -171,6 +179,18 @@ describe('UpdateHistoryPageComponent', () => {
             const link = root().querySelector<HTMLAnchorElement>('a[href$="/update"]')!;
             expect(link.textContent!.trim()).toBe('Посмотреть обновление');
             expect(link.getAttribute('href')).toBe(`/decks/${DECK_ID}/update`);
+        });
+
+        it('names «Вернуть как было» of units with the same title in two updates by the time of each, and leaves a title that is unique alone', async () => {
+            await open(
+                entry(1, { appliedAt: '2026-10-01T09:30:00.000Z', units: [unit('MATERIAL', 1, 'CHANGED', { title: 'Спряжение' }), unit('MATERIAL', 2, 'CHANGED', { title: 'Прошедшее время' })] }),
+                entry(2, { appliedAt: '2026-09-01T09:30:00.000Z', units: [unit('MATERIAL', 1, 'CHANGED', { title: 'Спряжение' })] })
+            );
+            const labels = revertButtons().map(item => item.getAttribute('aria-label')!);
+            expect(labels[0]).toMatch(/^Вернуть как было: «Спряжение», обновление от 01\.10\.2026, \d{2}:\d{2}$/u);
+            expect(labels[1]).toBe('Вернуть как было: «Прошедшее время»');
+            expect(labels[2]).toMatch(/^Вернуть как было: «Спряжение», обновление от 01\.09\.2026, \d{2}:\d{2}$/u);
+            expect(new Set(labels).size).toBe(3);
         });
 
         it('says a detached copy keeps its history but cannot return anything', async () => {
@@ -224,6 +244,13 @@ describe('UpdateHistoryPageComponent', () => {
             expect(root().querySelector('.notice.error')).toBeNull();
         });
 
+        it('hides the notice in the hub at once (this tab\'s seen state), and puts it back when the server did not hear of it', async () => {
+            const state = TestBed.inject(UpdateSeenState);
+            api.markSeen.mockImplementation((_deck, id) => id === entryId(2) ? throwError(() => problem(500)) : of(true as const));
+            await open(entry(1), entry(2), entry(3, { seen: true }));
+            expect([...state.seen()]).toEqual([entryId(1)]);
+        });
+
         it('marks nothing for an empty history', async () => {
             await open();
             expect(api.markSeen).not.toHaveBeenCalled();
@@ -235,7 +262,7 @@ describe('UpdateHistoryPageComponent', () => {
         const exercise = unit('EXERCISE', 2, 'CHANGED');
 
         it.each([
-            ['ADDED', 'Уберём «Материал 1» из вашей колоды, как будто его не добавляли.'],
+            ['ADDED', 'Уберём «Материал 1» из вашей колоды.'],
             ['CHANGED', 'Вернём «Материал 1» к тому, что было до обновления.'],
             ['REMOVED', 'Вернём «Материал 1» в вашу колоду на прежнее место.']
         ] as const)('asks in one sentence what a %s unit will become before it sends anything', async (change, sentence) => {
@@ -245,13 +272,16 @@ describe('UpdateHistoryPageComponent', () => {
             expect(text('.revert-confirm .ask')).toBe(sentence);
             expect(confirmPanel()!.getAttribute('role')).toBe('group');
             expect(confirmPanel()!.getAttribute('aria-labelledby')).toBe(root().querySelector('.revert-confirm .ask')!.id);
-            expect(document.activeElement).toBe(root().querySelector('.revert-confirm .ask'));
+            // The group takes the focus and is read whole: named by the question, described by everything else.
+            expect(document.activeElement).toBe(confirmPanel());
+            const described = confirmPanel()!.getAttribute('aria-describedby')!.split(' ').map(id => root().querySelector(`#${id}`)!.textContent);
+            expect(described).toEqual(['Следующее обновление не вернёт это обратно, пока автор не изменит его снова.']);
             expect([...confirmPanel()!.querySelectorAll('button')].map(item => item.textContent!.trim())).toEqual(['Вернуть', 'Отмена']);
             expect(revertButtons()).toHaveLength(0);
             expect(api.revert).not.toHaveBeenCalled();
         });
 
-        it('sends the command with a fresh command id, then says it in a toast, reads the history and the deck again, and moves the focus to the heading', async () => {
+        it('sends the command with a fresh command id, then says it in a toast only, and reads the history and the deck again', async () => {
             await open(entry(1));
             decks.detail.mockClear();
             api.history.mockClear();
@@ -265,11 +295,11 @@ describe('UpdateHistoryPageComponent', () => {
             expect(isCanonicalCommandId(command.commandId)).toBe(true);
             expect(command.with).toEqual([]);
             expect(toasts.echo).toHaveBeenCalledWith('Вернули «Материал 1».');
-            expect(live()).toBe('Вернули «Материал 1».');
+            // One announcement: the toast. The live region of the page stays silent.
+            expect(live()).toBe('');
             expect(api.history).toHaveBeenCalledTimes(1);
             expect(decks.detail).toHaveBeenCalledTimes(1);
             expect(confirmPanel()).toBeNull();
-            expect(document.activeElement).toBe(root().querySelector('h1'));
         });
 
         it('says how many more units came back with it', async () => {
@@ -280,6 +310,32 @@ describe('UpdateHistoryPageComponent', () => {
             button('Вернуть').click();
             await settle();
             expect(toasts.echo).toHaveBeenCalledWith('Вернули «Материал 1» и ещё 2.');
+        });
+
+        it('moves the focus to the reverted row, which now says «Вы уже вернули», and to the heading when the row is gone', async () => {
+            await open(entry(1));
+            api.revert.mockReturnValue(of(answer('x', [material.unitId])));
+            api.history.mockReturnValue(of(history(entry(1, { units: [{ ...material, state: 'RETURNED', revertible: false }] }))));
+            revertButtons()[0]!.click();
+            await settle();
+            button('Вернуть').click();
+            await settle();
+            await settle();
+            const row = root().querySelector<HTMLElement>(`li[data-unit="${entryId(1)}|${material.unitId}"]`)!;
+            expect(row.getAttribute('tabindex')).toBe('-1');
+            expect(row.querySelector('.state')!.textContent).toBe('Вы уже вернули');
+            expect(document.activeElement).toBe(row);
+
+            api.history.mockReturnValue(of(history(entry(1, { units: [] }))));
+            api.revert.mockReturnValue(of(answer('x', [material.unitId])));
+            await open(entry(1));
+            api.history.mockReturnValue(of(history(entry(1, { units: [] }))));
+            revertButtons()[0]!.click();
+            await settle();
+            button('Вернуть').click();
+            await settle();
+            await settle();
+            expect(document.activeElement).toBe(root().querySelector('h1'));
         });
 
         it('cancels with the button or Escape, sends nothing and gives the focus back to «Вернуть как было»', async () => {
@@ -328,17 +384,21 @@ describe('UpdateHistoryPageComponent', () => {
                 await settle();
             }
 
-            it('shows «Вместе с этим вернутся: …» and a second confirmation, and sends the named units in `with` under a new command', async () => {
+            it('shows «Вместе с этим вернём к прежнему виду: …» and a second confirmation, and sends the named units in `with` under a new command', async () => {
                 await openAndAsk();
                 api.revert.mockReturnValueOnce(throwError(() => needed([exercise.unitId])));
                 button('Вернуть').click();
                 await settle();
                 const first = lastRevert()[3];
                 expect(text('.revert-confirm .ask')).toBe('Вернём «Материал 1» к тому, что было до обновления.');
-                expect(text('.revert-confirm p:nth-of-type(2)')).toBe('Вместе с этим вернутся: «Упражнение 2».');
+                expect(text('.revert-confirm p:nth-of-type(2)')).toBe('Вместе с этим вернём к прежнему виду: «Упражнение 2».');
                 expect(text('.revert-confirm .hint')).toBe('Они связаны между собой, поэтому возвращаются вместе.');
                 expect([...confirmPanel()!.querySelectorAll('button')].map(item => item.textContent!.trim())).toEqual(['Вернуть всё это', 'Отмена']);
-                expect(document.activeElement).toBe(root().querySelector('.revert-confirm .ask'));
+                // The group takes the focus again and is described by every paragraph but the question, the new line included.
+                expect(document.activeElement).toBe(confirmPanel());
+                const described = confirmPanel()!.getAttribute('aria-describedby')!.split(' ').map(id => root().querySelector(`#${id}`)!.textContent);
+                expect(described).toEqual(['Вместе с этим вернём к прежнему виду: «Упражнение 2».', 'Они связаны между собой, поэтому возвращаются вместе.',
+                    'Следующее обновление не вернёт это обратно, пока автор не изменит его снова.']);
                 expect(live()).toBe('');
 
                 api.revert.mockReturnValueOnce(of(answer('x', [material.unitId, exercise.unitId])));
@@ -352,12 +412,29 @@ describe('UpdateHistoryPageComponent', () => {
                 expect(confirmPanel()).toBeNull();
             });
 
-            it('names a unit the entry does not list by its kind, and several units in the order the server gave them', async () => {
+            it('names a unit the entry does not list by its kind, and says what happens to each by what the update did to it', async () => {
                 await openAndAsk(material);
                 api.revert.mockReturnValueOnce(throwError(() => needed([exercise.unitId, `EXERCISE:${keyOf(9)}`])));
                 button('Вернуть').click();
                 await settle();
                 expect(text('.revert-confirm p:nth-of-type(2)')).toBe('Вместе с этим вернутся: «Упражнение недоступно», «Упражнение недоступно».');
+            });
+
+            it('tells apart what is removed, what comes back and what is returned to its earlier form, one line each', async () => {
+                const added = unit('EXERCISE', 3, 'ADDED');
+                const removed = unit('MATERIAL', 4, 'REMOVED');
+                const changed = unit('EXERCISE', 5, 'CHANGED');
+                await openAndAsk(material, added, removed, changed);
+                api.revert.mockReturnValueOnce(throwError(() => needed([added.unitId, removed.unitId, changed.unitId])));
+                button('Вернуть').click();
+                await settle();
+                const lines = [...confirmPanel()!.querySelectorAll('p')].map(line => line.textContent);
+                expect(lines.slice(1, 4)).toEqual([
+                    'Вместе с этим вернём к прежнему виду: «Упражнение 5».',
+                    'Вместе с этим вернём: «Материал 4».',
+                    'Вместе с этим уберём: «Упражнение 3».'
+                ]);
+                expect(confirmPanel()!.getAttribute('aria-describedby')!.split(' ')).toHaveLength(5);
             });
 
             it('asks again for what a second answer adds, and gives up when it names nothing new', async () => {
@@ -369,7 +446,8 @@ describe('UpdateHistoryPageComponent', () => {
                 button('Вернуть всё это').click();
                 await settle();
                 expect(lastRevert()[3].with).toEqual([exercise.unitId]);
-                expect(text('.revert-confirm p:nth-of-type(2)')).toBe('Вместе с этим вернутся: «Упражнение 2», «Упражнение недоступно».');
+                expect(text('.revert-confirm p:nth-of-type(2)')).toBe('Вместе с этим вернём к прежнему виду: «Упражнение 2».');
+                expect(text('.revert-confirm p:nth-of-type(3)')).toBe('Вместе с этим вернутся: «Упражнение недоступно».');
                 api.revert.mockReturnValueOnce(throwError(() => needed([exercise.unitId])));
                 button('Вернуть всё это').click();
                 await settle();
@@ -406,7 +484,12 @@ describe('UpdateHistoryPageComponent', () => {
                 decks.detail.mockClear();
                 await fail(problem(409, 'UPDATE_REVERT_STALE', { unitId: `MATERIAL:${keyOf(1)}` }));
                 expect(text('.notice.compact')).toBe('После обновления вы уже меняли это, поэтому вернуть нельзя. Мы обновили список.');
-                expect(live()).toBe('После обновления вы уже меняли это, поэтому вернуть нельзя. Мы обновили список.');
+                // The question that had the focus is gone: the notice takes it.
+                const notice = root().querySelector('.notice.compact')!;
+                expect(notice.getAttribute('tabindex')).toBe('-1');
+                expect(document.activeElement).toBe(notice);
+                // Focus announces it; the live region does not repeat the same sentence.
+                expect(live()).toBe('');
                 expect(confirmPanel()).toBeNull();
                 expect(api.history).toHaveBeenCalledTimes(1);
                 expect(decks.detail).toHaveBeenCalledTimes(1);
@@ -419,11 +502,13 @@ describe('UpdateHistoryPageComponent', () => {
                 expect(text('.notice.compact')).toBe('Пока вы смотрели, колода изменилась. Мы обновили список, попробуйте ещё раз.');
             });
 
-            it('says a copy detached meanwhile cannot take anything back (409 FORK_DETACHED), and reads again', async () => {
+            it('says a copy detached meanwhile cannot take anything back (409 FORK_DETACHED), once, and reads again', async () => {
                 await ask();
                 api.history.mockClear();
+                decks.detail.mockReturnValue(of({ deckId: DECK_ID, metadata: { title: 'К', description: '' }, fork: { detached: true, updateAvailable: false } } as unknown as OwnDeck));
                 await fail(problem(409, 'FORK_DETACHED'));
-                expect(text('.notice.compact')).toBe('Колода отвязана от автора, поэтому вернуть изменения нельзя. Мы обновили список.');
+                expect([...root().querySelectorAll('.notice.compact')].map(item => item.textContent!.trim())).toEqual(['Колода отвязана от автора, поэтому вернуть изменения нельзя. Мы обновили список.']);
+                expect(document.activeElement).toBe(root().querySelector('.notice.compact'));
                 expect(api.history).toHaveBeenCalledTimes(1);
             });
 
@@ -435,6 +520,16 @@ describe('UpdateHistoryPageComponent', () => {
                 await settle();
                 await fail(problem(404, 'RESOURCE_NOT_FOUND'));
                 expect(text('.notice.compact')).toBe('Это обновление или колода больше недоступны. Мы обновили список.');
+            });
+
+            it('focuses the notice for a copy still preparing and for an update that is gone', async () => {
+                await ask();
+                await fail(problem(409, 'DECK_PREPARING'));
+                expect(document.activeElement).toBe(root().querySelector('.notice.compact'));
+                revertButtons()[0]!.click();
+                await settle();
+                await fail(problem(404, 'RESOURCE_NOT_FOUND'));
+                expect(document.activeElement).toBe(root().querySelector('.notice.compact'));
             });
 
             it('clears the notice when the next return starts', async () => {

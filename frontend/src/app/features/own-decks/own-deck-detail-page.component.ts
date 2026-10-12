@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, linkedSignal, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, LOCALE_ID, afterNextRender, computed, effect, inject, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -32,6 +32,8 @@ import { DeckWorkshopsComponent } from '../generation/deck-workshops.component';
 import { DeckModerationComponent } from './moderation/deck-moderation.component';
 import { DeckRecoveryContext, OwnDeckRecoveryService } from './own-deck-recovery.service';
 import { ForkApiService } from './fork/fork-api.service';
+import { UpdateSeenState } from './update/update-seen-state';
+import { whenOf } from './update/update-history.models';
 import { FORK_POLL_LIMIT, FORK_POLL_MIN_GAP_MS, forkPollDelay } from './fork/fork-poll';
 import { ForkProgress, forkFailureOf, forkProgressOf } from './fork/fork.models';
 import {
@@ -107,7 +109,16 @@ export class OwnDeckDetailPageComponent {
      */
     readonly lastUpdate = computed(() => {
         const fork = this.fork();
-        return fork !== null && !fork.detached && !fork.preparing ? fork.lastUpdate ?? null : null;
+        const last = fork !== null && !fork.detached && !fork.preparing ? fork.lastUpdate ?? null : null;
+        // Marked seen in this tab (the history page sent `:seen`): gone at once, before the next read of the deck says so.
+        return last !== null && !this.seenState.seen().has(last.deckRevisionId) ? last : null;
+    });
+    /** The time of that update, relative and exact. */
+    readonly lastUpdateWhen = computed(() => {
+        const last = this.lastUpdate();
+        if (last === null) return '';
+        const { relative, exact } = whenOf(last.appliedAt, Date.now(), this.locale);
+        return relative === null ? exact : `${relative}, ${exact}`;
     });
     /** «Проверить обновления»: a quiet link for a ready, attached copy whose source opens and that has no update waiting. */
     readonly updateCheck = computed(() => {
@@ -161,6 +172,8 @@ export class OwnDeckDetailPageComponent {
     private readonly decksApi = inject(OwnDecksApiService);
     private readonly hubApi = inject(DeckHubApiService);
     private readonly forks = inject(ForkApiService);
+    private readonly seenState = inject(UpdateSeenState);
+    private readonly locale = inject(LOCALE_ID);
     private readonly toasts = inject(ToastService);
     private readonly capabilities = inject(CapabilitiesApiService);
     private readonly router = inject(Router);

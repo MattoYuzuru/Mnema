@@ -16,23 +16,27 @@ describe('UpdateHistoryUnitComponent', () => {
         const root = create(view());
         expect(root.querySelector('.kind')!.textContent).toBe('Материал');
         expect(root.querySelector('.stamp')!.textContent).toBe('Исправлено');
-        const article = root.querySelector('article')!;
-        const title = root.querySelector('.title')!;
-        expect(title.textContent).toBe('Спряжение ser и estar');
-        expect(article.getAttribute('aria-labelledby')).toBe(title.id);
+        expect(root.querySelector('.title')!.textContent).toBe('Спряжение ser и estar');
+        expect(root.querySelector('article, [aria-labelledby]')).toBeNull();
         expect(root.querySelector('.state')).toBeNull();
     });
 
     it.each([
         ['ADDED', 'material', 'Добавлено', 'Материал'],
         ['CHANGED', 'exercise', 'Исправлено', 'Упражнение'],
-        ['REMOVED', 'exercise', 'Удалено', 'Упражнение'],
-        ['REORDERED', 'order', 'Порядок', 'Порядок материалов']
+        ['REMOVED', 'exercise', 'Удалено', 'Упражнение']
     ] as const)('says %s as «%s»', (change, kind, word, kindWord) => {
         const root = create(view({ change, kind }));
         expect(root.querySelector('.stamp')!.textContent).toBe(word);
         expect(root.querySelector('.kind')!.textContent).toBe(kindWord);
         expect(root.querySelector('.stamp')!.classList.contains('solid')).toBe(change === 'REMOVED');
+    });
+
+    it('says the order of the materials in one line, without a stamp or a title that would say it again', () => {
+        const root = create(view({ change: 'REORDERED', kind: 'order', title: 'Порядок материалов' }));
+        expect(root.querySelector('.title')!.textContent).toBe('Изменился порядок материалов');
+        expect(root.querySelector('.title app-glyph')).not.toBeNull();
+        expect(root.querySelector('.stamp, .kind, .meta')).toBeNull();
     });
 
     it('says in a sentence when the unit is no longer what the update made it', () => {

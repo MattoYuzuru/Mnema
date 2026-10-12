@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, LOCALE_ID, afterNextRender, computed, inject, signal } from '@angular/core';
-import { formatDate } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
@@ -17,10 +16,11 @@ import {
     REVERT_MAX_WITH,
     RevertFailure,
     newRevertCommandId,
-    relativeWhen,
     revertFailureOf,
-    splitUnitId
+    splitUnitId,
+    whenOf
 } from './update-history.models';
+import { UpdateSeenState } from './update-seen-state';
 import { viewKindOf } from './update-plan.models';
 
 /** One row of an entry, with the words the page needs. */
@@ -29,12 +29,18 @@ interface HistoryRow {
     readonly view: HistoryUnitView;
     /** The unit is `MATERIAL`/`EXERCISE`, exactly as the update made it, in an attached copy: «Вернуть как было» is offered. */
     readonly revertible: boolean;
+    /** The name of «Вернуть как было» for assistive technology: the title, and the time of the update when another update lists a unit of the same title. */
+    readonly label: string;
 }
 
 interface HistoryItem {
     readonly entry: HistoryEntry;
     readonly headingId: string;
-    readonly when: string;
+    /** The heading says how the update came («Автоматически») and when, in a phrase («3 часа назад»; the date when it is a week old). */
+    readonly mode: string;
+    readonly short: string;
+    /** The exact date and time, written again under the heading when the heading has a phrase. */
+    readonly exact: string | null;
     readonly rows: readonly HistoryRow[];
 }
 
@@ -55,8 +61,6 @@ interface RevertFlow {
     /** The last request ended without a known outcome. */
     readonly unknown: boolean;
 }
-
-const WHEN_FORMAT = 'dd.MM.y, HH:mm';
 
 /**
  * «История обновлений» of a copy (`/decks/:deckId/update/history`, Updates/6 part B): the applies that made a revision of the copy, newest first,
@@ -100,14 +104,18 @@ export class UpdateHistoryPageComponent {
     readonly liveMessage = signal('');
     private readonly now = signal(Date.now());
 
-    protected readonly items = computed<readonly HistoryItem[]>(() => this.entries().map((entry, index) => {
-        const relative = relativeWhen(entry.appliedAt, this.now());
-        const exact = formatDate(entry.appliedAt, WHEN_FORMAT, this.locale);
-        return {
-            entry, headingId: `history-entry-${index}`, when: relative === null ? exact : `${relative}, ${exact}`,
-            rows: entry.units.map(unit => this.rowOf(unit))
-        };
-    }));
+    protected readonly items = computed<readonly HistoryItem[]>(() => {
+        const now = this.now();
+        const titles = new Map<string, number>();
+        for (const entry of this.entries()) for (const unit of entry.units) if (unit.revertible) titles.set(this.titleOf(unit), (titles.get(this.titleOf(unit)) ?? 0) + 1);
+        return this.entries().map((entry, index) => {
+            const when = whenOf(entry.appliedAt, now, this.locale);
+            return {
+                entry, headingId: `history-entry-${index}`, mode: UPDATE_TEXT.modes[entry.mode], short: when.relative ?? when.exact, exact: when.relative === null ? null : when.exact,
+                rows: entry.units.map(unit => this.rowOf(unit, (titles.get(this.titleOf(unit)) ?? 0) > 1 ? when.exact : null))
+            };
+        });
+    });
 
     private readonly route = inject(ActivatedRoute);
     private readonly api = inject(UpdateHistoryApiService);
@@ -117,6 +125,7 @@ export class UpdateHistoryPageComponent {
     private readonly destroyRef = inject(DestroyRef);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
     private readonly locale = inject(LOCALE_ID);
+    private readonly seenState = inject(UpdateSeenState);
 
     private loadSequence = 0;
     private historyLoad: Subscription | null = null;
@@ -124,6 +133,8 @@ export class UpdateHistoryPageComponent {
     private revertRequest: Subscription | null = null;
     /** The entries already marked seen: each is asked for once. */
     private readonly marked = new Set<string>();
+    /** `entry|unit` of a row to move the focus to once the history has been read again after a return. */
+    private focusAfterLoad: string | null = null;
 
     constructor() {
         this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
@@ -187,9 +198,11 @@ export class UpdateHistoryPageComponent {
                 this.entries.set(history.entries);
                 this.phase.set('ready');
                 this.markSeen(history.entries);
+                this.focusReturned();
             },
             error: error => {
                 if (sequence !== this.loadSequence) return;
+                this.focusAfterLoad = null;
                 this.loadFailure.set(revertFailureOf(error).kind === 'not-found' ? 'not-found' : 'other');
                 this.phase.set('error');
             }
@@ -205,17 +218,28 @@ export class UpdateHistoryPageComponent {
         for (const entry of entries) {
             if (entry.mode !== 'AUTO' || entry.seen || this.marked.has(entry.deckRevisionId)) continue;
             this.marked.add(entry.deckRevisionId);
-            this.api.markSeen(deckId, entry.deckRevisionId).subscribe({ error: () => this.marked.delete(entry.deckRevisionId) });
+            // The hub hides the notice from now on; if the server did not hear of it, the notice is back.
+            this.seenState.mark(entry.deckRevisionId);
+            this.api.markSeen(deckId, entry.deckRevisionId).subscribe({
+                error: () => { this.marked.delete(entry.deckRevisionId); this.seenState.unmark(entry.deckRevisionId); }
+            });
         }
     }
 
     // -- rows ---------------------------------------------------------------------------------
 
-    private rowOf(unit: HistoryUnit): HistoryRow {
+    private titleOf(unit: HistoryUnit): string {
+        return unit.title !== null && unit.title.trim().length > 0 ? unit.title : UPDATE_TEXT.untitled[viewKindOf(unit.kind)];
+    }
+
+    private rowOf(unit: HistoryUnit, repeatedAt: string | null): HistoryRow {
         const kind = viewKindOf(unit.kind);
-        const title = unit.title !== null && unit.title.trim().length > 0 ? unit.title : UPDATE_TEXT.untitled[kind];
+        const title = this.titleOf(unit);
         const state = unit.state === 'RETURNED' || unit.state === 'CHANGED_SINCE' ? unit.state : null;
-        return { unit, view: { id: unit.unitId, kind, change: unit.change, title, state }, revertible: unit.revertible };
+        return {
+            unit, view: { id: unit.unitId, kind, change: unit.change, title, state }, revertible: unit.revertible,
+            label: repeatedAt === null ? UPDATE_TEXT.revertFor(title) : UPDATE_TEXT.revertForAt(title, repeatedAt)
+        };
     }
 
     protected flowFor(entry: HistoryEntry, row: HistoryRow): RevertFlow | null {
@@ -231,8 +255,20 @@ export class UpdateHistoryPageComponent {
         return UPDATE_TEXT.revertAsk[flow.change](flow.title);
     }
 
-    protected withText(flow: RevertFlow): string | null {
-        return flow.group ? UPDATE_TEXT.revertWith(flow.with.map(unitId => `«${this.nameOf(flow.entryId, unitId)}»`).join(', ')) : null;
+    /** What happens to each unit that goes back with the asked one, said by what the update did to it; one line per kind of change. */
+    protected withLines(flow: RevertFlow): readonly string[] {
+        const groups = new Map<'CHANGED' | 'REMOVED' | 'ADDED' | 'UNKNOWN', string[]>();
+        for (const unitId of flow.with) {
+            const change = this.entries().find(entry => entry.deckRevisionId === flow.entryId)?.units.find(candidate => candidate.unitId === unitId)?.change;
+            const key = change === 'ADDED' || change === 'CHANGED' || change === 'REMOVED' ? change : 'UNKNOWN';
+            groups.set(key, [...(groups.get(key) ?? []), `«${this.nameOf(flow.entryId, unitId)}»`]);
+        }
+        return (['CHANGED', 'REMOVED', 'ADDED', 'UNKNOWN'] as const).filter(key => groups.has(key)).map(key => UPDATE_TEXT.revertWith[key](groups.get(key)!.join(', ')));
+    }
+
+    /** The ids of every paragraph of the confirmation but its question (that one names the group): the group is read whole when it takes the focus. */
+    protected describedBy(base: string, flow: RevertFlow): string {
+        return [...this.withLines(flow).map((_, index) => `${base}-w${index}`), ...(flow.group ? [`${base}-y`] : []), `${base}-h`].join(' ');
     }
 
     /** Anything else of the page that is busy keeps the buttons of other rows from starting a second return. */
@@ -271,11 +307,21 @@ export class UpdateHistoryPageComponent {
 
     private reverted(flow: RevertFlow, more: number): void {
         this.flow.set(null);
-        const message = UPDATE_TEXT.revertDone(flow.title, more);
-        this.toasts.echo(message);
-        this.liveMessage.set(message);
+        // The toast is the one announcement; the live region of the page stays for the paths that close the question.
+        this.toasts.echo(UPDATE_TEXT.revertDone(flow.title, more));
+        this.focusAfterLoad = `${flow.entryId}|${flow.unitId}`;
         this.refresh();
-        afterNextRender(() => this.element.nativeElement.querySelector<HTMLElement>('h1')?.focus(), { injector: this.injector });
+    }
+
+    /** The reverted row now says «Вы уже вернули»: the focus rests on it, where the button was. */
+    private focusReturned(): void {
+        const marker = this.focusAfterLoad;
+        if (marker === null) return;
+        this.focusAfterLoad = null;
+        afterNextRender(() => {
+            const host = this.element.nativeElement;
+            (host.querySelector<HTMLElement>(`[data-unit="${marker}"]`) ?? host.querySelector<HTMLElement>('h1'))?.focus();
+        }, { injector: this.injector });
     }
 
     private failed(flow: RevertFlow, failure: RevertFailure): void {
@@ -296,7 +342,7 @@ export class UpdateHistoryPageComponent {
             case 'rate-limited': return this.stay(flow, UPDATE_TEXT.revertRateLimited, false);
             case 'unknown': return this.stay(flow, UPDATE_TEXT.revertUnknown, true);
             case 'stale': return this.close(failure.unitId === null ? UPDATE_TEXT.revertStaleCopy : UPDATE_TEXT.revertStaleUnit);
-            case 'detached': return this.close(UPDATE_TEXT.revertDetached);
+            case 'detached': this.detached.set(true); return this.close(UPDATE_TEXT.revertDetached);
             case 'preparing': return this.close(UPDATE_TEXT.revertPreparing);
             case 'not-found': return this.close(UPDATE_TEXT.revertGone);
         }
@@ -311,8 +357,14 @@ export class UpdateHistoryPageComponent {
     private close(message: string): void {
         this.flow.set(null);
         this.notice.set(message);
-        this.liveMessage.set(message);
         this.refresh();
+        // The question that held the focus is gone: the notice that replaces it takes it, and comes into view. Focus alone announces it,
+        // so the live region stays silent here (a second announcement of the same sentence would only repeat it).
+        afterNextRender(() => {
+            const notice = this.element.nativeElement.querySelector<HTMLElement>('[data-notice]');
+            notice?.focus();
+            notice?.scrollIntoView?.({ block: 'nearest' });
+        }, { injector: this.injector });
     }
 
     private refresh(): void {
