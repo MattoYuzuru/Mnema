@@ -1,0 +1,75 @@
+<div class="page">
+  <!-- The region is in the DOM, empty, before its first text: a region that appears with its text is not announced reliably. -->
+  <p class="status" role="status">{{ view() === 'loading' ? 'Загружаем профиль…' : '' }}</p>
+
+  @switch (view()) {
+    @case ('not-found') {
+      <app-access-screen heading="Профиль не найден" eyebrow="Профиль">
+        <p>Такого профиля нет, или автор его скрыл.</p>
+        <a access-actions class="button" routerLink="/community">В Сообщество</a>
+      </app-access-screen>
+    }
+    @case ('unavailable') {
+      <app-access-screen heading="Не удалось открыть профиль" eyebrow="Профиль">
+        <p>Проверьте соединение и повторите.</p>
+        <button access-actions type="button" class="button primary" (click)="retry()">Повторить</button>
+      </app-access-screen>
+    }
+    @case ('ready') {
+      @if (author(); as profile) {
+        <app-author-header [author]="profile" [profileUrl]="profileUrl()" [learningNow]="learningNow() ?? 0" [isSelf]="isSelf()"
+          (complain)="complainAboutProfile()" />
+
+        <section class="decks" aria-labelledby="author-decks-title">
+          <h2 id="author-decks-title">Колоды автора</h2>
+          <p class="status" role="status">{{ decksView() === 'loading' ? 'Загружаем колоды…' : '' }}</p>
+
+          @switch (decksView()) {
+            @case ('closed') {
+              <p class="calm">Колоды появятся здесь, когда откроется Сообщество.</p>
+            }
+            @case ('rate-limited') {
+              <div class="notice error" role="alert">
+                <p>{{ waiting() }}</p>
+                <button type="button" class="button secondary" (click)="retryDecks()">Повторить</button>
+              </div>
+            }
+            @case ('busy') {
+              <div class="notice error" role="alert">
+                <p>Сейчас много читателей. Повторите через секунду.</p>
+                <button type="button" class="button secondary" (click)="retryDecks()">Повторить</button>
+              </div>
+            }
+            @case ('error') {
+              <div class="notice error" role="alert">
+                <p>Не удалось загрузить колоды. Проверьте соединение и повторите.</p>
+                <button type="button" class="button secondary" (click)="retryDecks()">Повторить</button>
+              </div>
+            }
+            @default {
+              @if (noDecks()) {
+                <div class="empty-state">
+                  @if (isSelf()) {
+                    <p>Здесь появятся ваши публичные колоды.</p>
+                    <p><a class="button primary" routerLink="/decks">Мои колоды</a></p>
+                  } @else {
+                    <p>У автора пока нет открытых колод.</p>
+                  }
+                </div>
+              } @else {
+                <app-deck-grid [decks]="cards()" [results]="null" [headingLevel]="3" [authorShown]="false" [deckLink]="deckLink" [noteFor]="noteFor"
+                  [menuFor]="menuFor" [continuation]="pager.cursor()" [loading]="pager.loadingMore()" [error]="moreError()" [enabled]="pager.phase() === 'ready'"
+                  [context]="pager.context()" (loadNext)="pager.next()" (action)="actionChosen($event)" />
+              }
+            }
+          }
+        </section>
+      }
+    }
+  }
+
+  @if (complaint(); as target) {
+    <app-complaint-dialog [target]="target.target" [subject]="target.subject" [subjectName]="target.name"
+      (filed)="complaint.set(null)" (gone)="complaintGone()" (dismissed)="complaint.set(null)" />
+  }
+</div>

@@ -48,6 +48,8 @@ describe('AuthorHeaderComponent', () => {
         expect(root.querySelector('h1')!.textContent).toBe('Анна Ковалёва');
         expect(root.querySelector('.login')!.textContent).toBe('@anna.k');
         expect(root.querySelectorAll('h1')).toHaveLength(1);
+        // The page moves the focus to its title: a heading takes it only with a tabindex.
+        expect(root.querySelector('h1')!.getAttribute('tabindex')).toBe('-1');
     });
 
     it('lowers the heading where the header is not the page title', () => {

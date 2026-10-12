@@ -29,8 +29,9 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
   list with selection and bulk delete); there is no separate `/decks/:deckId/materials` list route. There is no
   legacy `my-study`, public-deck, template or import route; do not reintroduce one. The public deck routes are the
   read-only view of someone else's deck at `/d/:code/:slug` and `/d/:code` (`features/public-deck`, guests included, no `authGuard`; one matcher route)
-  and the community catalogue at `/community` (`features/community`, guests included, no `authGuard`; the address is its state). Nothing in the product leads to
-  `/community` until `COMMUNITY_LAUNCHED` (`shared/community-launch.ts`) is flipped by the epic's enabling PR.
+  and the community catalogue at `/community` (`features/community`, guests included, no `authGuard`; the address is its state), and the public author page
+  at `/u/:username` (`features/community`, guests included, no `authGuard`, reachable while the flag is off). Nothing in the product leads to
+  `/community` or `/u/…` until `COMMUNITY_LAUNCHED` (`shared/community-launch.ts`) is flipped by the epic's enabling PR.
 - Feature ownership and product-specific boundaries (generation, goal, plans, promo, experiment):
   [frontend feature changes](../docs/engineering/repository-guide.md#frontend-feature-changes).
 - Native document/editor/renderer lives in `src/app/content`; theme values live in

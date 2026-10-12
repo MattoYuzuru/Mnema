@@ -220,3 +220,31 @@ describe('DeckGridComponent menu per card', () => {
         removePopoverShim();
     });
 });
+
+@Component({
+    imports: [DeckGridComponent],
+    template: `<app-deck-grid [decks]="decks" [noteFor]="noteFor" [authorShown]="authorShown" />`
+})
+class NoteHostComponent {
+    readonly decks = decks(0, 3);
+    authorShown = false;
+    noteFor = (card: PublicDeckCard): string | null => card.id === 'deck-1' ? 'Доступна вам' : null;
+}
+
+describe('DeckGridComponent note and author chip per card', () => {
+    function mount(): HTMLElement {
+        installPopoverShim();
+        TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: ShareLinkService, useValue: { share: vi.fn() } }] });
+        const fixture = TestBed.createComponent(NoteHostComponent);
+        fixture.detectChanges();
+        return fixture.nativeElement as HTMLElement;
+    }
+    afterEach(() => removePopoverShim());
+
+    it('puts the note `noteFor` gives on that card only, and leaves the author chip out when `authorShown` is off', () => {
+        const root = mount();
+        const notes = [...root.querySelectorAll('li.cell')].map(cell => cell.querySelector('.stamp.solid')?.textContent ?? null);
+        expect(notes).toEqual([null, 'Доступна вам', null]);
+        expect(root.querySelector('app-author-chip')).toBeNull();
+    });
+});

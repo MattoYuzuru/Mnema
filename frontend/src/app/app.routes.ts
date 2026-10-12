@@ -203,6 +203,13 @@ export const appRoutes: Routes = [
         path: 'community',
         loadComponent: () => import('./features/community/community-page.component').then(module => module.CommunityPageComponent)
     },
+    {
+        // Public, guests included, no authGuard: the page of an author. The card comes from Identity (a login without a public profile is «Профиль не найден»), the decks from
+        // the community catalogue. Deliberately reachable while `COMMUNITY_LAUNCHED` is false, like `/community`: the flag only hides the entry points («Как меня видят другие» in the
+        // own profile, the author chip), so the browser harness can test the page before the launch. Do not guard it behind the flag.
+        path: 'u/:username',
+        loadComponent: () => import('./features/community/author-page.component').then(module => module.AuthorPageComponent)
+    },
     // Public: the footer and the «Что это?» toggletips of the AI actions link here, signed in or not.
     {
         path: 'ai',

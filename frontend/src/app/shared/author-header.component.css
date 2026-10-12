@@ -5,6 +5,7 @@
 .placeholder { display: grid; place-items: center; border: 1px solid var(--mn-field-border); background: var(--mn-soft); color: var(--mn-ink); font-size: 1.5rem; font-weight: 600; line-height: 1; }
 .names { flex: 1 1 auto; min-inline-size: 0; align-self: center; }
 .name { margin: 0; color: var(--mn-ink); font: 600 clamp(1.75rem, 5vw, 2.5rem)/1.15 var(--mn-font-display); overflow-wrap: anywhere; }
+h1.name:focus-visible { outline: none; }
 .login { margin: .15rem 0 0; color: var(--mn-muted); overflow-wrap: anywhere; }
 .menu { flex: none; }
 .bio { max-inline-size: 60ch; margin: 0; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }

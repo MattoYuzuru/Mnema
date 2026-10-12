@@ -19,7 +19,7 @@ const COMPLAIN_ITEM: ActionMenuItem = { id: 'complain', label: 'Пожалова
 
 /**
  * The head of an author's page `/u/{username}`: a 64 px photo (without one, or when it cannot be loaded, the neutral disc with the first
- * letter of the author chip), the `h1` (the display name, else `@login`; `headingLevel` lowers it where the header is not the page title), the `@login` line when the heading is a name, the bio, «Учат сейчас: N» and the
+ * letter of the author chip), the `h1` (focusable with `tabindex="-1"`, so the page can move the focus to its title; the display name, else `@login`; `headingLevel` lowers it where the header is not the page title), the `@login` line when the heading is a name, the bio, «Учат сейчас: N» and the
  * «⋯» menu. The bio is plain text: line breaks are kept, nothing is parsed as HTML and no link is made of it. «Учат сейчас» is drawn from 10 up
  * and rounded like on the cards. The menu has «Поделиться» (the address of the profile, `profileUrl`; the link field shows when copying
  * failed) and «Пожаловаться» (the output `complain`; the page opens the complaint dialog). For one's own page (`isSelf`) the menu has no
@@ -41,7 +41,7 @@ const COMPLAIN_ITEM: ActionMenuItem = { id: 'complain', label: 'Пожалова
               @case (2) { <h2 class="name">{{ heading() }}</h2> }
               @case (3) { <h3 class="name">{{ heading() }}</h3> }
               @case (4) { <h4 class="name">{{ heading() }}</h4> }
-              @default { <h1 class="name">{{ heading() }}</h1> }
+              @default { <h1 class="name" tabindex="-1">{{ heading() }}</h1> }
             }
             @if (author().displayName) { <p class="login">&#64;{{ author().profileUsername }}</p> }
           </div>

@@ -45,7 +45,8 @@ interface GridRow { readonly deck: PublicDeckCard; readonly delay: number }
       <ul #list class="grid" role="list">
         @for (row of rows(); track row.deck.id) {
           <li class="cell" [style.--mn-cascade-delay]="row.delay + 'ms'">
-            <app-public-deck-card [deck]="row.deck" [headingLevel]="headingLevel()" [link]="deckLink()(row.deck)" [menuItems]="menuFor()?.(row.deck) ?? menuItems()"
+            <app-public-deck-card [deck]="row.deck" [headingLevel]="headingLevel()" [link]="deckLink()(row.deck)" [note]="noteFor()?.(row.deck) ?? null"
+              [authorShown]="authorShown()" [menuItems]="menuFor()?.(row.deck) ?? menuItems()"
               (action)="action.emit({ id: $event, deck: row.deck })" />
           </li>
         }
@@ -64,6 +65,10 @@ export class DeckGridComponent {
     readonly menuItems = input<readonly ActionMenuItem[]>([SHARE_MENU_ITEM]);
     /** The rows of one deck's «⋯» menu where they differ from deck to deck (no «Пожаловаться» on one's own deck); wins over `menuItems`. */
     readonly menuFor = input<((deck: PublicDeckCard) => readonly ActionMenuItem[]) | null>(null);
+    /** A short mark on one deck's card where it differs from deck to deck (an invitation-only deck in a profile: «Доступна вам»); `null` for none. */
+    readonly noteFor = input<((deck: PublicDeckCard) => string | null) | null>(null);
+    /** Draws the author chip on every card; a list of one author's decks switches it off. */
+    readonly authorShown = input(true);
     /** The next cursor, `null` at the end. Passed to `app-auto-load` together with the next five inputs. */
     readonly continuation = input<string | null>(null);
     readonly loading = input(false);

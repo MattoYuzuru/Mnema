@@ -7,6 +7,7 @@ import { AccountProfile, AccountProfileApi } from '../../account-profile.api';
 import { ToastService } from '../../core/notifications/toast.service';
 import { PUBLIC_PROFILE_TEXT_VERSION, PublicProfileConsent, PublicProfileConsentUpdate } from '../../public-profile';
 import { AuthorChipComponent } from '../../shared/author-chip.component';
+import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 
 type ConsentField = 'enabled' | 'showDisplayName' | 'showAvatar' | 'showBio';
 
@@ -18,7 +19,8 @@ const TEXT_OUTDATED = 'Текст согласия обновился. Обно�
  * «Публичный профиль» of /profile (#423): the separate, per-field, revocable consent to show the profile to other people
  * (152-FZ art. 10.1). Every change is saved at once as the complete state; nothing is ticked beforehand and a field is never
  * implied by the switch. While a save is on its way the controls stay focusable (`aria-disabled`, never `disabled`, so
- * focus is not thrown out) and further changes are ignored; a failed save puts the control back and says why.
+ * focus is not thrown out) and further changes are ignored; a failed save puts the control back and says why. With the consent on and a login, and
+ * once the Community is open (`COMMUNITY_LAUNCH`), the preview ends with the link «Как меня видят другие» to the real page `/u/<логин>`.
  */
 @Component({
     selector: 'app-public-profile-settings',
@@ -68,6 +70,7 @@ const TEXT_OUTDATED = 'Текст согласия обновился. Обно�
             <app-author-chip [username]="name" [avatarSrc]="previewAvatar()" />
             @if (current.showDisplayName && profile().displayName; as displayName) { <p class="preview-name">{{ displayName }}</p> }
             @if (current.showBio && profile().bio; as bio) { <p class="preview-bio">{{ bio }}</p> }
+            @if (communityLaunched) { <a class="page-link" [routerLink]="['/u', name]">Как меня видят другие</a> }
           } @else {
             <p class="preview-hidden">Профиль скрыт</p>
           }
@@ -92,6 +95,7 @@ const TEXT_OUTDATED = 'Текст согласия обновился. Обно�
       .preview p { margin: 0; overflow-wrap: anywhere; }
       .preview-name { color: var(--mn-ink); font-weight: 650; }
       .preview-bio { max-inline-size: 60ch; white-space: pre-line; }
+      .page-link { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 46px); color: var(--mn-ink); text-underline-offset: .22em; }
       .preview-hidden { color: var(--mn-muted); }
       @media (forced-colors: active) { .preview { border-color: CanvasText; } }
     `],
@@ -104,6 +108,8 @@ export class PublicProfileSettingsComponent implements OnInit {
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
     private readonly destroyRef = inject(DestroyRef);
+    /** The own page `/u/<логин>` is offered once the Community is open to readers (the route itself exists always). */
+    protected readonly communityLaunched = inject(COMMUNITY_LAUNCH);
 
     /** The saved account profile: the login is the precondition, name and «О себе» feed the preview. */
     readonly profile = input.required<AccountProfile>();

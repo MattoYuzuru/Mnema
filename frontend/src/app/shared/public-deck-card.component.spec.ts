@@ -15,13 +15,14 @@ const FULL: PublicDeckCard = {
 
 @Component({
     imports: [PublicDeckCardComponent],
-    template: `<app-public-deck-card [deck]="deck" [link]="link" [headingLevel]="level" [note]="note" [menuItems]="items" (action)="actions.push($event)" />`
+    template: `<app-public-deck-card [deck]="deck" [link]="link" [headingLevel]="level" [note]="note" [authorShown]="authorShown" [menuItems]="items" (action)="actions.push($event)" />`
 })
 class HostComponent {
     deck = FULL;
     link: string | null = null;
     level: 2 | 3 | 4 = 3;
     note: string | null = null;
+    authorShown = true;
     items = [{ id: 'share', label: 'Поделиться' }, { id: 'report', label: 'Пожаловаться' }];
     readonly actions: string[] = [];
 }
@@ -81,6 +82,15 @@ describe('PublicDeckCardComponent', () => {
         const stamps = [...root.querySelectorAll('.tags .stamp')];
         expect(stamps.map(stamp => stamp.textContent)).toEqual(['Тема: Языки', 'Язык: Испанский', 'Доступна вам']);
         expect(stamps[2].querySelector('.visually-hidden')).toBeNull();
+    });
+
+    it('leaves the author chip out where the list is one author\'s (`authorShown` off) and draws it by default', () => {
+        expect(create().root.querySelector('app-author-chip .chip')).not.toBeNull();
+        TestBed.resetTestingModule();
+        const { root } = create({ authorShown: false });
+        expect(root.querySelector('app-author-chip')).toBeNull();
+        expect(root.querySelector('.login')).toBeNull();
+        expect(root.querySelector('.size')).not.toBeNull();
     });
 
     it('takes the heading level from the screen: h3 by default, h2 or h4 on request', () => {

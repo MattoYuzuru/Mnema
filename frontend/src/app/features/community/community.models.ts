@@ -5,8 +5,8 @@ import { PublicDeckFailure } from '../public-deck/public-deck.models';
 /**
  * Wire shapes of the community catalogue (`contracts/community/catalog.json`, epic 3): the facets, the shelves and a page of browse or
  * search. Parsing is strict like the public deck parser: a missing, mistyped or unknown field is a protocol failure
- * ({@link PublicDeckFailure} `unavailable`), never a silently ignored extra. The decks of an author (their own list shape) arrive with the
- * author's page.
+ * ({@link PublicDeckFailure} `unavailable`), never a silently ignored extra. The decks of an author have their own list shape (`access` with a card,
+ * the sum of «Учат сейчас»), and only there a card may be an invitation-only deck without a slug.
  */
 
 /** Cards per request; the contract's default page is 24 and the cap 48. */
@@ -45,6 +45,29 @@ export interface CommunityCard {
     readonly learningNowCount: number | null;
     readonly updatedAt: string;
     readonly ownerId: string;
+}
+
+/**
+ * A deck in an author's list. The same card as the catalogue's, except that an invitation-only deck (`access: 'GRANTEE'`) has no slug: its
+ * address is `/d/{code}`, with no title in it.
+ */
+export interface AuthorDeckCard extends Omit<CommunityCard, 'slug'> {
+    readonly slug: string | null;
+}
+
+/** `PUBLIC`: a public deck. `GRANTEE`: an invitation-only deck of the author that the signed-in viewer has a grant for («Доступна вам»). */
+export type AuthorDeckAccess = 'PUBLIC' | 'GRANTEE';
+
+/** One row of an author's list: the card with the viewer's access to it. The identity of a row is `code`. */
+export interface AuthorDeckEntry extends AuthorDeckCard {
+    readonly access: AuthorDeckAccess;
+}
+
+export interface AuthorDeckPage {
+    /** The sum of «Учат сейчас» over the author's public decks; `null` below 10 (the server's `audienceMinShown`). */
+    readonly learningNowTotal: number | null;
+    readonly decks: readonly AuthorDeckEntry[];
+    readonly nextCursor: string | null;
 }
 
 export interface FacetTopic { readonly id: string; readonly parentId: string | null; readonly name: string; readonly count: number }
@@ -163,15 +186,21 @@ const CARD_FIELDS = ['code', 'slug', 'title', 'description', 'topic', 'contentLa
     'media', 'mechanics', 'addedCount', 'learningNowCount', 'updatedAt', 'ownerId'] as const;
 
 export function parseCommunityCard(value: unknown): CommunityCard {
+    const card = parseCardFields(value, false);
+    return card.slug === null ? fail() : { ...card, slug: card.slug };
+}
+
+/** `slugOptional`: the card may be an invitation-only deck of an author's list, which has no slug (`null`). Any slug that is present must be a slug. */
+function parseCardFields(value: unknown, slugOptional: boolean): AuthorDeckCard {
     const f = exact(value, CARD_FIELDS);
     if (typeof f['code'] !== 'string' || !CODE.test(f['code'])) return fail();
-    if (typeof f['slug'] !== 'string' || !SLUG.test(f['slug'])) return fail();
+    if (!(slugOptional && f['slug'] === null) && (typeof f['slug'] !== 'string' || !SLUG.test(f['slug']))) return fail();
     if (typeof f['ownerId'] !== 'string' || !ACCOUNT_ID.test(f['ownerId'])) return fail();
     const level = f['level'];
     if (level !== null && !CATALOG_LEVELS.some(entry => entry.value === level)) return fail();
     if (!Array.isArray(f['tags']) || f['tags'].length > 50) return fail();
     return {
-        code: f['code'], slug: f['slug'], title: text(f['title'], 400, false), description: text(f['description'], 8192, true),
+        code: f['code'], slug: f['slug'] as string | null, title: text(f['title'], 400, false), description: text(f['description'], 8192, true),
         topic: f['topic'] === null ? null : parseTopic(f['topic']),
         contentLanguage: language(f['contentLanguage']), targetLanguage: language(f['targetLanguage']), level: level as string | null,
         tags: f['tags'].map(tag => text(tag, 100, false)),
@@ -247,4 +276,25 @@ export function parseCommunityDeckPage(value: unknown, limit: number = COMMUNITY
     const f = exact(value, ['decks', 'total', 'totalCapped', 'nextCursor']);
     if (typeof f['totalCapped'] !== 'boolean') return fail();
     return { decks: cards(f['decks'], limit), total: count(f['total'], TOTAL_MAX), totalCapped: f['totalCapped'], nextCursor: cursor(f['nextCursor']) };
+}
+
+function parseAuthorDeck(value: unknown): AuthorDeckEntry {
+    const f = exact(value, ['access', 'deck']);
+    if (f['access'] !== 'PUBLIC' && f['access'] !== 'GRANTEE') return fail();
+    const access: AuthorDeckAccess = f['access'];
+    const card = parseCardFields(f['deck'], access === 'GRANTEE');
+    if (access === 'PUBLIC') return card.slug === null ? fail() : { ...card, access };
+    // The server keeps back what would show an invitation-only deck in a catalogue: its address has no title and its numbers are not published.
+    if (card.slug !== null || card.topic !== null || card.addedCount !== null || card.learningNowCount !== null
+        || card.media.length > 0 || card.mechanics.length > 0) return fail();
+    return { ...card, access };
+}
+
+/** `limit` is the page size that was asked for: more rows than that is a protocol failure, and so is a code that appears twice in one page. */
+export function parseAuthorDeckPage(value: unknown, limit: number = COMMUNITY_PAGE_MAX): AuthorDeckPage {
+    const f = exact(value, ['learningNowTotal', 'decks', 'nextCursor']);
+    if (!Array.isArray(f['decks']) || f['decks'].length > limit) return fail();
+    const decks = f['decks'].map(parseAuthorDeck);
+    if (new Set(decks.map(entry => entry.code)).size !== decks.length) return fail();
+    return { learningNowTotal: audience(f['learningNowTotal']), decks, nextCursor: cursor(f['nextCursor']) };
 }

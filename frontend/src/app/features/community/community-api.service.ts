@@ -3,14 +3,17 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, defer, map, of, throwError } from 'rxjs';
 
 import { appConfig } from '../../app.config';
+import { ACCOUNT_ID } from '../../public-profile';
 import { CatalogFilters } from '../../shared/catalog-filters';
 import { publicFailureOf } from '../public-deck/public-deck.models';
 import {
+    AuthorDeckPage,
     COMMUNITY_PAGE_SIZE,
     COMMUNITY_QUERY_MAX,
     CommunityDeckPage,
     CommunityFacets,
     CommunityShelves,
+    parseAuthorDeckPage,
     parseCommunityDeckPage,
     parseCommunityFacets,
     parseCommunityShelves
@@ -74,6 +77,19 @@ export class CommunityApiService {
      */
     decks(query: CommunityQuery, cursor: string | null = null, limit: number = COMMUNITY_PAGE_SIZE): Observable<CommunityDeckPage> {
         return this.get('/decks', deckParams(query, cursor, limit), body => parseCommunityDeckPage(body, limit), NOTHING);
+    }
+
+    /**
+     * A page of the decks of an author: his public decks, newest update first, and, for a signed-in viewer with a grant, his invitation-only decks.
+     * The page asks Identity for the author's card first (Learning does not know the consent), so an account id that is not an id is a
+     * 404 here without a request. 404 is the catalogue being switched off.
+     */
+    authorDecks(accountId: string, cursor: string | null = null, limit: number = COMMUNITY_PAGE_SIZE): Observable<AuthorDeckPage> {
+        const id = accountId.toLowerCase();
+        if (!ACCOUNT_ID.test(id)) return throwError(() => publicFailureOf(new HttpErrorResponse({ status: 404 })));
+        let params = new HttpParams().set('limit', String(limit));
+        if (cursor !== null) params = params.set('cursor', cursor);
+        return this.get(`/authors/${id}/decks`, params, body => parseAuthorDeckPage(body, limit));
     }
 
     private get<T>(path: string, params: HttpParams | undefined, parse: (body: unknown) => T, whenRefused?: T): Observable<T> {

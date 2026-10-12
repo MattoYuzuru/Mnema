@@ -55,6 +55,14 @@ describe('SgCommunityComponent', () => {
         expect(new Set(demoCards(0, 40).map(card => card.id)).size).toBe(40);
     });
 
+    it('shows the card without the chip of the author next to the ones with it', () => {
+        const cards = [...specimen('Карточка с пометкой').querySelectorAll('app-public-deck-card')];
+        expect(cards).toHaveLength(3);
+        expect(cards[2].classList.contains('sg-no-author')).toBe(true);
+        expect(cards[1].querySelector('app-author-chip .login')).not.toBeNull();
+        expect(cards[2].querySelector('app-author-chip')).toBeNull();
+    });
+
     it('plays the opening of the first open book only, and plays it again on request', () => {
         const book = (): HTMLElement => specimen('Книга поиска: раскрытая').querySelector('.spread')!;
         expect(book().classList.contains('is-opening')).toBe(true);

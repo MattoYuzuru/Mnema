@@ -2,9 +2,19 @@ import { DestroyRef, signal } from '@angular/core';
 import { Observable, Subscription } from 'rxjs';
 
 import { PublicDeckFailure, publicFailureOf } from '../public-deck/public-deck.models';
-import { CommunityCard, CommunityDeckPage } from './community.models';
+import { CommunityCard } from './community.models';
 
 export type CommunityPagerPhase = 'idle' | 'loading' | 'ready' | 'error';
+
+/** What the pager needs of a page: the rows in order, the count the server gave, and where the list goes on. The rows of a list are told apart by `code`. */
+export interface PagerPage<Row extends PagerRow> {
+    readonly decks: readonly Row[];
+    readonly total: number;
+    readonly totalCapped: boolean;
+    readonly nextCursor: string | null;
+}
+
+export interface PagerRow { readonly code: string }
 
 /**
  * The cursor list of the catalogue behind `app-auto-load`, with the rules of `PublicPager` (rows accumulate by `code`, one request at a time,
@@ -14,8 +24,8 @@ export type CommunityPagerPhase = 'idle' | 'loading' | 'ready' | 'error';
  * A 412 on a next page (the rank generation of the cursor expired) starts the list again from its first page, silently; a 412 on a first page is asked again once. A failed next page
  * keeps the rows and waits for the explicit retry of the auto-load element. A failed first page is exposed as {@link failure}.
  */
-export class CommunityPager {
-    readonly rows = signal<readonly CommunityCard[]>([]);
+export class CommunityPager<Row extends PagerRow = CommunityCard> {
+    readonly rows = signal<readonly Row[]>([]);
     readonly total = signal(0);
     readonly capped = signal(false);
     readonly cursor = signal<string | null>(null);
@@ -31,7 +41,7 @@ export class CommunityPager {
     /** A first page is asked again once, silently, if the server says its generation is gone (412); a second 412 is a failure. */
     private restartsLeft = 1;
 
-    constructor(private readonly fetch: (cursor: string | null) => Observable<CommunityDeckPage>, destroyRef: DestroyRef) {
+    constructor(private readonly fetch: (cursor: string | null) => Observable<PagerPage<Row>>, destroyRef: DestroyRef) {
         destroyRef.onDestroy(() => this.subscription?.unsubscribe());
     }
 
@@ -112,7 +122,7 @@ export class CommunityPager {
     }
 }
 
-function unique(rows: readonly CommunityCard[]): readonly CommunityCard[] {
+function unique<Row extends PagerRow>(rows: readonly Row[]): readonly Row[] {
     const seen = new Set<string>();
     return rows.filter(row => {
         if (seen.has(row.code)) return false;

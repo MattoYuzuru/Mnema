@@ -5,7 +5,7 @@ import {
 } from '../../shared/catalog-filters';
 import { PublicDeckAuthor, PublicDeckCard, MIN_SHOWN_COUNT } from '../../shared/public-deck-card';
 import { normalizeQuery } from './community-api.service';
-import { CommunityCard, CommunityFacets, CommunityShelf, ShelfMore } from './community.models';
+import { AuthorDeckCard, CommunityFacets, CommunityShelf, ShelfMore } from './community.models';
 
 /** What the address says: the text of the search and the filters. The address is the state of the page. */
 export interface CommunityAddress {
@@ -111,8 +111,8 @@ export function shelfLimit(shelf: CommunityShelf): number {
     return shelf.more === null ? SHELF_DECKS_MAX : SHELF_ROW_MAX;
 }
 
-/** The wire card as the shared card shows it. `author` is what Identity said (a hidden profile is `username: null`); small audiences stay hidden. */
-export function displayCard(card: CommunityCard, author: PublicDeckAuthor, origin: string): PublicDeckCard {
+/** The wire card (the catalogue's, or an author's list entry) as the shared card shows it. `author` is what Identity said (a hidden profile is `username: null`); small audiences stay hidden. */
+export function displayCard(card: AuthorDeckCard, author: PublicDeckAuthor, origin: string): PublicDeckCard {
     const spoken = card.targetLanguage ?? card.contentLanguage;
     return {
         id: card.code,
@@ -127,7 +127,8 @@ export function displayCard(card: CommunityCard, author: PublicDeckAuthor, origi
         addedCount: shown(card.addedCount),
         learningNowCount: shown(card.learningNowCount),
         updatedAt: card.updatedAt,
-        shareUrl: `${origin}/d/${card.code}/${encodeURIComponent(card.slug)}`
+        // An invitation-only deck has no slug and so no title in its address.
+        shareUrl: card.slug === null ? `${origin}/d/${card.code}` : `${origin}/d/${card.code}/${encodeURIComponent(card.slug)}`
     };
 }
 

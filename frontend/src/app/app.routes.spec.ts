@@ -17,6 +17,7 @@ import { StudySessionPageComponent } from './features/study/study-session-page.c
 import { StyleguidePageComponent } from './styleguide/styleguide-page.component';
 import { PublicDeckPageComponent } from './features/public-deck/public-deck-page.component';
 import { CommunityPageComponent } from './features/community/community-page.component';
+import { AuthorPageComponent } from './features/community/author-page.component';
 import { publicDeckMatcher } from './features/public-deck/public-deck-routing';
 import { UrlSegment } from '@angular/router';
 
@@ -142,5 +143,15 @@ describe('appRoutes', () => {
         expect(route.component).toBeUndefined();
         expect(appRoutes.indexOf(route)).toBeLessThan(appRoutes.findIndex(candidate => candidate.path === '**'));
         expect(await route.loadComponent!()).toBe(CommunityPageComponent);
+    });
+
+    it('opens the author page to guests: one lazy public route /u/:username, no guard, before the catch-all, whatever the launch flag says', async () => {
+        const route = appRoutes.find(candidate => candidate.path === 'u/:username')!;
+        expect(route).toBeDefined();
+        expect(route.canActivate).toBeUndefined();
+        expect(route.component).toBeUndefined();
+        expect(route.data).toBeUndefined();
+        expect(appRoutes.indexOf(route)).toBeLessThan(appRoutes.findIndex(candidate => candidate.path === '**'));
+        expect(await route.loadComponent!()).toBe(AuthorPageComponent);
     });
 });
