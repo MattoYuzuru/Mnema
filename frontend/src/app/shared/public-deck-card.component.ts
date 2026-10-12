@@ -14,7 +14,7 @@ let nextCard = 0;
 /**
  * The card of a public deck in the catalogue, a shelf or an author's profile (skeleton: the layout and states; the data
  * source and the actions are wired by the screens that use it; «Поделиться» is done by the card itself). Title (a link when `link` is given), a two-line
- * description, topic and language (each with a hidden «Тема:» / «Язык:» prefix), the author chip, the size, media badges with words, the audience counts (only from
+ * description, topic and language (each with a hidden «Тема:» / «Язык:» prefix, plus the optional `note` stamp), the author chip, the size, media badges with words, the audience counts (only from
  * 10 and rounded), the update date and the «⋯» menu. There are no stars and no likes. Without an author (hidden
  * profile) the chip draws nothing; without media or with small audiences the row is simply absent.
  */
@@ -38,6 +38,7 @@ let nextCard = 0;
         <p class="tags">
           <span class="stamp"><span class="visually-hidden">Тема: </span>{{ deck().topic }}</span>
           <span class="stamp"><span class="visually-hidden">Язык: </span>{{ deck().language }}</span>
+          @if (note(); as text) { <span class="stamp solid">{{ text }}</span> }
         </p>
         <app-author-chip [username]="deck().author.username" [avatarSrc]="deck().author.avatarSrc" />
         <p class="size">{{ size() }}</p>
@@ -69,6 +70,8 @@ export class PublicDeckCardComponent {
     readonly headingLevel = input<2 | 3 | 4>(3);
     /** The route of the deck page; without it the title is plain text. */
     readonly link = input<string | readonly string[] | null>(null);
+    /** A short mark next to the topic and language, for a state of this deck for this reader (a profile's invitation-only deck: «Доступна вам»). */
+    readonly note = input<string | null>(null);
     /** The `id` of a chosen menu row other than «Поделиться». */
     readonly action = output<string>();
 

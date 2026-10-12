@@ -15,12 +15,13 @@ const FULL: PublicDeckCard = {
 
 @Component({
     imports: [PublicDeckCardComponent],
-    template: `<app-public-deck-card [deck]="deck" [link]="link" [headingLevel]="level" [menuItems]="items" (action)="actions.push($event)" />`
+    template: `<app-public-deck-card [deck]="deck" [link]="link" [headingLevel]="level" [note]="note" [menuItems]="items" (action)="actions.push($event)" />`
 })
 class HostComponent {
     deck = FULL;
     link: string | null = null;
     level: 2 | 3 | 4 = 3;
+    note: string | null = null;
     items = [{ id: 'share', label: 'Поделиться' }, { id: 'report', label: 'Пожаловаться' }];
     readonly actions: string[] = [];
 }
@@ -71,6 +72,15 @@ describe('PublicDeckCardComponent', () => {
         expect(ids[0]).not.toBe(ids[1]);
         expect(ids[0]).not.toContain('full');
         expect(first.root.querySelector('article')?.getAttribute('aria-labelledby')).toBe(ids[0]);
+    });
+
+    it('shows the note as one more stamp next to the topic and the language, and nothing without it', () => {
+        expect(create().root.querySelectorAll('.tags .stamp')).toHaveLength(2);
+        TestBed.resetTestingModule();
+        const { root } = create({ note: 'Доступна вам' });
+        const stamps = [...root.querySelectorAll('.tags .stamp')];
+        expect(stamps.map(stamp => stamp.textContent)).toEqual(['Тема: Языки', 'Язык: Испанский', 'Доступна вам']);
+        expect(stamps[2].querySelector('.visually-hidden')).toBeNull();
     });
 
     it('takes the heading level from the screen: h3 by default, h2 or h4 on request', () => {
