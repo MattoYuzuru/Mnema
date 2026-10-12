@@ -1,3 +1,5 @@
+import { plural } from '../core/notifications/notification-presenter';
+
 /**
  * The words of a copy of somebody else's deck («Добавить к себе», Share/10). Where the product contract has approved wording
  * (docs/product/community-decks.md, «Копии» and «Экраны») it is used as written; the rest are plain statements of state.
@@ -127,7 +129,7 @@ export const UPDATE_TEXT = {
     autoTitle: 'Обновления от автора',
     autoLabel: 'Принимать безопасное автоматически',
     autoTopic: 'автоматический приём обновлений',
-    autoHelp: 'Берём новое и исправления того, что вы не меняли. Конфликты и удаления ждут вашего решения.',
+    autoHelp: 'Берём новое и исправления того, что вы не меняли. Конфликты и удаления ждут вашего решения. Любое автоматическое изменение можно вернуть в «Истории обновлений».',
     autoOn: 'Безопасное будет приниматься автоматически.',
     autoOff: 'Обновления снова принимаются только вручную.',
     autoFailed: 'Не удалось сохранить настройку. Проверьте соединение и повторите.',
@@ -193,9 +195,73 @@ export const UPDATE_TEXT = {
     applyNeedsMaterial: (title: string | null): string => title === null
         ? 'Это упражнение нельзя взять: вы удалили материал, к которому оно относится.'
         : `Упражнение «${title}» нельзя взять: вы удалили материал, к которому оно относится.`,
+    /** 400 `material_still_used`: deleting a material that exercises of the copy are still about; `exercise` is the one the plan lists, if it does. */
+    applyMaterialStillUsed: (material: string | null, exercise: string | null): string => {
+        const subject = material === null ? 'Этот материал' : `Материал «${material}»`;
+        return exercise === null
+            ? `${subject} нельзя удалить: к нему ещё привязаны упражнения. Удалите и их или оставьте материал у себя.`
+            : `${subject} нельзя удалить: к нему ещё привязано упражнение «${exercise}». Удалите и его или оставьте материал у себя.`;
+    },
+    /** 400 `publication_refused`: nothing was written. */
+    applyRefused: 'Не удалось применить обновление: результат не принят. Ничего не изменилось.',
     /** 503 `UPDATE_PLAN_BUSY` after the one automatic retry. */
     busy: 'Сервер сейчас занят. Попробуйте через минуту.',
     applyJobFailed: 'Не удалось применить большое обновление. Ничего не потеряно: выберите и примените снова.',
+
+    /** «Что нового» in the hub of a copy after an automatic update (Updates/6 part B). */
+    newsApplied: (applied: number): string => applied > 0
+        ? `Автор обновил колоду, мы взяли ${applied} ${plural(applied, ['изменение', 'изменения', 'изменений'])} автоматически.`
+        : 'Автор обновил колоду.',
+    newsPending: (pending: number): string => `${pending} ${plural(pending, ['ждёт', 'ждут', 'ждут'])} вашего решения.`,
+    newsLook: 'Посмотреть, что изменилось',
+    newsDecide: 'Решить, что взять',
+
+    /** The history of updates (`/decks/:id/update/history`): «Что нового» with the way to take a unit back. */
+    historyTitle: 'История обновлений',
+    historyLede: 'Что менялось в вашей копии после обновлений от автора. Любое изменение можно вернуть, пока вы сами не правили его после обновления.',
+    historyLoading: 'Загружаем историю…',
+    historyFailed: 'Не удалось загрузить историю. Проверьте соединение и повторите.',
+    historyFailedTitle: 'Не удалось открыть историю',
+    historyEmpty: 'Обновлений пока не было.',
+    historyEntries: 'Обновления',
+    historyUnits: 'Что изменилось',
+    historyTruncated: 'Показаны не все изменения этого обновления.',
+    historyCounts: (applied: number, pending: number): string =>
+        `Принято изменений: ${applied}.${pending > 0 ? ` Ждали вашего решения: ${pending}.` : ''}`,
+    historyDetached: 'Копия отвязана от автора: изменения можно посмотреть, но вернуть их уже нельзя.',
+    modes: { AUTO: 'Автоматически', MANUAL: 'Вручную' } satisfies Record<'AUTO' | 'MANUAL', string>,
+    appliedAtExact: 'Точное время',
+    justNow: 'только что',
+    changes: { ADDED: 'Добавлено', CHANGED: 'Исправлено', REMOVED: 'Удалено', REORDERED: 'Порядок' } satisfies Record<'ADDED' | 'CHANGED' | 'REMOVED' | 'REORDERED', string>,
+    unitStates: { RETURNED: 'Вы уже вернули', CHANGED_SINCE: 'Вы изменили после обновления' } satisfies Record<'RETURNED' | 'CHANGED_SINCE', string>,
+
+    /** Taking a unit back. */
+    revert: 'Вернуть как было',
+    revertFor: (title: string): string => `Вернуть как было: «${title}»`,
+    revertAsk: {
+        ADDED: (title: string): string => `Уберём «${title}» из вашей колоды, как будто его не добавляли.`,
+        CHANGED: (title: string): string => `Вернём «${title}» к тому, что было до обновления.`,
+        REMOVED: (title: string): string => `Вернём «${title}» в вашу колоду на прежнее место.`
+    },
+    /** `titles`: the quoted titles, already joined with commas. */
+    revertWith: (titles: string): string => `Вместе с этим вернутся: ${titles}.`,
+    revertWithWhy: 'Они связаны между собой, поэтому возвращаются вместе.',
+    revertConfirm: 'Вернуть',
+    revertConfirmAll: 'Вернуть всё это',
+    reverting: 'Возвращаем…',
+    revertDone: (title: string, more: number): string => more > 0 ? `Вернули «${title}» и ещё ${more}.` : `Вернули «${title}».`,
+    revertStaleUnit: 'После обновления вы уже меняли это, поэтому вернуть нельзя. Мы обновили список.',
+    revertStaleCopy: 'Пока вы смотрели, колода изменилась. Мы обновили список, попробуйте ещё раз.',
+    revertDetached: 'Колода отвязана от автора, поэтому вернуть изменения нельзя. Мы обновили список.',
+    revertPreparing: 'Копия ещё готовится. Вернуть изменения можно, когда она будет готова.',
+    revertUnknown: 'Не удалось узнать, вернулось ли. Повторите: ничего не будет возвращено дважды.',
+    revertStillUsed: (title: string | null): string => title === null
+        ? 'Нельзя убрать материал: к нему привязано ваше упражнение, которое не было частью обновления.'
+        : `Нельзя убрать материал: к нему привязано ваше упражнение «${title}», которое не было частью обновления.`,
+    revertNotReturnable: 'Это изменение нельзя вернуть по отдельности.',
+    revertRefused: 'Не удалось вернуть. Ничего не изменилось.',
+    revertGone: 'Это обновление или колода больше недоступны. Мы обновили список.',
+    revertRateLimited: 'Слишком много запросов. Подождите немного и повторите.',
 
     /** The two sides of a unit. */
     sidesLoading: 'Загружаем сравнение…',

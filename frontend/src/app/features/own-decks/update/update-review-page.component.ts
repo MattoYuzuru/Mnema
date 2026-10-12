@@ -528,6 +528,12 @@ export class UpdateReviewPageComponent {
                     this.dependencyProblem.set(needed !== null && by !== null ? UPDATE_TEXT.dependencyBlocked(needed, by) : UPDATE_TEXT.dependencyDeclined);
                 }
                 break;
+            case 'material_still_used':
+                this.applyProblem.set(UPDATE_TEXT.applyMaterialStillUsed(title(invalid.unitId), title(invalid.dependency)));
+                break;
+            case 'publication_refused':
+                this.applyProblem.set(UPDATE_TEXT.applyRefused);
+                break;
             default:
                 this.applyProblem.set(UPDATE_TEXT.applyInvalid);
         }

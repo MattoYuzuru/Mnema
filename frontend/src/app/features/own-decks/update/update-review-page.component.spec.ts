@@ -97,6 +97,20 @@ describe('UpdateReviewPageComponent', () => {
             expect(api.plan).toHaveBeenCalledWith(DECK_ID);
         });
 
+        it('links to the history of updates from every loaded state, and from neither the loading line nor the failure', async () => {
+            const link = () => root().querySelector<HTMLAnchorElement>('a[href$="/update/history"]');
+            await open(readyPage(mixed()));
+            expect(link()!.textContent!.trim()).toBe('История обновлений');
+            expect(link()!.getAttribute('href')).toBe(`/decks/${DECK_ID}/update/history`);
+            expect(link()!.classList.contains('quiet')).toBe(true);
+            await open(closedPage('DETACHED'));
+            expect(link()).not.toBeNull();
+            await open(readyPage([], { state: 'UP_TO_DATE' }));
+            expect(link()).not.toBeNull();
+            await open(throwError(() => problem(500)));
+            expect(link()).toBeNull();
+        });
+
         it('shows a loading line, then the summary with the author\'s note and the counts of the whole plan', async () => {
             const pending = new Subject<UpdatePlanPage>();
             api.plan.mockReturnValueOnce(pending);
@@ -817,6 +831,26 @@ describe('UpdateReviewPageComponent', () => {
                 api.apply.mockReturnValue(throwError(() => refusal('dependency_declined', exerciseId, materialId)));
                 await pressSafe();
                 expect(alertText()).toBe('«Материал 1» нужно для «Упражнение 2», которое вы принимаете. Верните «Принять» для «Материал 1» или не берите «Упражнение 2».');
+            });
+
+            it('material_still_used: names the material and the exercise the plan lists, or says exercises in general', async () => {
+                await open(readyPage(mixed()));
+                api.apply.mockReturnValueOnce(throwError(() => refusal('material_still_used', materialId, exerciseId)));
+                await pressSafe();
+                expect(alertText()).toBe('Материал «Материал 1» нельзя удалить: к нему ещё привязано упражнение «Упражнение 2». Удалите и его или оставьте материал у себя.');
+                api.apply.mockReturnValueOnce(throwError(() => refusal('material_still_used', materialId)));
+                await pressSafe();
+                expect(alertText()).toBe('Материал «Материал 1» нельзя удалить: к нему ещё привязаны упражнения. Удалите и их или оставьте материал у себя.');
+                api.apply.mockReturnValueOnce(throwError(() => refusal('material_still_used', `MATERIAL:${keyOf(99)}`)));
+                await pressSafe();
+                expect(alertText()).toBe('Этот материал нельзя удалить: к нему ещё привязаны упражнения. Удалите и их или оставьте материал у себя.');
+            });
+
+            it('publication_refused: says nothing was written', async () => {
+                await open(readyPage(mixed()));
+                api.apply.mockReturnValue(throwError(() => refusal('publication_refused', materialId)));
+                await pressSafe();
+                expect(alertText()).toBe('Не удалось применить обновление: результат не принят. Ничего не изменилось.');
             });
 
             it('names no unit it has not loaded, and says so in general words', async () => {

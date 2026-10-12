@@ -16,7 +16,8 @@ export interface UpdateUnitView {
     readonly dependency?: string | null;
 }
 
-const KIND_GLYPHS: Readonly<Record<UpdateUnitKind, GlyphName>> = {
+/** The line glyph of every kind of unit; the history row of an update uses the same ones. */
+export const KIND_GLYPHS: Readonly<Record<UpdateUnitKind, GlyphName>> = {
     material: 'book-open', exercise: 'exercise', goal: 'goal', description: 'scroll-seal', order: 'order'
 };
 

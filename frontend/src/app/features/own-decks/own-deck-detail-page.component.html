@@ -85,6 +85,14 @@
       @if (retryError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
       @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
     } @else {
+      @if (lastUpdate(); as news) {
+        <app-update-news [applied]="news.counts.applied" [pending]="news.counts.pending">
+          <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'update', 'history']">{{ updateText.newsLook }}</a>
+          <!-- With the update offer below the block there is already one link to the review screen. -->
+          @if (news.counts.pending > 0 && !updateOffer()) { <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'update']">{{ updateText.newsDecide }}</a> }
+        </app-update-news>
+      }
+
       @if (updateOffer()) {
         <section class="update-offer" aria-labelledby="update-offer-title">
           <h2 id="update-offer-title" class="subsection-heading"><app-update-badge /></h2>

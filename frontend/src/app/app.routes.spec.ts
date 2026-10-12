@@ -38,7 +38,7 @@ describe('appRoutes', () => {
             'decks', 'decks/new', 'decks/:deckId/study', 'decks/:deckId/materials/new', 'decks/:deckId/exercises/generate',
             'decks/:deckId/materials/:memberKey/exercises/new', 'decks/:deckId/exercises/:exerciseId/edit',
             'decks/:deckId/materials/:memberKey/edit',
-            'decks/:deckId/materials/:memberKey', 'decks/:deckId/capture', 'decks/:deckId/workshop/:sessionId', 'decks/:deckId/update', 'decks/:deckId'
+            'decks/:deckId/materials/:memberKey', 'decks/:deckId/capture', 'decks/:deckId/workshop/:sessionId', 'decks/:deckId/update', 'decks/:deckId/update/history', 'decks/:deckId'
         ]);
         // The material list lives in the Deck hub; no separate list route may come back (greenfield: no redirect either).
         expect(paths).not.toContain('decks/:deckId/materials');

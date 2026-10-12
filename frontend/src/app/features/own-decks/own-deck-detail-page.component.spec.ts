@@ -392,7 +392,7 @@ describe('OwnDeckDetailPageComponent', () => {
     });
 
     describe('a copy of somebody else\'s deck', () => {
-        const states = forksFixture.fork as unknown as Record<'preparing' | 'failed' | 'ready' | 'sourceClosed' | 'detached' | 'updateAvailable', DeckFork>;
+        const states = forksFixture.fork as unknown as Record<'preparing' | 'failed' | 'ready' | 'sourceClosed' | 'detached' | 'updateAvailable' | 'updatedAutomatically', DeckFork>;
         const root = () => fixture.nativeElement as HTMLElement;
         const live = () => root().querySelector('.deck-detail-page > p.visually-hidden[role=status]')!.textContent;
         const actions = () => [...root().querySelectorAll('nav.hub-actions > a, nav.hub-actions > button')].map(element => element.getAttribute('aria-label') ?? element.textContent?.trim());
@@ -499,6 +499,48 @@ describe('OwnDeckDetailPageComponent', () => {
             });
         });
 
+        describe('«Что нового» after an automatic update', () => {
+            const news = () => root().querySelector('app-update-news');
+            const links = () => [...root().querySelectorAll<HTMLAnchorElement>('app-update-news a')].map(anchor => [anchor.textContent!.trim(), anchor.getAttribute('href')]);
+            const withNotice = (fork: DeckFork, counts: { applied: number; pending: number }): DeckFork => ({ ...fork, lastUpdate: { ...states.updatedAutomatically.lastUpdate!, counts } });
+
+            it('says what was taken and what waits, under its own heading, with a link to the history (the contract example)', async () => {
+                await show(states.updatedAutomatically);
+                expect(news()!.querySelector('h2')!.textContent).toBe('Что нового');
+                expect(news()!.querySelector('.line')!.textContent).toBe('Автор обновил колоду, мы взяли 3 изменения автоматически. 2 ждут вашего решения.');
+                expect(links()[0]).toEqual(['Посмотреть, что изменилось', `/decks/${deck.deckId}/update/history`]);
+                expect([...root().querySelectorAll('.button.primary')].map(item => item.textContent!.trim())).toEqual(['Учить']);
+            });
+
+            it('has exactly one link to the review screen while the update offer is shown (the offer carries it)', async () => {
+                await show(states.updatedAutomatically);
+                expect(root().querySelector('section.update-offer')).not.toBeNull();
+                expect(links()).toHaveLength(1);
+                expect(root().querySelectorAll('a[href$="/update"]')).toHaveLength(1);
+                expect(news()!.compareDocumentPosition(root().querySelector('section.update-offer')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+            });
+
+            it('links to the review screen itself when something waits and no offer is shown, and not when nothing waits', async () => {
+                await show(withNotice({ ...states.updatedAutomatically, updateAvailable: false }, { applied: 1, pending: 1 }));
+                expect(news()!.querySelector('.line')!.textContent).toBe('Автор обновил колоду, мы взяли 1 изменение автоматически. 1 ждёт вашего решения.');
+                expect(links()).toEqual([['Посмотреть, что изменилось', `/decks/${deck.deckId}/update/history`], ['Решить, что взять', `/decks/${deck.deckId}/update`]]);
+                await show(withNotice({ ...states.updatedAutomatically, updateAvailable: false }, { applied: 5, pending: 0 }));
+                expect(news()!.querySelector('.line')!.textContent).toBe('Автор обновил колоду, мы взяли 5 изменений автоматически.');
+                expect(links()).toHaveLength(1);
+            });
+
+            it('is absent once the server stops sending the notice (seen), for an ordinary deck, and for a copy that cannot have one', async () => {
+                await show(states.updateAvailable);
+                expect(news()).toBeNull();
+                await show(null);
+                expect(news()).toBeNull();
+                for (const fork of [states.preparing, states.detached]) {
+                    await show({ ...fork, lastUpdate: states.updatedAutomatically.lastUpdate });
+                    expect(news(), JSON.stringify(fork)).toBeNull();
+                }
+            });
+        });
+
         describe('«Принимать безопасное автоматически»', () => {
             const box = () => root().querySelector<HTMLInputElement>('.auto-update input[type=checkbox]')!;
             const alert = () => root().querySelector('.auto-update [role=alert]')?.textContent ?? null;
@@ -512,7 +554,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(box().checked).toBe(false);
                 const tip = root().querySelector('.auto-update app-toggletip')!;
                 expect(tip.querySelector('button')!.getAttribute('aria-label')).toBe('Подробнее: автоматический приём обновлений');
-                expect(tip.querySelector('.bubble')!.textContent).toBe('Берём новое и исправления того, что вы не меняли. Конфликты и удаления ждут вашего решения.');
+                expect(tip.querySelector('.bubble')!.textContent).toBe('Берём новое и исправления того, что вы не меняли. Конфликты и удаления ждут вашего решения. Любое автоматическое изменение можно вернуть в «Истории обновлений».');
                 await show(states.updateAvailable);
                 expect(box().checked).toBe(true);
             });

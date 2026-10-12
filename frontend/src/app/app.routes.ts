@@ -166,6 +166,13 @@ export const appRoutes: Routes = [
         canActivate: [authGuard]
     },
     {
+        // «История обновлений» of a copy (Updates/6 part B): what the author's updates changed in it, with a way to take a unit back. Owner of the copy only.
+        path: 'decks/:deckId/update/history',
+        loadComponent: () => import('./features/own-decks/update/update-history-page.component')
+            .then(module => module.UpdateHistoryPageComponent),
+        canActivate: [authGuard]
+    },
+    {
         path: 'decks/:deckId',
         loadComponent: () => import('./features/own-decks/own-deck-detail-page.component')
             .then(module => module.OwnDeckDetailPageComponent),

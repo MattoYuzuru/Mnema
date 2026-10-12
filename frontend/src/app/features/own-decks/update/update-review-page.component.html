@@ -8,6 +8,9 @@
       <h1 id="update-title" tabindex="-1">{{ text.pageTitle }}</h1>
       @if (sourceTitle(); as title) { <p class="lede">{{ text.sourceLine(title) }}</p> }
     </div>
+    @if (view() !== 'loading' && view() !== 'error') {
+      <a class="button quiet" [routerLink]="['/decks', deckId(), 'update', 'history']">{{ text.historyTitle }}</a>
+    }
   </header>
 
   @switch (view()) {

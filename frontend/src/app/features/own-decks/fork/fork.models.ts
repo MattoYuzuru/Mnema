@@ -30,6 +30,22 @@ export interface DeckFork {
     readonly updateAvailable: boolean;
     /** The owner's setting «Принимать безопасное автоматически», as stored (false by default), whatever the state of the copy. */
     readonly autoUpdate: boolean;
+    /**
+     * «Что нового» (Updates/6 part B): the newest automatic update the owner has not marked seen. Absent (not `null`) otherwise, and always for a
+     * preparing or detached copy.
+     */
+    readonly lastUpdate?: LastUpdate;
+}
+
+/** `fork.lastUpdate`: an automatic update of the copy that its owner has not looked at yet. */
+export interface LastUpdate {
+    /** The revision of the copy the update made: the key of its entry in the history and of `:seen`. */
+    readonly deckRevisionId: string;
+    readonly mode: 'AUTO';
+    readonly appliedAt: string;
+    readonly seen: false;
+    /** `applied`: units the update took, dependencies included; `pending`: units it left to the owner. */
+    readonly counts: { readonly applied: number; readonly pending: number };
 }
 
 export type ForkProgress = 'preparing' | 'failed' | 'ready';
@@ -74,7 +90,7 @@ export function newForkCommandId(): string {
 
 export function parseDeckFork(value: unknown): DeckFork | null {
     if (value === null || value === undefined) return null;
-    const object = exactObject(value, ['upstreamCode', 'upstreamTitle', 'sourceAvailable', 'preparing', 'failed', 'detached', 'updateAvailable', 'autoUpdate']);
+    const object = exactObject(value, ['upstreamCode', 'upstreamTitle', 'sourceAvailable', 'preparing', 'failed', 'detached', 'updateAvailable', 'autoUpdate'], ['lastUpdate']);
     const upstreamCode = object['upstreamCode'];
     const upstreamTitle = object['upstreamTitle'];
     const sourceAvailable = flag(object['sourceAvailable']);
@@ -94,7 +110,26 @@ export function parseDeckFork(value: unknown): DeckFork | null {
     if (failed && !preparing) throw new OwnDeckProtocolError('A failed copy is a preparing copy.');
     // The badge is only ever on for a ready, attached copy whose source opens.
     if (updateAvailable && (preparing || detached || !sourceAvailable)) throw new OwnDeckProtocolError('An update is available only to a ready, attached copy with a readable source.');
-    return { upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached, updateAvailable, autoUpdate };
+    if (!('lastUpdate' in object)) return { upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached, updateAvailable, autoUpdate };
+    // The notice is only ever on for a ready, attached copy; an absent member is the way to say «nothing new», never `null`.
+    if (preparing || detached) throw new OwnDeckProtocolError('An automatic update is noticed only on a ready, attached copy.');
+    return { upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached, updateAvailable, autoUpdate, lastUpdate: parseLastUpdate(object['lastUpdate']) };
+}
+
+function parseLastUpdate(value: unknown): LastUpdate {
+    const object = exactObject(value, ['deckRevisionId', 'mode', 'appliedAt', 'seen', 'counts']);
+    const deckRevisionId = object['deckRevisionId'];
+    const appliedAt = object['appliedAt'];
+    const counts = exactObject(object['counts'], ['applied', 'pending']);
+    if (typeof deckRevisionId !== 'string' || !isCanonicalEntityId(deckRevisionId)) throw new OwnDeckProtocolError('Invalid automatic update revision.');
+    if (object['mode'] !== 'AUTO' || object['seen'] !== false) throw new OwnDeckProtocolError('Only an unseen automatic update is noticed.');
+    if (typeof appliedAt !== 'string' || Number.isNaN(Date.parse(appliedAt))) throw new OwnDeckProtocolError('Invalid automatic update time.');
+    const applied = counts['applied'];
+    const pending = counts['pending'];
+    if (typeof applied !== 'number' || !Number.isInteger(applied) || applied < 0 || typeof pending !== 'number' || !Number.isInteger(pending) || pending < 0) {
+        throw new OwnDeckProtocolError('Invalid automatic update counts.');
+    }
+    return { deckRevisionId: deckRevisionId.toLowerCase(), mode: 'AUTO', appliedAt, seen: false, counts: { applied, pending } };
 }
 
 export function parseForkCreated(value: unknown, status: number, commandId: string): ForkCreated {
@@ -203,9 +238,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function exactObject(value: unknown, keys: readonly string[]): Record<string, unknown> {
+function exactObject(value: unknown, keys: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
     if (!isRecord(value)) throw new OwnDeckProtocolError('Expected an object response.');
     const present = Object.keys(value);
-    if (present.length !== keys.length || present.some(key => !keys.includes(key))) throw new OwnDeckProtocolError('Response object has an unexpected shape.');
+    if (keys.some(key => !present.includes(key)) || present.some(key => !keys.includes(key) && !optional.includes(key))) throw new OwnDeckProtocolError('Response object has an unexpected shape.');
     return value;
 }
