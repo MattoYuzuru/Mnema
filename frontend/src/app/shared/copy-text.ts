@@ -129,7 +129,7 @@ export const UPDATE_TEXT = {
     autoTitle: 'Обновления от автора',
     autoLabel: 'Принимать безопасное автоматически',
     autoTopic: 'автоматический приём обновлений',
-    autoHelp: 'Берём новое и исправления того, что вы не меняли. Конфликты и удаления ждут вашего решения. Любое автоматическое изменение можно вернуть в «Истории обновлений».',
+    autoHelp: 'Берём новое и исправления того, что вы не меняли. Конфликты и удаления ждут вашего решения. Принятое автоматически смотрите в «Истории обновлений». Материал или упражнение можно вернуть, пока вы сами не правили его после обновления.',
     autoOn: 'Безопасное будет приниматься автоматически.',
     autoOff: 'Обновления снова принимаются только вручную.',
     autoFailed: 'Не удалось сохранить настройку. Проверьте соединение и повторите.',
@@ -218,7 +218,7 @@ export const UPDATE_TEXT = {
 
     /** The history of updates (`/decks/:id/update/history`): «Что нового» with the way to take a unit back. */
     historyTitle: 'История обновлений',
-    historyLede: 'Что менялось в вашей копии после обновлений от автора. Любое изменение можно вернуть, пока вы сами не правили его после обновления.',
+    historyLede: 'Что менялось в вашей копии после обновлений от автора. Материал или упражнение можно вернуть, пока вы сами не правили его после обновления.',
     historyLoading: 'Загружаем историю…',
     historyFailed: 'Не удалось загрузить историю. Проверьте соединение и повторите.',
     historyFailedTitle: 'Не удалось открыть историю',
@@ -238,13 +238,23 @@ export const UPDATE_TEXT = {
     /** Taking a unit back. */
     revert: 'Вернуть как было',
     revertFor: (title: string): string => `Вернуть как было: «${title}»`,
+    /** The same, told apart from a unit of the same title in another update by the time of that update. */
+    revertForAt: (title: string, when: string): string => `Вернуть как было: «${title}», обновление от ${when}`,
+    orderChanged: 'Изменился порядок материалов',
     revertAsk: {
-        ADDED: (title: string): string => `Уберём «${title}» из вашей колоды, как будто его не добавляли.`,
+        ADDED: (title: string): string => `Уберём «${title}» из вашей колоды.`,
         CHANGED: (title: string): string => `Вернём «${title}» к тому, что было до обновления.`,
         REMOVED: (title: string): string => `Вернём «${title}» в вашу колоду на прежнее место.`
     },
-    /** `titles`: the quoted titles, already joined with commas. */
-    revertWith: (titles: string): string => `Вместе с этим вернутся: ${titles}.`,
+    /** What happens to each unit that goes back together with the asked one; `titles` are the quoted titles, already joined with commas. */
+    revertWith: {
+        ADDED: (titles: string): string => `Вместе с этим уберём: ${titles}.`,
+        REMOVED: (titles: string): string => `Вместе с этим вернём: ${titles}.`,
+        CHANGED: (titles: string): string => `Вместе с этим вернём к прежнему виду: ${titles}.`,
+        /** A unit the entry does not list: only that it goes back. */
+        UNKNOWN: (titles: string): string => `Вместе с этим вернутся: ${titles}.`
+    },
+    revertNoRepeat: 'Следующее обновление не вернёт это обратно, пока автор не изменит его снова.',
     revertWithWhy: 'Они связаны между собой, поэтому возвращаются вместе.',
     revertConfirm: 'Вернуть',
     revertConfirmAll: 'Вернуть всё это',

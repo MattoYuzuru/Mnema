@@ -85,15 +85,7 @@
       @if (retryError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
       @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
     } @else {
-      @if (lastUpdate(); as news) {
-        <app-update-news [applied]="news.counts.applied" [pending]="news.counts.pending">
-          <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'update', 'history']">{{ updateText.newsLook }}</a>
-          <!-- With the update offer below the block there is already one link to the review screen. -->
-          @if (news.counts.pending > 0 && !updateOffer()) { <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'update']">{{ updateText.newsDecide }}</a> }
-        </app-update-news>
-      }
-
-      @if (updateOffer()) {
+      @if (updateOffer() && !lastUpdate()) {
         <section class="update-offer" aria-labelledby="update-offer-title">
           <h2 id="update-offer-title" class="subsection-heading"><app-update-badge /></h2>
           <p>{{ updateText.offerNote }}</p>
@@ -109,6 +101,18 @@
         <button class="button secondary" type="button" #editButton [attr.aria-controls]="editing() ? 'deck-editor' : null" [attr.aria-expanded]="editing()" (click)="toggleEditor()">Изменить</button>
         <app-action-menu [label]="'Действия с колодой «' + deck.metadata.title + '»'" [items]="menuItems()" (chosen)="onMenu($event)" />
       </nav>
+
+      @if (lastUpdate(); as news) {
+        <app-update-news [applied]="news.counts.applied" [pending]="news.counts.pending" [appliedAt]="news.appliedAt" [when]="lastUpdateWhen()" [offer]="updateOffer()">
+          <a class="button quiet" [routerLink]="['/decks', deck.deckId, 'update', 'history']">{{ updateText.newsLook }}</a>
+          <!-- The block is the one place of the hub that speaks of this update: it carries the link to the review screen the offer would. -->
+          @if (updateOffer()) {
+            <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'update']">{{ updateText.viewUpdate }}</a>
+          } @else if (news.counts.pending > 0) {
+            <a class="button quiet" [routerLink]="['/decks', deck.deckId, 'update']">{{ updateText.newsDecide }}</a>
+          }
+        </app-update-news>
+      }
 
       @if (confirmingDetach()) {
         <section class="notice warning detach-confirm" aria-labelledby="detach-title" (keydown.escape)="cancelDetach()">

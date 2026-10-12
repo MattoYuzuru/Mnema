@@ -147,19 +147,20 @@
   </app-sg-specimen>
 
   <app-sg-specimen title="Что нового в хабе копии" selector="<app-update-news>"
-    when="Хаб копии, когда автоматический приём взял безопасное, а владелец ещё не смотрел. Заголовок «Что нового» и одно предложение со склонением («Автор обновил колоду, мы взяли 3 изменения автоматически. 2 ждут вашего решения.»; если ничего не ждёт, второго предложения нет). Действия кладёт страница: ссылка «Посмотреть, что изменилось» ведёт в историю и сразу отмечает запись просмотренной, ссылка «Решить, что взять» нужна, только если рядом нет «Посмотреть обновление». Не живая область: обновление пришло, пока владельца не было."
-    [tokens]="['--mn-ink', '--mn-sheet', '--mn-body']"
-    usage='<app-update-news [applied]="3" [pending]="2">
-  <a class="button secondary" routerLink="…/update/history">Посмотреть, что изменилось</a>
+    when="Хаб копии, под рядом действий (так «Учить» остаётся на первом экране), когда автоматический приём взял безопасное, а владелец ещё не смотрел. Маленький заголовок «Что нового», время обновления в «time» («2 часа назад, 12.10.2026, 12:30») и одно предложение со склонением («Автор обновил колоду, мы взяли 3 изменения автоматически. 2 ждут вашего решения.»; если ничего не ждёт, второго предложения нет). Без рамки и без своей кнопки: страница кладёт текстовую ссылку «Посмотреть, что изменилось» (ведёт в историю; сама история отметит запись просмотренной) и, если ждёт решения, ссылку «Решить, что взять». Когда у автора есть и новое обновление (`offer`), блок один: в нём значок «Есть обновление» и единственная кнопка «Посмотреть обновление», отдельного блока предложения рядом нет. Не живая область: обновление пришло, пока владельца не было."
+    [tokens]="['--mn-rule', '--mn-muted', '--mn-body']"
+    usage='<app-update-news [applied]="3" [pending]="2" appliedAt="2026-10-12T09:30:00Z" when="2 часа назад, 12.10.2026, 12:30">
+  <a class="button quiet" routerLink="…/update/history">Посмотреть, что изменилось</a>
 </app-update-news>'>
     <div class="sg-stack">
-      <app-update-news [applied]="3" [pending]="2"><a class="button secondary" href="#update">{{ newsLook }}</a><a class="button secondary" href="#update">{{ newsDecide }}</a></app-update-news>
-      <app-update-news [applied]="1" [pending]="0"><a class="button secondary" href="#update">{{ newsLook }}</a></app-update-news>
+      <app-update-news [applied]="3" [pending]="2" appliedAt="2026-10-12T09:30:00Z" when="2 часа назад, 12.10.2026, 12:30"><a class="button quiet" href="#update">{{ newsLook }}</a><a class="button quiet" href="#update">{{ newsDecide }}</a></app-update-news>
+      <app-update-news [applied]="1" [pending]="0" appliedAt="2026-10-11T09:30:00Z" when="вчера, 11.10.2026, 12:30"><a class="button quiet" href="#update">{{ newsLook }}</a></app-update-news>
+      <app-update-news [applied]="3" [pending]="2" [offer]="true" appliedAt="2026-10-12T09:30:00Z" when="2 часа назад, 12.10.2026, 12:30"><a class="button quiet" href="#update">{{ newsLook }}</a><a class="button secondary" href="#update">{{ viewUpdate }}</a></app-update-news>
     </div>
   </app-sg-specimen>
 
   <app-sg-specimen title="Строка истории обновлений" selector="<app-update-history-unit>"
-    when="Одна единица, которую изменило обновление: вид (знак и слово), что с ней сделали штампом («Добавлено», «Исправлено», «Удалено», «Порядок»), название целиком и, если единица уже не такая, как после обновления, предложение («Вы уже вернули», «Вы изменили после обновления»). Действие строки кладёт страница: «Вернуть как было» (только у материала и упражнения, которые остались ровно такими, как сделало обновление) и подтверждение прямо под ней в одно предложение («Вернём «…» к тому, что было до обновления.») с кнопками «Вернуть» и «Отмена». Если вместе с единицей возвращаются другие (материал и взятые с ним упражнения), подтверждение называет их и просит ещё раз."
+    when="Одна единица, которую изменило обновление (страница кладёт её в пункт списка): вид (знак и слово), что с ней сделали штампом («Добавлено», «Исправлено», «Удалено»), название целиком и, если единица уже не такая, как после обновления, предложение («Вы уже вернули», «Вы изменили после обновления»). Порядок материалов не повторяет штамп и название: одна строка «Изменился порядок материалов». Действие строки кладёт страница: «Вернуть как было» (только у материала и упражнения, которые остались ровно такими, как сделало обновление; если в истории есть два одноимённых, имя кнопки получает время обновления) и подтверждение на месте кнопки: группа `role=group` с вопросом в одно предложение («Вернём «…» к тому, что было до обновления.»), подсказкой «Следующее обновление не вернёт это обратно, пока автор не изменит его снова.» и кнопками «Вернуть» и «Отмена». Фокус встаёт на группу, её описание (`aria-describedby`) собрано из всех абзацев кроме вопроса. Если вместе с единицей возвращаются другие, группа говорит, что станет с каждой: «Вместе с этим уберём: …» (добавлено), «вернём: …» (удалено), «вернём к прежнему виду: …» (исправлено)."
     [tokens]="['--mn-ink', '--mn-rule', '--mn-muted', '--mn-font-mono', '--mn-caution']"
     usage='<app-update-history-unit [unit]="unit">
   <button type="button" class="button small">Вернуть как было</button>
@@ -169,11 +170,13 @@
         <li>
           <app-update-history-unit [unit]="unit">
             @if (unit.id === 'h2') {
-              <div class="notice warning sg-revert">
-                <p><strong>{{ confirmText }}</strong></p>
+              <div class="notice warning sg-revert" role="group" tabindex="-1" aria-labelledby="sg-ask" aria-describedby="sg-with sg-hint">
+                <p id="sg-ask"><strong>{{ confirmText }}</strong></p>
+                <p id="sg-with">{{ withText }}</p>
+                <p id="sg-hint" class="hint">{{ noRepeatText }}</p>
                 <div class="actions"><button type="button" class="button primary">{{ revertConfirmText }}</button><button type="button" class="button quiet">{{ cancelText }}</button></div>
               </div>
-            } @else if (!unit.state && unit.id !== 'h4' && unit.id !== 'h5') {
+            } @else if (!unit.state && unit.kind !== 'order' && unit.kind !== 'description') {
               <button type="button" class="button small">{{ revertText }}</button>
             }
           </app-update-history-unit>

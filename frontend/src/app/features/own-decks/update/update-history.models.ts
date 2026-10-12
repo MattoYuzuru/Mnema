@@ -1,3 +1,4 @@
+import { formatDate } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 
 import { UPDATE_TEXT } from '../../../shared/copy-text';
@@ -242,6 +243,11 @@ export function relativeWhen(appliedAt: string, now: number): string | null {
     if (age < HOUR) return format.format(-Math.floor(age / MINUTE), 'minute');
     if (age < DAY) return format.format(-Math.floor(age / HOUR), 'hour');
     return format.format(-Math.floor(age / DAY), 'day');
+}
+
+/** How a time is written next to «Что нового»: the relative phrase when there is one, and the exact date and time always. */
+export function whenOf(appliedAt: string, now: number, locale: string): { readonly relative: string | null; readonly exact: string } {
+    return { relative: relativeWhen(appliedAt, now), exact: formatDate(appliedAt, 'dd.MM.y, HH:mm', locale) };
 }
 
 /** The kind and the key out of a `KIND:key` unit id. */
