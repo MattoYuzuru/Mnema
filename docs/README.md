@@ -33,7 +33,7 @@ artifact:
 | Изменить Study | [Study contract](../contracts/study/README.md); продукт — [exercise catalog](./product/exercise-catalog-v2.md) |
 | Изменить authoring/content | [Learning guide](../backend/services/learning/guide.md) и [native content contract](../contracts/content/native-v1/README.md) |
 | Изменить media | Раздел [Media](#media-epic-76) ниже |
-| Колоды сообщества: доступ, публикация, копии, жалобы | [Product contract](./product/community-decks.md) (раздел «Статус реализации»), затем [architecture](./architecture/community-decks.md) и разделы эпика в [Learning guide](../backend/services/learning/guide.md); состояние задач — [evidence эпика 1](./engineering/evidence/community-decks/epic-1/README.md) |
+| Колоды сообщества: доступ, публикация, копии, жалобы | [Product contract](./product/community-decks.md) (раздел «Статус реализации»), затем [architecture](./architecture/community-decks.md) и разделы эпика в [Learning guide](../backend/services/learning/guide.md); состояние задач — evidence [эпика 1](./engineering/evidence/community-decks/epic-1/README.md) и [эпика 2](./engineering/evidence/community-decks/epic-2/README.md) |
 | Изменить AI | [Generation](../contracts/generation/README.md), [speech](../contracts/speech/README.md), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md); смысл — [product contract](./product/ai-layer-2026-10.md) |
 | GitHub Issue/PR | [Work item standard](./engineering/work-item-standard.md) |
 | Публикация или deployment | [Production delivery](./operations/production-delivery.md), только в scope соответствующего поручения |
@@ -63,7 +63,7 @@ artifact:
 | accepted | [AI layer contract](./product/ai-layer-2026-10.md) | Принятые решения AI-слоя: слои, сценарии, UX, usage, тарифы, промокоды, legal gates. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Текущий статус РКН/эквайринга и оставшиеся human gates; не юридическая гарантия. |
-| accepted | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. Эпик 1 (доступ, публикация, копии, жалобы) закрыт и включён в production; эпики 2 и 3 идут, эпик 4 не начат, раздел «Уточнено реализацией» фиксирует отличия от плана. |
+| accepted | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. Эпики 1 (доступ, публикация, копии, жалобы) и 2 (обновления копий) закрыты и выкачены; эпик 3 идёт, эпик 4 не начат, раздел «Уточнено реализацией» фиксирует отличия от плана. |
 
 ## Architecture и backend
 
@@ -156,6 +156,8 @@ Kubernetes-доставка (staging/production workflows, `k8s/`, recovery и p
   [закрытие #75](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
 - **historical:** [Community decks, эпик 1: evidence задач](./engineering/evidence/community-decks/epic-1/README.md) — PR, коммиты, миграции V49–V58,
   состояние production (функции включены релизом #481) и проверка каждой задачи; начиная с [прототипа линии хранения](./engineering/evidence/community-decks/epic-1/share-3-lineage-prototype.md).
+- **historical:** [Community decks, эпик 2: evidence задач](./engineering/evidence/community-decks/epic-2/README.md) — PR, коммиты, миграции V59–V65,
+  релизы, ревью и браузерная проверка обновлений копий, критерии эпика #420.
 - **historical:** [Community decks research and RFC](./reviews/community-decks-2026-10/README.md) — факты кода,
   варианты, исследования конкурентов/права/поиска, аудит индексов и ответы владельца 2026-10-10.
 - **historical:** [Owner console delivery record](./engineering/evidence/admin-console-2026-10/README.md) — первый снимок реализации эпика #398, его задачи, локальная проверка и границы.

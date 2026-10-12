@@ -24,7 +24,13 @@ artifact:
 Эпик 1 ([#419](https://github.com/MattoYuzuru/Mnema/issues/419)) закрыт: Share/1–17 и
 попутная [#461](https://github.com/MattoYuzuru/Mnema/issues/461) смержены и выкачены.
 Коммиты, миграции (V49–V58) и состояние production по задачам:
-[evidence эпика 1](./evidence/community-decks/epic-1/README.md). Эпики 2 и 3 идут.
+[evidence эпика 1](./evidence/community-decks/epic-1/README.md).
+
+Эпик 2 ([#420](https://github.com/MattoYuzuru/Mnema/issues/420)): Updates/1–7 и попутная
+[#460](https://github.com/MattoYuzuru/Mnema/issues/460) смержены и выкачены, миграции V59–V65
+(без V62); автоприём выключен до решения владельца. Updates/5 и Updates/6 вышли одним PR, потому что
+контракт копии меняется на обеих сторонах одновременно. Подробности:
+[evidence эпика 2](./evidence/community-decks/epic-2/README.md). Эпик 3 идёт.
 
 В production функции эпика 1 включены релизом #481 вместе с текстами политики 1.4 и
 соглашения (выключатели — [runtime policy index](./runtime-policy-index.md)).
