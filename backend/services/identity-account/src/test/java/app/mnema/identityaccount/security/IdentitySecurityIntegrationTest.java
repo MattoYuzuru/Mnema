@@ -374,6 +374,65 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void userInfoCarriesTheTwoAntiAbuseClaimsFromTheVerifiedEmailAndTheAgeOfTheAccount() throws Exception {
+        var access = account();
+        UUID id = access.accountId();
+        String bearer = "Bearer " + userInfoToken(access, "serves-trust-claims-0123456789-abcdefghijklmnopqrstuvwxyz-0123");
+        // A brand-new account with an unverified e-mail: new, and not trusted.
+        assertClaims(bearer, id, false, true);
+        // Verified, but young: still not trusted, still new.
+        verify(id, true);
+        assertClaims(bearer, id, false, true);
+        // Edges of the age: 47 h is new, 49 h is not; 71 h is not trusted yet, 73 h is.
+        age(id, Duration.ofHours(47));
+        assertClaims(bearer, id, false, true);
+        age(id, Duration.ofHours(49));
+        assertClaims(bearer, id, false, false);
+        age(id, Duration.ofHours(71));
+        assertClaims(bearer, id, false, false);
+        age(id, Duration.ofHours(73));
+        assertClaims(bearer, id, true, false);
+        // Old but the e-mail is not verified (a provider that does not vouch for it): not trusted, not new.
+        verify(id, false);
+        assertClaims(bearer, id, false, false);
+        // The claims are the signals of the token's own subject, whatever another account has.
+        var other = account();
+        String otherBearer = "Bearer " + userInfoToken(other, "serves-trust-claims-other-0123456789-abcdefghijklmnopqrstuvwxyz");
+        verify(id, true);
+        assertClaims(otherBearer, other.accountId(), false, true);
+        assertClaims(bearer, id, true, false);
+    }
+
+    private void assertClaims(String bearer, UUID subject, boolean trusted, boolean newAccount) throws Exception {
+        mvc.perform(get("/userinfo").header("Authorization", bearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.sub").value(subject.toString()))
+                .andExpect(jsonPath("$.mnema_trusted").value(trusted))
+                .andExpect(jsonPath("$.mnema_new_account").value(newAccount));
+    }
+
+    private void verify(UUID id, boolean verified) {
+        jdbc.sql("UPDATE app_identity.account SET email_verified=:v WHERE account_id=:id").param("v", verified).param("id", id).update();
+    }
+
+    private void age(UUID id, Duration age) {
+        jdbc.sql("UPDATE app_identity.account SET created_at=statement_timestamp() - (:millis * interval '1 millisecond') WHERE account_id=:id")
+                .param("millis", age.toMillis()).param("id", id).update();
+    }
+
+    @Test
+    void theAntiAbuseClaimNamesAreTheOnesLearningReadsAndTheContractListsThem() throws Exception {
+        java.nio.file.Path root = java.nio.file.Path.of("").toAbsolutePath();
+        while (root != null && !java.nio.file.Files.exists(root.resolve("contracts/community/catalog.json"))) root = root.getParent();
+        assertThat(root).isNotNull();
+        var claims = json.readTree(java.nio.file.Files.readString(root.resolve("contracts/identity/user-info-claims.json")));
+        assertThat(SecurityConfiguration.TRUSTED_CLAIM).isEqualTo(claims.path("trusted").path("claim").asString()).isEqualTo("mnema_trusted");
+        assertThat(SecurityConfiguration.NEW_ACCOUNT_CLAIM).isEqualTo(claims.path("newAccount").path("claim").asString()).isEqualTo("mnema_new_account");
+        assertThat(app.mnema.identityaccount.profile.PublicProfiles.TRUSTED_AFTER).isEqualTo(Duration.ofHours(claims.path("trusted").path("minAgeHours").asInt()));
+        assertThat(app.mnema.identityaccount.profile.PublicProfiles.NEW_ACCOUNT_WITHIN)
+                .isEqualTo(Duration.ofHours(claims.path("newAccount").path("maxAgeHours").asInt()));
+    }
+
+    @Test
     void theClaimNameIsTheOneLearningReadsFromTheSharedContractFile() throws Exception {
         java.nio.file.Path root = java.nio.file.Path.of("").toAbsolutePath();
         while (root != null && !java.nio.file.Files.exists(root.resolve("contracts/decks/publication.json"))) root = root.getParent();

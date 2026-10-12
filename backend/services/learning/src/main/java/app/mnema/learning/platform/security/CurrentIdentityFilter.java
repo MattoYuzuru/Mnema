@@ -41,8 +41,10 @@ final class CurrentIdentityFilter extends OncePerRequestFilter {
                     errors.unavailable(request, response);
                     return;
                 }
-                // The claim is read leniently: anything but a JSON true is "not ready".
+                // The claims are read leniently: anything but a JSON true is "not ready" / "not trusted" / "not new".
                 IdentityClaims.publicProfile(request, claims.path(IdentityClaims.PUBLIC_PROFILE_CLAIM).booleanValue(false));
+                IdentityClaims.signals(request, new IdentityClaims.AccountSignals(claims.path(IdentityClaims.TRUSTED_CLAIM).booleanValue(false),
+                        claims.path(IdentityClaims.NEW_ACCOUNT_CLAIM).booleanValue(false)));
             } catch (IOException | IllegalArgumentException exception) {
                 errors.unavailable(request, response);
                 return;

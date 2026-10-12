@@ -1,0 +1,21 @@
+{
+  "description": "Product claims of Identity's /userinfo besides sub (Learning reads them from the answer that authorizes a request; it reads no Identity table). Booleans, computed on every request. mnema_public_profile is listed in contracts/decks/publication.json. The two claims below are internal anti-abuse signals of the community ranking: they are never shown to anybody and carry no personal data.",
+  "trusted": {
+    "claim": "mnema_trusted",
+    "rule": "the account's e-mail is verified (local accounts: email_verified; federated accounts: the provider vouched for the e-mail) AND the account was created at least minAgeHours ago",
+    "minAgeHours": 72,
+    "learningUse": "a copy by an account that is not trusted weighs 0.25 in the rank; an absent or malformed claim is false"
+  },
+  "newAccount": {
+    "claim": "mnema_new_account",
+    "rule": "the account was created less than maxAgeHours ago",
+    "maxAgeHours": 48,
+    "learningUse": "a copy by a new account counts toward the anomaly flag of the owner console (catalog.json constants.anomaly); an absent or malformed claim is false and never raises a flag"
+  },
+  "example": {
+    "sub": "0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35",
+    "mnema_public_profile": true,
+    "mnema_trusted": false,
+    "mnema_new_account": true
+  }
+}

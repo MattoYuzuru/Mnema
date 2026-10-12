@@ -42,8 +42,18 @@ username (`PublicProfiles.publishReady`, the same gate as the author card). It i
 withdrawn consent is visible at once, and it is the only way Learning learns it (Learning reads no Identity
 table). It is added through the Spring Authorization Server `userInfoMapper`
 ([OIDC UserInfo endpoint configuration](https://docs.spring.io/spring-authorization-server/reference/protocol-endpoints.html#oidc-user-info-endpoint)):
-the answer is `{sub, mnema_public_profile}`; the ID token carries no profile claims, so nothing the
+the answer is `{sub, mnema_public_profile, mnema_trusted, mnema_new_account}`; the ID token carries no profile claims, so nothing the
 default mapper returned is dropped.
+
+The two other claims are **internal anti-abuse signals** of the community ranking (Community/3, #450), not personal data and never shown to anybody:
+`mnema_trusted` is true when the account's e-mail is verified (`account.email_verified`, which local accounts earn by verification and federated
+accounts by the provider's own statement; a Yandex e-mail is never verified) AND the account was created at least 72 hours ago, and
+`mnema_new_account` is true while the account is younger than 48 hours. A copy of a community deck by an account that is not trusted weighs 0.25 in the
+rank, and a burst of copies by new accounts raises a flag in the owner console. All three booleans come from ONE primary-key statement
+(`PublicProfiles.userInfoSignals`, evaluated at the request's clock instant), so they are as current as the request and nothing is cached. An unknown
+account answers all three `false`. The claim names and the two thresholds are listed in
+[`contracts/identity/user-info-claims.json`](../../../contracts/identity/user-info-claims.json) and checked against the code by
+`IdentitySecurityIntegrationTest` (the signals for a new, a verified-but-young, an old and an old-but-unverified account, with the edges at 47/49 and 71/73 hours).
 
 Every login rotates the Secure/HttpOnly/SameSite=Lax session cookie and CSRF token.
 Sessions live in PostgreSQL with eight-hour inactivity and absolute limits.

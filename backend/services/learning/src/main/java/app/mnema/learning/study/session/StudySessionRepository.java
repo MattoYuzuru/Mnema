@@ -1,6 +1,7 @@
 package app.mnema.learning.study.session;
 
 import app.mnema.learning.catalog.item.ItemRevisionVisibility;
+import app.mnema.learning.community.DeckEngagement;
 import app.mnema.learning.moderation.ContentTakedowns;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -56,7 +57,12 @@ class StudySessionRepository {
             """;
     private final JdbcClient jdbc;
 
-    StudySessionRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
+    private final DeckEngagement engagement;
+
+    StudySessionRepository(JdbcClient jdbc, DeckEngagement engagement) {
+        this.jdbc = jdbc;
+        this.engagement = engagement;
+    }
 
     record DeckHead(UUID deckId, UUID ownerId, UUID scopeId, UUID revisionId, long sequence, UUID exercisesRootId,
                     int exerciseCount) { }
@@ -613,12 +619,14 @@ class StudySessionRepository {
     }
 
     void complete(Session session, Instant now) {
-        jdbc.sql("""
+        int completed = jdbc.sql("""
                 UPDATE app_learning.study_session SET status='COMPLETE',completed_at=:now,
                     batch_start=issued_count,batch_size=0,wrapped=TRUE,row_version=row_version+1
                  WHERE account_id=:actor AND session_id=:session AND row_version=:version
                 """).param("now", Timestamp.from(now)).param("actor", session.accountId())
                 .param("session", session.sessionId()).param("version", session.rowVersion()).update();
+        // Community/3: the completion of a scheduled session of a copy is an engagement of its source, in this transaction (a non-copy deck costs two primary-key probes).
+        if (completed == 1) engagement.studied(session.accountId(), session.sessionId());
     }
 
     Instant now() { return jdbc.sql("SELECT statement_timestamp()").query(Timestamp.class).single().toInstant(); }

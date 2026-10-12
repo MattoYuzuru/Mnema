@@ -58,6 +58,10 @@ import java.util.UUID;
 public class SecurityConfiguration {
     /** The product claim of {@code /userinfo}: the account's public profile is ready (consent on, login set). Learning's {@code IdentityClaims} reads it. */
     public static final String PUBLIC_PROFILE_CLAIM = "mnema_public_profile";
+    /** The anti-abuse claim of {@code /userinfo}: the e-mail is verified and the account is at least 3 days old. Learning's {@code IdentityClaims} reads it. */
+    public static final String TRUSTED_CLAIM = "mnema_trusted";
+    /** The anti-abuse claim of {@code /userinfo}: the account is younger than 48 hours. Learning's {@code IdentityClaims} reads it. */
+    public static final String NEW_ACCOUNT_CLAIM = "mnema_new_account";
 
     private static final Logger LOG = LoggerFactory.getLogger(SecurityConfiguration.class);
 
@@ -119,11 +123,15 @@ public class SecurityConfiguration {
                     http.securityMatcher(server.getEndpointsMatcher());
                     server.oidc(o -> o.logoutEndpoint(l -> l.logoutResponseHandler(oidcLogout))
                             .userInfoEndpoint(u -> u.userInfoMapper(context -> {
-                                // /userinfo answers the subject plus one product claim: whether the account may publish a public deck. Learning
-                                // reads this instead of Identity tables (the claim is the consent flag AND a login, see PublicProfiles.publishReady).
+                                // /userinfo answers the subject plus three product claims, from ONE statement: whether the account may publish a public
+                                // deck (the consent flag AND a login, see PublicProfiles.publishReady) and the two anti-abuse signals of the community ranking
+                                // (verified e-mail and age). Learning reads these instead of Identity tables.
                                 var subject = UUID.fromString(context.getAuthorization().getPrincipalName());
+                                var signals = profiles.userInfoSignals(subject, clock.instant());
                                 return OidcUserInfo.builder().subject(subject.toString())
-                                        .claim(PUBLIC_PROFILE_CLAIM, profiles.publishReady(subject)).build();
+                                        .claim(PUBLIC_PROFILE_CLAIM, signals.publishReady())
+                                        .claim(TRUSTED_CLAIM, signals.trusted())
+                                        .claim(NEW_ACCOUNT_CLAIM, signals.newAccount()).build();
                             })));
                 })
                 .addFilterAfter(new LegacyBrowserSessionFilter(), SecurityContextHolderFilter.class)
