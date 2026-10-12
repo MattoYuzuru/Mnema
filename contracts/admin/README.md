@@ -124,8 +124,8 @@ The contract is [`contracts/moderation`](../moderation/README.md). Every decisio
 ## Community
 
 The shelf «Выбор Мнемы» (`/api/admin/community/editorial`) and the anomaly flags (`/api/admin/community/anomalies`) of the community catalogue,
-same owner check. The contract is [`contracts/community`](../community/README.md). Journal actions: `COMMUNITY_EDITORIAL_UPDATE` (resource: none, one
-row per effective change of the list) and `COMMUNITY_ANOMALY_DISMISS` (resource: the deck id).
+same owner check. The contract is [`contracts/community`](../community/README.md). Journal actions: `COMMUNITY_EDITORIAL_UPDATE` (resource: the shelf, the constant id
+`00000000-0000-7000-8000-00000000e001` because the journal needs one; one row per effective change of the list) and `COMMUNITY_ANOMALY_DISMISS` (resource: the deck id).
 
 ## Promo creation safety
 

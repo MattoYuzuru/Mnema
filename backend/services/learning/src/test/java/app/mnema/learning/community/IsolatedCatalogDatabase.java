@@ -40,6 +40,8 @@ abstract class IsolatedCatalogDatabase extends PostgresIntegrationTest {
         jdbc.sql("DELETE FROM app_learning.rank_generation").update();
         jdbc.sql("DELETE FROM app_learning.deck_engagement").update();
         jdbc.sql("DELETE FROM app_learning.catalog_anomaly").update();
+        jdbc.sql("DELETE FROM app_learning.editorial_pick").update();
+        jdbc.sql("UPDATE app_learning.editorial_shelf SET row_version = 0").update();
         jdbc.sql("DELETE FROM app_learning.public_deck").update();
         jdbc.sql("DELETE FROM app_learning.learning_job WHERE queue IN ('catalog.rank', 'catalog.anomaly', 'catalog.project', 'catalog.rebuild')").update();
     }

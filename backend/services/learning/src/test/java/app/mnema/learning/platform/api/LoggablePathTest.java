@@ -29,6 +29,16 @@ class LoggablePathTest {
     }
 
     @Test
+    void theCatalogueRoutesLogTheirPathAndNeverTheSearchText() {
+        MockHttpServletRequest search = request("/api/public/community/decks");
+        search.setQueryString("q=%D0%B8%D1%81%D0%BF%D0%B0%D0%BD%D1%81%D0%BA%D0%B8%D0%B9&limit=24");
+        search.setParameter("q", "испанский");
+        assertThat(ApiExceptionHandler.loggablePath(search)).isEqualTo("/api/public/community/decks");
+        assertThat(ApiExceptionHandler.loggablePath(request("/api/public/community/decks?q=secret"))).isEqualTo("/api/public/community/decks");
+        assertThat(ApiExceptionHandler.loggablePath(request("/api/public/sitemap.xml"))).isEqualTo("/api/public/sitemap.xml");
+    }
+
+    @Test
     void theLinkPreviewRoutesOfADeckNeverLogItsCode() {
         MockHttpServletRequest mapped = request("/api/public/meta/decks/Kq7xT3mNpR/head");
         mapped.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/public/meta/decks/{code}/head");

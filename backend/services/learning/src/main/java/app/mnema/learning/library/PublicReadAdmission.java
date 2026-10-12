@@ -19,7 +19,7 @@ import java.util.function.Supplier;
  * the caller counts what its own work decides.
  */
 @Component
-final class PublicReadAdmission {
+public final class PublicReadAdmission {
     private final PublicRouteSettings settings;
     private final PublicReadLimiter limiter;
     private final MeterRegistry meters;
@@ -33,7 +33,7 @@ final class PublicReadAdmission {
     }
 
     /** Runs {@code work} inside a place of the bulkhead; the place is released when it ends, however it ends. */
-    <T> T within(String route, Viewer viewer, Supplier<T> work) {
+    public <T> T within(String route, Viewer viewer, Supplier<T> work) {
         if (!settings.enabled) {
             count(route, "disabled");
             throw new ResourceNotFoundException();
@@ -62,7 +62,7 @@ final class PublicReadAdmission {
         }
     }
 
-    void count(String route, String outcome) {
+    public void count(String route, String outcome) {
         meters.counter("mnema_public_deck_requests_total", "route", route, "outcome", outcome).increment();
     }
 }

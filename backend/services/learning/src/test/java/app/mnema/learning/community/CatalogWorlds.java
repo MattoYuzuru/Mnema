@@ -79,7 +79,11 @@ final class CatalogWorlds {
 
     /** A new deck of a new owner with {@code materials} plain materials (bulk commands of {@value #BULK}). */
     World deck(String title, String description, int materials) {
-        UUID owner = UUID.randomUUID();
+        return deck(UUID.randomUUID(), title, description, materials);
+    }
+
+    /** As {@link #deck(String, String, int)} for an owner that already has decks (an author with several). */
+    World deck(UUID owner, String title, String description, int materials) {
         UUID deck = UUID.fromString(decks.create(owner, new DeckCommand(UUID.randomUUID(), title, description)).acknowledgement().path("deck").path("deckId").stringValue(null));
         List<StudyFixtures.Material> created = new ArrayList<>();
         for (int from = 0; from < materials; from += BULK) created.addAll(bulk(owner, deck, Math.min(BULK, materials - from)));

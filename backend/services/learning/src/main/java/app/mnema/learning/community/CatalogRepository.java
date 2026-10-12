@@ -19,11 +19,11 @@ import java.util.UUID;
  */
 @Repository
 class CatalogRepository {
-    private static final String COLUMNS = """
+    static final String COLUMNS = """
             deck_id, public_code, owner_id, published_revision_id, title, description, topic_id, parent_topic_id, content_language, target_language, level, tags,
             item_count, exercise_count, media_mask, mechanics_mask, listed, first_listed_at, content_updated_at, title_norm, projected_revision_id, projected_at""";
 
-    private static final RowMapper<PublicDeckRow> ROW = (row, ignored) -> new PublicDeckRow(row.getObject("deck_id", UUID.class), row.getString("public_code"),
+    static final RowMapper<PublicDeckRow> ROW = (row, ignored) -> new PublicDeckRow(row.getObject("deck_id", UUID.class), row.getString("public_code"),
             row.getObject("owner_id", UUID.class), row.getObject("published_revision_id", UUID.class), row.getString("title"), row.getString("description"),
             row.getString("topic_id"), row.getString("parent_topic_id"), row.getString("content_language"), row.getString("target_language"), row.getString("level"),
             tags(row), row.getInt("item_count"), row.getInt("exercise_count"), row.getInt("media_mask"), row.getInt("mechanics_mask"), row.getBoolean("listed"),

@@ -41,7 +41,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
             "/admin/support/tickets", "/admin/support/tickets/{ticketId}", "/admin/support/tickets/{ticketId}/commands",
             "/admin/complaints", "/admin/complaints/journal", "/admin/complaints/{complaintId}", "/admin/complaints/{complaintId}/units",
             "/admin/complaints/{complaintId}:decide", "/admin/complaints/{complaintId}:unhide",
-            "/admin/community/anomalies", "/admin/community/anomalies/{code}:dismiss");
+            "/admin/community/anomalies", "/admin/community/anomalies/{code}:dismiss", "/admin/community/editorial");
 
     @Autowired
     private ApplicationContext applicationContext;
@@ -98,7 +98,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "51:lineage items:SUCCESS", "52:lineage exercises:SUCCESS", "53:deck access:SUCCESS", "54:deck publication:SUCCESS", "55:shared media:SUCCESS",
                         "56:deck invites and requests:SUCCESS", "57:deck forks:SUCCESS", "58:complaints and takedowns:SUCCESS",
                         "59:study snapshot retention:SUCCESS", "60:combined publication:SUCCESS", "61:fork unit decisions:SUCCESS", "63:apply update support:SUCCESS", "64:fork relink:SUCCESS", "65:fork update log:SUCCESS",
-                        "66:catalog search dictionaries:SUCCESS", "67:public deck:SUCCESS", "68:deck engagement and rank:SUCCESS");
+                        "66:catalog search dictionaries:SUCCESS", "67:public deck:SUCCESS", "68:deck engagement and rank:SUCCESS", "69:editorial shelf:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -165,7 +165,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "usageController", "estimateController", "generationController", "speechInputController", "plansController", "learningProfileController", "promoController", "promoAdminController", "promoPopupController", "experimentController",
                         "publicEventsController", "adminEventsController", "billingController", "TBankNotificationController",
                         "adminConsoleController", "adminSupportController", "publicDeckController", "publicMetaController", "publicationController", "deckAccessController", "inviteRedeemController", "forkController", "updatePlanController", "applyController", "updateHistoryController",
-                        "complaintController", "complaintAdminController", "anomalyAdminController");
+                        "complaintController", "complaintAdminController", "anomalyAdminController", "catalogController", "editorialAdminController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {
