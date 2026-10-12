@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 /**
  * The validated query of {@code GET /api/public/community/decks} (contract {@code contracts/community/catalog.json}, {@code constants} and {@code invariants}): the search text, the
  * filters, the sort and the page size. Parsing is strict and cheap and happens before anything is read: an unknown parameter, a repeated one, an unknown value, a text over
- * {@value #QUERY_MAX} code points, a limit outside 1..{@value #PAGE_MAX} or a sort next to a text is {@code 400 INVALID_REQUEST}. An EMPTY value of a parameter is the same as an absent one (a client
+ * {@value #QUERY_MAX} code points, a limit outside 1..{@value #PAGE_MAX} or an unknown sort is {@code 400 INVALID_REQUEST}. An EMPTY value of a parameter is the same as an absent one (a client
  * that builds the query string from a form need not drop its blank fields); the text is trimmed, a blank text is a browse.
  *
  * <p>{@link #hash()} binds a cursor to the question it was issued for: the kind of list, the trimmed text AS TYPED together with its normalization (the operators and quotes of the
@@ -33,7 +33,8 @@ import java.util.regex.Pattern;
  * @param mediaMask the bits of {@link CatalogMedia} every deck must have
  * @param mechanicsMask the bits of {@link CatalogMechanic} every deck must have
  * @param fresh whether only decks updated within the last {@value #FRESH_DAYS} days are wanted
- * @param sort {@code popular}, {@code learning}, {@code new} or {@code updated} for a browse; {@code null} for a search (the order is the relevance)
+ * @param sort {@code popular}, {@code learning}, {@code new} or {@code updated}; for a browse the default is {@code popular}; for a search {@code null} is the relevance and a sort orders the
+ *             best 200 candidates by that key instead
  * @param limit the page size
  * @param cursor the raw cursor, or null
  */
@@ -67,7 +68,7 @@ record CatalogQuery(String q, String topic, boolean topicIsParent, String learn,
         q = q == null ? "" : q.strip();
         if (q.codePointCount(0, q.length()) > QUERY_MAX || q.chars().anyMatch(Character::isISOControl)) throw new InvalidRequestException();
         String sort = value(raw, "sort");
-        if (sort != null && (!q.isEmpty() || !SORTS.contains(sort))) throw new InvalidRequestException();
+        if (sort != null && !SORTS.contains(sort)) throw new InvalidRequestException();
         String topic = value(raw, "topic");
         boolean parent = false;
         if (topic != null) {
@@ -94,7 +95,7 @@ record CatalogQuery(String q, String topic, boolean topicIsParent, String learn,
             if (page > PAGE_MAX) throw new InvalidRequestException();
         }
         String cursor = value(raw, "cursor");
-        return new CatalogQuery(q, topic, parent, learn, level, size, media, mechanics, "true".equals(fresh), q.isEmpty() ? (sort == null ? DEFAULT_SORT : sort) : null, page, cursor);
+        return new CatalogQuery(q, topic, parent, learn, level, size, media, mechanics, "true".equals(fresh), q.isEmpty() && sort == null ? DEFAULT_SORT : sort, page, cursor);
     }
 
     /** The value of a single-valued parameter; an empty one is absent. */
@@ -115,7 +116,7 @@ record CatalogQuery(String q, String topic, boolean topicIsParent, String learn,
 
     /** What a cursor of this query is bound to. */
     String hash() {
-        return digest(String.join("\n", kind(), q, normalizedQuery(), String.valueOf(topic), String.valueOf(learn), String.valueOf(level), String.valueOf(size),
+        return digest(String.join("\n", kind(), String.valueOf(sort), q, normalizedQuery(), String.valueOf(topic), String.valueOf(learn), String.valueOf(level), String.valueOf(size),
                 String.valueOf(mediaMask), String.valueOf(mechanicsMask), String.valueOf(fresh)));
     }
 

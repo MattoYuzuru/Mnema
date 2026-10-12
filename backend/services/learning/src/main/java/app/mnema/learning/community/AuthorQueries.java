@@ -60,11 +60,23 @@ class AuthorQueries {
                 row.getInt("exercise_count"), row.getObject("published_at", OffsetDateTime.class).toInstant())).list();
     }
 
-    /** The sum of «Учат сейчас» over the author's decks in the projection in {@code generation}, raw (the caller applies {@link AudienceCounts}). */
-    long learningNow(UUID author, long generation) {
-        return jdbc.sql("""
-                SELECT COALESCE(sum(r.learning_now_count), 0)::bigint FROM app_learning.public_deck d
-                  JOIN app_learning.deck_rank r ON r.generation = :g AND r.deck_id = d.deck_id WHERE d.owner_id = :author
-                """).params(Map.of("g", generation, "author", author)).query(Long.class).single();
+    /**
+     * The statement of {@link #learningNow}: one aggregate over the {@code deck_engagement} rows of the author's PUBLIC decks (listed or not). The primary key
+     * {@code (deck_id, account_id, kind)} serves it per deck after {@code public_deck_owner} has given the decks; the rows read are the study rows of those decks, so the cost is bounded by
+     * the audience of one author.
+     */
+    static final String LEARNING_NOW_SQL = """
+            SELECT count(DISTINCT e.account_id)::bigint
+              FROM app_learning.public_deck d
+              JOIN app_learning.deck_engagement e ON e.deck_id = d.deck_id AND e.kind = 'STUDY' AND e.last_at >= :since AND e.account_id <> d.owner_id
+             WHERE d.owner_id = :author
+            """;
+
+    /**
+     * «Учат сейчас» of an author: the DISTINCT non-owner learners with a study row (a completed scheduled session of a direct copy) since {@code since} across his public decks. A person who
+     * studies three of his decks is one learner, which a sum of the per-deck counts would count three times. Raw: the caller applies {@link AudienceCounts}.
+     */
+    long learningNow(UUID author, java.time.Instant since) {
+        return jdbc.sql(LEARNING_NOW_SQL).param("author", author).param("since", at(since)).query(Long.class).single();
     }
 }

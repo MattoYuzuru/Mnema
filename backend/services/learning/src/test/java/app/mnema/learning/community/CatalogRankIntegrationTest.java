@@ -243,10 +243,19 @@ class CatalogRankIntegrationTest extends IsolatedCatalogDatabase {
         World older = publicDeck(10, true, NOW, "spanish", "languages");
         World newer = publicDeck(10, true, NOW, "spanish", "languages");
         long generation = generate();
-        // no engagement at all: score 0 everywhere, so the order is the one of deck_id DESC (PostgreSQL's byte order of the uuid)
+        // no engagement at all: score 0 everywhere, so «Популярные» is «newest first»: equal scores are ordered by first_listed_at DESC (then deck_id DESC), for the learning rank too
+        assertThat(jdbc.sql("SELECT first_listed_at FROM app_learning.public_deck WHERE deck_id = :d").param("d", newer.deck()).query(java.sql.Timestamp.class).single())
+                .isAfter(jdbc.sql("SELECT first_listed_at FROM app_learning.public_deck WHERE deck_id = :d").param("d", older.deck()).query(java.sql.Timestamp.class).single());
         List<UUID> byRank = jdbc.sql("SELECT deck_id FROM app_learning.deck_rank WHERE generation = :g ORDER BY rank").param("g", generation).query(UUID.class).list();
-        List<UUID> byId = jdbc.sql("SELECT deck_id FROM app_learning.deck_rank WHERE generation = :g ORDER BY deck_id DESC").param("g", generation).query(UUID.class).list();
-        assertThat(byRank).hasSize(2).containsExactlyElementsOf(byId).containsExactlyInAnyOrder(older.deck(), newer.deck());
+        List<UUID> byLearning = jdbc.sql("SELECT deck_id FROM app_learning.deck_rank WHERE generation = :g ORDER BY learning_rank").param("g", generation).query(UUID.class).list();
+        assertThat(byRank).containsExactly(newer.deck(), older.deck());
+        assertThat(byLearning).containsExactly(newer.deck(), older.deck());
+        // the last tie-break: the same date, then deck_id DESC
+        jdbc.sql("UPDATE app_learning.public_deck SET first_listed_at = :at").param("at", java.sql.Timestamp.from(NOW)).update();
+        long same = generate();
+        List<UUID> byId = jdbc.sql("SELECT deck_id FROM app_learning.deck_rank WHERE generation = :g ORDER BY deck_id DESC").param("g", same).query(UUID.class).list();
+        assertThat(jdbc.sql("SELECT deck_id FROM app_learning.deck_rank WHERE generation = :g ORDER BY rank").param("g", same).query(UUID.class).list()).containsExactlyElementsOf(byId);
+        generation = same;
         assertThat(rank(generation, newer).popPct()).isZero();
         assertThat(rank(generation, older).popPct()).isZero();
         // a STUDY row with no FORK row (it should not happen) weighs 0.25 and counts as activated, not as added

@@ -95,7 +95,7 @@ class CatalogLimitsHttpIntegrationTest extends PostgresIntegrationTest {
             inside.countDown();
             assertThat(release.await(20, TimeUnit.SECONDS)).isTrue();
             return call.callRealMethod();
-        }).when(queries).searchPage(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyLong(), Mockito.any(), Mockito.any(), Mockito.anyInt());
+        }).when(queries).searchPage(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyBoolean(), Mockito.anyLong(), Mockito.any(), Mockito.any(), Mockito.anyInt(), Mockito.anyInt());
         try {
             CompletableFuture<HttpResponse<String>> first = CompletableFuture.supplyAsync(() -> get("/public/community/decks?q=%D0%B8%D1%81%D0%BF%D0%B0%D0%BD%D1%81%D0%BA%D0%B8%D0%B9"));
             assertThat(inside.await(20, TimeUnit.SECONDS)).isTrue();

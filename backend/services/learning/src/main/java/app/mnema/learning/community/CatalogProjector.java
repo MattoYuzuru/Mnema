@@ -7,16 +7,21 @@ import app.mnema.learning.library.ManifestPages;
 import app.mnema.learning.platform.jobs.Job;
 import app.mnema.learning.platform.jobs.JobHandler;
 import app.mnema.learning.platform.jobs.JobState;
+import app.mnema.learning.platform.jobs.LearningJobs;
 import app.mnema.learning.platform.jobs.PermanentJobException;
 import app.mnema.learning.platform.jobs.Slice;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.time.Clock;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -47,6 +52,7 @@ import java.util.UUID;
  */
 @Component
 public class CatalogProjector implements JobHandler {
+    private static final DateTimeFormatter MINUTE = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm", Locale.ROOT);
     private static final Logger LOG = LoggerFactory.getLogger(CatalogProjector.class);
     private static final JsonMapper JSON = JsonMapper.builder().build();
     /** Manifest entries per read: the page size the owner's and the public lists read. */
@@ -56,12 +62,28 @@ public class CatalogProjector implements JobHandler {
     private final ManifestPages manifests;
     private final CatalogSettings settings;
     private final MeterRegistry meters;
+    private final LearningJobs jobs;
+    private final RankSettings rank;
+    private final Clock clock;
 
+    @Autowired
+    CatalogProjector(ProjectionRepository repository, ManifestPages manifests, CatalogSettings settings, MeterRegistry meters, LearningJobs jobs, RankSettings rank) {
+        this(repository, manifests, settings, meters, jobs, rank, Clock.systemUTC());
+    }
+
+    /** Without the rank job: for the tests of the projection itself, which want no job enqueued by the projector. */
     CatalogProjector(ProjectionRepository repository, ManifestPages manifests, CatalogSettings settings, MeterRegistry meters) {
+        this(repository, manifests, settings, meters, null, null, Clock.systemUTC());
+    }
+
+    CatalogProjector(ProjectionRepository repository, ManifestPages manifests, CatalogSettings settings, MeterRegistry meters, LearningJobs jobs, RankSettings rank, Clock clock) {
         this.repository = repository;
         this.manifests = manifests;
         this.settings = settings;
         this.meters = meters;
+        this.jobs = jobs;
+        this.rank = rank;
+        this.clock = clock;
     }
 
     @Override
@@ -92,8 +114,10 @@ public class CatalogProjector implements JobHandler {
             if (!published.revisionId().equals(listing.orElseThrow().mediaRevisionId())) {
                 repository.storeMedia(deck, published.revisionId(), CatalogMedia.maskOf(repository.mediaTypes(deck)));
             }
+            boolean wasListed = repository.projected(deck).map(ProjectionRepository.Projected::listed).orElse(false);
             repository.upsert(published, AliasNormalizer.normalize(published.title()));
             Optional<ProjectionRepository.Projected> row = repository.projected(deck);
+            if (!wasListed && row.isPresent() && row.orElseThrow().listed()) rankSoon();
             if (row.isEmpty() || !row.orElseThrow().publishedRevisionId().equals(published.revisionId())) {
                 // the publication moved between the state read and the upsert (the change enqueued its own job), or the deck is gone: nothing more to do here
                 outcome("moved");
@@ -106,6 +130,18 @@ public class CatalogProjector implements JobHandler {
             cursor = new Cursor(published.revisionId(), 0, 0);
         }
         return scan(published, cursor, job.progressCount());
+    }
+
+    /**
+     * A deck that has just become listed (its first listing, or a re-listing after a hide or a demotion) must reach «Популярные» and «Учат сейчас» within about a minute, not up to
+     * the next hourly generation: the system rank job is enqueued, in this transaction, with the dedupe key of the current UTC MINUTE, so there is at most one extra generation a
+     * minute however many decks are listed in it (the hourly one stays). Not enqueued when the rank is switched off.
+     */
+    private void rankSoon() {
+        if (jobs == null || !rank.enabled) return;
+        String minute = MINUTE.format(clock.instant().atZone(ZoneOffset.UTC));
+        jobs.enqueue(CatalogRank.QUEUE, "rank:" + minute, null, JSON.createObjectNode().put("minute", minute));
+        meters.counter("mnema_catalog_rank_requested_total", "reason", "listed").increment();
     }
 
     private Slice scan(ProjectionRepository.Published published, Cursor cursor, long done) {

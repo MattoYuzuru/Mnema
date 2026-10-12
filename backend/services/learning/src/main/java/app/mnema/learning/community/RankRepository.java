@@ -35,8 +35,8 @@ class RankRepository {
     /**
      * Writes the rank of every {@code public_deck} row for {@code generation} and returns the number of rows. Per deck: the non-owner accounts with an event (a copy, a study
      * session) are folded to one line each ({@code per_account}), then to the sums of the formula ({@code per_deck}); the score is computed once and the three window functions
-     * order the LISTED decks only ({@code PARTITION BY listed}; the other partition's values are discarded by the {@code CASE}). A deck without engagement scores 0 and is ordered by
-     * {@code deck_id DESC} (a stable, arbitrary order). {@code trust} of a copy row that is missing (only a STUDY row exists) or unknown (NULL: Identity did not send the claim) is the untrusted weight. Refinements of RFC 11.2 against Sybil accounts: the quality term Q is weighted by trust like the volume (an army of untrusted accounts that copy and study moves it by a quarter of what the same number of trusted ones would), and the fork term decays from the copy while the activation term decays from the last study, each its own.
+     * order the LISTED decks only ({@code PARTITION BY listed}; the other partition's values are discarded by the {@code CASE}). A deck without engagement scores 0 and equal scores are ordered by
+     * {@code first_listed_at DESC} (so at zero engagement «Популярные» is «newest first») and then by {@code deck_id DESC} (a stable, arbitrary order); the same for the ties of the learning rank. {@code trust} of a copy row that is missing (only a STUDY row exists) or unknown (NULL: Identity did not send the claim) is the untrusted weight. Refinements of RFC 11.2 against Sybil accounts: the quality term Q is weighted by trust like the volume (an army of untrusted accounts that copy and study moves it by a quarter of what the same number of trusted ones would), and the fork term decays from the copy while the activation term decays from the last study, each its own.
      */
     int fill(long generation, Instant now, RankSettings settings) {
         return statement("", generation, now, settings).update();
@@ -76,7 +76,7 @@ class RankRepository {
                       FROM per_account a
                      GROUP BY a.deck_id
                 ), scored AS (
-                    SELECT p.deck_id, p.topic_id, p.parent_topic_id, p.listed,
+                    SELECT p.deck_id, p.topic_id, p.parent_topic_id, p.listed, p.first_listed_at,
                            COALESCE(d.forks, 0) AS forks, COALESCE(d.activated, 0) AS activated, COALESCE(d.learning_now, 0) AS learning_now,
                            ln(1 + COALESCE(d.s, 0))
                            * (0.5 + (COALESCE(d.activated_weighted, 0) + CAST(:priorWeight AS double precision) * CAST(:priorRate AS double precision))
@@ -88,8 +88,8 @@ class RankRepository {
                 INSERT INTO app_learning.deck_rank(generation, deck_id, score, rank, learning_rank, pop_pct, added_count, learning_now_count, activated_count,
                                                    topic_id, parent_topic_id, listed)
                 SELECT :generation, s.deck_id, s.score,
-                       CASE WHEN s.listed THEN (row_number() OVER (PARTITION BY s.listed ORDER BY s.score DESC, s.deck_id DESC))::integer END,
-                       CASE WHEN s.listed THEN (row_number() OVER (PARTITION BY s.listed ORDER BY s.learning_now DESC, s.score DESC, s.deck_id DESC))::integer END,
+                       CASE WHEN s.listed THEN (row_number() OVER (PARTITION BY s.listed ORDER BY s.score DESC, s.first_listed_at DESC, s.deck_id DESC))::integer END,
+                       CASE WHEN s.listed THEN (row_number() OVER (PARTITION BY s.listed ORDER BY s.learning_now DESC, s.score DESC, s.first_listed_at DESC, s.deck_id DESC))::integer END,
                        CASE WHEN s.listed THEN (percent_rank() OVER (PARTITION BY s.listed ORDER BY s.score))::real ELSE 0 END,
                        s.forks, s.learning_now, s.activated, s.topic_id, s.parent_topic_id, s.listed
                   FROM scored s

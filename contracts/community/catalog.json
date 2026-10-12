@@ -49,6 +49,7 @@
       "new": "first time the deck entered the catalogue, newest first",
       "updated": "last publication of new content, newest first"
     },
+    "sortWithQuery": "with q the sort is optional: absent is the relevance; a sort orders the best searchCandidates by relevance by that key (a deck the current generation does not know is last, by first_listed_at); the cursor is the position in that list",
     "freshDays": 30,
     "rankGenerationRetention": "PT24H: a cursor of an older generation is 412 VERSION_CONFLICT and the client restarts the list",
     "rateLimit": "the public read admission of public-read-v1 (per guest network, per IPv6 /48, per account; the shared bulkhead): 429 RATE_LIMITED and 503 PUBLIC_READ_BUSY as there",
@@ -113,7 +114,7 @@
     "facets, shelves, browse and search contain listed decks only; author.decks also contains public decks below the threshold (listed=false is not exposed, they simply appear)",
     "a LINK deck never appears; an INVITE deck appears only in author.decks and only for a signed-in viewer with a grant, with access GRANTEE and without counts, media or mechanics",
     "every answer is Cache-Control: no-store with Vary: Authorization, except sitemap (public, max-age=3600)",
-    "q is trimmed; an empty q is browse; longer than queryMaxLength code points is 400; with q the order is relevance and sort must be absent",
+    "q is trimmed; an empty q is browse; longer than queryMaxLength code points is 400; with q and no sort the order is relevance; with q and a sort (popular, learning, new, updated) the best searchCandidates by relevance are ordered by that key instead (a candidate the current generation does not know is last, newest entrant first) and paged by position",
     "topic may be a leaf or a top-level topic (a top-level topic includes its children); unknown topic, learn, level, size, media, mechanics or sort values are 400",
     "media and mechanics are comma-separated lists; a deck must have ALL listed values; fresh=true keeps decks whose updatedAt is within freshDays",
     "limit outside 1..pageMax, repeated parameters and malformed cursors are 400; a cursor is bound to the query and filters (another query with an old cursor is 400) and to the rank generation (an expired generation is 412)",
@@ -316,7 +317,7 @@
     "searchRules": [
       "candidates: listed decks matching the filters whose search vectors match the query (russian with stemming, simple_unaccent without), whose normalized title is similar to the normalized query (pg_trgm word similarity), or whose topic is named by the query through topic aliases («испанский», «spanish» and «español» name the topic spanish; its names and aliases also extend the text query)",
       "relevance = 0.6 * text rank + 0.2 * title word similarity + 0.2 * popularity percentile of the current generation (0 for a deck the generation does not know yet), multiplied by 0.85 when the deck's content language is set and differs from the query's detected language (no penalty at all when the language of the query is not sure, as for a short or mixed text)",
-      "the best searchCandidates by relevance, then deck id, are paged; ja/zh/ko text has no word segmentation in v1: their titles are found by trigram similarity only"
+      "the best searchCandidates by relevance, then public code, are paged (or, with a sort, ordered by that key and paged by position); a query word of five code points or more that is word-similar (pg_trgm, the same threshold) to a topic synonym names that topic (a typo of «испанский» or «spanish» names spanish); typos in descriptions and tags are not tolerated in v1 (titles are, by trigram similarity); ja/zh/ko text has no word segmentation in v1: their titles are found by trigram similarity only"
     ],
     "fixtures": "the backend test publishes decks titled «Испанские глаголы» (topic spanish), «Spanish verbs for travel» (topic spanish, contentLanguage en), «Español para principiantes» (topic spanish, contentLanguage es), «Английские фразовые глаголы» (topic english), «日本語のひらがな» (topic japanese, contentLanguage ja), «SQL для собеседований» (topic sql-data); the queries «испанский», «Spanish», «espanol», «Español» must find the three Spanish decks and nothing else, «испнские глаголы» (a typo) must find «Испанские глаголы» first, «ひらがな» must find the Japanese deck, «sql» must find the SQL deck"
   },
@@ -358,7 +359,7 @@
   },
   "sitemap": {
     "request": "GET /api/public/sitemap.xml",
-    "rules": "XML sitemap (sitemaps.org 0.9) of https://mnema.app/community and https://mnema.app/d/{code}/{slug} for every listed deck with lastmod = updatedAt; at most 50 000 URLs (beyond that a sitemap index is the documented next step); Cache-Control public, max-age=3600; served to crawlers as /sitemap.xml by the web server"
+    "rules": "XML sitemap (sitemaps.org 0.9) of https://mnema.app/community and https://mnema.app/d/{code}/{slug} for every listed deck with lastmod = updatedAt; at most 50 000 URLs (beyond that a sitemap index is the documented next step); Cache-Control public, max-age=3600; served to crawlers as /sitemap-decks.xml (the web server proxies it to /api/public/sitemap.xml; the static /sitemap.xml keeps the static pages)"
   },
   "editorial": {
     "state": {

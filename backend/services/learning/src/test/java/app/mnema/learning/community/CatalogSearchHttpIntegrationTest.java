@@ -273,6 +273,75 @@ class CatalogSearchHttpIntegrationTest extends CatalogHttpTest {
     }
 
     @Test
+    void aSortOrdersTheBestTwoHundredCandidatesByThatKeyAndPagesByPosition() {
+        // eight Spanish decks named by the query: the relevance order is NOT the order of any of the sorts below
+        List<CatalogSeed.Spec> specs = new ArrayList<>();
+        Instant base = Instant.parse("2026-09-01T00:00:00Z");
+        for (int index = 0; index < 8; index++) {
+            specs.add(CatalogSeed.deck("Испанский " + index).topic("spanish").code("12345678" + "1" + (index + 1)).listedAt(base.plusSeconds(index * 100L)).updatedAt(base.plusSeconds((7 - index) * 100L + 5)));
+        }
+        List<Deck> decks = seed.insertAll(specs);
+        // generation: popular order 3, 1, 5, 0; learning order 5, 3, 1, 0; decks 2, 4, 6, 7 are unknown to it
+        seed.generation(1, Instant.now(), List.of(
+                new CatalogSeed.Rank(decks.get(3).id(), 1, 2, 1, 0.5, 0, 0), new CatalogSeed.Rank(decks.get(1).id(), 2, 3, 1, 0.5, 0, 0),
+                new CatalogSeed.Rank(decks.get(5).id(), 3, 1, 1, 0.5, 0, 0), new CatalogSeed.Rank(decks.get(0).id(), 4, 4, 1, 0.5, 0, 0)));
+        List<String> byCode = decks.stream().map(Deck::code).toList();
+        // popular: the ranked first by rank, then the unknown ones, newest entrant first
+        assertThat(codes(ok(get(decks("q", "испанский", "sort", "popular", "limit", "48"))))).containsExactly(byCode.get(3), byCode.get(1), byCode.get(5), byCode.get(0),
+                byCode.get(7), byCode.get(6), byCode.get(4), byCode.get(2));
+        assertThat(codes(ok(get(decks("q", "испанский", "sort", "learning", "limit", "48"))))).containsExactly(byCode.get(5), byCode.get(3), byCode.get(1), byCode.get(0),
+                byCode.get(7), byCode.get(6), byCode.get(4), byCode.get(2));
+        assertThat(codes(ok(get(decks("q", "испанский", "sort", "new", "limit", "48"))))).containsExactlyElementsOf(byCode.reversed());
+        assertThat(codes(ok(get(decks("q", "испанский", "sort", "updated", "limit", "48"))))).containsExactlyElementsOf(byCode);
+        // the total and the cap do not change with the sort
+        JsonNode sorted = ok(get(decks("q", "испанский", "sort", "popular", "limit", "3")));
+        assertThat(sorted.path("total").intValue()).isEqualTo(8);
+        // pages: the cursor is the position in the ordered list, bound to the generation and the question
+        List<String> walked = new ArrayList<>();
+        String cursor = null;
+        do {
+            JsonNode page = ok(get(decks("q", "испанский", "sort", "popular", "limit", "3") + (cursor == null ? "" : "&cursor=" + cursor)));
+            walked.addAll(codes(page));
+            cursor = page.path("nextCursor").isNull() ? null : page.path("nextCursor").stringValue(null);
+            if (cursor != null) {
+                JsonNode decoded = cursor(cursor);
+                assertThat(decoded.propertyNames()).containsOnly("v", "k", "h", "g", "p");
+                assertThat(decoded.toString()).doesNotContain("score").doesNotContain("pop_pct");
+            }
+        } while (cursor != null);
+        assertThat(walked).containsExactly(byCode.get(3), byCode.get(1), byCode.get(5), byCode.get(0), byCode.get(7), byCode.get(6), byCode.get(4), byCode.get(2));
+        // another sort, the relevance or another text with that cursor is 400; a position beyond the candidates is 400
+        String first = ok(get(decks("q", "испанский", "sort", "popular", "limit", "3"))).path("nextCursor").stringValue(null);
+        problem(get(decks("q", "испанский", "sort", "learning", "limit", "3", "cursor", first)), 400, "INVALID_REQUEST");
+        problem(get(decks("q", "испанский", "limit", "3", "cursor", first)), 400, "INVALID_REQUEST");
+        problem(get(decks("q", "испанские", "sort", "popular", "limit", "3", "cursor", first)), 400, "INVALID_REQUEST");
+        // an expired generation is 412 for a sorted search too
+        jdbc.sql("DELETE FROM app_learning.rank_generation WHERE generation = 1").update();
+        problem(get(decks("q", "испанский", "sort", "popular", "limit", "3", "cursor", first)), 412, "VERSION_CONFLICT");
+        // and without any generation the popular order is the order of the entrants
+        assertThat(codes(ok(get(decks("q", "испанский", "sort", "popular", "limit", "48"))))).containsExactlyElementsOf(byCode.reversed());
+    }
+
+    @Test
+    void aTypoOfATopicSynonymNamesTheTopicButATypoOfADescriptionOrATagIsNotTolerated() {
+        fixtures();
+        for (String typo : List.of("испанскй", "испанскиий", "spansh", "Spanich", "espanoll")) {
+            assertThat(titles(search(typo))).as(typo).contains("Испанские глаголы", "Spanish verbs for travel", "Español para principiantes");
+        }
+        // only one-word synonyms of five letters or more are compared: «языков» resembles «языки» (languages) but «испанский язык» (a phrase) is never matched by one of its words
+        assertThat(titles(search("языков"))).as("a typo of the one-word synonym «языки»").hasSize(5);
+        // a short word is not looked up (too close to too many synonyms)
+        assertThat(titles(search("ispa"))).isEmpty();
+        assertThat(titles(search("sql"))).containsExactly("SQL для собеседований");
+        assertThat(titles(search("sqll"))).as("a typo of a title word with no topic synonym: the title trigrams only").containsExactly("SQL для собеседований");
+        // description and tags: v1 matches them exactly (stemmed), never fuzzily
+        seed.insert(CatalogSeed.deck("Нейтральное название").description("Подробности про глаголы движения").tags("мнемотехника"));
+        assertThat(titles(search("мнемотехника"))).contains("Нейтральное название");
+        assertThat(titles(search("мнемотхника"))).doesNotContain("Нейтральное название");
+        assertThat(titles(search("двжения"))).doesNotContain("Нейтральное название");
+    }
+
+    @Test
     void theQueryIsValidatedBeforeAnythingIsRead() {
         fixtures();
         String hundred = "а".repeat(100);
@@ -284,8 +353,8 @@ class CatalogSearchHttpIntegrationTest extends CatalogHttpTest {
         // trimmed: 100 letters and blanks around them are fine; an empty (or blank) text is a browse
         assertThat(get(decks("q", "  " + hundred + "  ")).statusCode()).isEqualTo(200);
         assertThat(ok(get(decks("q", "   "))).path("decks")).isEmpty();
-        // with a text the order is the relevance: a sort next to it is an error, even a valid one
-        problem(get(decks("q", "испанский", "sort", "popular")), 400, "INVALID_REQUEST");
+        // with a text the order is the relevance unless a sort is asked for; an unknown sort is 400
+        assertThat(get(decks("q", "испанский", "sort", "popular")).statusCode()).isEqualTo(200);
         problem(get(decks("q", "испанский", "sort", "nonsense")), 400, "INVALID_REQUEST");
         problem(get("/public/community/decks?q=a&q=b"), 400, "INVALID_REQUEST");
         problem(get(decks("q", "a\u0000b")), 400, "INVALID_REQUEST");

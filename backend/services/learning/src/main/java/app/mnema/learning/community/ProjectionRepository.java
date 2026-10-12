@@ -30,7 +30,9 @@ class ProjectionRepository {
     record Published(UUID deckId, UUID scopeId, UUID revisionId, UUID exercisesRootId, int exerciseCount, String title) { }
 
     /** The row as the projector left it: which revision its metadata and its mechanics were derived from. */
-    record Projected(UUID publishedRevisionId, UUID projectedRevisionId) { }
+    record Projected(UUID publishedRevisionId, UUID projectedRevisionId, boolean listed) {
+        Projected(UUID publishedRevisionId, UUID projectedRevisionId) { this(publishedRevisionId, projectedRevisionId, false); }
+    }
 
     /** What the catalogue keeps about a deck apart from its row ({@code catalog_listing}); the instants and revisions are null until known. */
     record Listing(java.time.Instant firstListedAt, UUID scannedRevisionId, int mechanicsMask, UUID mediaRevisionId, int mediaMask) { }
@@ -161,8 +163,8 @@ class ProjectionRepository {
 
     /** The revisions the deck's row was derived from, or empty when it has no row. */
     Optional<Projected> projected(UUID deck) {
-        return jdbc.sql("SELECT published_revision_id, projected_revision_id FROM app_learning.public_deck WHERE deck_id = :deck").param("deck", deck)
-                .query((row, ignored) -> new Projected(row.getObject("published_revision_id", UUID.class), row.getObject("projected_revision_id", UUID.class))).optional();
+        return jdbc.sql("SELECT published_revision_id, projected_revision_id, listed FROM app_learning.public_deck WHERE deck_id = :deck").param("deck", deck)
+                .query((row, ignored) -> new Projected(row.getObject("published_revision_id", UUID.class), row.getObject("projected_revision_id", UUID.class), row.getBoolean("listed"))).optional();
     }
 
     /**

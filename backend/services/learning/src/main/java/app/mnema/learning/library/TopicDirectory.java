@@ -151,6 +151,24 @@ public class TopicDirectory {
         return new Named(topics, texts.stream().limit(MAX_EXTENSION_TEXTS).toList());
     }
 
+    /**
+     * {@code base} with more topics, the ones a typo of a synonym named (Community/2): they come after the exact ones, the total stays at most {@value #MAX_NAMED}, and their names and
+     * synonyms extend the text like the others'. Unknown ids are ignored.
+     */
+    public Named withTopics(Named base, java.util.Collection<String> more) {
+        if (more.isEmpty()) return base;
+        Snapshot directory = current();
+        List<String> topics = new ArrayList<>(base.topics());
+        Set<String> texts = new java.util.LinkedHashSet<>(base.texts());
+        for (String id : more) {
+            if (topics.size() >= MAX_NAMED) break;
+            if (topics.contains(id) || !directory.byId().containsKey(id)) continue;
+            topics.add(id);
+            texts.addAll(directory.textsByTopic().getOrDefault(id, List.of()));
+        }
+        return new Named(List.copyOf(topics), texts.stream().limit(MAX_EXTENSION_TEXTS).toList());
+    }
+
     /** Whether the topic exists and a deck may pick it. */
     public boolean selectable(String topicId) { return topicId != null && current().leaves().contains(topicId); }
 

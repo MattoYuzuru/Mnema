@@ -11,7 +11,7 @@ the behaviour [the product contract](../../docs/product/community-decks.md) («�
 | Shelves | `GET /api/public/community/shelves` | 200, `listedCount` and the shelves that have at least 4 decks |
 | Browse and search | `GET /api/public/community/decks?q=&topic=&learn=&level=&size=&media=&mechanics=&fresh=&sort=&limit=&cursor=` | 200, cards, `total`, `totalCapped`, nullable `nextCursor` |
 | Decks of an author | `GET /api/public/community/authors/{accountId}/decks?limit=&cursor=` | 200, public decks of the author and, for a viewer with a grant, his invitation-only decks |
-| Sitemap | `GET /api/public/sitemap.xml` | 200, XML, `/sitemap.xml` for crawlers |
+| Sitemap | `GET /api/public/sitemap.xml` | 200, XML, `/sitemap-decks.xml` for crawlers (the static `/sitemap.xml` keeps the static pages) |
 | Editorial shelf (owner console) | `GET`/`PUT /api/admin/community/editorial` | 200, the ordered list |
 | Anomaly flags (owner console) | `GET /api/admin/community/anomalies`, `POST …/{code}:dismiss` | 200 list, 204 |
 
@@ -66,3 +66,12 @@ These do not change a shape of [`catalog.json`](catalog.json); they fix what the
   query timeout (3 seconds) is the same 503. The client retries with a pause; the cheap reads (browse, facets, shelves) are not affected.
 - **Cursor validity.** The public code in a cursor must be a base58 code of ten characters in every kind of list and the time must lie between the year 2000 and a day from now; otherwise 400. The cursor is bound to the text as typed (the
   operators and quotes of the search syntax count) and to its normalization, and a browse or search is read in one snapshot, so a cursor of a pruned generation is always 412 and never an empty page.
+- **Sort with a text.** With `q` the sort is optional: absent is the relevance (cursor: the relevance in millionths and the public code of the last deck); `popular`, `learning`, `new` or `updated` re-orders the best 200 candidates by
+  that key (the current generation's rank, its learning rank, the first listing, the last publication; a candidate the generation does not know is last, newest entrant first; the public code is the last tie-break). The cursor
+  of a sorted search is the position in that ordered list (1..200), bound to the generation and to the question including the sort, and holds no score, rank or deck id. `total` and `totalCapped` are those of the candidates.
+- **Typos.** A query word of five code points or more that is word-similar (pg_trgm, the same threshold as the titles) to a topic synonym names that topic and extends the query with its names (so «испанскй» and «spansh» find the
+  Spanish decks). Typos in descriptions and tags are not tolerated in v1; titles are, by trigram similarity.
+- **Ties of the ranks.** Equal scores are ordered by `first_listed_at` newest first and then by an internal key, so at zero engagement «Популярные» is «newest first»; the same for the learning rank. A deck that has just become
+  listed is ranked within about a minute (the projector asks for a generation with a one-per-minute key), not at the next hourly one.
+- **`learningNowTotal`** counts DISTINCT learners (non-owner accounts with a study row in the last 30 days) across the author's public decks, listed or not; one person who studies two of his decks counts once. It is not a sum of the
+  numbers of the cards. Below 10 it is `null`, above it is floored to two significant digits. It is read live, so it may be fresher than the cards' numbers (which are those of the hourly generation).

@@ -73,6 +73,7 @@ public class CatalogService {
     private final MeterRegistry meters;
     private final Clock clock;
     private final TransactionTemplate transaction;
+    private final RankSettings rank;
     private final Semaphore searches;
     private final Object facetsLock = new Object();
     private final Object sitemapLock = new Object();
@@ -81,12 +82,13 @@ public class CatalogService {
 
     @Autowired
     CatalogService(CatalogRouteSettings settings, PublicReadAdmission admission, CatalogQueries queries, AuthorQueries authors, CatalogRanks ranks, CatalogCards cards,
-                   TopicDirectory topics, PlatformTransactionManager transactions, MeterRegistry meters) {
-        this(settings, admission, queries, authors, ranks, cards, topics, transactions, meters, Clock.systemUTC());
+                   TopicDirectory topics, PlatformTransactionManager transactions, MeterRegistry meters, RankSettings rank) {
+        this(settings, admission, queries, authors, ranks, cards, topics, transactions, meters, rank, Clock.systemUTC());
     }
 
     CatalogService(CatalogRouteSettings settings, PublicReadAdmission admission, CatalogQueries queries, AuthorQueries authors, CatalogRanks ranks, CatalogCards cards,
-                   TopicDirectory topics, PlatformTransactionManager transactions, MeterRegistry meters, Clock clock) {
+                   TopicDirectory topics, PlatformTransactionManager transactions, MeterRegistry meters, RankSettings rank, Clock clock) {
+        this.rank = rank;
         this.settings = settings;
         this.admission = admission;
         this.queries = queries;
@@ -342,32 +344,45 @@ public class CatalogService {
         String normalized = query.normalizedQuery();
         // A text without a single letter or digit (punctuation, operators, emoji) or that normalizes to nothing searches nothing: an empty page, no statement
         if (normalized.isEmpty() || query.q().codePoints().noneMatch(Character::isLetterOrDigit)) return answer(List.of(), Map.of(), 0, false, null);
+        boolean sorted = query.sort() != null;
         OptionalLong generation;
         if (cursor != null) {
-            if (cursor.position() == null || cursor.code() == null || !cursor.code().matches("[1-9A-HJ-NP-Za-km-z]{10}")) throw new InvalidRequestException();
+            // relevance: (relevance in millionths, public code of the last deck); a sort: the position in the ordered list of the best 200 (1..200); never both
+            boolean valid = cursor.position() != null && (sorted ? cursor.position() <= CatalogQueries.SEARCH_CANDIDATES && cursor.code() == null : cursor.code() != null);
+            if (!valid) throw new InvalidRequestException();
             if (cursor.generation() != null && !ranks.kept(cursor.generation())) throw new VersionConflictException();
             generation = cursor.generation() == null ? OptionalLong.empty() : OptionalLong.of(cursor.generation());
         } else {
             generation = ranks.current();
         }
-        TopicDirectory.Named named = topics.named(query.normalizedQuery());
+        queries.prepareSearch(settings.similarityThreshold);
+        // the topics the text names: exactly by their synonyms, and by a typo of a synonym (word similarity to topic_alias with the same threshold; a description or a tag is not
+        // typo-tolerant in v1: only the titles are, by trigrams)
+        TopicDirectory.Named exact = topics.named(normalized);
+        TopicDirectory.Named named = topics.withTopics(exact, queries.similarTopics(typoCandidates(normalized)));
         List<String> parents = new ArrayList<>();
         List<String> leaves = new ArrayList<>();
         for (String topic : named.topics()) (!topics.childrenOf(topic).isEmpty() ? parents : leaves).add(topic);
         // null when the detector is not sure: then no deck is lowered for its language
         String language = LanguageDetector.detect(query.q()).orElse(null);
-        queries.prepareSearch(settings.similarityThreshold);
-        CatalogQueries.Page page = queries.searchPage(query, now, named, parents, leaves, language, trigramUseful(normalized), generation.orElse(0), cursor == null ? null : cursor.position(),
-                cursor == null ? null : cursor.code(), query.limit());
+        CatalogQueries.Page page = queries.searchPage(query, now, named, parents, leaves, language, trigramUseful(normalized), generation.orElse(0),
+                !sorted && cursor != null ? cursor.position() : null, !sorted && cursor != null ? cursor.code() : null, sorted && cursor != null ? cursor.position().intValue() : 0, query.limit());
         List<CatalogQueries.Hit> hits = page.hits();
         boolean more = hits.size() > query.limit();
         List<CatalogQueries.Hit> shown = more ? hits.subList(0, query.limit()) : hits;
         String next = null;
         if (more) {
             CatalogQueries.Hit last = shown.getLast();
-            next = new CatalogCursor("search", query.hash(), generation.isPresent() ? generation.getAsLong() : null, last.position(), null, last.row().publicCode(), null).encode();
+            Long g = generation.isPresent() ? generation.getAsLong() : null;
+            next = (sorted ? new CatalogCursor("search", query.hash(), g, (cursor == null ? 0L : cursor.position()) + shown.size(), null, null, null)
+                    : new CatalogCursor("search", query.hash(), g, last.position(), null, last.row().publicCode(), null)).encode();
         }
         return answer(shown, counts(generation, shown.stream().map(hit -> hit.row().deckId()).toList()), page.total(), page.total() >= CatalogQueries.SEARCH_CANDIDATES, next);
+    }
+
+    /** The words of a normalized text that may be a typo of a topic synonym: five code points or more (a shorter word is too close to too many), at most eight. */
+    static List<String> typoCandidates(String normalized) {
+        return java.util.Arrays.stream(normalized.split("[^\\p{L}\\p{N}]+")).filter(word -> word.codePointCount(0, word.length()) >= 5).distinct().limit(8).toList();
     }
 
     /**
@@ -423,14 +438,11 @@ public class CatalogService {
             }
             Map<UUID, CatalogRanks.Counts> counts = counts(generation, own.stream().limit(limit).map(PublicDeckRow::deckId).toList());
             ObjectNode document = JsonNodeFactory.instance.objectNode();
-            if (generation.isPresent()) {
-                long sum = authors.learningNow(author, generation.getAsLong());
-                Integer shown = AudienceCounts.shown((int) Math.min(sum, Integer.MAX_VALUE));
-                if (shown == null) document.putNull("learningNowTotal");
-                else document.put("learningNowTotal", shown.intValue());
-            } else {
-                document.putNull("learningNowTotal");
-            }
+            // distinct learners of the window across his public decks (not a sum of per-deck counts), live, then the display rule of every audience number
+            long learners = authors.learningNow(author, clock.instant().minus(java.time.Duration.ofDays(rank.windowDays)));
+            Integer shown = AudienceCounts.shown((int) Math.min(learners, Integer.MAX_VALUE));
+            if (shown == null) document.putNull("learningNowTotal");
+            else document.put("learningNowTotal", shown.intValue());
             ArrayNode decks = document.putArray("decks");
             String next = null;
             if (own.size() > limit) {

@@ -229,23 +229,23 @@ class CatalogQueries {
      * GIN indexes with the statistics of the vectors; a generic plan could not, which is why the transaction forces custom plans ({@link #prepareSearch}).
      */
     Page searchPage(CatalogQuery query, Instant now, TopicDirectory.Named named, List<String> parentTopics, List<String> leafTopics, String language, boolean trigram, long generation,
-                    Long afterRelevance, String afterCode, int limit) {
-        Sql sql = searchSql(query, now, named, parentTopics, leafTopics, language, trigram, generation, afterRelevance, afterCode, limit);
+                    Long afterRelevance, String afterCode, int offset, int limit) {
+        Sql sql = searchSql(query, now, named, parentTopics, leafTopics, language, trigram, generation, afterRelevance, afterCode, offset, limit);
         int[] total = {0};
         List<Hit> hits = jdbc.sql(sql.sql()).params(sql.params).query((row, ignored) -> {
             total[0] = row.getInt("total");
             return new Hit(CatalogRepository.ROW.mapRow(row, 0), row.getLong("position"));
         }).list();
-        if (hits.isEmpty() && afterRelevance != null) {
+        if (hits.isEmpty() && (afterRelevance != null || offset > 0)) {
             // a page past the end (the list shrank meanwhile) has no row to carry the total: the first row of the same list does
-            return new Page(hits, searchPage(query, now, named, parentTopics, leafTopics, language, trigram, generation, null, null, 1).total());
+            return new Page(hits, searchPage(query, now, named, parentTopics, leafTopics, language, trigram, generation, null, null, 0, 1).total());
         }
         return new Page(hits, hits.isEmpty() ? 0 : total[0]);
     }
 
     /** The statement of {@link #searchPage}. */
     Sql searchSql(CatalogQuery query, Instant now, TopicDirectory.Named named, List<String> parentTopics, List<String> leafTopics, String language, boolean trigram, long generation,
-                    Long afterRelevance, String afterCode, int limit) {
+                    Long afterRelevance, String afterCode, int offset, int limit) {
         List<String> texts = new ArrayList<>();
         texts.add(query.q());
         texts.addAll(named.texts());
@@ -280,16 +280,30 @@ class CatalogQueries {
                 + " + " + SIMILARITY_WEIGHT + "::float8 * app_learning.word_similarity(CAST(:qn AS text), d.title_norm)::float8"
                 + " + " + POPULARITY_WEIGHT + "::float8 * COALESCE(r.pop_pct, 0)::float8)"
                 + " * (CASE WHEN CAST(:lang AS text) IS NOT NULL AND d.content_language IS NOT NULL AND d.content_language <> CAST(:lang AS text) THEN " + LANGUAGE_FACTOR + "::float8 ELSE 1::float8 END) * " + RELEVANCE_SCALE
-                + ")::bigint AS position FROM (" + arms + ") h JOIN app_learning.public_deck d ON d.deck_id = h.deck_id"
+                + ")::bigint AS position, r.rank AS sort_rank, r.learning_rank AS sort_learning FROM (" + arms + ") h JOIN app_learning.public_deck d ON d.deck_id = h.deck_id"
                 + " LEFT JOIN app_learning.deck_rank r ON r.generation = :g AND r.deck_id = d.deck_id WHERE d.listed");
         filters(sql, query, now, false);
         sql.add(") s ORDER BY s.position DESC, s.public_code COLLATE \"C\" ASC LIMIT " + SEARCH_CANDIDATES + ") c) k");
-        if (afterRelevance != null) {
-            sql.add(" WHERE (k.position < :afterPosition OR (k.position = :afterPosition AND k.public_code COLLATE \"C\" > :afterCode))");
-            sql.params.put("afterPosition", afterRelevance);
-            sql.params.put("afterCode", afterCode);
+        String sort = query.sort();
+        if (sort == null) {
+            if (afterRelevance != null) {
+                sql.add(" WHERE (k.position < :afterPosition OR (k.position = :afterPosition AND k.public_code COLLATE \"C\" > :afterCode))");
+                sql.params.put("afterPosition", afterRelevance);
+                sql.params.put("afterCode", afterCode);
+            }
+            sql.add(" ORDER BY k.position DESC, k.public_code COLLATE \"C\" ASC LIMIT :limit");
+        } else {
+            // the best 200 by relevance, re-ordered by the sort the client asked for: the generation's rank (a candidate it does not know is last, newest entrant first), or a time.
+            // The position in that list is the cursor (OFFSET), so the order must be total: the public code is the last key
+            String key = switch (sort) {
+                case "popular" -> "k.sort_rank ASC NULLS LAST, k.first_listed_at DESC";
+                case "learning" -> "k.sort_learning ASC NULLS LAST, k.first_listed_at DESC";
+                case "new" -> "k.first_listed_at DESC";
+                default -> "k.content_updated_at DESC, k.first_listed_at DESC";
+            };
+            sql.add(" ORDER BY " + key + ", k.public_code COLLATE \"C\" ASC OFFSET :offset LIMIT :limit");
+            sql.params.put("offset", offset);
         }
-        sql.add(" ORDER BY k.position DESC, k.public_code COLLATE \"C\" ASC LIMIT :limit");
         sql.params.put("limit", limit + 1);
         return sql;
     }
@@ -305,6 +319,16 @@ class CatalogQueries {
             sql.params.put("leafTopics", leafTopics);
         }
         return arms.isEmpty() ? "false" : "(" + String.join(" OR ", arms) + ")";
+    }
+
+    /**
+     * The topics whose synonym is word-similar to one of {@code words} (pg_trgm {@code %>}, the threshold of the transaction: {@link #prepareSearch}), for the typos of a topic name:
+     * «испанскй» and «spansh» name {@code spanish}. Only one-word synonyms of five letters or more are compared (a word that resembles one word of «испанский язык» or the short «eng» would name half the directory); a transposition of two letters is below the threshold. {@code topic_alias} is a few hundred rows, so this is a scan of it, one statement per search with such a word, none without.
+     */
+    List<String> similarTopics(List<String> words) {
+        if (words.isEmpty()) return List.of();
+        return jdbc.sql("SELECT DISTINCT a.topic_id FROM app_learning.topic_alias a JOIN unnest(CAST(:words AS text[])) AS w(word) ON a.alias_norm OPERATOR(app_learning.%>) w.word WHERE a.alias_norm !~ ' ' AND char_length(a.alias_norm) >= 5 ORDER BY a.topic_id")
+                .param("words", "{" + String.join(",", words.stream().map(word -> "\"" + word.replace("\\", "\\\\").replace("\"", "\\\"") + "\"").toList()) + "}").query(String.class).list();
     }
 
     /** The plan of a statement as the database prints it ({@code analyze} executes it: the statements here are reads); for the plan tests and the evidence of the scale test. */
@@ -346,10 +370,10 @@ class CatalogQueries {
         return rows("SELECT " + D + " FROM app_learning.public_deck d WHERE d.listed ORDER BY d.first_listed_at DESC, d.deck_id DESC LIMIT :limit", Map.of("limit", limit));
     }
 
-    /** The popular decks of a leaf topic: {@code deck_rank_topic} is ordered by (score, deck id) descending, which is the rank order, so the walk stops at the limit. */
+    /** The popular decks of a leaf topic, in rank order: the equality on the topic picks its rows from {@code deck_rank_topic} and the top-N sort by {@code rank} is over one topic only. */
     List<PublicDeckRow> topicShelf(long generation, String topic, int limit) {
         return rows("SELECT " + D + " FROM app_learning.deck_rank r JOIN app_learning.public_deck d ON d.deck_id = r.deck_id"
-                + " WHERE r.generation = :g AND r.listed AND r.topic_id = :topic AND d.listed ORDER BY r.score DESC, r.deck_id DESC LIMIT :limit",
+                + " WHERE r.generation = :g AND r.listed AND r.topic_id = :topic AND d.listed ORDER BY r.rank LIMIT :limit",
                 Map.of("g", generation, "topic", topic, "limit", limit));
     }
 

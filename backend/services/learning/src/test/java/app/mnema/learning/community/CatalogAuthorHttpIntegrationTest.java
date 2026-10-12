@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -202,32 +203,42 @@ class CatalogAuthorHttpIntegrationTest extends CatalogHttpTest {
     }
 
     @Test
-    void theLearnersOfTheAuthorAreTheSumOfHisPublicDecksShownLikeACard() {
+    void theLearnersOfTheAuthorAreDistinctLearnersOfHisPublicDecksInThirtyDaysShownLikeACard() {
         World a = listed("А");
         World b = belowThreshold("Б");
         World other = worlds.deck("Чужая", "Описание", 10);
-        // 5 + 4 = 9 learners: nothing is shown; 70 + 51 = 121: floored to two digits; another author's decks never count
-        setLearning(2000, a, 5, b, 4, other, 100);
-        assertThat(ok(get(path(""))).path("learningNowTotal").isNull()).isTrue();
-        setLearning(2001, a, 70, b, 51, other, 100);
+        UUID both = UUID.randomUUID();
+        study(a, both, 1);
+        study(b, both, 1);
+        // a person who studies two of his decks is ONE learner (a sum of the counts of the decks would say two)
+        for (int index = 0; index < 4; index++) study(a, UUID.randomUUID(), 2);
+        for (int index = 0; index < 4; index++) study(b, UUID.randomUUID(), 3);
+        // not counted: another author's deck, a study 31 days ago, and the author himself
+        study(other, UUID.randomUUID(), 1);
+        study(a, UUID.randomUUID(), 31);
+        study(a, author, 1);
+        assertThat(ok(get(path(""))).path("learningNowTotal").isNull()).as("9 learners are not shown").isTrue();
+        study(a, UUID.randomUUID(), 5);
+        assertThat(ok(get(path(""))).path("learningNowTotal").intValue()).as("10 are shown exactly").isEqualTo(10);
+        // 121 distinct learners across the two decks, floored to two significant digits
+        for (int index = 0; index < 111; index++) study(index % 2 == 0 ? a : b, UUID.randomUUID(), 4);
         assertThat(ok(get(path(""))).path("learningNowTotal").intValue()).isEqualTo(120);
-        // the unlisted deck carries its audience too: the generation has a row for every projection row
-        setLearning(2002, a, 0, b, 12, other, 0);
-        assertThat(ok(get(path(""))).path("learningNowTotal").intValue()).isEqualTo(12);
+        // the statement is an aggregate over the primary key of the study rows of the author's decks
+        String plan = new org.springframework.transaction.support.TransactionTemplate(transactions).execute(status -> {
+            var statement = jdbc.sql("EXPLAIN " + AuthorQueries.LEARNING_NOW_SQL).param("author", author).param("since", java.sql.Timestamp.from(Instant.now()));
+            jdbc.sql("SET LOCAL enable_seqscan = off").update();
+            return String.join("\n", statement.query(String.class).list());
+        });
+        assertThat(plan).contains("public_deck_owner").contains("deck_engagement_pkey").doesNotContain("Seq Scan");
     }
 
-    private void setLearning(long generation, World a, int learningA, World b, int learningB, World c, int learningC) {
+    /** A study row of {@code learner} on the author's deck, the last study {@code daysAgo} days ago (written straight, the writers have their own tests). */
+    private void study(World deck, UUID learner, int daysAgo) {
         new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(status -> {
             jdbc.sql("SET LOCAL session_replication_role = replica").update();
-            jdbc.sql("INSERT INTO app_learning.rank_generation(generation, started_at, completed_at, deck_count) VALUES (:g, now(), now(), 3)").param("g", generation).update();
-            int[] counts = {learningA, learningB, learningC};
-            UUID[] ids = {a.deck(), b.deck(), c.deck()};
-            for (int index = 0; index < 3; index++) {
-                jdbc.sql("INSERT INTO app_learning.deck_rank(generation, deck_id, score, rank, learning_rank, pop_pct, added_count, learning_now_count, activated_count, listed) "
-                                + "VALUES (:g, :d, 0, :r, :r, 0, 0, :n, 0, :l)").param("g", generation).param("d", ids[index]).param("r", index == 1 ? null : index + 1)
-                        .param("n", counts[index]).param("l", index != 1).update();
-            }
-            jdbc.sql("DELETE FROM app_learning.rank_generation WHERE generation < :g").param("g", generation).update();
+            jdbc.sql("INSERT INTO app_learning.deck_engagement(deck_id, account_id, kind, first_at, last_at, study_days, last_study_date) "
+                            + "VALUES (:d, :a, 'STUDY', now() - make_interval(days => :days + 1), now() - make_interval(days => :days), 3, current_date)")
+                    .param("d", deck.deck()).param("a", learner).param("days", daysAgo).update();
         });
     }
 }
