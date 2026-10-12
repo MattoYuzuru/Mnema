@@ -454,8 +454,11 @@ describe('CommunityPageComponent', () => {
             await open();
             expect(one('.notice.error')?.textContent).toContain('Слишком много запросов. Подождите 37 с и повторите.');
             one<HTMLButtonElement>('.notice button')!.click();
+            // The pressed button is gone with its notice: the focus is on the heading, not lost.
+            expect(document.activeElement).toBe(one('h1'));
             await settle();
             expect(api.shelves).toHaveBeenCalledTimes(2);
+            expect(document.activeElement).toBe(one('h1'));
             expect(one('.notice')).toBeNull();
             expect(one('app-deck-shelf')).not.toBeNull();
         });
@@ -628,6 +631,7 @@ describe('CommunityPageComponent', () => {
             await settle();
             expect(one('app-complaint-dialog')).toBeNull();
             expect(api.shelves).toHaveBeenCalledTimes(2);
+            expect(document.activeElement).toBe(one('h1'));
         });
     });
 

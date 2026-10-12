@@ -26,6 +26,7 @@ interface PendingSave {
 
 const percent = new Intl.NumberFormat('ru-RU', { style: 'percent', maximumFractionDigits: 0 });
 const NOT_FIT = 'Эту колоду нельзя поставить на полку: она не публичная или не опубликована. Уберите её или замените.';
+const FULL_HINT = `На полке уже ${EDITORIAL_MAX} колод. Уберите одну, чтобы добавить другую.`;
 const sameCodes = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((code, index) => code === b[index]);
 
 /**
@@ -53,7 +54,6 @@ const sameCodes = (a: readonly string[], b: readonly string[]): boolean => a.len
       До {{ max }} публичных колод, которые Сообщество показывает первыми, в порядке списка. Колода со штампом «Не в каталоге» остаётся в списке,
       но читатели её не видят: она скрыта или больше не публична.
     </p>
-    @if (!loaded() && shelfLoading()) { <p role="status">Загружаем полку…</p> }
     @if (shelfError()) {
       <div class="notice error" role="alert">
         <p>{{ shelfError() }}</p><button class="button" type="button" (click)="loadShelf()">Повторить</button>
@@ -86,16 +86,17 @@ const sameCodes = (a: readonly string[], b: readonly string[]): boolean => a.len
               [value]="draft()" (input)="typed($event)" [attr.aria-invalid]="addError() ? 'true' : null" [attr.aria-describedby]="addError() ? 'shelf-add-hint shelf-add-error' : 'shelf-add-hint'" />
             <button class="button" type="submit" [attr.aria-disabled]="full() || busy() ? 'true' : null" [attr.aria-describedby]="full() ? 'shelf-add-hint' : null">Добавить</button>
           </div>
-          <p class="hint" id="shelf-add-hint">{{ full() ? 'На полке уже ' + max + ' колод. Уберите одну, чтобы добавить другую.' : 'Публичная ссылка на колоду вида https://mnema.app/d/Kq7xT3mNpR или код из 10 знаков.' }}</p>
-          @if (addError()) { <p class="field-error" id="shelf-add-error">{{ addError() }}</p> }
+          <p class="hint" id="shelf-add-hint">{{ full() ? fullHint : 'Публичная ссылка на колоду вида https://mnema.app/d/Kq7xT3mNpR или код из 10 знаков.' }}</p>
+          @if (addError()) { <p class="field-error" id="shelf-add-error" role="alert">{{ addError() }}</p> }
         </div>
       </form>
       <div class="actions shelf-save">
-        <button class="button primary" type="button" [attr.aria-disabled]="canSave() ? null : 'true'" [attr.aria-busy]="busy() ? 'true' : null" (click)="save()">Сохранить</button>
+        <button #saveButton class="button primary" type="button" [attr.aria-disabled]="canSave() ? null : 'true'" [attr.aria-busy]="busy() ? 'true' : null" (click)="save()">Сохранить</button>
         @if (dirty()) { <p class="hint">Есть несохранённые изменения.</p> }
       </div>
     }
-    <p class="status-region" role="status">{{ status() }}</p>
+    <!-- Both status regions are in the tree, empty, before their first text: a region that appears with its text is not announced reliably. -->
+    <p class="status-region" role="status">{{ !loaded() && shelfLoading() ? 'Загружаем полку…' : status() }}</p>
   </section>
 
   <section class="rule-section" aria-labelledby="flags-title">
@@ -104,12 +105,13 @@ const sameCodes = (a: readonly string[], b: readonly string[]): boolean => a.len
       Раз в сутки Мнема отмечает колоду, если за 7 дней её скопировали не меньше 20 раз и больше 70 % копий сделали аккаунты младше 48 часов. Сама колода не меняется:
       посмотрите её и отметьте флаг «Просмотрено». Если колода уже не публична, ссылка откроет «Колода не найдена».
     </p>
-    @if (flags.loading()) { <p role="status">Загружаем флаги…</p> }
+    <p class="status-region" role="status">{{ flags.loading() ? 'Загружаем флаги…' : flagStatus() }}</p>
     @if (flags.error()) {
       <div class="notice error" role="alert">
         <p>{{ flags.error() }}</p><button class="button" type="button" (click)="flags.reload()">Повторить</button>
       </div>
     }
+    @if (flags.items().length > 0) {
     <ul #flagList class="flag-list" role="list" aria-label="Флаги накруток: открытые первыми, дальше просмотренные">
       @for (flag of flags.items(); track flag.code) {
         <li class="flag-row">
@@ -121,16 +123,16 @@ const sameCodes = (a: readonly string[], b: readonly string[]): boolean => a.len
             @else { <span class="stamp">Просмотрен {{ date(flag.dismissedAt) }}</span> }
           </p>
           @if (flag.dismissedAt === null) {
-            <p><button class="button small" type="button" [attr.aria-label]="'Просмотрено: ' + flag.title" [attr.aria-busy]="dismissing().has(flag.code) ? 'true' : null"
+            <p><button class="button small" type="button" [attr.aria-label]="'Просмотрено: ' + flag.title" [attr.aria-busy]="dismissing().has(flag.code) ? 'true' : null" [attr.aria-describedby]="flagErrors()[flag.code] ? 'flag-error-' + flag.code : null"
               [attr.aria-disabled]="dismissing().has(flag.code) ? 'true' : null" (click)="dismiss(flag)">Просмотрено</button></p>
           }
-          @if (flagErrors()[flag.code]; as message) { <p class="field-error" role="alert">{{ message }}</p> }
+          @if (flagErrors()[flag.code]; as message) { <p class="field-error" role="alert" [id]="'flag-error-' + flag.code">{{ message }}</p> }
         </li>
       }
     </ul>
-    @if (!flags.loading() && !flags.error() && flags.items().length === 0) { <p>Флагов нет.</p> }
     <app-auto-load [content]="flagList" [context]="flags.context()" [continuation]="flags.next()" [loading]="flags.loadingMore()" [error]="flags.moreError()"
       loadingText="Загружаем следующие флаги…" (loadNext)="flags.more()" />
+    } @else if (!flags.loading() && !flags.error()) { <p>Флагов нет.</p> }
   </section>`,
     styleUrl: './admin-page.css',
     styles: [`
@@ -151,6 +153,7 @@ export class AdminCommunityPageComponent implements OnInit {
     private readonly destroy = inject(DestroyRef);
     private readonly injector = inject(Injector);
     protected readonly max = EDITORIAL_MAX;
+    protected readonly fullHint = FULL_HINT;
 
     protected readonly rows = signal<readonly ShelfRow[]>([]);
     private readonly baseline = signal<readonly string[]>([]);
@@ -167,6 +170,7 @@ export class AdminCommunityPageComponent implements OnInit {
     protected readonly full = computed(() => this.rows().length >= EDITORIAL_MAX);
     protected readonly dirty = computed(() => !sameCodes(this.rows().map(row => row.code), this.baseline()));
     protected readonly canSave = computed(() => this.dirty() && !this.busy() && this.rowVersion() !== null);
+    private readonly saveButton = viewChild<ElementRef<HTMLButtonElement>>('saveButton');
     private readonly deckInput = viewChild<ElementRef<HTMLInputElement>>('deckInput');
     private pending: PendingSave | null = null;
     private epoch = 0;
@@ -178,6 +182,7 @@ export class AdminCommunityPageComponent implements OnInit {
         firstError: 'Не удалось загрузить флаги. Повторите запрос.',
         moreError: 'Следующие флаги не загрузились.'
     });
+    protected readonly flagStatus = signal('');
     protected readonly dismissing = signal<ReadonlySet<string>>(new Set());
     protected readonly flagErrors = signal<Readonly<Record<string, string>>>({});
     private readonly dismissCommands = new Map<string, string>();
@@ -223,7 +228,8 @@ export class AdminCommunityPageComponent implements OnInit {
 
     protected add(event: Event): void {
         event.preventDefault();
-        if (this.busy() || this.full()) return;
+        if (this.busy()) return;
+        if (this.full()) { this.addError.set(FULL_HINT); return; }
         const parsed = parseDeckInput(this.draft());
         if ('error' in parsed) { this.addError.set(parsed.error); return; }
         if (this.rows().some(row => row.code === parsed.code)) { this.addError.set('Эта колода уже на полке.'); return; }
@@ -260,7 +266,9 @@ export class AdminCommunityPageComponent implements OnInit {
     }
 
     protected async save(): Promise<void> {
-        if (!this.canSave()) return;
+        if (this.busy()) return;
+        if (!this.dirty()) { this.status.set('Нечего сохранять'); return; }
+        if (this.rowVersion() === null) { this.status.set('Список обновляется, подождите и повторите.'); return; }
         const codes = this.rows().map(row => row.code), version = this.rowVersion()!;
         // A repeat of the same list at the same version is the same command, so an unknown outcome never writes twice.
         const command: PendingSave = this.pending !== null && this.pending.version === version && sameCodes(this.pending.codes, codes)
@@ -322,12 +330,14 @@ export class AdminCommunityPageComponent implements OnInit {
         if (this.dismissing().has(flag.code) || flag.dismissedAt !== null) return;
         const commandId = this.dismissCommands.get(flag.code) ?? crypto.randomUUID();
         this.dismissCommands.set(flag.code, commandId);
+        this.flagStatus.set('');
         this.dismissing.update(set => new Set(set).add(flag.code));
         this.flagErrors.update(errors => { const { [flag.code]: _gone, ...rest } = errors; return rest; });
         try {
             await firstValueFrom(this.api.dismissAnomaly(flag.code, commandId).pipe(takeUntilDestroyed(this.destroy)));
             this.dismissCommands.delete(flag.code);
             this.flags.replace({ ...flag, dismissedAt: new Date().toISOString() });
+            this.flagStatus.set(`Флаг «${flag.title}» отмечен просмотренным.`);
             this.focusAfterRender(() => document.getElementById(`flag-${flag.code}`));
         } catch (failure) {
             if (isForbidden(failure)) {
@@ -351,8 +361,14 @@ export class AdminCommunityPageComponent implements OnInit {
 
     canLeave(): boolean {
         if (!this.session.access()) return true;
-        if (this.busy()) return false;
-        return !this.dirty() || window.confirm('Несохранённые изменения полки «Выбор Мнемы» будут отброшены. Покинуть страницу?');
+        if (this.busy()) {
+            this.status.set('Идёт сохранение, подождите');
+            this.focusAfterRender(() => this.saveButton()?.nativeElement ?? null);
+            return false;
+        }
+        if (!this.dirty()) return true;
+        this.notice.set('В списке полки есть несохранённые изменения. Если уйти, они пропадут. Нажмите «Сохранить», чтобы их оставить.');
+        return window.confirm('Несохранённые изменения полки «Выбор Мнемы» будут отброшены. Покинуть страницу?');
     }
 
     /** An edit makes the earlier outcome stale: the old «Сохранено» and notices no longer describe the list. */

@@ -12,6 +12,7 @@
 
 .decks { display: grid; gap: 1rem; min-inline-size: 0; }
 .decks h2 { margin: 0; padding-block-end: .75rem; border-block-end: 1px solid var(--mn-ink); color: var(--mn-ink); font: 600 clamp(1.4rem, 3vw, 1.9rem)/1.2 var(--mn-font-display, Georgia, serif); }
+.decks h2:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 .status { margin: 0; }
 /* Empty, the region takes no room (not even a gap of the page grid) but stays in the tree. */
 .status:empty { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; }

@@ -138,6 +138,8 @@ export class AuthorPageComponent {
     /** The list failed on its own (the card is fine): ask for the decks again. */
     protected retryDecks(): void {
         this.startDecks();
+        // The notice with the pressed button is replaced by the loading list: the focus goes to the list's heading, not to the page.
+        this.focusDecksHeading();
     }
 
     protected actionChosen(event: { readonly id: string; readonly deck: PublicDeckCard }): void {
@@ -160,8 +162,11 @@ export class AuthorPageComponent {
     protected complaintGone(): void {
         const closed = this.complaint();
         this.complaint.set(null);
-        if (closed?.target === 'deck') this.startDecks();
-        else void this.load(this.username());
+        if (closed?.target === 'deck') {
+            this.startDecks();
+            // The dialog is removed in the next render and may hand the focus to its opener on the way out: the heading takes it after that.
+            afterNextRender(() => this.focusDecksHeading(), { injector: this.injector });
+        } else void this.load(this.username());
     }
 
     private fetchDecks(cursor: string | null): Observable<PagerPage<AuthorDeckEntry>> {
@@ -202,6 +207,10 @@ export class AuthorPageComponent {
         this.accountId = card.accountId;
         this.settle('ready', card.displayName === null ? `@${card.profileUsername} — ${SHELL_TITLE}` : `${card.displayName} (@${card.profileUsername}) — ${SHELL_TITLE}`);
         this.startDecks();
+    }
+
+    private focusDecksHeading(): void {
+        this.host.nativeElement.querySelector<HTMLElement>('#author-decks-title')?.focus();
     }
 
     private settle(view: View, title: string): void {

@@ -80,14 +80,14 @@ describe('PublicProfileSettingsComponent', () => {
         expect(root.querySelector('app-author-chip .chip')).toBeNull();
     });
 
-    describe('«Как меня видят другие» as a link to the page', () => {
+    describe('«Открыть публичную страницу профиля» as a link to the page', () => {
         const link = () => root.querySelector<HTMLAnchorElement>('.preview a');
 
         it('is offered with the consent on and a login once the Community is open, to /u/<логин>', async () => {
             TestBed.overrideProvider(COMMUNITY_LAUNCH, { useValue: true });
             api.loadPublicProfile.mockReturnValue(of(on));
             await open();
-            expect(link()?.textContent?.trim()).toBe('Как меня видят другие');
+            expect(link()?.textContent?.trim()).toBe('Открыть публичную страницу профиля');
             expect(link()?.getAttribute('href')).toBe('/u/reader');
         });
 

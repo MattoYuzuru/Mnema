@@ -21,7 +21,7 @@
           (complain)="complainAboutProfile()" />
 
         <section class="decks" aria-labelledby="author-decks-title">
-          <h2 id="author-decks-title">Колоды автора</h2>
+          <h2 id="author-decks-title" tabindex="-1">Колоды автора</h2>
           <p class="status" role="status">{{ decksView() === 'loading' ? 'Загружаем колоды…' : '' }}</p>
 
           @switch (decksView()) {

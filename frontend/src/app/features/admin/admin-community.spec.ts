@@ -122,6 +122,15 @@ describe('owner console community page: «Выбор Мнемы»', () => {
         expect(putRequest().request.headers.get('If-Match')).toBe('"4"');
     });
 
+    it('says «Нечего сохранять» when Сохранить is pressed on a clean list, and sends nothing', async () => {
+        await setup();
+        expect(root.querySelectorAll('.status-region')).toHaveLength(2);
+        await press(saveButton());
+        expect(status()).toBe('Нечего сохранять');
+        await press(action(C, 'up'));
+        expect(status()).not.toBe('Нечего сохранять');
+    });
+
     it('adds a deck by a public link or a bare code, at the end, and refuses what is not a deck or already there', async () => {
         await setup();
         await add('https://mnema.app/d/Hd9Ts5pLwX/ispanskii');
@@ -132,6 +141,7 @@ describe('owner console community page: «Выбор Мнемы»', () => {
         expect(status()).toContain('Hd9Ts5pLwX добавлена в конец списка');
         await add(A);
         expect(root.querySelector('#shelf-add-error')!.textContent).toBe('Эта колода уже на полке.');
+        expect(root.querySelector('#shelf-add-error')!.getAttribute('role')).toBe('alert');
         expect(root.querySelector('#shelf-add-input')!.getAttribute('aria-invalid')).toBe('true');
         expect(root.querySelector('#shelf-add-input')!.getAttribute('aria-describedby')).toBe('shelf-add-hint shelf-add-error');
         await add('привет');
@@ -152,6 +162,8 @@ describe('owner console community page: «Выбор Мнемы»', () => {
         expect(root.querySelector('#shelf-add-hint')!.textContent).toBe('На полке уже 24 колод. Уберите одну, чтобы добавить другую.');
         await add('Hd9Ts5pLwX');
         expect(codes()).toHaveLength(24);
+        expect(root.querySelector('#shelf-add-error')!.textContent).toBe('На полке уже 24 колод. Уберите одну, чтобы добавить другую.');
+        expect(root.querySelector('#shelf-add-error')!.getAttribute('role')).toBe('alert');
         await press(action(many[0].code, 'remove'));
         expect(codes()).toHaveLength(23);
         expect(submit.getAttribute('aria-disabled')).toBeNull();
@@ -273,6 +285,22 @@ describe('owner console community page: «Выбор Мнемы»', () => {
         expect(root.querySelector('.shelf-list')).toBeNull();
     });
 
+    it('refuses to leave while saving, says so in the status and puts the focus on Сохранить', async () => {
+        await setup();
+        await press(action(C, 'up'));
+        await press(saveButton());
+        const confirm = vi.spyOn(window, 'confirm');
+        expect(canLeaveAdminCommunity(fixture.componentInstance)).toBe(false);
+        fixture.detectChanges();
+        expect(confirm).not.toHaveBeenCalled();
+        expect(status()).toBe('Идёт сохранение, подождите');
+        expect(document.activeElement).toBe(saveButton());
+        putRequest().flush(null, { status: 204, statusText: 'No Content' });
+        await settle();
+        shelfRead().flush(shelf('4', [entry(A, 'Испанский язык: базовые глаголы'), entry(C, 'Японские числа'), entry(B, 'Столицы мира', false)]));
+        await settle();
+    });
+
     it('asks before leaving with unsaved changes, and not otherwise', async () => {
         await setup();
         const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
@@ -283,6 +311,8 @@ describe('owner console community page: «Выбор Мнемы»', () => {
         expect(confirm).toHaveBeenCalledWith('Несохранённые изменения полки «Выбор Мнемы» будут отброшены. Покинуть страницу?');
         confirm.mockReturnValue(true);
         expect(canLeaveAdminCommunity(fixture.componentInstance)).toBe(true);
+        fixture.detectChanges();
+        expect(root.querySelector('.notice.warning')!.textContent).toContain('несохранённые изменения');
         const event = new Event('beforeunload', { cancelable: true });
         window.dispatchEvent(event);
         expect(event.defaultPrevented).toBe(true);
@@ -309,10 +339,11 @@ describe('owner console community page: «Флаги накруток»', () => 
         expect(root.querySelector('.flag-row button')!.getAttribute('aria-label')).toBe('Просмотрено: Испанский язык: базовые глаголы');
     });
 
-    it('says «Флагов нет.» for an empty list', async () => {
+    it('says «Флагов нет.» for an empty list and renders no empty list element', async () => {
         await setup(shelf(), { entries: [], next: null });
         expect(root.textContent).toContain('Флагов нет.');
         expect(root.querySelector('.flag-row')).toBeNull();
+        expect(root.querySelector('.flag-list')).toBeNull();
     });
 
     it('dismisses a flag with its own command id, shows the state and keeps focus on the row heading', async () => {
@@ -333,6 +364,7 @@ describe('owner console community page: «Флаги накруток»', () => 
         expect(row.querySelector('.stamp')!.textContent).toContain('Просмотрен');
         expect(row.textContent).not.toContain('Открыт');
         expect(document.activeElement).toBe(row.querySelector('h3'));
+        expect(root.querySelectorAll('.status-region')[1].textContent).toBe('Флаг «Испанский язык: базовые глаголы» отмечен просмотренным.');
     });
 
     it('repeats the same command after an unknown outcome and reports a refusal in the row', async () => {
@@ -342,7 +374,10 @@ describe('owner console community page: «Флаги накруток»', () => 
         const first = http.expectOne(`/api/admin/community/anomalies/${A}:dismiss`);
         first.flush(null, { status: 500, statusText: 'Error' });
         await settle();
-        expect(root.querySelector('.flag-row .field-error')!.textContent).toContain('Результат не подтверждён');
+        const error = root.querySelector('.flag-row .field-error')!;
+        expect(error.textContent).toContain('Результат не подтверждён');
+        expect(error.id).toBe(`flag-error-${A}`);
+        expect(root.querySelector('.flag-row button')!.getAttribute('aria-describedby')).toBe(error.id);
         await click();
         const repeat = http.expectOne(`/api/admin/community/anomalies/${A}:dismiss`);
         expect(repeat.request.body.commandId).toBe(first.request.body.commandId);

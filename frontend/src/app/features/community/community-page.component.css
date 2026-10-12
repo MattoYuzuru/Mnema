@@ -21,7 +21,7 @@ h1 {
     letter-spacing: -.025em;
     overflow-wrap: anywhere;
 }
-h1:focus-visible { outline: none; }
+h1:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 
 .shelves { display: grid; gap: clamp(2rem, 5vw, 3rem); min-inline-size: 0; }
 .status { margin: 0; }

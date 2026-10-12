@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
@@ -77,6 +77,8 @@ export class CommunityPageComponent {
     private readonly titles = inject(Title);
     private readonly document = inject(DOCUMENT);
     private readonly destroyRef = inject(DestroyRef);
+    private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+    private readonly injector = inject(Injector);
 
     protected readonly moreLink = COMMUNITY_LINK;
     protected readonly signedIn = computed(() => this.auth.status() === 'authenticated');
@@ -216,6 +218,8 @@ export class CommunityPageComponent {
     protected retry(): void {
         this.closed.set(false);
         void this.load();
+        // The notice with the pressed button is replaced by the loading page: the focus goes to the heading, not to the body.
+        this.focusHeading();
     }
 
     /** A search from the book: a new entry in the history. The text is the address's; the filters stay. */
@@ -247,6 +251,12 @@ export class CommunityPageComponent {
     protected complaintGone(): void {
         this.complaint.set(null);
         void this.load();
+        // The dialog is removed in the next render and may hand the focus to its opener on the way out: the heading takes it after that.
+        afterNextRender(() => this.focusHeading(), { injector: this.injector });
+    }
+
+    private focusHeading(): void {
+        this.host.nativeElement.querySelector<HTMLElement>('h1')?.focus();
     }
 
     private applyFilters(): void {

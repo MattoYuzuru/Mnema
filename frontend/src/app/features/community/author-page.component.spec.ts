@@ -264,7 +264,9 @@ describe('AuthorPageComponent', () => {
             await open();
             expect(one('section.decks .notice[role=alert] p')?.textContent).toBe('Слишком много запросов. Подождите 37 с и повторите.');
             const retry = () => { one<HTMLButtonElement>('section.decks .notice button')!.click(); return settle(); };
+            expect(one('#author-decks-title')?.getAttribute('tabindex')).toBe('-1');
             await retry();
+            expect(document.activeElement).toBe(one('#author-decks-title'));
             expect(one('section.decks .notice p')?.textContent).toBe('Сейчас много читателей. Повторите через секунду.');
             await retry();
             expect(one('section.decks .notice p')?.textContent).toBe('Не удалось загрузить колоды. Проверьте соединение и повторите.');
@@ -392,6 +394,7 @@ describe('AuthorPageComponent', () => {
             await settle();
             expect(authors.byUsername).toHaveBeenCalledOnce();
             expect(api.authorDecks).toHaveBeenCalledTimes(2);
+            expect(document.activeElement).toBe(one('#author-decks-title'));
         });
     });
 

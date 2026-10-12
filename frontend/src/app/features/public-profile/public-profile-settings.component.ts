@@ -20,7 +20,7 @@ const TEXT_OUTDATED = 'Текст согласия обновился. Обно�
  * (152-FZ art. 10.1). Every change is saved at once as the complete state; nothing is ticked beforehand and a field is never
  * implied by the switch. While a save is on its way the controls stay focusable (`aria-disabled`, never `disabled`, so
  * focus is not thrown out) and further changes are ignored; a failed save puts the control back and says why. With the consent on and a login, and
- * once the Community is open (`COMMUNITY_LAUNCH`), the preview ends with the link «Как меня видят другие» to the real page `/u/<логин>`.
+ * once the Community is open (`COMMUNITY_LAUNCH`), the preview ends with the link «Открыть публичную страницу профиля» to the real page `/u/<логин>`.
  */
 @Component({
     selector: 'app-public-profile-settings',
@@ -70,7 +70,7 @@ const TEXT_OUTDATED = 'Текст согласия обновился. Обно�
             <app-author-chip [username]="name" [avatarSrc]="previewAvatar()" />
             @if (current.showDisplayName && profile().displayName; as displayName) { <p class="preview-name">{{ displayName }}</p> }
             @if (current.showBio && profile().bio; as bio) { <p class="preview-bio">{{ bio }}</p> }
-            @if (communityLaunched) { <a class="page-link" [routerLink]="['/u', name]">Как меня видят другие</a> }
+            @if (communityLaunched) { <a class="page-link" [routerLink]="['/u', name]">Открыть публичную страницу профиля</a> }
           } @else {
             <p class="preview-hidden">Профиль скрыт</p>
           }
