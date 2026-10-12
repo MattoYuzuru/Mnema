@@ -182,17 +182,23 @@ class UpdatePlanTruthTableIntegrationTest extends PostgresIntegrationTest {
         assertThat(units.get(exercise(e0)).mineRevisionId()).isEqualTo(e.get(0).revisionId());
 
         // dependencies: a new material comes with its exercise, a safe fix brings the quoted node, a deleted one does not
-        assertThat(units.get(exercise(ex10)).dependsOn()).containsExactlyInAnyOrder(material(added), objective(ex10));
-        assertThat(units.get(exercise(ex9)).dependsOn()).containsExactlyInAnyOrder(material(m.get(12)), objective(ex9));
-        assertThat(units.get(exercise(ex5)).dependsOn()).containsExactly(objective(ex5));
-        assertThat(units.get(exercise(ex7)).dependsOn()).as("the learner's head still has the quoted node").containsExactly(objective(ex7));
-        assertThat(units.get(exercise(ex8)).dependsOn()).containsExactly(objective(ex8));
-        assertThat(units.get(exercise(ex6)).dependsOn()).containsExactly(objective(ex6));
+        assertThat(units.get(exercise(ex10)).dependsOn()).containsExactly(material(added));
+        assertThat(units.get(exercise(ex9)).dependsOn()).containsExactly(material(m.get(12)));
+        assertThat(units.get(exercise(ex5)).dependsOn()).isEmpty();
+        assertThat(units.get(exercise(ex7)).dependsOn()).as("the learner's head still has the quoted node").isEmpty();
+        assertThat(units.get(exercise(ex8)).dependsOn()).isEmpty();
+        assertThat(units.get(exercise(ex6)).dependsOn()).isEmpty();
 
         // objectives: the author renamed one nobody else touched, both renamed another, every new exercise brings its own
         expect(units, objective(e0), UnitClass.SAFE, null);
         expect(units, objective(e1), UnitClass.CONFLICT, Reason.BOTH_CHANGED);
-        for (Authored created : List.of(ex5, ex6, ex7, ex8, ex9, ex10)) expect(units, objective(created), UnitClass.SAFE, null);
+        // the objective a NEW exercise introduces (the copy has no head for it) is not a unit of the plan: it comes with the exercise, as an implicit unit
+        for (Authored created : List.of(ex5, ex6, ex7, ex8, ex9, ex10)) {
+            assertThat(units).doesNotContainKey(objective(created));
+            assertThat(plan.implicit()).extracting(PlanUnit::unitId).contains(objective(created));
+            assertThat(units.get(exercise(created)).implied()).containsExactly(objective(created));
+        }
+        assertThat(plan.implicit()).hasSize(6);
         assertThat(units.get(objective(e0)).authorRevisionId()).isEqualTo(e0.objectiveRevisionId());
         assertThat(units.get(objective(e0)).mineRevisionId()).isEqualTo(e.get(0).objectiveRevisionId());
         assertThat(units.get(exercise(e0)).dependsOn()).containsExactly(objective(e0));
@@ -202,7 +208,7 @@ class UpdatePlanTruthTableIntegrationTest extends PostgresIntegrationTest {
 
         // the order of the plan: class order, then kind, then the author's manifest order
         assertThat(plan.units()).extracting(unit -> unit.unitClass().ordinal()).isSorted();
-        assertThat(plan.summary()).isEqualTo(new UpdatePlan.Summary(1, 4, 11, 8, 3, 0));
-        assertThat(plan.units()).hasSize(27);
+        assertThat(plan.summary()).isEqualTo(new UpdatePlan.Summary(1, 4, 5, 8, 3, 0));
+        assertThat(plan.units()).hasSize(21);
     }
 }

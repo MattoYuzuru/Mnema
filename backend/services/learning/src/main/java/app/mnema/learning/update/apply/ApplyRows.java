@@ -49,6 +49,8 @@ final class ApplyRows {
     static List<Row> build(ApplySelection selection, Set<String> recorded) {
         List<Row> rows = new ArrayList<>();
         for (PlanUnit unit : selection.units()) {
+            // an implicit unit has no decision of its own: it is taken with its exercise or not at all
+            if (selection.implicit(unit)) continue;
             switch (selection.fate(unit)) {
                 case ACCEPT -> {
                     if (recorded.contains(unit.unitId())) rows.add(new Row(Op.REMOVE, unit.kind(), unit.key(), UNUSED, UNUSED));

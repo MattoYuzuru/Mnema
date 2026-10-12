@@ -162,7 +162,8 @@ class ApplyIntegrationTest extends PostgresIntegrationTest {
         UpdatePlan plan = apply.plan(copy);
         assertThat(ApplyWorlds.classes(plan)).isEqualTo(expected(
                 UnitKind.METADATA.unitId(mine), "SAFE", material(m.get(0)), "SAFE", material(added), "NEW", exercise(created), "NEW", exercise(e.get(2)), "SAFE",
-                objective(created), "SAFE", objective(e.get(2)), "SAFE", material(m.get(1)), "CONFLICT", material(m.get(4)), "DELETED"));
+                objective(e.get(2)), "SAFE", material(m.get(1)), "CONFLICT", material(m.get(4)), "DELETED"));
+        assertThat(plan.summary().fixes()).as("the fix of a material, of an exercise, the rename of its objective and the title: not the objective a new exercise introduces").isEqualTo(4);
         long revisionsBefore = apply.revisions(mine);
         String untouchedBeforeSource = apply.snapshot(deck);
 
@@ -173,7 +174,7 @@ class ApplyIntegrationTest extends PostgresIntegrationTest {
         assertThat(response.headers().firstValue("idempotency-replayed")).isEmpty();
         assertThat(answer.path("commandId").stringValue(null)).isEqualTo(command.toString());
         assertThat(answer.path("state").stringValue(null)).isEqualTo("APPLIED");
-        assertThat(answer.path("applied").intValue()).isEqualTo(7);
+        assertThat(answer.path("applied").intValue()).isEqualTo(6);
         assertThat(answer.path("declined").intValue()).isZero();
         assertThat(answer.path("pending").intValue()).isEqualTo(2);
         assertThat(answer.path("alsoAccepted").intValue()).isZero();
@@ -455,7 +456,7 @@ class ApplyIntegrationTest extends PostgresIntegrationTest {
         Authored exercise = worlds.exercise(material, "Ещё вопрос", null, "Ещё цель");
         worlds.publish(fresh.author(), fresh.deck(), "LINK");
         assertThat(apply.plan(first).units().stream().filter(unit -> unit.unitId().equals(exercise(exercise))).findFirst().orElseThrow().dependsOn())
-                .containsExactlyInAnyOrder(material(material), objective(exercise));
+                .containsExactly(material(material));
 
         // a declined dependency of a unit that is taken by name: refused, both units are named, nothing is written
         String snapshot = apply.snapshot(second.deck());
@@ -469,25 +470,77 @@ class ApplyIntegrationTest extends PostgresIntegrationTest {
 
         // named alone, it brings both
         JsonNode taken = ok(apply.apply(first, false, Pick.exercise(exercise.exerciseId(), "ACCEPT")));
-        assertThat(taken.path("applied").intValue()).isEqualTo(3);
-        assertThat(taken.path("alsoAccepted").intValue()).isEqualTo(2);
+        assertThat(taken.path("applied").intValue()).as("the exercise and its material; its new objective comes with it and is not a unit").isEqualTo(2);
+        assertThat(taken.path("alsoAccepted").intValue()).isEqualTo(1);
         assertThat(taken.path("pending").intValue()).isZero();
         assertThat(worlds.itemHead(first.deck(), material.member())).isEqualTo(material.itemRevision());
         assertThat(apply.exerciseHead(first.deck(), exercise.exerciseId())).isEqualTo(exercise.revisionId());
         assertThat(apply.objectiveHead(first.deck(), exercise.objectiveId())).isEqualTo(exercise.objectiveRevisionId());
         assertThat(apply.plan(first).state()).isEqualTo(UpdatePlan.State.UP_TO_DATE);
 
-        // "accept all safe, but not this material": the exercise of that material waits, and its objective waits with it (an objective moves only with the exercises that evidence it);
-        // the material is remembered as declined
+        // "accept all safe, but not this material": the exercise of that material waits, and its new objective with it (it is never taken alone); the material is remembered as declined
         JsonNode partly = ok(apply.apply(second, true, Pick.material(material.member(), "DECLINE")));
         assertThat(partly.path("applied").intValue()).isZero();
         assertThat(partly.path("declined").intValue()).isEqualTo(1);
-        assertThat(partly.path("pending").intValue()).isEqualTo(2);
+        assertThat(partly.path("pending").intValue()).isEqualTo(1);
         assertThat(apply.objectiveHead(second.deck(), exercise.objectiveId())).isNull();
         assertThat(worlds.itemHead(second.deck(), material.member())).isNull();
         assertThat(apply.exerciseHead(second.deck(), exercise.exerciseId())).isNull();
         assertThat(apply.decisions(second.deck())).containsEntry("MATERIAL:" + material.member(), "DECLINE_NEW " + material.itemRevision() + " .")
                 .containsEntry("EXERCISE:" + exercise.exerciseId(), "PENDING " + exercise.revisionId() + " -");
+    }
+
+    @Test
+    void theObjectiveANewExerciseIntroducesIsNotAUnitOfThePlanAndComesWithTheExerciseAndNeverAlone() {
+        Source source = worlds.source("LINK", 4, 0);
+        List<Material> m = source.materials();
+        Copy taking = worlds.copy(source);
+        Copy declining = worlds.copy(source);
+        UUID a0 = worlds.editText(source.author(), source.deck(), m.get(0).member(), "author zero");
+        Material added = worlds.study.addMaterial(source.author(), source.deck(), "новое слово", "перевод");
+        Authored created = worlds.exercise(added, "Новый вопрос", null, "Новая цель");
+        worlds.publish(source.author(), source.deck(), "LINK");
+
+        // the plan: the new material, the new exercise and the one fix; no row for the objective, and the summary does not count it
+        UpdatePlan plan = apply.plan(taking);
+        assertThat(ApplyWorlds.classes(plan)).isEqualTo(expected(material(added), "NEW", exercise(created), "NEW", material(m.get(0)), "SAFE"));
+        assertThat(plan.summary()).isEqualTo(new UpdatePlan.Summary(1, 1, 1, 0, 0, 0));
+        assertThat(plan.units().stream().filter(unit -> unit.unitId().equals(exercise(created))).findFirst().orElseThrow().dependsOn()).containsExactly(material(added));
+        JsonNode route = apply.planRoute(taking);
+        assertThat(ApplyWorlds.classes(route)).isEqualTo(ApplyWorlds.classes(plan));
+        assertThat(route.path("summary").path("fixes").intValue()).isEqualTo(1);
+        assertThat(route.toString()).as("nothing of the objective on the wire").doesNotContain(created.objectiveId().toString());
+        // the pages and the version do not depend on the hidden unit: a page of one unit at a time lists the same three, in the same order
+        List<String> paged = new ArrayList<>();
+        String cursor = null;
+        do {
+            JsonNode page = json(worlds.get("/decks/" + taking.deck() + "/update-plan?limit=1" + (cursor == null ? "" : "&cursor=" + cursor), taking.owner()));
+            page.path("units").forEach(unit -> paged.add(unit.path("unitId").stringValue(null)));
+            cursor = page.path("nextCursor").isNull() ? null : page.path("nextCursor").stringValue(null);
+        } while (cursor != null);
+        assertThat(paged).containsExactlyElementsOf(ApplyWorlds.classes(plan).keySet());
+        // an objective is not a unit one can name
+        HttpResponse<String> named = apply.apply(taking, false, Pick.of(UnitKind.OBJECTIVE, created.objectiveId(), "ACCEPT"));
+        problem(named, 400, "INVALID_REQUEST");
+        assertThat(json(named).path("reason").stringValue(null)).isEqualTo("unknown_unit");
+
+        // "accept all safe" takes the three listed units and the objective along: its head is the revision the exercise pins
+        JsonNode answer = ok(apply.apply(taking, true));
+        assertThat(answer.path("applied").intValue()).isEqualTo(3);
+        assertThat(answer.path("pending").intValue()).isZero();
+        assertThat(answer.path("alsoAccepted").intValue()).as("the material the exercise needs; the objective is not counted").isEqualTo(0);
+        assertThat(worlds.itemHead(taking.deck(), m.get(0).member())).isEqualTo(a0);
+        assertThat(apply.exerciseHead(taking.deck(), created.exerciseId())).isEqualTo(created.revisionId());
+        assertThat(apply.objectiveHead(taking.deck(), created.objectiveId())).isEqualTo(created.objectiveRevisionId());
+        assertThat(apply.decisions(taking.deck())).isEmpty();
+        assertThat(apply.plan(taking).state()).isEqualTo(UpdatePlan.State.UP_TO_DATE);
+
+        // the new exercise declined: its objective is not touched (there is no head), and nothing is remembered about the objective
+        ok(apply.apply(declining, true, Pick.exercise(created.exerciseId(), "DECLINE")));
+        assertThat(apply.exerciseHead(declining.deck(), created.exerciseId())).isNull();
+        assertThat(apply.objectiveHead(declining.deck(), created.objectiveId())).isNull();
+        assertThat(apply.decisions(declining.deck())).doesNotContainKey("OBJECTIVE:" + created.objectiveId()).containsKey("EXERCISE:" + created.exerciseId());
+        assertThat(apply.plan(declining).state()).isEqualTo(UpdatePlan.State.UP_TO_DATE);
     }
 
     // ---- a partial apply ----

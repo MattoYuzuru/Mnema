@@ -47,6 +47,7 @@ final class ApplySelection {
     private final Map<String, PlanUnit> units = new LinkedHashMap<>();
     private final Map<String, Fate> fates = new HashMap<>();
     private final Set<String> also = new LinkedHashSet<>();
+    private final Set<String> implicit = new HashSet<>();
 
     private ApplySelection() { }
 
@@ -57,7 +58,8 @@ final class ApplySelection {
      */
     static ApplySelection of(UpdatePlan plan, ApplyCommand command, Map<UUID, Set<UUID>> bound) {
         ApplySelection selection = new ApplySelection();
-        plan.units().forEach(unit -> selection.units.put(unit.unitId(), unit));
+        plan.allUnits().forEach(unit -> selection.units.put(unit.unitId(), unit));
+        plan.implicit().forEach(unit -> selection.implicit.add(unit.unitId()));
         Map<String, List<String>> dependents = new HashMap<>();
         for (PlanUnit unit : plan.units()) {
             for (String dependency : unit.dependsOn()) dependents.computeIfAbsent(dependency, ignored -> new ArrayList<>()).add(unit.unitId());
@@ -66,7 +68,8 @@ final class ApplySelection {
         Set<String> explicitKeep = new LinkedHashSet<>();
         for (ApplyCommand.Pick pick : command.choices()) {
             PlanUnit unit = selection.units.get(pick.unitId());
-            if (unit == null) throw invalid("unknown_unit", pick.unitId());
+            // an implicit unit is nothing the owner can name: it exists only with the exercises that need it
+            if (unit == null || selection.implicit.contains(pick.unitId())) throw invalid("unknown_unit", pick.unitId());
             if (!allowed(unit.unitClass(), pick.choice())) throw invalid("choice_not_allowed", pick.unitId());
             if (pick.choice().takesAuthor()) {
                 if (unit.reason() == Reason.MATERIAL_DELETED) throw invalid("exercise_needs_material", pick.unitId());
@@ -93,7 +96,9 @@ final class ApplySelection {
                 PlanUnit unit = selection.units.get(id);
                 boolean named = explicitAccept.contains(id);
                 // the units this one needs to be taken with it
-                for (String dependency : unit.dependsOn()) {
+                List<String> needs = new ArrayList<>(unit.dependsOn());
+                needs.addAll(unit.implied());
+                for (String dependency : needs) {
                     if (!selection.units.containsKey(dependency)) continue;
                     if (refused.contains(dependency)) {
                         if (named) throw invalid("dependency_declined", id, dependency);
@@ -134,7 +139,7 @@ final class ApplySelection {
             }
         } while (changed);
         for (String id : accepted) {
-            if (!explicitAccept.contains(id) && !soft.contains(id)) selection.also.add(id);
+            if (!explicitAccept.contains(id) && !soft.contains(id) && !selection.implicit.contains(id)) selection.also.add(id);
         }
         for (String id : selection.units.keySet()) {
             selection.fates.put(id, accepted.contains(id) ? Fate.ACCEPT : explicitKeep.contains(id) ? Fate.DECLINE : Fate.PENDING);
@@ -151,12 +156,16 @@ final class ApplySelection {
         };
     }
 
-    /** The units of the plan in its order. */
+    /** The units of the plan in its order, the implicit ones (taken with the exercises that need them) after the listed ones. */
     Iterable<PlanUnit> units() { return units.values(); }
 
     Fate fate(PlanUnit unit) { return fates.get(unit.unitId()); }
 
-    int count(Fate fate) { return (int) fates.values().stream().filter(found -> found == fate).count(); }
+    /** The units with this fate that the owner can see: an implicit unit is counted with the exercise that brings it, not by itself. */
+    int count(Fate fate) { return (int) fates.entrySet().stream().filter(entry -> entry.getValue() == fate && !implicit.contains(entry.getKey())).count(); }
+
+    /** Whether the unit is implicit: not listed, taken with the exercises that need it and never alone. */
+    boolean implicit(PlanUnit unit) { return implicit.contains(unit.unitId()); }
 
     /** The units taken only because another taken unit depends on them. */
     int also() { return also.size(); }
