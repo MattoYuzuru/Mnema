@@ -1,0 +1,21 @@
+:host { display: block; }
+
+.update-heading { margin-block-end: 1.5rem; }
+.update-heading h1 { max-inline-size: 22ch; font-size: clamp(2rem, 6vw, 3.5rem); }
+
+.selected-action { display: grid; justify-items: start; gap: .5rem; margin-block: 1rem 1.5rem; }
+.selected-action .hint { max-inline-size: 62ch; margin: 0; }
+.selected-action .button[aria-disabled='true'] { opacity: .6; cursor: default; }
+@media (max-width: 30rem) { .selected-action .button { inline-size: 100%; } }
+
+.changes-heading { margin-block: 1.5rem .5rem; }
+.panel { min-inline-size: 0; padding-block-start: .5rem; }
+.rows { margin: 0; padding: 0; list-style: none; }
+.rows > li { min-inline-size: 0; }
+.tab-note { display: grid; gap: .25rem; margin-block: .75rem; }
+.tab-note .hint { max-inline-size: 62ch; margin: 0; }
+.applied-line { max-inline-size: 62ch; }
+.panel:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
+.empty { margin-block: 1rem; }
+.status { margin-block: 1.5rem; }
+:is(h1, h2):focus-visible { outline: none; }

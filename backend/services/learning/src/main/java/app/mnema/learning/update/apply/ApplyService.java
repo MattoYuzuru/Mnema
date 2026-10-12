@@ -27,6 +27,7 @@ import app.mnema.learning.update.apply.ApplySelection.Fate;
 import app.mnema.learning.update.plan.Decision;
 import app.mnema.learning.update.plan.ApplyProgress;
 import app.mnema.learning.update.plan.PlanUnit;
+import app.mnema.learning.update.plan.UnitClass;
 import app.mnema.learning.update.plan.UnitKind;
 import app.mnema.learning.update.plan.UpdatePlan;
 import app.mnema.learning.update.plan.UpdatePlanService;
@@ -142,27 +143,10 @@ public class ApplyService {
             throw new UpdatePlanStaleException();
         }
 
-        Revision head = repository.revision(deckId, plan.forkHeadRevisionId()).orElseThrow(() -> new IllegalStateException("The head revision of the plan is missing"));
-        Revision published = repository.revision(copy.upstreamDeckId(), plan.upstreamRevisionId())
-                .orElseThrow(() -> new IllegalStateException("The published revision of the plan is missing"));
-        // the exercises of the copy that are about a material the author removed: removing it needs them removed (the engine's rule, modelled by the selection)
-        Set<UUID> removedMaterials = new HashSet<>();
-        for (PlanUnit unit : plan.units()) {
-            if (unit.kind() == UnitKind.MATERIAL && unit.authorRevisionId() == null) removedMaterials.add(unit.key());
-        }
-        ApplySelection selection = ApplySelection.of(plan, command, removedMaterials.isEmpty() ? Map.of() : repository.boundHeadExercises(deckId, copy.scopeId(), removedMaterials));
-        Set<String> recorded = new HashSet<>();
-        for (Decision decision : plans.decisions(deckId)) {
-            if (decision.verdict() != Decision.Verdict.PENDING) recorded.add(decision.kind().unitId(decision.key()));
-        }
-        Shape members = new Shape(diffs.members(copy.scopeId(), head.membersRootId(), head.memberCount(), published.membersRootId(), published.memberCount()), head.memberCount());
-        Shape exercises = new Shape(diffs.exercises(copy.scopeId(), head.exercisesRootId(), head.exerciseCount(), published.exercisesRootId(), published.exerciseCount()),
-                head.exerciseCount());
-        Built ops = ApplyOps.build(selection, members, exercises, new Text(published.title(), published.description()), () -> lists(copy.scopeId(), head, published));
-        ApplyWrites writes = new ApplyWrites(command.commandId(), plan.planVersion(), plan.baseRevisionId(), plan.upstreamRevisionId(), request, selection.count(Fate.ACCEPT),
-                selection.count(Fate.DECLINE), selection.count(Fate.PENDING), selection.also(), ApplyRows.build(selection, recorded));
-        CombinedUnits units = new CombinedUnits(command.commandId(), deckId, owner, plan.forkHeadRevisionId(), ops.metadata(), ops.items(), ops.exercises(), ops.objectives(),
-                writes.toFinalWrites());
+        ApplySelection selection = select(deckId, copy, plan, command);
+        Prepared prepared = prepare(owner, deckId, copy, plan, command, selection, request, ApplyWrites.MANUAL);
+        CombinedUnits units = prepared.units();
+        ApplyWrites writes = prepared.writes();
 
         CombinedPublication.Outcome outcome;
         try {
@@ -198,6 +182,116 @@ public class ApplyService {
                     units.unitCount(), writes.applied(), writes.declined(), writes.pending(), writes.alsoAccepted(), (System.nanoTime() - started) / 1_000);
         }
         return new Applied((ObjectNode) answer.deepCopy(), replayed);
+    }
+
+
+    // ---- the automatic mode (Updates/6 part B, #445) ----
+
+    /** What the automatic apply did for one copy. Only {@code APPLIED} and {@code QUEUED} wrote anything (or will). */
+    public enum AutoOutcome {
+        /** The safe units were applied in this transaction (or only the base moved: the plan had nothing left to offer). */
+        APPLIED,
+        /** More than {@code learning.updates.sync-max-units} units: the job of the combined publication applies them, the final writer logs them as AUTO. */
+        QUEUED,
+        /** The copy follows the published revision already. */
+        UP_TO_DATE,
+        /** The plan has units but none of them is safe to take: nothing was written, the badge stays for the owner. */
+        NOTHING_SAFE,
+        /** Not a live, attached, ready copy of a readable source (deleted, detached, preparing, rotated away or hidden source): nothing to do. */
+        CLOSED,
+        /** The owner has an apply of this copy running as a job: nothing was written, the next publication will look again. */
+        BUSY,
+        /** The owner switched the setting off after the job was queued: nothing was written. */
+        OFF
+    }
+
+    /**
+     * @param accepted units taken (with the units taken only as their dependencies)
+     * @param pending units the apply leaves to the owner (conflicts, removals by the author, questions asked again, and safe units that wait for them)
+     * @param planUnits units of the whole plan
+     * @param unresolved units of the plan that are a CONFLICT, DELETED or ASK_AGAIN: what the owner still has to decide
+     */
+    public record AutoResult(AutoOutcome outcome, int accepted, int pending, int planUnits, int unresolved) {
+        static AutoResult of(AutoOutcome outcome) { return new AutoResult(outcome, 0, 0, 0, 0); }
+    }
+
+    /**
+     * Applies the SAFE units of the copy's plan (what «accept all safe» takes: NEW and SAFE, with their dependencies; never a conflict, a removal by the author or a question asked
+     * again), moves the base and records the rest as pending, exactly as the owner's own command would, as the owner. It runs inside the transaction of the background job
+     * ({@code deck.update.auto}: the executor's slice), so it is atomic with the end of the job, and it is never called on a read path.
+     *
+     * <p>The command is deterministic: its id is derived from the copy, the published revision and the plan version, so a slice that is run again after a crash builds the very same
+     * command (the engine and the final writer apply it once). Nothing here is thrown for a copy that is merely not eligible; those answer an {@link AutoOutcome}. What is thrown
+     * ({@link UpdatePlanStaleException}, {@link VersionConflictException}, {@link InvalidRequestException}) rolls the job's slice back: the executor retries the first two and the
+     * handler ends the job on the last.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public AutoResult applyAuto(UUID owner, UUID deckId) {
+        UuidPolicy.requireEntityId(owner, "owner");
+        UuidPolicy.requireEntityId(deckId, "deckId");
+        Optional<Copy> found = repository.copy(owner, deckId);
+        if (found.isEmpty()) return AutoResult.of(AutoOutcome.CLOSED);
+        Copy copy = found.get();
+        // the owner decides: a copy whose setting is off by now is left alone, whatever was queued while it was on
+        if (!copy.autoUpdate()) return AutoResult.of(AutoOutcome.OFF);
+        Optional<ApplyProgress.Progress> running = progress.of(owner, deckId);
+        if (running.isPresent() && running.get().running()) return AutoResult.of(AutoOutcome.BUSY);
+
+        UpdatePlan plan = plans.plan(owner, deckId);
+        if (!plan.hasPins()) return AutoResult.of(AutoOutcome.CLOSED);
+        ApplyCommand command = new ApplyCommand(ApplyReceipt.autoCommand(deckId, plan.upstreamRevisionId(), plan.planVersion()), plan.planVersion(), true, List.of());
+        ApplySelection selection = select(deckId, copy, plan, command);
+        int accepted = selection.count(Fate.ACCEPT);
+        int pending = selection.count(Fate.PENDING);
+        int unresolved = (int) plan.units().stream().filter(unit -> unit.unitClass() == UnitClass.CONFLICT || unit.unitClass() == UnitClass.DELETED
+                || unit.unitClass() == UnitClass.ASK_AGAIN).count();
+        if (plan.state() == UpdatePlan.State.UP_TO_DATE && plan.baseRevisionId().equals(plan.upstreamRevisionId())) return AutoResult.of(AutoOutcome.UP_TO_DATE);
+        // a plan with units but nothing safe is left exactly as it is: no base moved, no row written, the badge keeps asking the owner
+        if (plan.state() == UpdatePlan.State.READY && accepted == 0) return new AutoResult(AutoOutcome.NOTHING_SAFE, 0, pending, plan.units().size(), unresolved);
+
+        Prepared prepared = prepare(owner, deckId, copy, plan, command, selection, command.envelope(deckId), ApplyWrites.AUTO);
+        CombinedPublication.Outcome outcome = publication.submit(prepared.units());
+        LOG.info("deck_update_auto deck_id={} command_id={} units={} applied={} pending={} path={}", deckId, command.commandId(), prepared.units().unitCount(), accepted, pending,
+                outcome instanceof CombinedPublication.Queued ? "job" : "sync");
+        return new AutoResult(outcome instanceof CombinedPublication.Queued ? AutoOutcome.QUEUED : AutoOutcome.APPLIED, accepted, pending, plan.units().size(), unresolved);
+    }
+
+    /** What the command does with each unit of the plan: the exercises that are about a material the author removed are looked up first (one statement per 1 000 materials). */
+    private ApplySelection select(UUID deckId, Copy copy, UpdatePlan plan, ApplyCommand command) {
+        // the exercises of the copy that are about a material the author removed: removing it needs them removed (the engine's rule, modelled by the selection)
+        Set<UUID> removedMaterials = new HashSet<>();
+        for (PlanUnit unit : plan.units()) {
+            if (unit.kind() == UnitKind.MATERIAL && unit.authorRevisionId() == null) removedMaterials.add(unit.key());
+        }
+        return ApplySelection.of(plan, command, removedMaterials.isEmpty() ? Map.of() : repository.boundHeadExercises(deckId, copy.scopeId(), removedMaterials));
+    }
+
+    private record Prepared(CombinedUnits units, ApplyWrites writes) { }
+
+    /** The operations, the pins and the decision rows of a selection: the combined publication command and what its final writer writes. */
+    private Prepared prepare(UUID owner, UUID deckId, Copy copy, UpdatePlan plan, ApplyCommand command, ApplySelection selection, ObjectNode request, String mode) {
+        Revision head = repository.revision(deckId, plan.forkHeadRevisionId()).orElseThrow(() -> new IllegalStateException("The head revision of the plan is missing"));
+        Revision published = repository.revision(copy.upstreamDeckId(), plan.upstreamRevisionId())
+                .orElseThrow(() -> new IllegalStateException("The published revision of the plan is missing"));
+        Set<String> recorded = new HashSet<>();
+        for (Decision decision : plans.decisions(deckId)) {
+            if (decision.verdict() != Decision.Verdict.PENDING) recorded.add(decision.kind().unitId(decision.key()));
+        }
+        Shape members = new Shape(diffs.members(copy.scopeId(), head.membersRootId(), head.memberCount(), published.membersRootId(), published.memberCount()), head.memberCount());
+        Shape exercises = new Shape(diffs.exercises(copy.scopeId(), head.exercisesRootId(), head.exerciseCount(), published.exercisesRootId(), published.exerciseCount()),
+                head.exerciseCount());
+        Built ops = ApplyOps.build(selection, members, exercises, new Text(published.title(), published.description()), () -> lists(copy.scopeId(), head, published));
+        List<ApplyWrites.ObjectiveAdoption> objectives = new ArrayList<>();
+        for (PlanUnit unit : selection.units()) {
+            if (unit.kind() == UnitKind.OBJECTIVE && selection.fate(unit) == Fate.ACCEPT) {
+                objectives.add(new ApplyWrites.ObjectiveAdoption(unit.key(), unit.mineRevisionId(), unit.authorRevisionId()));
+            }
+        }
+        ApplyWrites writes = new ApplyWrites(command.commandId(), plan.planVersion(), plan.baseRevisionId(), plan.upstreamRevisionId(), request, selection.count(Fate.ACCEPT),
+                selection.count(Fate.DECLINE), selection.count(Fate.PENDING), selection.also(), ApplyRows.build(selection, recorded), mode, objectives);
+        CombinedUnits units = new CombinedUnits(command.commandId(), deckId, owner, plan.forkHeadRevisionId(), ops.metadata(), ops.items(), ops.exercises(), ops.objectives(),
+                writes.toFinalWrites());
+        return new Prepared(units, writes);
     }
 
     private Applied replayed(JsonNode answer) {

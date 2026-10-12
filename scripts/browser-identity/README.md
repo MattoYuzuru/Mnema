@@ -556,6 +556,8 @@ likewise); both come from the credential allowlist in `frontend/src/app/auth.int
 `…-{copy-ready,study,study-feedback,complaint,invite-only,withdrawn}-member.png`, `…-{invite-guest,invite-landed}-invitee.png` (the invite-link and
 invitee captures show a disposable token of the disposable database).
 
+The copy hub of a copy whose source was closed shows `app-unavailable-note` (the source line `app-copy-origin` is replaced, Updates/6), which the `invite_only` stage accepts. The update review has its own scenario below (`--updates`).
+
 Not verified here: Chrome only; no real touch input, screen reader, Safari/Firefox or physical phone (the mobile pass is a 390 px emulated viewport);
 public media (the decks have no media, so the media route is switched on but not exercised) and the link-preview HTML head (the harness serves the built
 SPA without nginx SSI); the other outcomes of invitation links (a one-time link used by a second *new* account, expired, revoked or stale links, the 30-day
@@ -564,6 +566,53 @@ complaint dialog's other outcomes (404 «Колода больше недост�
 profile, the owner console and its decisions, hiding and takedown (Share/15 is covered by its own tests); that the `Referer` of requests after the redemption
 is clean (the address is rewritten before the first sub-request, which is not observed per request); the catalog, Community page, profile `/u/{username}` and
 update review (other epics); zero-load and 100k-MAU (scenario H) behaviour; production.
+
+## Update of a copy (`--updates`, #446)
+
+`python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node "$NODE24" --updates` (no `--authoring` needed; default deadline 600 s,
+about 90 s of run time; not combinable with `--generation`, `--assessment`, `--only-promo` or `--admin`; `--community --updates` runs both scenarios on the same
+two accounts, deadline 900 s). It is a sibling of `--community` rather than a stage of it because it needs a deck of its own (four materials, so a
+deletion and a conflict can coexist with a fix) and must not share the access changes of the community passes (the invitation stage closes the source of
+its deck); the **composition is the same**: one ordinary Learning with the three community kill switches on, the base flow's two long waits skipped, no
+other instance. `updates.mjs` reuses `makeActor` of `community.mjs` (real CDP keyboard, the page's own API reads, the per-tab wire log). The first account is
+the **author** (first tab), the second the **learner** (second tab); both passes (1280 px desktop, 390 px mobile) use the same pair with a deck of their own.
+Everything the user does goes through the real UI; the exceptions are the exercises (created through the authenticated API like the Study fixture of the base
+flow; the exercise editor belongs to `--mechanics`) and the API reads that compare a page with the server (plan, progress, deck, publication).
+
+| Stage | Assertions |
+|---|---|
+| `publish` | author: deck, four materials in the real editor, two `FREE_RESPONSE` exercises (API), the access picker by ArrowRight x3, the checklist, `PUBLIC` |
+| `copy` | learner: «Добавить к себе» by Enter, ready copy with four materials, `fork.updateAvailable` false, no badge or offer, the quiet «Проверить обновления» link, plan `UP_TO_DATE` |
+| `study` | one real attempt (answer field focused, feedback focused, correct); exactly one material has `lastAssessedAt` in `GET /api/decks/{id}/study-progress` |
+| `learner_edit` | the learner appends text to material #2 of the copy in the real editor (opened from Browse's «Редактировать», which carries `?ordinal=`) |
+| `author_update` | the author appends a fix to #1 and a different text to #2, adds material #5 and its exercise (API), deletes #4 with the real hold (Space to arm, Space held until the row goes), «Опубликовать обновление» with «Что нового»; the publication state is current and keeps the note |
+| `offer` | «Мои колоды»: the card of the copy carries «Есть обновление»; the hub offer (heading, «Посмотреть обновление», no quiet link beside it) is reached by Tab and opened with Enter; the review screen opens |
+| `review` | the server's plan holds exactly 1 new material, 1 new exercise, 1 safe material fix, 1 conflict, 1 deletion; the summary line, the four tab counts and the note equal the server's numbers; the tabs are a `tablist` (names carry counts, roving tabindex, panel linked); the tabs move with ArrowRight, Home and End and show the class of the tab; the fix is opened with Tab + Enter: at 1280 px the two columns stand side by side without the switch, at 390 px one side shows with a two-radio switch that moves with ArrowRight/ArrowLeft; the conflict starts on «Оставить моё» and the deletion on «Оставить у себя» (visible legend «Удалить «…» и у меня?»); rows are named for assistive technology (heading, legend, «Сравнить: «…»», one live region); no horizontal overflow |
+| `accept_safe` | «Принять всё безопасное» by Tab + Enter: one apply (200, bearer), the toast and the applied line say the same, the focus is on the summary heading, the plan reloads to the conflict and the deletion (the screen moves to «Конфликты»), the primary button is inactive and says so, the badge stays on the hub and on the card |
+| `copy_after_safe` | the copy: #1 shows the author's fix, #2 keeps the learner's edit and not the author's, #5 exists with its exercise, #4 is still there; Study (an open session of the earlier visit is finished, then a new one) issues the new exercise and one attempt is correct; the earlier material's `lastAssessedAt` is intact |
+| `apply_selected` | ArrowRight on the conflict's radio picks «Взять вариант автора», End then ArrowRight on the deletion picks «Удалить и у меня» (the note counts the picks), «Применить выбранное»: one apply, the toast, the focus on the heading «У вас всё как у автора», plan `UP_TO_DATE`, #2 is the author's, #4 is gone, no badge on the hub or the card |
+| `auto_update` | «Принимать безопасное автоматически» by Tab + Space: the server stores it (`fork.autoUpdate`), it survives a reload, and turns off the same way |
+| `detach` | the author republishes a second small update, the learner sees the badge again, «⋯» → «Отвязать от автора» (ArrowDown, Enter, confirmation heading focused, Enter): the toast, no offer, no badge, no link to `/update`, no automatic setting, the focus on the hub heading, `fork.detached`, plan `DETACHED`, `/update` says so, the card has no badge |
+
+A stage has two kinds of verdict. A **hard** failure (the flow cannot go on) is recorded as `failed` with the reason, the stages that depend on it are `skipped`;
+a **soft** finding (a statement of the contract or the handoff that does not hold, but the flow goes on) makes the stage `failed` with `findings` and the
+following stages still run. Both write `failure-updates_<pass>_<stage>.txt` (and `failure-updates-<pass>-<stage>-<author|learner>.png` for a hard failure) and make the run
+red. The soft findings today: `summary-counts` (see below), `desktop-columns-side-by-side`, `badge-stays-with-pending`, `badge-stays-in-list`, `quiet-link-beside-offer`,
+`auto-update-live-message`.
+
+Known finding (open): `summary-counts`. A new exercise with a new goal brings the goal as a separate `SAFE` unit of kind `OBJECTIVE`
+(`PlanComputation` classifies a goal the copy has no head of as `SAFE`; `UpdatePlan.Summary.of` counts every `SAFE` unit as `fixes`), so the review says
+«+1 материал, +1 упражнение, 2 исправления, …» for an author who corrected one material, the tab «Исправления» lists a «Цель» row stamped «Исправление»,
+and «Принять всё безопасное» takes four units, not three. The scenario asserts the author's own numbers (one fix), so it stays red until the product decides
+whether a goal that accompanies a new exercise belongs in «исправления».
+
+Screenshots: `updates-<desktop|mobile>-{list-badge,hub-offer,review,review-full,compare-expanded,compare-expanded-full,conflict,picks,after-safe,up-to-date,auto-on,detach-confirm,detached}-learner.png`
+and, at 390 px, `updates-mobile-compare-author-learner.png` (the other side after the switch moved).
+
+Not verified here: Chrome only; no real touch input, screen reader or Safari/Firefox (the mobile pass is a 390 px emulated viewport); a plan that does not fit one page
+(auto-load of the rows, `APPLYING` as a background job and its polling, 409 `UPDATE_PLAN_STALE` mid-review); the automatic acceptance itself (only the setting is
+checked); exercises other than `FREE_RESPONSE`, media in a compared material, moderation takedowns of a side, a source that closed under the review, the
+author's own view of who updated; the `Referer`/privacy checks of `--community`.
 
 ## Infinite scroll (`--authoring --media --mechanics`, #397)
 

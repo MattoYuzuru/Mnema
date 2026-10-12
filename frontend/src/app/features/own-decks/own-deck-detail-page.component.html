@@ -18,7 +18,9 @@
       <div>
         <p class="eyebrow">Личная колода</p>
         <h1 id="deck-detail-title" tabindex="-1">{{ deck.metadata.title }}</h1>
-        @if (fork(); as origin) { <app-copy-origin [fork]="origin" /> }
+        @if (fork(); as origin) {
+          @if (sourceClosed()) { <app-unavailable-note class="hub-source-note" subject="source" audience="owner" /> } @else { <app-copy-origin [fork]="origin" /> }
+        }
         @let level = publishedLevel() ?? deck.visibility;
         @if (level !== 'private') { <p class="hub-level"><app-access-level [level]="level" /></p> }
         @if (deck.metadata.description.trim()) {
@@ -83,13 +85,34 @@
       @if (retryError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
       @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
     } @else {
+      @if (updateOffer() && !lastUpdate()) {
+        <section class="update-offer" aria-labelledby="update-offer-title">
+          <h2 id="update-offer-title" class="subsection-heading"><app-update-badge /></h2>
+          <p>{{ updateText.offerNote }}</p>
+          <div class="actions"><a class="button secondary" [routerLink]="['/decks', deck.deckId, 'update']">{{ updateText.viewUpdate }}</a></div>
+        </section>
+      }
+
       <nav class="actions hub-actions" aria-label="Действия с колодой">
         <a class="button primary" [routerLink]="['/decks', deck.deckId, 'study']">Учить</a>
         <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Добавить материал</a>
         <a class="button secondary capture-link" [routerLink]="['/decks', deck.deckId, 'capture']" [attr.aria-label]="captureCount() ? 'На потом, заметок: ' + captureCount() : 'На потом'">На потом@if (captureCount(); as count) { <span class="capture-badge" aria-hidden="true">{{ count > 999 ? '999+' : count }}</span> }</a>
+        @if (updateCheck()) { <a class="button quiet" [routerLink]="['/decks', deck.deckId, 'update']">{{ updateText.checkUpdates }}</a> }
         <button class="button secondary" type="button" #editButton [attr.aria-controls]="editing() ? 'deck-editor' : null" [attr.aria-expanded]="editing()" (click)="toggleEditor()">Изменить</button>
         <app-action-menu [label]="'Действия с колодой «' + deck.metadata.title + '»'" [items]="menuItems()" (chosen)="onMenu($event)" />
       </nav>
+
+      @if (lastUpdate(); as news) {
+        <app-update-news [applied]="news.counts.applied" [pending]="news.counts.pending" [appliedAt]="news.appliedAt" [when]="lastUpdateWhen()" [offer]="updateOffer()">
+          <a class="button quiet" [routerLink]="['/decks', deck.deckId, 'update', 'history']">{{ updateText.newsLook }}</a>
+          <!-- The block is the one place of the hub that speaks of this update: it carries the link to the review screen the offer would. -->
+          @if (updateOffer()) {
+            <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'update']">{{ updateText.viewUpdate }}</a>
+          } @else if (news.counts.pending > 0) {
+            <a class="button quiet" [routerLink]="['/decks', deck.deckId, 'update']">{{ updateText.newsDecide }}</a>
+          }
+        </app-update-news>
+      }
 
       @if (confirmingDetach()) {
         <section class="notice warning detach-confirm" aria-labelledby="detach-title" (keydown.escape)="cancelDetach()">
@@ -163,6 +186,20 @@
         @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
       </form>
       </section>
+      }
+
+      @if (autoUpdateShown()) {
+        <section class="auto-update" aria-labelledby="auto-update-title">
+          <h2 id="auto-update-title" class="section-heading">{{ updateText.autoTitle }}</h2>
+          <div class="auto-update-row">
+            <label class="check-row">
+              <input type="checkbox" [checked]="autoUpdate()" [attr.aria-disabled]="autoSaving() ? 'true' : null" [attr.aria-busy]="autoSaving() ? 'true' : null" (click)="holdAutoUpdate($event)" (change)="toggleAutoUpdate(deck, $event)" />
+              <span>{{ updateText.autoLabel }}</span>
+            </label>
+            <app-toggletip [topic]="updateText.autoTopic">{{ updateText.autoHelp }}</app-toggletip>
+          </div>
+          @if (autoError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
+        </section>
       }
 
       <app-publication-block anchor="access" [deckId]="deck.deckId" [deckTitle]="deck.metadata.title" [reloadToken]="publicationToken()" (levelChange)="publishedLevel.set($event)" (editDescription)="openEditor('description')" />

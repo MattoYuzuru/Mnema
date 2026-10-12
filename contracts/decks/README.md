@@ -556,6 +556,7 @@ duplicated and edits never cross in either direction.
 | Copy | `POST /api/decks/forks`, `{commandId, sourceCode}` | 201 `{commandId, deckId, preparing: true, existing: false}` + `Location`; 200 with `existing: true` when a live copy of this source already exists |
 | Retry a failed copy | `POST /api/decks/{deckId}/fork:retry` (no body) | 200 `{deckId, preparing, failed}` |
 | Detach from the author | `POST /api/decks/{deckId}/fork:detach` (no body) | 200 `{deckId, detached: true}` |
+| Auto-update setting | `PUT /api/decks/{deckId}/fork:auto-update`, `{autoUpdate: boolean}` | 200 `{deckId, autoUpdate}` (idempotent) |
 | State of the copy | the existing `GET /api/decks/{deckId}` and `GET /api/decks` | `fork` member (below) |
 | «Открыть мою копию» | `GET /api/public/decks/{code}` | `myCopy` member for a signed-in viewer (below) |
 
@@ -572,15 +573,20 @@ duplicated and edits never cross in either direction.
   (its own durable pins), so the source can later change, be deleted or go private without touching the copy. Anything the author did after
   publishing, including a new image only an unpublished revision uses, is not in the copy and is 404 on every media route.
 - **`fork` in the owner's deck JSON.** Detail and every list item carry `fork`: `null` for an ordinary deck, otherwise
-  `{upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached}`.
+  `{upstreamCode, upstreamTitle, sourceAvailable, preparing, failed, detached, updateAvailable, autoUpdate}`.
   - `preparing`: the heads are not complete yet (true from the answer of `POST` until the job ends successfully). `failed` (implies `preparing`):
     the job ended `FAILED`/`CANCELLED` or its record is gone; show «Повторить» (`fork:retry`), the copy can also be deleted. Poll `GET` at a bounded
     backoff while `preparing && !failed`.
   - `sourceAvailable`, `upstreamCode`, `upstreamTitle`: computed at read for the copier through `DeckAccess` with the code he copied by, so they
-    go dark when the source is deleted, made private, or its link is rotated away (lowering the level rotates the code, and a copier gets no new
-    code). Nothing is written on read. Unavailable means `sourceAvailable` is `false` and the other two are `null`: show the approved text «Автор закрыл исходную колоду. Ваша
+    go dark when the source is deleted, made private, hidden by moderation, or its link is rotated away (lowering the level rotates the code, and a copier gets no new
+    code; he gets the copy back by opening the new link and pressing «Добавить к себе» again, see *Re-linking* below). Nothing is written on read. Unavailable means `sourceAvailable` is `false` and the other two are `null`: show the approved text «Автор закрыл исходную колоду. Ваша
     копия остаётся с вами, но обновлений больше не будет.»
   - `detached`: the owner pressed «Отвязать от автора» (`fork:detach`); idempotent, never changes the content.
+  - `updateAvailable` (the badge «Есть обновление», Updates/6): computed at read, nothing is written. True exactly when the copy is ready, attached, `sourceAvailable` is true, and the base
+    revision the copy stands on is not the source's published revision **or** a unit the learner left for later (a `PENDING` row of the decisions table) is still on offer. After an apply
+    that accepted or declined everything it is false until the author publishes again. It is never true for a preparing, failed, detached or dark copy. Open the plan
+    ([`updates.json`](updates.json)) to see what the update contains.
+  - `autoUpdate`: the stored setting, `false` by default, reported as stored in every state.
 - **While preparing.** Every mutation of the copy and Study answer **409 `DECK_PREPARING`** (every non-GET method under `/api/decks/{deckId}/…` except `fork:retry`,
   `fork:detach` and `DELETE /api/decks/{deckId}`; `POST /api/capture-notes` and `POST /api/editing-drafts` that name the copy). The hub reads normally:
   `memberCount`/`exerciseCount` are the counts being prepared and the material list is empty (its `total` names the count being prepared). Deleting a preparing or failed
@@ -591,10 +597,20 @@ duplicated and edits never cross in either direction.
   `RESOURCE_LIMIT_EXCEEDED` with the member `limit`. At most `learning.community.forks.max-per-window` (20) copies may be **created** per account in a sliding `learning.community.forks.window` (one hour), deleted copies included: one more is 429
   `RATE_LIMITED` with `Retry-After` (and the member `retryAfter`), the time until the oldest creation leaves the window; answering an existing copy never counts. Across all accounts at most `learning.community.forks.max-unfinished-total` (200) copies may be unfinished (the queue of the job is shared): one more is **503 `FORKS_BUSY`** with `Retry-After: 30` (and the member `retryAfter`), nothing is written and the same command may be sent again; answering an existing copy never counts. The job runs one copy per account at a time (`learning.jobs` per-account limit) in slices of at most 200 entries.
 
+- **Auto-update setting** (`PUT /api/decks/{deckId}/fork:auto-update`, Updates/6). Owner only, `learning.write`, strict body `{autoUpdate: boolean}` (no `commandId`: a state, not a command;
+  unknown or duplicate members, non-booleans and bodies over 256 bytes are 400). Answers 200 `{deckId, autoUpdate}` with the stored value; the same value again is answered without a write.
+  A deck that is not the caller's live copy is the opaque 404; a copy that is still preparing is 409 `DECK_PREPARING`; a **detached** copy is 409 `CAPABILITY_UNAVAILABLE` with
+  `capability: "forkAutoUpdate"` and `reason: "DETACHED"` (a detached copy never gets updates and keeps the value it had). The kill switch `learning.updates.auto.enabled` (default false)
+  decides whether the stored choice is acted on; the choice itself is always stored.
+- **Re-linking.** `POST /api/decks/forks` with the NEW code of a source the caller already holds a live copy of answers the existing copy as before (200, `existing: true`) and, when the
+  copy stored a different code, stores the one that now opens the source, so the copy is available again and its updates resume. Only a code that `DeckAccess` resolves for the caller to the
+  copy's **own** source does this: the code of another deck, a private, deleted or unknown code, a guest and another account never re-link it, and a detached copy keeps its code.
+  Nothing re-links on a read, and an exact retry of the command writes nothing.
+
 ### Codes
 
 New: `DECK_PREPARING` (409), `FORK_OWN_DECK` (409) and `FORKS_BUSY` (503, member `retryAfter`, header `Retry-After`). Existing codes keep their status/title/detail
-(`RATE_LIMITED` 429, `RESOURCE_NOT_FOUND` 404, `DECK_INVITE_ONLY` 403, `IDEMPOTENCY_CONFLICT` 409, `INVALID_REQUEST` 400, `RESOURCE_LIMIT_EXCEEDED` 422). Problem text never echoes
+(`RATE_LIMITED` 429, `RESOURCE_NOT_FOUND` 404, `DECK_INVITE_ONLY` 403, `IDEMPOTENCY_CONFLICT` 409, `INVALID_REQUEST` 400, `RESOURCE_LIMIT_EXCEEDED` 422, `CAPABILITY_UNAVAILABLE` 409 with `capability` and `reason` members for the detached auto-update setting). Problem text never echoes
 codes, titles or identifiers.
 
 ## The update plan of a copy (Updates/3, #442)
@@ -695,3 +711,32 @@ New: `UPDATE_SOURCE_UNAVAILABLE` (409: the source can no longer be read by the o
 preparing copy), `UPDATE_PLAN_STALE` (409), `IDEMPOTENCY_CONFLICT` (409), `INVALID_REQUEST` (400, with the members `reason`, `unitId` and, for `dependency_declined`, `dependency`),
 `RESOURCE_LIMIT_EXCEEDED` (422, `limit`), `UPDATE_PLAN_BUSY` (503), `RESOURCE_NOT_FOUND` (404: not the caller's live copy), `AUTHENTICATION_REQUIRED` (401), `ACCESS_DENIED` (403: no write scope).
 Nothing was written by any refusal. Problem text never echoes titles, codes or identifiers other than the unit ids the request named.
+
+## «Что нового»: the automatic mode and returning a unit (Updates/6 part B, #445)
+
+After the author publishes, the copies that follow the source **automatically** (`PUT …/fork:auto-update`, Updates/6 part A) get the SAFE changes in the background, and «Что нового» shows
+what came, with a way to take one unit back. Exact examples and executable invariants are in [`updates.json`](updates.json) (`history`, `seen`, `revert`, the two new problems); the optional deck notice
+is in [`forks.json`](forks.json) (`fork.lastUpdate`); the architecture is [community decks §7](../../docs/architecture/community-decks.md#7-обновления-cd-5), the migration is `V65__fork_update_log.sql`.
+
+- **The automatic mode** (no route; `learning.updates.auto.enabled`, default **false**). When the published revision of a source moves, one job per (source, revision) walks the copies that are
+  ready, attached, live and automatic, and hands the ACTIVE ones (made in the last 30 days, or studied by their owner in the last 30 days) to a job per copy, at most `learning.updates.auto.per-minute`
+  (50) copies per minute per instance. That job does what «accept all safe» does for the owner: it takes the `NEW` and `SAFE` units (with their dependencies), moves the base, and leaves
+  conflicts, the author's removals and questions asked again exactly as they are (`PENDING` rows: the badge stays). A copy with nothing safe is not touched at all. The read paths (plan, deck, history)
+  never write.
+- **`GET /api/decks/{id}/update-history?limit=`** (`learning.read`, owner of the copy): `{deckId, entries: [{deckRevisionId, upstreamRevisionId, mode (AUTO|MANUAL), appliedAt, seen, counts:
+  {applied, pending}, units: [{unitId, kind, key, change (ADDED|CHANGED|REMOVED|REORDERED), title, previousRevisionId, revisionId, state (CURRENT|RETURNED|CHANGED_SINCE|null), revertible}],
+  unitsTruncated}]}`, newest first, 1..20 entries (default 5), at most 100 units each. Every apply that made a revision of the copy is an entry, the owner's own included, so the screen can show
+  «последнее обновление» whatever its origin.
+- **`POST …/update-history/{deckRevisionId}:seen`** (`learning.write`): `{deckId, deckRevisionId, seen: true}`; idempotent. `fork.lastUpdate` on the deck is the newest unseen AUTO entry.
+- **`POST …/update-history/{deckRevisionId}/units/{kind}/{key}:revert`** (`learning.write`): body `{commandId, with?: ["KIND:key", …]}`; `200 {commandId, state: "REVERTED", deckRevisionId, units}`
+  (`Idempotency-Replayed: true` for the stored answer). Only a `MATERIAL` or an `EXERCISE` in the state `CURRENT` can be returned: a changed unit gets the revision the apply replaced as its head again, an
+  added unit is removed, a removed unit comes back right behind the member it followed. One new revision of the copy; a decision (`KEEP_MINE` / `DECLINE_NEW`) keeps the next update from putting the unit back until the author changes it again.
+  **A material and the exercises taken with it are returned together**: the refusal `400 unit_needed` lists the units of the group the command left out; send them in `with`. `409 UPDATE_REVERT_STALE`:
+  the unit is not what the apply made it any more (the owner edited, deleted or returned it) or the copy moved meanwhile; `409 FORK_DETACHED`; an apply or unit the copy has not is the opaque 404.
+- **`fork.lastUpdate`** (optional member of the owner's deck JSON): `{deckRevisionId, mode: "AUTO", appliedAt, seen: false, counts: {applied, pending}}`, only while an unseen AUTO entry exists.
+
+### Codes
+
+New: `UPDATE_REVERT_STALE` (409, with `unitId` when known). Used: `INVALID_REQUEST` (400: `reason` `unit_needed` with `unitId` and `units`, `material_still_used` with `unitId` and `dependency`, `duplicate_unit`,
+`unit_not_returnable`, `publication_refused`), `FORK_DETACHED`, `DECK_PREPARING`, `IDEMPOTENCY_CONFLICT`, `RESOURCE_NOT_FOUND`, `UPDATE_PLAN_BUSY` (the routes share the plan routes' places), `AUTHENTICATION_REQUIRED`,
+`ACCESS_DENIED`.

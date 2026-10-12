@@ -145,4 +145,7 @@
 .sg-panel { min-inline-size: 0; padding-block: var(--mn-space-3); }
 .sg-panel:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 .sg-unit-list { border-block-end: 1px solid var(--mn-rule); }
+.sg-history { margin: 0; padding: 0; list-style: none; }
+.sg-revert { display: grid; gap: .6rem; justify-items: start; margin: 0; }
+.sg-revert p { margin: 0; }
 .sg-order { margin: 0; padding-inline-start: 1.4rem; line-height: 1.7; }

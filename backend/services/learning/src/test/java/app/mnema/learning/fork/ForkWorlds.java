@@ -205,6 +205,55 @@ final class ForkWorlds {
         return shared.save(owner, deck, member, expectedRevision, document);
     }
 
+    // ---- the update state of a copy (Updates/6) ----
+
+    /** The revision the source's publication row names as published right now. */
+    UUID publishedRevision(UUID source) {
+        return jdbc.sql("SELECT published_revision_id FROM app_learning.deck_publication WHERE deck_id = :d").param("d", source).query(UUID.class).single();
+    }
+
+    /** The author adds a material and publishes the head again at {@code level}; returns the new published revision. */
+    UUID republish(Source source, String level) {
+        study.addMaterial(source.author(), source.deck(), "ещё " + UUID.randomUUID().toString().substring(0, 6), "ещё");
+        publish(source.author(), source.deck(), level);
+        return publishedRevision(source.deck());
+    }
+
+    /** Marks a copy ready without running the job (no executor runs in an {@code api} context); its heads stay empty, which the update state does not read. */
+    void markReady(UUID copy) {
+        jdbc.sql("UPDATE app_learning.deck_fork SET materialized_at = statement_timestamp() WHERE deck_id = :d AND materialized_at IS NULL").param("d", copy).update();
+    }
+
+    /** What the apply command of Updates/4 does to the base: moves it forward to the published revision (the V61 guard decides if that is legal). */
+    void moveBase(UUID copy, UUID revision) {
+        jdbc.sql("UPDATE app_learning.deck_fork SET base_revision_id = :r WHERE deck_id = :d").param("d", copy).param("r", revision).update();
+    }
+
+    /** A PENDING decision of the copy for a made-up material (unit left for later: its base and the author's offered state are both "absent"). */
+    UUID pend(UUID copy) {
+        UUID unit = UUID.randomUUID();
+        jdbc.sql("""
+                INSERT INTO app_learning.fork_unit_decision(deck_id, reuse_scope_id, unit_kind, unit_key, decision, resolved_upstream_absent, pending_base_absent, decided_at)
+                SELECT deck_id, reuse_scope_id, 'MATERIAL', :unit, 'PENDING', TRUE, TRUE, statement_timestamp() FROM app_learning.deck WHERE deck_id = :d
+                """).param("d", copy).param("unit", unit).update();
+        return unit;
+    }
+
+    /** A decided unit (the author removed it and the learner keeps his): it is no reason for the badge. */
+    void keepMine(UUID copy) {
+        jdbc.sql("""
+                INSERT INTO app_learning.fork_unit_decision(deck_id, reuse_scope_id, unit_kind, unit_key, decision, resolved_upstream_absent, decided_at)
+                SELECT deck_id, reuse_scope_id, 'MATERIAL', gen_random_uuid(), 'KEEP_MINE', TRUE, statement_timestamp() FROM app_learning.deck WHERE deck_id = :d
+                """).param("d", copy).update();
+    }
+
+    /** The copy's {@code fork} member as the owner reads it. */
+    JsonNode forkOf(UUID owner, UUID copy) {
+        HttpResponse<String> response = get("/decks/" + copy, owner);
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+        return json(response).path("fork");
+    }
+
     // ---- the published manifest and the heads of a copy ----
 
     /** What the PUBLISHED revision of {@code source} holds, resolved through the lineage by the manifest's descriptors. */

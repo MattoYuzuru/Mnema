@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, TemplateRef, computed, inject, inpu
 
 import type { NativeDocument } from '../content/native-document';
 import { AssetPlaybackSource, NativeDocumentRendererComponent } from '../content/rendering/native-document-renderer.component';
+import { NativeMediaSurfaceComponent } from '../content/rendering/native-media-surface.component';
 import type { BlockOverlay, BlockSlotContext } from '../content/rendering/native-top-block.directive';
 import { CompareColumnsComponent } from './compare-columns.component';
 import { UPDATE_TEXT } from './copy-text';
@@ -18,14 +19,18 @@ const NONE: ReadonlySet<string> = new Set();
  * instead of the plain block (as the Workshop does for a rewrite): on the reader's side the words the author took away are struck
  * through, on the author's side the new ones are underlined, both with hidden «удалено:» and «добавлено:» prefixes. Without a
  * `counterpart` (the unit does not exist on the other side) the document is drawn plainly. Node ids appear in the DOM (the overlay
- * needs them); media files arrive through `assetSources` like in the renderer.
+ * needs them); media files arrive through `assetSources` like in the renderer, or through the media surface when `mediaAudience` is set.
  */
 @Component({
     selector: 'app-compared-document',
-    imports: [NativeDocumentRendererComponent, WordDiffComponent],
+    imports: [NativeDocumentRendererComponent, NativeMediaSurfaceComponent, WordDiffComponent],
     template: `
-      <app-native-document-renderer [document]="document()" [assetSources]="assetSources()" [assetStatuses]="assetStatuses()"
-        [exposeNodeIds]="true" [overlay]="overlay()" [headingOffset]="offset()" />
+      @if (mediaAudience(); as audience) {
+        <app-native-media-surface [document]="document()" [audience]="audience" [exposeNodeIds]="true" [overlay]="overlay()" [headingOffset]="offset()" />
+      } @else {
+        <app-native-document-renderer [document]="document()" [assetSources]="assetSources()" [assetStatuses]="assetStatuses()"
+          [exposeNodeIds]="true" [overlay]="overlay()" [headingOffset]="offset()" />
+      }
       <ng-template #slot let-id let-placement="placement">
         @if (placement === 'before') {
           <div class="change" [attr.data-change]="changes().marks.get(id)">
@@ -54,6 +59,13 @@ export class ComparedDocumentComponent {
     readonly side = input.required<CompareSide>();
     readonly assetSources = input<Readonly<Record<string, string | AssetPlaybackSource>>>({});
     readonly assetStatuses = input<Readonly<Record<string, string | undefined>>>({});
+    /**
+     * Where the media of this side comes from. `null` (the default) draws the files named in `assetSources`, as the styleguide does;
+     * `owner` or `public` hands the document to the renderer's media surface, which asks the `MediaPlaybackApi` provided above this
+     * element for each file (the owner's own playback route for the reader's copy; a provider for the public media route of the source
+     * for the author's side) and tells the reader, in words, about a file it cannot get. `audience` only chooses the wording of that.
+     */
+    readonly mediaAudience = input<'owner' | 'public' | null>(null);
     /**
      * Levels the document's headings sit below the renderer's default (its level 1 is `h2` at 0). Left unset, it follows the enclosing
      * `app-compare-columns`: the columns' heading is at level H, so the document's level 1 is drawn at H + 1 (offset H - 1). Outside

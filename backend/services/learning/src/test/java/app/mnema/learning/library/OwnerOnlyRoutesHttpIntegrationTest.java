@@ -144,6 +144,7 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         // copies (Share/10): an ordinary deck is not a copy, so the owner's own answer is the same opaque 404 (the stranger's is, whatever the deck)
         rows.add(Row.absent("POST /decks/{deckId}/fork:retry", w -> send("POST", "/decks/" + w.deck().id() + "/fork:retry", null, null)));
         rows.add(Row.absent("POST /decks/{deckId}/fork:detach", w -> send("POST", "/decks/" + w.deck().id() + "/fork:detach", null, null)));
+        rows.add(Row.absent("PUT /decks/{deckId}/fork:auto-update", w -> send("PUT", "/decks/" + w.deck().id() + "/fork:auto-update", JSON.createObjectNode().put("autoUpdate", true), null)));
         // the update plan of a copy (Updates/3): an ordinary deck is not a copy, so the owner's own answer is the same opaque 404 (the stranger's is, whatever the deck)
         rows.add(Row.absent("GET /decks/{deckId}/update-plan", w -> get("/decks/" + w.deck().id() + "/update-plan")));
         rows.add(Row.absent("GET /decks/{deckId}/update-plan/units/{kind}/{key}",
@@ -151,6 +152,11 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         // the apply command of the update plan (Updates/4): an ordinary deck is not a copy, so the owner's own answer is the same opaque 404
         rows.add(Row.absent("POST /decks/{deckId}/update-plan:apply", w -> send("POST", "/decks/" + w.deck().id() + "/update-plan:apply",
                 command().put("planVersion", "sha256:" + "0".repeat(64)), null)));
+        // «Что нового» and the return of one unit (Updates/6 part B): an ordinary deck is not a copy, so the owner's own answer is the same opaque 404
+        rows.add(Row.absent("GET /decks/{deckId}/update-history", w -> get("/decks/" + w.deck().id() + "/update-history")));
+        rows.add(Row.absent("POST /decks/{deckId}/update-history/{deckRevisionId}:seen", w -> send("POST", "/decks/" + w.deck().id() + "/update-history/" + random + ":seen", null, null)));
+        rows.add(Row.absent("POST /decks/{deckId}/update-history/{deckRevisionId}/units/{kind}/{key}:revert",
+                w -> send("POST", "/decks/" + w.deck().id() + "/update-history/" + random + "/units/MATERIAL/" + random + ":revert", command(), null)));
         // materials
         rows.add(Row.of("GET /decks/{deckId}/items", w -> get("/decks/" + w.deck().id() + "/items")));
         rows.add(Row.of("GET /decks/{deckId}/items/{memberKey}", w -> get("/decks/" + w.deck().id() + "/items/" + w.deck().material().member())));

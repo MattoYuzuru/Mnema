@@ -10,6 +10,8 @@ import { UPDATE_TEXT, UpdateChoice } from '../shared/copy-text';
 import { CountTab, CountTabsComponent } from '../shared/count-tabs.component';
 import { UnavailableNoteComponent } from '../shared/unavailable-note.component';
 import { UpdateBadgeComponent } from '../shared/update-badge.component';
+import { HistoryUnitView, UpdateHistoryUnitComponent } from '../shared/update-history-unit.component';
+import { UpdateNewsComponent } from '../shared/update-news.component';
 import { UpdateCounts, UpdateSummaryComponent } from '../shared/update-summary.component';
 import { UpdateUnitRowComponent, UpdateUnitView } from '../shared/update-unit-row.component';
 import { WordDiffComponent } from '../shared/word-diff.component';
@@ -56,7 +58,7 @@ const DESCRIPTION_AUTHOR = ['Двадцать самых частых испан
     selector: 'app-sg-update',
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, UpdateBadgeComponent, UnavailableNoteComponent, UpdateSummaryComponent, CountTabsComponent, CompareColumnsComponent,
-        ComparedDocumentComponent, WordDiffComponent, UpdateUnitRowComponent],
+        ComparedDocumentComponent, WordDiffComponent, UpdateUnitRowComponent, UpdateNewsComponent, UpdateHistoryUnitComponent],
     templateUrl: './sg-update.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -99,6 +101,8 @@ export class SgUpdateComponent {
     protected readonly newExerciseUnit: UpdateUnitView = {
         id: 'u5', kind: 'exercise', title: 'Превратите в приказ: tú hablas', class: 'new', dependency: 'Повелительное наклонение'
     };
+    protected readonly lockedUnit: UpdateUnitView = { id: 'u-locked', kind: 'material', title: 'Спряжение глагола hablar', class: 'new' };
+    protected readonly lockedNote = UPDATE_TEXT.lockedFor('Что значит hablar?');
     protected readonly againUnit: UpdateUnitView = { id: 'u6', kind: 'material', title: 'Неправильные глаголы с корнем на -o-', class: 'changed-again' };
     protected readonly orderUnit: UpdateUnitView = { id: 'u7', kind: 'order', title: 'Порядок материалов', class: 'fix' };
     protected readonly descriptionUnit: UpdateUnitView = { id: 'u8', kind: 'description', title: 'Описание колоды', class: 'fix' };
@@ -107,6 +111,26 @@ export class SgUpdateComponent {
     };
 
     protected readonly exerciseChoice = signal<UpdateChoice | null>(null);
+
+    /** «Что нового» (Updates/6 part B): the units of an update as the history lists them, one per change and one per state. */
+    protected readonly historyUnits: readonly HistoryUnitView[] = [
+        { id: 'h1', kind: 'material', change: 'ADDED', title: 'Повелительное наклонение', state: null },
+        { id: 'h2', kind: 'material', change: 'CHANGED', title: 'Спряжение ser и estar', state: null },
+        { id: 'h3', kind: 'exercise', change: 'REMOVED', title: 'Вставьте глагол: Yo ___ estudiante', state: null },
+        { id: 'h4', kind: 'order', change: 'REORDERED', title: 'Порядок материалов', state: null },
+        { id: 'h5', kind: 'description', change: 'CHANGED', title: 'Испанский язык: базовые глаголы', state: null },
+        { id: 'h6', kind: 'material', change: 'CHANGED', title: 'Простое прошедшее время', state: 'RETURNED' },
+        { id: 'h7', kind: 'exercise', change: 'ADDED', title: 'Превратите в приказ: tú hablas, а потом объясните, почему здесь нужна именно эта форма', state: 'CHANGED_SINCE' }
+    ];
+    protected readonly confirmText = UPDATE_TEXT.revertAsk.CHANGED('Спряжение ser и estar');
+    protected readonly revertText = UPDATE_TEXT.revert;
+    protected readonly revertConfirmText = UPDATE_TEXT.revertConfirm;
+    protected readonly withText = UPDATE_TEXT.revertWith.CHANGED('«Вставьте глагол: Yo ___ estudiante»');
+    protected readonly noRepeatText = UPDATE_TEXT.revertNoRepeat;
+    protected readonly cancelText = 'Отмена';
+    protected readonly viewUpdate = UPDATE_TEXT.viewUpdate;
+    protected readonly newsLook = UPDATE_TEXT.newsLook;
+    protected readonly newsDecide = UPDATE_TEXT.newsDecide;
 
     constructor() { this.destroyRef.onDestroy(() => { if (this.timer !== null) clearTimeout(this.timer); }); }
 

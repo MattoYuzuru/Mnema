@@ -87,6 +87,25 @@ describe('OwnDecksListPageComponent', () => {
         expect(root.textContent).not.toContain('Учить');
     });
 
+    it('puts «Есть обновление» on the card of a copy whose author published something, in words and inside the link to its hub', () => {
+        const root = fixture.nativeElement as HTMLElement;
+        const base = metadataFixture.detail as unknown as OwnDeck;
+        const fork = forksFixture.fork as unknown as Record<'ready' | 'updateAvailable' | 'detached' | 'sourceClosed', DeckFork>;
+        const ids = ['33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444', '55555555-5555-4555-8555-555555555555'];
+        state.set({
+            phase: 'ready', nextCursor: null, operation: null, failure: null,
+            items: [base, { ...base, deckId: ids[0], fork: fork.ready }, { ...base, deckId: ids[1], fork: fork.updateAvailable },
+                { ...base, deckId: ids[2], fork: { ...fork.detached, updateAvailable: false } }]
+        });
+        fixture.detectChanges();
+        const rows = [...root.querySelectorAll('.deck-list li')];
+        expect(rows.map(row => row.querySelector('app-update-badge')?.textContent?.trim() ?? null)).toEqual([null, null, 'Есть обновление', null]);
+        // Words inside the card's own link: read in place with the title, never a bare dot.
+        expect(rows[2]!.querySelector('a.deck-row app-update-badge .stamp')!.textContent!.trim()).toBe('Есть обновление');
+        expect(rows[2]!.querySelector('a')!.getAttribute('href')).toBe(`/decks/${ids[1]}`);
+        expect(root.querySelectorAll('app-update-badge')).toHaveLength(1);
+    });
+
     it('loads once and exposes an exact private deck without invented actions', () => {
         const root = fixture.nativeElement as HTMLElement;
 

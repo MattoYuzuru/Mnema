@@ -1,0 +1,88 @@
+<section class="page narrow history-page" aria-labelledby="history-title">
+  <a class="back-link" [routerLink]="['/decks', deckId()]"><span aria-hidden="true">←</span> {{ text.backToDeck }}</a>
+  <p class="visually-hidden" role="status">{{ liveMessage() }}</p>
+
+  <header class="page-heading history-heading">
+    <div>
+      @if (deckTitle(); as title) { <p class="eyebrow">{{ title }}</p> }
+      <h1 id="history-title" tabindex="-1">{{ text.historyTitle }}</h1>
+      <p class="lede">{{ text.historyLede }}</p>
+    </div>
+  </header>
+
+  @switch (phase()) {
+    @case ('loading') {
+      <p class="status">{{ text.historyLoading }}</p>
+    }
+    @case ('error') {
+      <section class="notice error" aria-labelledby="history-error-title">
+        <h2 id="history-error-title" class="section-heading">{{ text.historyFailedTitle }}</h2>
+        <p>{{ loadFailure() === 'not-found' ? text.notFound : text.historyFailed }}</p>
+        @if (loadFailure() !== 'not-found') {
+          <div class="actions"><button type="button" class="button secondary" (click)="reload()">{{ text.retry }}</button></div>
+        }
+      </section>
+    }
+    @default {
+      <!-- One notice at a time: what closed the question, or else the standing note of a detached copy. -->
+      @if (notice(); as message) {
+        <p class="notice compact" data-notice tabindex="-1">{{ message }}</p>
+      } @else if (detached()) {
+        <p class="notice compact" data-notice tabindex="-1">{{ text.historyDetached }}</p>
+      }
+      @if (updateWaiting()) {
+        <p class="actions"><a class="button secondary" [routerLink]="['/decks', deckId(), 'update']">{{ text.viewUpdate }}</a></p>
+      }
+
+      @if (items().length === 0) {
+        <p class="hint empty">{{ text.historyEmpty }}</p>
+      } @else {
+        <ol class="entries" [attr.aria-label]="text.historyEntries">
+          @for (item of items(); track item.entry.deckRevisionId) {
+            <li>
+              <article class="entry" [attr.aria-labelledby]="item.headingId">
+                <header class="entry-head">
+                  <h2 class="section-heading" [id]="item.headingId">{{ item.mode }}, <time [attr.datetime]="item.entry.appliedAt">{{ item.short }}</time></h2>
+                </header>
+                @if (item.exact; as exact) { <p class="when hint"><time [attr.datetime]="item.entry.appliedAt">{{ exact }}</time></p> }
+                <p class="counts">{{ text.historyCounts(item.entry.counts.applied, item.entry.counts.pending) }}</p>
+                @if (item.rows.length > 0) {
+                  <ul class="units" [attr.aria-label]="text.historyUnits">
+                    @for (row of item.rows; track row.unit.unitId) {
+                      <li tabindex="-1" [attr.data-unit]="revertMarker(item.entry, row)">
+                        <app-update-history-unit [unit]="row.view">
+                          @if (row.revertible) {
+                            @if (flowFor(item.entry, row); as flow) {
+                              @let base = 'ask-' + item.headingId + '-' + $index;
+                              <div class="revert-confirm notice warning" role="group" tabindex="-1" data-revert-ask [attr.aria-labelledby]="base" [attr.aria-describedby]="describedBy(base, flow)" (keydown.escape)="cancel()">
+                                <p class="ask" [id]="base">{{ askText(flow) }}</p>
+                                @for (line of withLines(flow); track $index) { <p [id]="base + '-w' + $index">{{ line }}</p> }
+                                @if (flow.group) { <p class="hint" [id]="base + '-y'">{{ text.revertWithWhy }}</p> }
+                                <p class="hint" [id]="base + '-h'">{{ text.revertNoRepeat }}</p>
+                                @if (flow.problem; as problem) { <p class="field-error" role="alert">{{ problem }}</p> }
+                                <div class="actions">
+                                  <button type="button" class="button primary" [attr.aria-busy]="flow.busy ? 'true' : null" [attr.aria-disabled]="flow.busy ? 'true' : null" (click)="confirm()">
+                                    {{ flow.busy ? text.reverting : flow.unknown ? text.retry : flow.group ? text.revertConfirmAll : text.revertConfirm }}
+                                  </button>
+                                  <button type="button" class="button quiet" [disabled]="flow.busy" (click)="cancel()">{{ copyText.cancel }}</button>
+                                </div>
+                              </div>
+                            } @else {
+                              <button type="button" class="button small" [attr.data-revert]="revertMarker(item.entry, row)" [attr.aria-label]="row.label"
+                                [attr.aria-disabled]="returning() ? 'true' : null" (click)="ask(item.entry, row)">{{ text.revert }}</button>
+                            }
+                          }
+                        </app-update-history-unit>
+                      </li>
+                    }
+                  </ul>
+                }
+                @if (item.entry.unitsTruncated) { <p class="hint">{{ text.historyTruncated }}</p> }
+              </article>
+            </li>
+          }
+        </ol>
+      }
+    }
+  }
+</section>

@@ -16,7 +16,7 @@
   </app-sg-specimen>
 
   <app-sg-specimen title="Сводка обновления" selector="<app-update-summary>"
-    when="Верх экрана обзора. Одна строка словами со склонением («+12 материалов, +30 упражнений, 5 исправлений, 2 конфликта, 3 удалено автором»), пустые части не пишутся; «Что нового» автора (до 500 символов), если есть; главное действие «Принять всё безопасное» и строка, что оно берёт и чего не трогает. Когда безопасного нет, кнопка aria-disabled и строка говорит об этом; пока идёт запрос, кнопка aria-busy и сохраняет фокус. Результат озвучивает область role=status страницы, не блок."
+    when="Верх экрана обзора. Одна строка словами со склонением («+12 материалов, +30 упражнений, 5 исправлений, 2 конфликта, 3 удалено автором»), пустые части не пишутся; «Что нового» автора (до 500 символов), если есть; главное действие «Принять всё безопасное» и строка, что оно берёт и чего не трогает. Когда безопасного нет, кнопка aria-disabled и строка говорит об этом; пока идёт запрос, кнопка aria-busy и сохраняет фокус. Результат озвучивает область role=status страницы, не блок. Если читатель уже выбрал что-то у конфликтов или удалений, вторая строка под кнопкой говорит, что этот выбор применит «Применить выбранное» (pendingNote)."
     [tokens]="['--mn-ink', '--mn-muted', '--mn-sheet', '--mn-rule', '--mn-font-display']"
     usage='<app-update-summary [counts]="counts" [note]="whatsNew" [busy]="accepting()" (acceptSafe)="acceptSafe()" />'>
     <div class="sg-stack">
@@ -24,6 +24,7 @@
       <p class="hint" role="status">@if (accepted()) { Образец: безопасные изменения приняты. }</p>
       <app-update-summary [counts]="singleCounts" [headingLevel]="3" />
       <app-update-summary [counts]="riskyCounts" [headingLevel]="3" />
+      <app-update-summary [counts]="fullCounts" [headingLevel]="3" [pendingNote]="true" />
     </div>
   </app-sg-specimen>
 
@@ -84,7 +85,7 @@
   </app-sg-specimen>
 
   <app-sg-specimen title="Строка единицы обновления" selector="<app-update-unit-row>"
-    when="Одна единица плана: материал, упражнение, цель, описание колоды или порядок материалов. Слева вид (знак и слово), штамп класса словами, название в одну строку, при зависимости пояснение «Нужен материал «…». Он будет добавлен вместе с этим.». Решение читателя: сегменты, потому что у каждого класса два ответа с глаголами, а не «да/нет»: «Принять» и «Не брать»; «Оставить моё» (по умолчанию) и «Взять вариант автора»; «Оставить у себя» (по умолчанию) и «Удалить и у меня». Кнопка «Сравнить» с aria-expanded открывает сравнение внутри строки."
+    when="Одна единица плана: материал, упражнение, цель, описание колоды или порядок материалов. Слева вид (знак и слово), штамп класса словами, название в одну строку, при зависимости пояснение «Нужен материал «…». Он будет добавлен вместе с этим.». Решение читателя: сегменты, потому что у каждого класса два ответа с глаголами, а не «да/нет»: «Принять» и «Не брать»; «Оставить моё» (по умолчанию) и «Взять вариант автора»; «Оставить у себя» (по умолчанию) и «Удалить и у меня». Кнопка «Сравнить» с aria-expanded открывает сравнение внутри строки. Решение, которое задано страницей (единицу требует другая, принятая читателем), остаётся в порядке фокуса, но не меняется: сразу под выбором стоят штамп «Обязательно» со знаком замка и причина словами, причина входит в описание группы (aria-describedby)."
     [tokens]="['--mn-ink', '--mn-rule', '--mn-muted', '--mn-font-mono']"
     usage='<app-update-unit-row #row [headingLevel]="4" [unit]="unit" [(choice)]="choice">
   @if (row.expanded()) {
@@ -123,6 +124,7 @@
         }
       </app-update-unit-row>
       <app-update-unit-row [headingLevel]="4" [unit]="newExerciseUnit" />
+      <app-update-unit-row [headingLevel]="4" [unit]="lockedUnit" [choice]="'accept'" [locked]="true" [lockNote]="lockedNote" />
       <app-update-unit-row [headingLevel]="4" [unit]="againUnit" />
       <app-update-unit-row #order [headingLevel]="4" [unit]="orderUnit">
         @if (order.expanded()) {
@@ -142,5 +144,44 @@
       </app-update-unit-row>
       <app-update-unit-row [headingLevel]="4" [unit]="goalUnit" />
     </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Что нового в хабе копии" selector="<app-update-news>"
+    when="Хаб копии, под рядом действий (так «Учить» остаётся на первом экране), когда автоматический приём взял безопасное, а владелец ещё не смотрел. Маленький заголовок «Что нового», время обновления в «time» («2 часа назад, 12.10.2026, 12:30») и одно предложение со склонением («Автор обновил колоду, мы взяли 3 изменения автоматически. 2 ждут вашего решения.»; если ничего не ждёт, второго предложения нет). Без рамки и без своей кнопки: страница кладёт текстовую ссылку «Посмотреть, что изменилось» (ведёт в историю; сама история отметит запись просмотренной) и, если ждёт решения, ссылку «Решить, что взять». Когда у автора есть и новое обновление (`offer`), блок один: в нём значок «Есть обновление» и единственная кнопка «Посмотреть обновление», отдельного блока предложения рядом нет. Не живая область: обновление пришло, пока владельца не было."
+    [tokens]="['--mn-rule', '--mn-muted', '--mn-body']"
+    usage='<app-update-news [applied]="3" [pending]="2" appliedAt="2026-10-12T09:30:00Z" when="2 часа назад, 12.10.2026, 12:30">
+  <a class="button quiet" routerLink="…/update/history">Посмотреть, что изменилось</a>
+</app-update-news>'>
+    <div class="sg-stack">
+      <app-update-news [applied]="3" [pending]="2" appliedAt="2026-10-12T09:30:00Z" when="2 часа назад, 12.10.2026, 12:30"><a class="button quiet" href="#update">{{ newsLook }}</a><a class="button quiet" href="#update">{{ newsDecide }}</a></app-update-news>
+      <app-update-news [applied]="1" [pending]="0" appliedAt="2026-10-11T09:30:00Z" when="вчера, 11.10.2026, 12:30"><a class="button quiet" href="#update">{{ newsLook }}</a></app-update-news>
+      <app-update-news [applied]="3" [pending]="2" [offer]="true" appliedAt="2026-10-12T09:30:00Z" when="2 часа назад, 12.10.2026, 12:30"><a class="button quiet" href="#update">{{ newsLook }}</a><a class="button secondary" href="#update">{{ viewUpdate }}</a></app-update-news>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Строка истории обновлений" selector="<app-update-history-unit>"
+    when="Одна единица, которую изменило обновление (страница кладёт её в пункт списка): вид (знак и слово), что с ней сделали штампом («Добавлено», «Исправлено», «Удалено»), название целиком и, если единица уже не такая, как после обновления, предложение («Вы уже вернули», «Вы изменили после обновления»). Порядок материалов не повторяет штамп и название: одна строка «Изменился порядок материалов». Действие строки кладёт страница: «Вернуть как было» (только у материала и упражнения, которые остались ровно такими, как сделало обновление; если в истории есть два одноимённых, имя кнопки получает время обновления) и подтверждение на месте кнопки: группа `role=group` с вопросом в одно предложение («Вернём «…» к тому, что было до обновления.»), подсказкой «Следующее обновление не вернёт это обратно, пока автор не изменит его снова.» и кнопками «Вернуть» и «Отмена». Фокус встаёт на группу, её описание (`aria-describedby`) собрано из всех абзацев кроме вопроса. Если вместе с единицей возвращаются другие, группа говорит, что станет с каждой: «Вместе с этим уберём: …» (добавлено), «вернём: …» (удалено), «вернём к прежнему виду: …» (исправлено)."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-muted', '--mn-font-mono', '--mn-caution']"
+    usage='<app-update-history-unit [unit]="unit">
+  <button type="button" class="button small">Вернуть как было</button>
+</app-update-history-unit>'>
+    <ul class="sg-unit-list sg-history">
+      @for (unit of historyUnits; track unit.id) {
+        <li>
+          <app-update-history-unit [unit]="unit">
+            @if (unit.id === 'h2') {
+              <div class="notice warning sg-revert" role="group" tabindex="-1" aria-labelledby="sg-ask" aria-describedby="sg-with sg-hint">
+                <p id="sg-ask"><strong>{{ confirmText }}</strong></p>
+                <p id="sg-with">{{ withText }}</p>
+                <p id="sg-hint" class="hint">{{ noRepeatText }}</p>
+                <div class="actions"><button type="button" class="button primary">{{ revertConfirmText }}</button><button type="button" class="button quiet">{{ cancelText }}</button></div>
+              </div>
+            } @else if (!unit.state && unit.kind !== 'order' && unit.kind !== 'description') {
+              <button type="button" class="button small">{{ revertText }}</button>
+            }
+          </app-update-history-unit>
+        </li>
+      }
+    </ul>
   </app-sg-specimen>
 </section>

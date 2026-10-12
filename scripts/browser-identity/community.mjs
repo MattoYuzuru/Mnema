@@ -17,7 +17,8 @@ import { join } from 'node:path';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const KEYS = { Tab: ['Tab', 'Tab', 9], Enter: ['Enter', 'Enter', 13], Space: [' ', 'Space', 32], ArrowLeft: ['ArrowLeft', 'ArrowLeft', 37],
-  ArrowRight: ['ArrowRight', 'ArrowRight', 39], ArrowDown: ['ArrowDown', 'ArrowDown', 40], Escape: ['Escape', 'Escape', 27] };
+  ArrowRight: ['ArrowRight', 'ArrowRight', 39], ArrowDown: ['ArrowDown', 'ArrowDown', 40], Escape: ['Escape', 'Escape', 27],
+  Home: ['Home', 'Home', 36], End: ['End', 'End', 35] };
 /** What is wrong with a topic directory body, as the page's strict parser would see it: keys per level, empty or over-long names, duplicate ids, ordinals. */
 function topicShape(body) {
   const level = entries => ({ count: Array.isArray(entries) ? entries.length : null,
@@ -86,8 +87,8 @@ const PASSES = [
     prompt: 'Введите по-португальски слово «обувь»', answer: 'sapato' }
 ];
 
-/** One browser tab seen as a person: page helpers, real keyboard, the real API with the person's own bearer (none for the guest). */
-function makeActor(ctx, label, tab, bearer) {
+/** One browser tab seen as a person: page helpers, real keyboard, the real API with the person's own bearer (none for the guest). Also used by `updates.mjs`. */
+export function makeActor(ctx, label, tab, bearer) {
   const { config, SafeFailure } = ctx;
   const need = (value, what) => { if (!value) throw new SafeFailure(`${label}: ${what}`); };
   const page = (body, ...args) => tab.callFunction(`async function(...args) { ${body} }`, args);
@@ -718,8 +719,10 @@ export async function runCommunity(ctx) {
       await shoot(member, `community-${pass.name}-invite-only-member.png`);
       // The copy keeps working and says the source is closed (the code that it was copied by was rotated away).
       await navigate(world.copyPath, member.tab);
-      await until(() => exists('app-copy-origin', member.tab), 'the copy has no source line', 30000);
-      member.need(await member.page(`return document.querySelector('app-copy-origin')?.innerText.replace(/\\s+/g, ' ').includes(args[0]);`, WORDS.sourceClosed), 'the copy does not say the source is closed: ' + await member.read('app-copy-origin'));
+      // The hub of a copy whose source is closed shows `app-unavailable-note` (Updates/6) in the place of the source line `app-copy-origin`.
+      const sourceLine = 'app-copy-origin, app-unavailable-note.hub-source-note';
+      await until(() => exists(sourceLine, member.tab), 'the copy has no source line', 30000);
+      member.need(await member.page(`return document.querySelector(args[1])?.innerText.replace(/\\s+/g, ' ').includes(args[0]);`, WORDS.sourceClosed, sourceLine), 'the copy does not say the source is closed: ' + await member.read(sourceLine));
       member.need(await exists('nav.hub-actions', member.tab), 'the copy stopped working');
 
       // The owner sees the request.

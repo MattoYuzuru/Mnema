@@ -35,6 +35,19 @@ describe('UpdateSummaryComponent', () => {
         return { fixture, root, button: () => root.querySelector<HTMLButtonElement>('button')! };
     }
 
+    it('says, when asked, that the picks on conflicts and deletions wait for «Применить выбранное», and describes the button by it', () => {
+        const { root, button } = create({ counts: counts({ materials: 2 }), pendingNote: true });
+        const hints = [...root.querySelectorAll('.action .hint')];
+        expect(hints.map(hint => hint.textContent)).toEqual([
+            'Берём новое и исправления того, что вы не меняли. Ваши правки и удаления не трогаем.',
+            'Ваш выбор у конфликтов и удалений применит кнопка «Применить выбранное».'
+        ]);
+        expect(button().getAttribute('aria-describedby')).toBe(hints.map(hint => hint.id).join(' '));
+        const plain = create({ counts: counts({ materials: 2 }) });
+        expect(plain.root.querySelectorAll('.action .hint')).toHaveLength(1);
+        expect(plain.button().getAttribute('aria-describedby')).toBe(plain.root.querySelector('.action .hint')!.id);
+    });
+
     it('is a section named by its heading, with the line, the note and the primary action', () => {
         const { root, button } = create({ counts: counts({ materials: 2, fixes: 1 }), note: 'Добавили два урока.' });
         const section = root.querySelector('section')!;

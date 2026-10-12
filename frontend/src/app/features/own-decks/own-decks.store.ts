@@ -11,6 +11,7 @@ import {
     OwnDeckProtocolError,
     createDeckCommand
 } from './own-deck.models';
+import type { DeckFork } from './fork/fork.models';
 import { OwnDecksApiService } from './own-decks-api.service';
 
 export interface DeckListState {
@@ -185,10 +186,10 @@ export class OwnDecksStore {
     }
 
     /**
-     * Shows what the server just answered about the copy's state (the `fork:retry` answer) without waiting for the next read; the
+     * Shows what the server just answered about the copy (the `fork:retry` answer, the stored auto-update setting) without waiting for the next read; the
      * read that follows remains the truth. Ignored when another deck is open.
      */
-    applyFork(deckId: string, change: { readonly preparing: boolean; readonly failed: boolean }): void {
+    applyFork(deckId: string, change: Partial<Pick<DeckFork, 'preparing' | 'failed' | 'autoUpdate'>>): void {
         const state = this.detailSignal();
         if (state.phase !== 'ready' || state.deck === null || state.deck.deckId !== deckId || state.deck.fork == null) return;
         this.detailSignal.set({ ...state, deck: { ...state.deck, fork: { ...state.deck.fork, ...change } } });
