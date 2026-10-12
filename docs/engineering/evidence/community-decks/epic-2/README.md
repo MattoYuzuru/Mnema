@@ -29,7 +29,7 @@ Evidence задач эпика [MattoYuzuru/Mnema#420](https://github.com/MattoY
 | Что | Состояние |
 |---|---|
 | Миграции | `V59`–`V65` применены (V62 нет: миграция перепривязки получила номер `V64`, чтобы идти после `V63`). |
-| Экран обзора, значок, перепривязка, история, возврат | Включены с релизом #495. |
+| Экран обзора, значок, перепривязка, история, возврат | Включены релизом #495 (`38202897337`). |
 | Автоприём безопасного | Выключен: `learning.updates.auto.enabled=false` (код по умолчанию). Включение — решение владельца. |
 | Retention Study (#460) | Включён (`LEARNING_STUDY_RETENTION_ENABLED: "true"` в `compose.yaml` с релиза #492; первый релиз #490 шёл выключенным, проверка после него показала ноль Study-сессий). |
 | Пул соединений Learning | 16 (`compose.yaml` с релиза #493). |
@@ -47,7 +47,7 @@ Evidence задач эпика [MattoYuzuru/Mnema#420](https://github.com/MattoY
 | Updates/2 [#441](https://github.com/MattoYuzuru/Mnema/issues/441) комбинированная публикация | [#492](https://github.com/MattoYuzuru/Mnema/pull/492) | `e7f686c3` | V60 | Релиз `38166694985`. | 37 тестов движка; 100 единиц ≈0,25–0,6 с, задача на 1 000 ≈2–5 с. Ревью: 2 major исправлены (осиротевшие команды, охрана приёма ревизий). |
 | Updates/3 [#442](https://github.com/MattoYuzuru/Mnema/issues/442) план | [#493](https://github.com/MattoYuzuru/Mnema/pull/493) | `ce173df4` | V61 | Релиз `38176802902`. | Таблица истинности на настоящих сервисах, property-тест; актуальная копия на 1 000 материалов — 4 запроса и 0 страниц, 100 правок — 16 запросов. Ревью (xhigh): 1 major исправлен (бюджет расчёта). |
 | Updates/4 [#443](https://github.com/MattoYuzuru/Mnema/issues/443) применение | [#494](https://github.com/MattoYuzuru/Mnema/pull/494) | `dabd0ad4` | V63 | Релиз `38196279686`. | 43 теста, все критерии приёмки применения. CI один раз упал на нехватке heap тестовой JVM: ограничен кеш Spring-контекстов. Harness нашёл баг (цель нового упражнения считалась исправлением) — исправлен здесь. Ревью (xhigh): 1 major исправлен. |
-| Updates/5 [#444](https://github.com/MattoYuzuru/Mnema/issues/444) экран и Updates/6 [#445](https://github.com/MattoYuzuru/Mnema/issues/445) | [#495](https://github.com/MattoYuzuru/Mnema/pull/495) | см. PR | V64, V65 | См. PR и комментарий о релизе в задачах. | Gate на точном коммите; harness `--community --updates` 65/65 этапов (26 этапов обновления на desktop 1280 и mobile 390). Ревью: часть A (security) без блокеров; часть B (xhigh) 1 major исправлен; a11y экрана и хаба — 1 blocker и 5 major исправлены; a11y истории — 3 major исправлены. |
+| Updates/5 [#444](https://github.com/MattoYuzuru/Mnema/issues/444) экран и Updates/6 [#445](https://github.com/MattoYuzuru/Mnema/issues/445) | [#495](https://github.com/MattoYuzuru/Mnema/pull/495) | `3d342c7d` | V64, V65 | Релиз `38202897337`; production Flyway 59, 60, 61, 63, 64, 65, новые маршруты без токена отвечают 401. Автоприём выключен. | Gate на точном коммите; harness `--community --updates` 65/65 этапов (26 этапов обновления на desktop 1280 и mobile 390). Ревью: часть A (security) без блокеров; часть B (xhigh) 1 major исправлен; a11y экрана и хаба — 1 blocker и 5 major исправлены; a11y истории — 3 major исправлены. |
 | Updates/7 [#446](https://github.com/MattoYuzuru/Mnema/issues/446) проверка эпика | этот PR | — | нет | Без релиза (документы). | Критерии эпика ниже. |
 
 ## Критерии завершения эпика
