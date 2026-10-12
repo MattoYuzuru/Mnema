@@ -1,0 +1,20 @@
+:host { display: block; container-type: inline-size; min-inline-size: 0; }
+.shelf { display: grid; gap: 1rem; min-inline-size: 0; }
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .25rem 1rem; }
+.titles { min-inline-size: 0; }
+.title { margin: 0; color: var(--mn-ink); font: 600 clamp(1.5rem, 4vw, 2rem)/1.2 var(--mn-font-display); overflow-wrap: anywhere; }
+.titles .hint { margin-block-start: .25rem; }
+.more { flex: none; }
+
+/* Narrow: one row that scrolls sideways and snaps to the cards; a card is 82% wide, so the next one peeks out from the edge. */
+.row {
+    display: grid; grid-auto-flow: column; grid-auto-columns: min(82%, 19rem); gap: 1rem;
+    margin: 0; padding: 0 0 .75rem; list-style: none;
+    overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: 0; scrollbar-width: thin;
+}
+.row > li { display: grid; min-inline-size: 0; scroll-snap-align: start; }
+
+/* Wide: the cards lie in a grid and nothing scrolls. */
+@container (min-width: 46rem) {
+    .row { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); overflow: visible; scroll-snap-type: none; padding-block-end: 0; }
+}

@@ -1,0 +1,35 @@
+:host { display: block; min-inline-size: 0; color: var(--mn-body); font-family: var(--mn-font-body, system-ui, sans-serif); }
+* { box-sizing: border-box; }
+
+.page {
+    display: grid;
+    gap: clamp(1.25rem, 3vw, 2rem);
+    inline-size: min(76rem, 100%);
+    margin-inline: auto;
+    padding: clamp(1.5rem, 6vw, 4rem) clamp(1.125rem, 5vw, 3rem);
+    min-inline-size: 0;
+}
+
+.heading { padding-block-end: 1.25rem; border-block-end: 1px solid var(--mn-ink); }
+h1 {
+    margin: 0;
+    color: var(--mn-ink);
+    font-family: var(--mn-font-display, Georgia, serif);
+    font-size: clamp(2.5rem, 6vw, 4.5rem);
+    font-weight: 500;
+    line-height: 1.12;
+    letter-spacing: -.025em;
+    overflow-wrap: anywhere;
+}
+h1:focus-visible { outline: none; }
+
+.shelves { display: grid; gap: clamp(2rem, 5vw, 3rem); min-inline-size: 0; }
+.status { margin: 0; }
+/* Empty, the region takes no room (not even a gap of the page grid) but stays in the tree. */
+.status:empty { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; }
+.notice { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; max-inline-size: 40rem; }
+.notice p { margin: 0; flex: 1 1 14rem; overflow-wrap: anywhere; }
+
+@media (forced-colors: active) {
+    .heading { border-color: CanvasText; }
+}

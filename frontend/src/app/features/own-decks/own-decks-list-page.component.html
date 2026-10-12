@@ -23,6 +23,7 @@
       <h2 id="empty-title">Первая страница пока чиста</h2>
       <p>{{ emptyText() }}</p>
       <a class="text-link" routerLink="/decks/new">Создать первую колоду</a>
+      @if (communityHasDecks()) { <p><a class="text-link" routerLink="/community">Посмотреть колоды сообщества</a></p> }
     </section>
   } @else {
     <ol #deckRows class="deck-list">

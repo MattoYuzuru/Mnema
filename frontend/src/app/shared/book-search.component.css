@@ -1,0 +1,35 @@
+:host { display: block; min-inline-size: 0; max-inline-size: 100%; }
+.book { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .5rem; min-inline-size: 0; }
+.entry { --mn-glyph-size: 1.5rem; padding-inline: .7rem; }
+.form { flex: 1 1 16rem; min-inline-size: 0; margin: 0; }
+.form[hidden] { display: none; }
+
+/* The open book: a cover leaf with the book glyph, the spine, and the leaf that carries the field. Closed mode draws the leaf alone. */
+.spread { display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid var(--mn-rule); border-block-start: 2px solid var(--mn-ink); background: var(--mn-sheet); }
+.is-book .spread { grid-template-columns: clamp(3rem, 20%, 9rem) 2px minmax(0, 1fr); }
+.cover {
+    display: grid; place-items: center; color: var(--mn-ink); --mn-glyph-size: clamp(2rem, 6vw, 3rem);
+    background: repeating-linear-gradient(to bottom, transparent 0 1.1rem, var(--mn-rule) 1.1rem calc(1.1rem + 1px));
+}
+.spine { background: var(--mn-ink); }
+.page { display: grid; gap: .25rem; min-inline-size: 0; padding: .9rem clamp(.75rem, 3vw, 1.5rem) 1rem; }
+.page .eyebrow { margin: 0; }
+.row { display: flex; gap: .5rem; align-items: stretch; min-inline-size: 0; }
+.box { position: relative; flex: 1 1 auto; min-inline-size: 0; }
+.box input { inline-size: 100%; min-block-size: var(--mn-touch-min); font-size: 1rem; }
+.submit { --mn-glyph-size: 1.4rem; flex: none; padding-inline: .8rem; }
+
+/* The opening: the book unfolds from the spine outwards, once, in half a second. `backwards` leaves no clip behind, so focus rings are never cut. */
+.spread.is-opening { animation: mn-book-open .5s cubic-bezier(.22, .61, .36, 1) backwards; }
+@keyframes mn-book-open {
+    from { clip-path: inset(0 50% 0 50%); }
+    to { clip-path: inset(0 0 0 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .spread.is-opening { animation: none; }
+}
+@media (forced-colors: active) {
+    .spread { border-color: CanvasText; }
+    .spine { background: CanvasText; }
+    .cover { background: none; }
+}

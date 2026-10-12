@@ -107,6 +107,10 @@
 
 .session { justify-content: flex-end; min-inline-size: 0; }
 
+/* The closed book of the catalogue search: a button until it is opened, then its form wraps under the button and takes the room it needs. */
+.masthead-search { flex: 0 0 auto; }
+.masthead-search.is-open { flex: 1 1 16rem; }
+
 .identity,
 .session-note {
     max-inline-size: 12rem;

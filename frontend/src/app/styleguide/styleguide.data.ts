@@ -29,7 +29,8 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
             { id: 'status', label: 'Статусы и ход' },
             { id: 'feedback', label: 'Обратная связь' },
             { id: 'cards', label: 'Карточки и области' },
-            { id: 'update', label: 'Обновление копии' }
+            { id: 'update', label: 'Обновление копии' },
+            { id: 'community', label: 'Сообщество' }
         ]
     },
     { title: 'Сборка', sections: [{ id: 'screen', label: 'Пример экрана' }] }

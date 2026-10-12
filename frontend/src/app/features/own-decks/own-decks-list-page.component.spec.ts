@@ -1,6 +1,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { of, throwError } from 'rxjs';
 
 import forksFixture from '../../../../../contracts/decks/forks.json';
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
@@ -10,6 +11,8 @@ import { DeckListState, OwnDecksStore } from './own-decks.store';
 import { OwnDecksListPageComponent } from './own-decks-list-page.component';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { PromoPopupService } from '../promo/promo-popup.service';
+import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
+import { CommunityApiService } from '../community/community-api.service';
 
 describe('OwnDecksListPageComponent', () => {
     beforeEach(() => {
@@ -163,5 +166,78 @@ describe('OwnDecksListPageComponent', () => {
         expect(store.refreshVisibleList).toHaveBeenCalledTimes(1);
         await vi.advanceTimersByTimeAsync(10000);
         expect(store.refreshVisibleList).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('OwnDecksListPageComponent link to the community', () => {
+    const empty: DeckListState = { phase: 'ready', items: [], nextCursor: null, operation: null, failure: null };
+    let facets: ReturnType<typeof vi.fn>;
+    let state: ReturnType<typeof signal<DeckListState>>;
+
+    function create(launched: boolean, items: readonly OwnDeck[] = []): ComponentFixture<OwnDecksListPageComponent> {
+        state = signal<DeckListState>({ ...empty, items });
+        const store = spyObj<OwnDecksStore>({ loadList: vi.fn(), loadMore: vi.fn(), retryList: vi.fn(), refreshVisibleList: vi.fn() });
+        Object.defineProperty(store, 'listState', { value: state.asReadonly() });
+        TestBed.configureTestingModule({
+            imports: [OwnDecksListPageComponent],
+            providers: [
+                provideRouter([]),
+                { provide: PromoPopupService, useValue: { request: vi.fn().mockResolvedValue(undefined) } },
+                { provide: COMMUNITY_LAUNCH, useValue: launched },
+                { provide: CommunityApiService, useValue: { facets } }
+            ]
+        }).overrideComponent(OwnDecksListPageComponent, { set: { providers: [{ provide: OwnDecksStore, useValue: store }] } });
+        const fixture = TestBed.createComponent(OwnDecksListPageComponent);
+        fixture.detectChanges();
+        return fixture;
+    }
+    const link = (fixture: ComponentFixture<OwnDecksListPageComponent>) =>
+        (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('a[href="/community"]');
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        facets = vi.fn().mockReturnValue(of({ listedCount: 3, topics: [], languages: [], levels: [] }));
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('asks nothing and shows no link while the catalogue is closed to readers', async () => {
+        const fixture = create(false);
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(facets).not.toHaveBeenCalled();
+        expect(link(fixture)).toBeNull();
+        expect(fixture.nativeElement.textContent).toContain('Первая страница пока чиста');
+    });
+
+    it('points the empty list to the catalogue when it is open and has decks, after one look', async () => {
+        const fixture = create(true);
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(facets).toHaveBeenCalledTimes(1);
+        expect(link(fixture)?.textContent).toBe('Посмотреть колоды сообщества');
+    });
+
+    it('leaves the link out when the open catalogue is empty, when the look fails, and when the list is not empty', async () => {
+        facets.mockReturnValue(of({ listedCount: 0, topics: [], languages: [], levels: [] }));
+        let fixture = create(true);
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(link(fixture)).toBeNull();
+        TestBed.resetTestingModule();
+
+        facets.mockReturnValue(throwError(() => new Error('offline')));
+        fixture = create(true);
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(link(fixture)).toBeNull();
+        TestBed.resetTestingModule();
+
+        facets.mockReturnValue(of({ listedCount: 3, topics: [], languages: [], levels: [] }));
+        facets.mockClear();
+        fixture = create(true, [metadataFixture.detail as unknown as OwnDeck]);
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(facets).not.toHaveBeenCalled();
+        expect(link(fixture)).toBeNull();
     });
 });

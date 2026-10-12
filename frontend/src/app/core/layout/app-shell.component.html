@@ -14,9 +14,11 @@
         <a [href]="learningHome">Открыть Мнему</a>
       } @else if (status() === 'authenticated') {
         <a routerLink="/decks" routerLinkActive="active" ariaCurrentWhenActive="page" [routerLinkActiveOptions]="{ exact: true }">Мои колоды</a>
+        @if (communityLaunched) { <a routerLink="/community" routerLinkActive="active" ariaCurrentWhenActive="page">Сообщество</a> }
         <a routerLink="/decks/new" routerLinkActive="active" ariaCurrentWhenActive="page">Новая колода</a>
         <a routerLink="/profile" routerLinkActive="active" ariaCurrentWhenActive="page">Профиль</a>
       } @else {
+        @if (communityLaunched) { <a routerLink="/community" routerLinkActive="active" ariaCurrentWhenActive="page">Сообщество</a> }
         <a routerLink="/" fragment="materials">Материалы</a>
         <a routerLink="/" fragment="exercises">Упражнения</a>
         <a routerLink="/" fragment="rhythm">Как учиться</a>
@@ -24,6 +26,9 @@
     </nav>
 
     <div class="session">
+      @if (communityLaunched && !adminMode() && !onCommunityPage()) {
+        <app-book-search class="masthead-search" [class.is-open]="searchOpen()" mode="closed" [hint]="false" [(value)]="searchText" [(expanded)]="searchOpen" (searched)="searchCommunity($event)" />
+      }
       @if (status() === 'authenticated') {
         @if (!adminMode()) { <app-notification-bell /> }
         <span class="identity">{{ user()?.name || user()?.email }}</span>
