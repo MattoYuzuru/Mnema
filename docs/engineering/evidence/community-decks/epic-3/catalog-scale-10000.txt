@@ -1,13 +1,13 @@
-synthetic catalogue: 10000 listed decks, 10000 rank rows, seeded in 1002 ms
-public_deck: 4976 kB table, 10080 kB indexes; deck_rank: 8232 kB with indexes
+synthetic catalogue: 10000 listed decks, 10000 rank rows, seeded in 871 ms
+public_deck: 4976 kB table, 10056 kB indexes; deck_rank: 8272 kB with indexes
 
 == popular, first page
-   p50 1.94 ms, p95 3.45 ms, max 3.73 ms over 30 runs
-Limit (actual time=0.007..0.040 rows=25.00 loops=1)
+   p50 1.46 ms, p95 1.92 ms, max 2.12 ms over 30 runs
+Limit (actual time=0.007..0.036 rows=25.00 loops=1)
   Buffers: shared hit=127
-  ->  Nested Loop (actual time=0.007..0.039 rows=25.00 loops=1)
+  ->  Nested Loop (actual time=0.007..0.035 rows=25.00 loops=1)
         Buffers: shared hit=127
-        ->  Index Scan using deck_rank_popular on deck_rank r (actual time=0.004..0.008 rows=25.00 loops=1)
+        ->  Index Scan using deck_rank_popular on deck_rank r (actual time=0.005..0.008 rows=25.00 loops=1)
               Index Cond: (generation = '1'::bigint)
               Index Searches: 1
               Buffers: shared hit=52
@@ -18,37 +18,37 @@ Limit (actual time=0.007..0.040 rows=25.00 loops=1)
               Buffers: shared hit=75
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.091 ms
-Execution Time: 0.053 ms
+Planning Time: 0.082 ms
+Execution Time: 0.048 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=0.845..0.846 rows=1.00 loops=1)
-  Buffers: shared hit=2846
-  ->  Limit (actual time=0.008..0.820 rows=1001.00 loops=1)
-        Buffers: shared hit=2846
-        ->  Merge Join (actual time=0.007..0.769 rows=1001.00 loops=1)
+Aggregate (actual time=0.753..0.753 rows=1.00 loops=1)
+  Buffers: shared hit=2695
+  ->  Limit (actual time=0.007..0.727 rows=1001.00 loops=1)
+        Buffers: shared hit=2695
+        ->  Merge Join (actual time=0.007..0.689 rows=1001.00 loops=1)
               Merge Cond: (r.deck_id = d.deck_id)
-              Buffers: shared hit=2846
-              ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.005..0.367 rows=1001.00 loops=1)
+              Buffers: shared hit=2695
+              ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.004..0.311 rows=1001.00 loops=1)
                     Index Cond: (generation = '1'::bigint)
                     Filter: listed
                     Index Searches: 1
-                    Buffers: shared hit=1873
-              ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.002..0.287 rows=1001.00 loops=1)
+                    Buffers: shared hit=1725
+              ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.002..0.273 rows=1001.00 loops=1)
                     Filter: listed
                     Index Searches: 1
-                    Buffers: shared hit=973
+                    Buffers: shared hit=970
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.107 ms
-Execution Time: 0.871 ms
+Planning Time: 0.069 ms
+Execution Time: 0.764 ms
 
 == popular, page at the middle of the ranking
-   p50 1.57 ms, p95 1.84 ms, max 1.88 ms over 30 runs
-Limit (actual time=0.013..0.053 rows=25.00 loops=1)
+   p50 1.40 ms, p95 1.54 ms, max 1.58 ms over 30 runs
+Limit (actual time=0.007..0.037 rows=25.00 loops=1)
   Buffers: shared hit=96
-  ->  Nested Loop (actual time=0.012..0.051 rows=25.00 loops=1)
+  ->  Nested Loop (actual time=0.007..0.036 rows=25.00 loops=1)
         Buffers: shared hit=96
-        ->  Index Scan using deck_rank_popular on deck_rank r (actual time=0.009..0.012 rows=25.00 loops=1)
+        ->  Index Scan using deck_rank_popular on deck_rank r (actual time=0.005..0.007 rows=25.00 loops=1)
               Index Cond: ((generation = '1'::bigint) AND (rank > '5000'::bigint))
               Index Searches: 1
               Buffers: shared hit=21
@@ -59,37 +59,37 @@ Limit (actual time=0.013..0.053 rows=25.00 loops=1)
               Buffers: shared hit=75
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.129 ms
-Execution Time: 0.069 ms
+Planning Time: 0.082 ms
+Execution Time: 0.046 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=0.947..0.947 rows=1.00 loops=1)
-  Buffers: shared hit=2846
-  ->  Limit (actual time=0.007..0.922 rows=1001.00 loops=1)
-        Buffers: shared hit=2846
-        ->  Merge Join (actual time=0.007..0.884 rows=1001.00 loops=1)
+Aggregate (actual time=0.735..0.735 rows=1.00 loops=1)
+  Buffers: shared hit=2695
+  ->  Limit (actual time=0.006..0.708 rows=1001.00 loops=1)
+        Buffers: shared hit=2695
+        ->  Merge Join (actual time=0.006..0.673 rows=1001.00 loops=1)
               Merge Cond: (r.deck_id = d.deck_id)
-              Buffers: shared hit=2846
-              ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.005..0.401 rows=1001.00 loops=1)
+              Buffers: shared hit=2695
+              ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.004..0.312 rows=1001.00 loops=1)
                     Index Cond: (generation = '1'::bigint)
                     Filter: listed
                     Index Searches: 1
-                    Buffers: shared hit=1873
-              ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.002..0.370 rows=1001.00 loops=1)
+                    Buffers: shared hit=1725
+              ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.002..0.253 rows=1001.00 loops=1)
                     Filter: listed
                     Index Searches: 1
-                    Buffers: shared hit=973
+                    Buffers: shared hit=970
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.116 ms
-Execution Time: 0.970 ms
+Planning Time: 0.074 ms
+Execution Time: 0.747 ms
 
 == popular, leaf topic
-   p50 2.52 ms, p95 3.20 ms, max 3.27 ms over 30 runs
-Limit (actual time=0.016..0.185 rows=25.00 loops=1)
+   p50 1.75 ms, p95 2.16 ms, max 2.19 ms over 30 runs
+Limit (actual time=0.008..0.152 rows=25.00 loops=1)
   Buffers: shared hit=664
-  ->  Nested Loop (actual time=0.016..0.184 rows=25.00 loops=1)
+  ->  Nested Loop (actual time=0.008..0.151 rows=25.00 loops=1)
         Buffers: shared hit=664
-        ->  Index Scan using deck_rank_popular on deck_rank r (actual time=0.013..0.155 rows=25.00 loops=1)
+        ->  Index Scan using deck_rank_popular on deck_rank r (actual time=0.007..0.130 rows=25.00 loops=1)
               Index Cond: (generation = '1'::bigint)
               Filter: (topic_id = 'spanish'::text)
               Rows Removed by Filter: 1308
@@ -102,44 +102,44 @@ Limit (actual time=0.016..0.185 rows=25.00 loops=1)
               Buffers: shared hit=75
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.142 ms
-Execution Time: 0.200 ms
+Planning Time: 0.093 ms
+Execution Time: 0.163 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=1.457..1.457 rows=1.00 loops=1)
-  Buffers: shared hit=725
-  ->  Limit (actual time=1.279..1.451 rows=188.00 loops=1)
-        Buffers: shared hit=725
-        ->  Hash Join (actual time=1.279..1.443 rows=188.00 loops=1)
+Aggregate (actual time=1.225..1.226 rows=1.00 loops=1)
+  Buffers: shared hit=723
+  ->  Limit (actual time=1.066..1.220 rows=188.00 loops=1)
+        Buffers: shared hit=723
+        ->  Hash Join (actual time=1.066..1.214 rows=188.00 loops=1)
               Hash Cond: (d.deck_id = r.deck_id)
-              Buffers: shared hit=725
-              ->  Seq Scan on public_deck d (actual time=0.003..1.047 rows=10000.00 loops=1)
+              Buffers: shared hit=723
+              ->  Seq Scan on public_deck d (actual time=0.002..0.842 rows=10000.00 loops=1)
                     Filter: listed
                     Buffers: shared hit=618
-              ->  Hash (actual time=0.065..0.065 rows=188.00 loops=1)
+              ->  Hash (actual time=0.057..0.058 rows=188.00 loops=1)
                     Buckets: 1024  Batches: 1  Memory Usage: 17kB
-                    Buffers: shared hit=107
-                    ->  Index Only Scan using deck_rank_topic on deck_rank r (actual time=0.006..0.055 rows=188.00 loops=1)
+                    Buffers: shared hit=105
+                    ->  Index Only Scan using deck_rank_topic on deck_rank r (actual time=0.004..0.045 rows=188.00 loops=1)
                           Index Cond: ((generation = '1'::bigint) AND (topic_id = 'spanish'::text))
                           Heap Fetches: 188
                           Index Searches: 1
-                          Buffers: shared hit=107
+                          Buffers: shared hit=105
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.114 ms
-Execution Time: 1.468 ms
+Planning Time: 0.074 ms
+Execution Time: 1.232 ms
 
 == popular, top-level topic
-   p50 1.97 ms, p95 2.48 ms, max 2.56 ms over 30 runs
-Limit (actual time=0.009..0.053 rows=25.00 loops=1)
-  Buffers: shared hit=178
-  ->  Nested Loop (actual time=0.009..0.052 rows=25.00 loops=1)
-        Buffers: shared hit=178
-        ->  Index Scan using deck_rank_popular on deck_rank r (actual time=0.006..0.017 rows=25.00 loops=1)
+   p50 1.74 ms, p95 1.88 ms, max 1.93 ms over 30 runs
+Limit (actual time=0.006..0.042 rows=25.00 loops=1)
+  Buffers: shared hit=177
+  ->  Nested Loop (actual time=0.006..0.041 rows=25.00 loops=1)
+        Buffers: shared hit=177
+        ->  Index Scan using deck_rank_popular on deck_rank r (actual time=0.004..0.012 rows=25.00 loops=1)
               Index Cond: (generation = '1'::bigint)
               Filter: (parent_topic_id = 'languages'::text)
               Rows Removed by Filter: 61
               Index Searches: 1
-              Buffers: shared hit=103
+              Buffers: shared hit=102
         ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.001..0.001 rows=1.00 loops=25)
               Index Cond: (deck_id = r.deck_id)
               Filter: listed
@@ -147,48 +147,48 @@ Limit (actual time=0.009..0.053 rows=25.00 loops=1)
               Buffers: shared hit=75
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.110 ms
-Execution Time: 0.072 ms
+Planning Time: 0.077 ms
+Execution Time: 0.057 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=1.475..1.476 rows=1.00 loops=1)
+Aggregate (actual time=1.246..1.246 rows=1.00 loops=1)
   Buffers: shared hit=548
-  ->  Limit (actual time=0.712..1.450 rows=1001.00 loops=1)
+  ->  Limit (actual time=0.611..1.220 rows=1001.00 loops=1)
         Buffers: shared hit=548
-        ->  Hash Join (actual time=0.711..1.406 rows=1001.00 loops=1)
+        ->  Hash Join (actual time=0.610..1.182 rows=1001.00 loops=1)
               Hash Cond: (d.deck_id = r.deck_id)
               Buffers: shared hit=548
-              ->  Seq Scan on public_deck d (actual time=0.005..0.528 rows=4579.00 loops=1)
+              ->  Seq Scan on public_deck d (actual time=0.002..0.406 rows=4575.00 loops=1)
                     Filter: listed
                     Buffers: shared hit=284
-              ->  Hash (actual time=0.632..0.633 rows=2641.00 loops=1)
+              ->  Hash (actual time=0.558..0.558 rows=2641.00 loops=1)
                     Buckets: 4096  Batches: 1  Memory Usage: 156kB
                     Buffers: shared hit=264
-                    ->  Seq Scan on deck_rank r (actual time=0.040..0.489 rows=2641.00 loops=1)
+                    ->  Seq Scan on deck_rank r (actual time=0.029..0.439 rows=2641.00 loops=1)
                           Filter: (listed AND (generation = '1'::bigint) AND (parent_topic_id = 'languages'::text))
                           Rows Removed by Filter: 7359
                           Buffers: shared hit=264
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.091 ms
-Execution Time: 1.487 ms
+Planning Time: 0.062 ms
+Execution Time: 1.252 ms
 
 == popular, top-level topic + level + media
-   p50 4.50 ms, p95 5.41 ms, max 5.68 ms over 30 runs
-Limit (actual time=2.681..2.683 rows=25.00 loops=1)
-  Buffers: shared hit=4537
-  ->  Sort (actual time=2.680..2.682 rows=25.00 loops=1)
+   p50 4.10 ms, p95 8.68 ms, max 11.65 ms over 30 runs
+Limit (actual time=2.200..2.202 rows=25.00 loops=1)
+  Buffers: shared hit=4411
+  ->  Sort (actual time=2.199..2.201 rows=25.00 loops=1)
         Sort Key: r.rank
-        Sort Method: top-N heapsort  Memory: 48kB
-        Buffers: shared hit=4537
-        ->  Nested Loop (actual time=0.431..2.632 rows=220.00 loops=1)
-              Buffers: shared hit=4537
-              ->  Bitmap Heap Scan on public_deck d (actual time=0.332..1.484 rows=834.00 loops=1)
+        Sort Method: top-N heapsort  Memory: 44kB
+        Buffers: shared hit=4411
+        ->  Nested Loop (actual time=0.429..2.143 rows=220.00 loops=1)
+              Buffers: shared hit=4411
+              ->  Bitmap Heap Scan on public_deck d (actual time=0.326..1.176 rows=834.00 loops=1)
                     Recheck Cond: listed
                     Filter: ((level = 'B2'::text) AND (((media_mask)::integer & 3) = 3))
                     Rows Removed by Filter: 9166
                     Heap Blocks: exact=618
                     Buffers: shared hit=691
-                    ->  Bitmap Index Scan on public_deck_updated (actual time=0.299..0.299 rows=10040.00 loops=1)
+                    ->  Bitmap Index Scan on public_deck_updated (actual time=0.291..0.291 rows=10040.00 loops=1)
                           Index Searches: 1
                           Buffers: shared hit=73
               ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=0.26 loops=834)
@@ -196,19 +196,19 @@ Limit (actual time=2.681..2.683 rows=25.00 loops=1)
                     Filter: (listed AND (parent_topic_id = 'languages'::text))
                     Rows Removed by Filter: 1
                     Index Searches: 834
-                    Buffers: shared hit=3671
+                    Buffers: shared hit=3561
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.146 ms
-Execution Time: 2.703 ms
+Planning Time: 0.158 ms
+Execution Time: 2.221 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=1.606..1.606 rows=1.00 loops=1)
-  Buffers: shared hit=4464
-  ->  Limit (actual time=0.067..1.599 rows=220.00 loops=1)
-        Buffers: shared hit=4464
-        ->  Nested Loop (actual time=0.067..1.590 rows=220.00 loops=1)
-              Buffers: shared hit=4464
-              ->  Seq Scan on public_deck d (actual time=0.003..0.855 rows=834.00 loops=1)
+Aggregate (actual time=1.878..1.878 rows=1.00 loops=1)
+  Buffers: shared hit=4338
+  ->  Limit (actual time=0.097..1.867 rows=220.00 loops=1)
+        Buffers: shared hit=4338
+        ->  Nested Loop (actual time=0.097..1.857 rows=220.00 loops=1)
+              Buffers: shared hit=4338
+              ->  Seq Scan on public_deck d (actual time=0.003..0.832 rows=834.00 loops=1)
                     Filter: (listed AND (level = 'B2'::text) AND (((media_mask)::integer & 3) = 3))
                     Rows Removed by Filter: 9166
                     Buffers: shared hit=618
@@ -217,29 +217,29 @@ Aggregate (actual time=1.606..1.606 rows=1.00 loops=1)
                     Filter: (listed AND (parent_topic_id = 'languages'::text))
                     Rows Removed by Filter: 1
                     Index Searches: 834
-                    Buffers: shared hit=3671
+                    Buffers: shared hit=3561
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.111 ms
-Execution Time: 1.614 ms
+Planning Time: 0.109 ms
+Execution Time: 1.887 ms
 
 == popular, rare combination (course, C1, all media, all mechanics)
-   p50 2.13 ms, p95 2.72 ms, max 2.96 ms over 30 runs
-Limit (actual time=0.866..0.867 rows=0.00 loops=1)
+   p50 2.03 ms, p95 3.75 ms, max 4.55 ms over 30 runs
+Limit (actual time=1.014..1.015 rows=0.00 loops=1)
   Buffers: shared hit=691
-  ->  Sort (actual time=0.866..0.866 rows=0.00 loops=1)
+  ->  Sort (actual time=1.014..1.014 rows=0.00 loops=1)
         Sort Key: r.rank
         Sort Method: quicksort  Memory: 25kB
         Buffers: shared hit=691
-        ->  Nested Loop (actual time=0.865..0.865 rows=0.00 loops=1)
+        ->  Nested Loop (actual time=1.013..1.013 rows=0.00 loops=1)
               Buffers: shared hit=691
-              ->  Bitmap Heap Scan on public_deck d (actual time=0.865..0.865 rows=0.00 loops=1)
+              ->  Bitmap Heap Scan on public_deck d (actual time=1.013..1.013 rows=0.00 loops=1)
                     Recheck Cond: listed
                     Filter: ((item_count > 300) AND (level = 'C1'::text) AND (((media_mask)::integer & 7) = 7) AND (((mechanics_mask)::integer & 31) = 31))
                     Rows Removed by Filter: 10000
                     Heap Blocks: exact=618
                     Buffers: shared hit=691
-                    ->  Bitmap Index Scan on public_deck_updated (actual time=0.280..0.280 rows=10040.00 loops=1)
+                    ->  Bitmap Index Scan on public_deck_updated (actual time=0.278..0.278 rows=10040.00 loops=1)
                           Index Searches: 1
                           Buffers: shared hit=73
               ->  Index Scan using deck_rank_pkey on deck_rank r (never executed)
@@ -248,16 +248,16 @@ Limit (actual time=0.866..0.867 rows=0.00 loops=1)
                     Index Searches: 0
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.144 ms
-Execution Time: 0.875 ms
+Planning Time: 0.142 ms
+Execution Time: 1.025 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=0.587..0.588 rows=1.00 loops=1)
+Aggregate (actual time=0.695..0.695 rows=1.00 loops=1)
   Buffers: shared hit=618
-  ->  Limit (actual time=0.586..0.587 rows=0.00 loops=1)
+  ->  Limit (actual time=0.694..0.694 rows=0.00 loops=1)
         Buffers: shared hit=618
-        ->  Nested Loop (actual time=0.586..0.586 rows=0.00 loops=1)
+        ->  Nested Loop (actual time=0.694..0.694 rows=0.00 loops=1)
               Buffers: shared hit=618
-              ->  Seq Scan on public_deck d (actual time=0.586..0.586 rows=0.00 loops=1)
+              ->  Seq Scan on public_deck d (actual time=0.693..0.693 rows=0.00 loops=1)
                     Filter: (listed AND (item_count > 300) AND (level = 'C1'::text) AND (((media_mask)::integer & 7) = 7) AND (((mechanics_mask)::integer & 31) = 31))
                     Rows Removed by Filter: 10000
                     Buffers: shared hit=618
@@ -268,15 +268,15 @@ Aggregate (actual time=0.587..0.588 rows=1.00 loops=1)
 Planning:
   Buffers: shared hit=6
 Planning Time: 0.101 ms
-Execution Time: 0.594 ms
+Execution Time: 0.701 ms
 
 == learning, first page
-   p50 1.49 ms, p95 1.72 ms, max 1.86 ms over 30 runs
-Limit (actual time=0.014..0.047 rows=25.00 loops=1)
+   p50 1.34 ms, p95 1.45 ms, max 1.57 ms over 30 runs
+Limit (actual time=0.005..0.032 rows=25.00 loops=1)
   Buffers: shared hit=127
-  ->  Nested Loop (actual time=0.014..0.046 rows=25.00 loops=1)
+  ->  Nested Loop (actual time=0.005..0.030 rows=25.00 loops=1)
         Buffers: shared hit=127
-        ->  Index Scan using deck_rank_learning on deck_rank r (actual time=0.005..0.008 rows=25.00 loops=1)
+        ->  Index Scan using deck_rank_learning on deck_rank r (actual time=0.004..0.007 rows=25.00 loops=1)
               Index Cond: (generation = '1'::bigint)
               Index Searches: 1
               Buffers: shared hit=52
@@ -287,257 +287,958 @@ Limit (actual time=0.014..0.047 rows=25.00 loops=1)
               Buffers: shared hit=75
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.079 ms
-Execution Time: 0.064 ms
+Planning Time: 0.068 ms
+Execution Time: 0.042 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=1.060..1.060 rows=1.00 loops=1)
-  Buffers: shared hit=2846
-  ->  Limit (actual time=0.008..1.035 rows=1001.00 loops=1)
-        Buffers: shared hit=2846
-        ->  Merge Join (actual time=0.008..0.995 rows=1001.00 loops=1)
+Aggregate (actual time=0.678..0.678 rows=1.00 loops=1)
+  Buffers: shared hit=2695
+  ->  Limit (actual time=0.006..0.650 rows=1001.00 loops=1)
+        Buffers: shared hit=2695
+        ->  Merge Join (actual time=0.005..0.614 rows=1001.00 loops=1)
               Merge Cond: (r.deck_id = d.deck_id)
-              Buffers: shared hit=2846
-              ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.005..0.443 rows=1001.00 loops=1)
+              Buffers: shared hit=2695
+              ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.003..0.278 rows=1001.00 loops=1)
                     Index Cond: (generation = '1'::bigint)
                     Filter: listed
                     Index Searches: 1
-                    Buffers: shared hit=1873
-              ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.001..0.434 rows=1001.00 loops=1)
+                    Buffers: shared hit=1725
+              ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.002..0.234 rows=1001.00 loops=1)
                     Filter: listed
                     Index Searches: 1
-                    Buffers: shared hit=973
+                    Buffers: shared hit=970
 Planning:
   Buffers: shared hit=6
-Planning Time: 0.087 ms
-Execution Time: 1.082 ms
+Planning Time: 0.079 ms
+Execution Time: 0.688 ms
 
 == new, first page
-   p50 0.93 ms, p95 1.57 ms, max 1.59 ms over 30 runs
-Limit (actual time=0.033..0.035 rows=25.00 loops=1)
+   p50 0.96 ms, p95 1.58 ms, max 1.85 ms over 30 runs
+Limit (actual time=0.019..0.021 rows=25.00 loops=1)
   Buffers: shared hit=28
-  ->  Incremental Sort (actual time=0.033..0.033 rows=25.00 loops=1)
+  ->  Incremental Sort (actual time=0.019..0.020 rows=25.00 loops=1)
         Sort Key: first_listed_at DESC, public_code COLLATE "C" DESC
         Presorted Key: first_listed_at
         Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 37kB  Peak Memory: 37kB
         Buffers: shared hit=28
-        ->  Index Scan using public_deck_new on public_deck d (actual time=0.007..0.022 rows=26.00 loops=1)
+        ->  Index Scan using public_deck_new on public_deck d (actual time=0.003..0.012 rows=26.00 loops=1)
               Index Searches: 1
               Buffers: shared hit=28
-Planning Time: 0.043 ms
-Execution Time: 0.045 ms
+Planning Time: 0.025 ms
+Execution Time: 0.029 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=0.166..0.167 rows=1.00 loops=1)
+Aggregate (actual time=0.165..0.165 rows=1.00 loops=1)
   Buffers: shared hit=63
-  ->  Limit (actual time=0.004..0.140 rows=1001.00 loops=1)
+  ->  Limit (actual time=0.003..0.140 rows=1001.00 loops=1)
         Buffers: shared hit=63
-        ->  Seq Scan on public_deck d (actual time=0.004..0.103 rows=1001.00 loops=1)
+        ->  Seq Scan on public_deck d (actual time=0.002..0.102 rows=1001.00 loops=1)
               Filter: listed
               Buffers: shared hit=63
-Planning Time: 0.035 ms
-Execution Time: 0.171 ms
+Planning Time: 0.033 ms
+Execution Time: 0.169 ms
 
 == new, page at the middle
-   p50 0.95 ms, p95 1.58 ms, max 1.67 ms over 30 runs
-Limit (actual time=0.034..0.036 rows=25.00 loops=1)
+   p50 0.84 ms, p95 0.97 ms, max 1.03 ms over 30 runs
+Limit (actual time=0.019..0.021 rows=25.00 loops=1)
   Buffers: shared hit=29
-  ->  Incremental Sort (actual time=0.034..0.034 rows=25.00 loops=1)
+  ->  Incremental Sort (actual time=0.019..0.020 rows=25.00 loops=1)
         Sort Key: first_listed_at DESC, public_code COLLATE "C" DESC
         Presorted Key: first_listed_at
         Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 37kB  Peak Memory: 37kB
         Buffers: shared hit=29
-        ->  Index Scan using public_deck_new on public_deck d (actual time=0.009..0.025 rows=26.00 loops=1)
+        ->  Index Scan using public_deck_new on public_deck d (actual time=0.004..0.012 rows=26.00 loops=1)
               Index Cond: ((first_listed_at <= '2026-10-09 03:39:00+03'::timestamp with time zone) AND (first_listed_at <= '2026-10-09 03:39:00+03'::timestamp with time z ...
               Filter: (ROW(first_listed_at, (public_code)::text) < ROW('2026-10-09 03:39:00+03'::timestamp with time zone, '13b264c595'::text))
               Rows Removed by Filter: 1
               Index Searches: 1
               Buffers: shared hit=29
-Planning Time: 0.051 ms
-Execution Time: 0.047 ms
+Planning Time: 0.031 ms
+Execution Time: 0.029 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=0.184..0.184 rows=1.00 loops=1)
+Aggregate (actual time=0.154..0.154 rows=1.00 loops=1)
   Buffers: shared hit=63
-  ->  Limit (actual time=0.005..0.159 rows=1001.00 loops=1)
+  ->  Limit (actual time=0.002..0.124 rows=1001.00 loops=1)
         Buffers: shared hit=63
-        ->  Seq Scan on public_deck d (actual time=0.005..0.121 rows=1001.00 loops=1)
+        ->  Seq Scan on public_deck d (actual time=0.002..0.086 rows=1001.00 loops=1)
               Filter: listed
               Buffers: shared hit=63
-Planning Time: 0.041 ms
-Execution Time: 0.190 ms
+Planning Time: 0.026 ms
+Execution Time: 0.162 ms
 
 == updated, first page
-   p50 0.82 ms, p95 1.05 ms, max 1.05 ms over 30 runs
-Limit (actual time=0.033..0.035 rows=25.00 loops=1)
+   p50 0.77 ms, p95 0.83 ms, max 0.84 ms over 30 runs
+Limit (actual time=0.014..0.016 rows=25.00 loops=1)
   Buffers: shared hit=28
-  ->  Incremental Sort (actual time=0.033..0.034 rows=25.00 loops=1)
+  ->  Incremental Sort (actual time=0.014..0.015 rows=25.00 loops=1)
         Sort Key: content_updated_at DESC, public_code COLLATE "C" DESC
         Presorted Key: content_updated_at
         Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 37kB  Peak Memory: 37kB
         Buffers: shared hit=28
-        ->  Index Scan using public_deck_updated on public_deck d (actual time=0.005..0.024 rows=26.00 loops=1)
+        ->  Index Scan using public_deck_updated on public_deck d (actual time=0.002..0.009 rows=26.00 loops=1)
               Index Searches: 1
               Buffers: shared hit=28
-Planning Time: 0.038 ms
-Execution Time: 0.044 ms
+Planning Time: 0.020 ms
+Execution Time: 0.023 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=0.181..0.181 rows=1.00 loops=1)
-  Buffers: shared hit=63
-  ->  Limit (actual time=0.004..0.157 rows=1001.00 loops=1)
-        Buffers: shared hit=63
-        ->  Seq Scan on public_deck d (actual time=0.004..0.116 rows=1001.00 loops=1)
-              Filter: listed
-              Buffers: shared hit=63
-Planning Time: 0.029 ms
-Execution Time: 0.185 ms
-
-== updated, fresh only
-   p50 0.82 ms, p95 0.91 ms, max 0.98 ms over 30 runs
-Limit (actual time=0.026..0.027 rows=25.00 loops=1)
-  Buffers: shared hit=28
-  ->  Incremental Sort (actual time=0.026..0.026 rows=25.00 loops=1)
-        Sort Key: content_updated_at DESC, public_code COLLATE "C" DESC
-        Presorted Key: content_updated_at
-        Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 37kB  Peak Memory: 37kB
-        Buffers: shared hit=28
-        ->  Index Scan using public_deck_updated on public_deck d (actual time=0.003..0.010 rows=26.00 loops=1)
-              Index Cond: (content_updated_at >= '2026-09-12 15:00:00+03'::timestamp with time zone)
-              Index Searches: 1
-              Buffers: shared hit=28
-Planning Time: 0.025 ms
-Execution Time: 0.035 ms
--- and the count behind total (up to 1001 rows):
-Aggregate (actual time=0.163..0.163 rows=1.00 loops=1)
+Aggregate (actual time=0.165..0.165 rows=1.00 loops=1)
   Buffers: shared hit=63
   ->  Limit (actual time=0.002..0.136 rows=1001.00 loops=1)
         Buffers: shared hit=63
         ->  Seq Scan on public_deck d (actual time=0.002..0.098 rows=1001.00 loops=1)
+              Filter: listed
+              Buffers: shared hit=63
+Planning Time: 0.022 ms
+Execution Time: 0.167 ms
+
+== updated, fresh only
+   p50 0.82 ms, p95 0.88 ms, max 1.06 ms over 30 runs
+Limit (actual time=0.015..0.016 rows=25.00 loops=1)
+  Buffers: shared hit=28
+  ->  Incremental Sort (actual time=0.015..0.015 rows=25.00 loops=1)
+        Sort Key: content_updated_at DESC, public_code COLLATE "C" DESC
+        Presorted Key: content_updated_at
+        Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 37kB  Peak Memory: 37kB
+        Buffers: shared hit=28
+        ->  Index Scan using public_deck_updated on public_deck d (actual time=0.003..0.009 rows=26.00 loops=1)
+              Index Cond: (content_updated_at >= '2026-09-12 15:00:00+03'::timestamp with time zone)
+              Index Searches: 1
+              Buffers: shared hit=28
+Planning Time: 0.023 ms
+Execution Time: 0.024 ms
+-- and the count behind total (up to 1001 rows):
+Aggregate (actual time=0.145..0.145 rows=1.00 loops=1)
+  Buffers: shared hit=63
+  ->  Limit (actual time=0.007..0.123 rows=1001.00 loops=1)
+        Buffers: shared hit=63
+        ->  Seq Scan on public_deck d (actual time=0.007..0.085 rows=1001.00 loops=1)
               Filter: (listed AND (content_updated_at >= '2026-09-12 15:00:00+03'::timestamp with time zone))
               Buffers: shared hit=63
-Planning Time: 0.021 ms
-Execution Time: 0.166 ms
+Planning Time: 0.025 ms
+Execution Time: 0.148 ms
 
 == new, leaf topic + learn
-   p50 0.71 ms, p95 0.81 ms, max 0.88 ms over 30 runs
-Limit (actual time=0.036..0.037 rows=25.00 loops=1)
+   p50 0.73 ms, p95 0.78 ms, max 0.79 ms over 30 runs
+Limit (actual time=0.026..0.028 rows=25.00 loops=1)
   Buffers: shared hit=124
-  ->  Incremental Sort (actual time=0.035..0.036 rows=25.00 loops=1)
+  ->  Incremental Sort (actual time=0.026..0.027 rows=25.00 loops=1)
         Sort Key: first_listed_at DESC, public_code COLLATE "C" DESC
         Presorted Key: first_listed_at
         Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 37kB  Peak Memory: 37kB
         Buffers: shared hit=124
-        ->  Index Scan using public_deck_topic on public_deck d (actual time=0.012..0.029 rows=26.00 loops=1)
+        ->  Index Scan using public_deck_topic on public_deck d (actual time=0.003..0.021 rows=26.00 loops=1)
               Index Cond: (topic_id = 'spanish'::text)
               Filter: (target_language = 'es'::text)
               Rows Removed by Filter: 102
               Index Searches: 1
               Buffers: shared hit=124
-Planning Time: 0.066 ms
-Execution Time: 0.045 ms
+Planning Time: 0.036 ms
+Execution Time: 0.035 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=0.032..0.032 rows=1.00 loops=1)
+Aggregate (actual time=0.031..0.031 rows=1.00 loops=1)
   Buffers: shared hit=178
-  ->  Limit (actual time=0.005..0.031 rows=38.00 loops=1)
+  ->  Limit (actual time=0.004..0.029 rows=38.00 loops=1)
         Buffers: shared hit=178
-        ->  Index Scan using public_deck_topic on public_deck d (actual time=0.005..0.029 rows=38.00 loops=1)
+        ->  Index Scan using public_deck_topic on public_deck d (actual time=0.004..0.027 rows=38.00 loops=1)
               Index Cond: (topic_id = 'spanish'::text)
               Filter: (target_language = 'es'::text)
               Rows Removed by Filter: 150
               Index Searches: 1
               Buffers: shared hit=178
-Planning Time: 0.032 ms
-Execution Time: 0.036 ms
+Planning Time: 0.040 ms
+Execution Time: 0.042 ms
 
 == new, top-level topic + level
-   p50 0.93 ms, p95 1.67 ms, max 1.85 ms over 30 runs
-Limit (actual time=0.044..0.046 rows=25.00 loops=1)
+   p50 0.95 ms, p95 1.49 ms, max 1.49 ms over 30 runs
+Limit (actual time=0.039..0.040 rows=25.00 loops=1)
   Buffers: shared hit=156
-  ->  Incremental Sort (actual time=0.044..0.045 rows=25.00 loops=1)
+  ->  Incremental Sort (actual time=0.039..0.039 rows=25.00 loops=1)
         Sort Key: first_listed_at DESC, public_code COLLATE "C" DESC
         Presorted Key: first_listed_at
         Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 37kB  Peak Memory: 37kB
         Buffers: shared hit=156
-        ->  Index Scan using public_deck_parent_topic on public_deck d (actual time=0.008..0.036 rows=26.00 loops=1)
+        ->  Index Scan using public_deck_parent_topic on public_deck d (actual time=0.004..0.032 rows=26.00 loops=1)
               Index Cond: (parent_topic_id = 'languages'::text)
               Filter: (level = 'B2'::text)
               Rows Removed by Filter: 127
               Index Searches: 1
               Buffers: shared hit=156
 Planning Time: 0.028 ms
-Execution Time: 0.069 ms
+Execution Time: 0.048 ms
 -- and the count behind total (up to 1001 rows):
-Aggregate (actual time=1.033..1.033 rows=1.00 loops=1)
+Aggregate (actual time=0.824..0.824 rows=1.00 loops=1)
   Buffers: shared hit=618
-  ->  Limit (actual time=0.044..1.021 rows=441.00 loops=1)
+  ->  Limit (actual time=0.036..0.811 rows=441.00 loops=1)
         Buffers: shared hit=618
-        ->  Seq Scan on public_deck d (actual time=0.043..1.004 rows=441.00 loops=1)
+        ->  Seq Scan on public_deck d (actual time=0.036..0.796 rows=441.00 loops=1)
               Filter: (listed AND (parent_topic_id = 'languages'::text) AND (level = 'B2'::text))
               Rows Removed by Filter: 9559
               Buffers: shared hit=618
-Planning Time: 0.030 ms
-Execution Time: 1.036 ms
+Planning Time: 0.031 ms
+Execution Time: 0.828 ms
 
 == search, rare word
-   p50 6.67 ms, p95 9.57 ms, max 10.14 ms over 30 runs
-Limit (actual time=4.347..4.350 rows=10.00 loops=1)
-  Buffers: shared hit=874
-  ->  Sort (actual time=4.346..4.349 rows=10.00 loops=1)
+   p50 6.18 ms, p95 7.36 ms, max 7.52 ms over 30 runs
+Limit (actual time=4.111..4.114 rows=10.00 loops=1)
+  Buffers: shared hit=875
+  ->  Sort (actual time=4.111..4.113 rows=10.00 loops=1)
         Sort Key: k."position" DESC, k.public_code COLLATE "C"
         Sort Method: quicksort  Memory: 30kB
-        Buffers: shared hit=874
-        ->  Subquery Scan on k (actual time=4.340..4.344 rows=10.00 loops=1)
-              Buffers: shared hit=874
-              ->  WindowAgg (actual time=4.340..4.343 rows=10.00 loops=1)
+        Buffers: shared hit=875
+        ->  Subquery Scan on k (actual time=4.106..4.109 rows=10.00 loops=1)
+              Buffers: shared hit=875
+              ->  WindowAgg (actual time=4.106..4.108 rows=10.00 loops=1)
                     Window: w1 AS ()
                     Storage: Memory  Maximum Storage: 20kB
-                    Buffers: shared hit=874
-                    ->  Subquery Scan on c (actual time=4.332..4.336 rows=10.00 loops=1)
-                          Buffers: shared hit=874
-                          ->  Limit (actual time=4.331..4.334 rows=10.00 loops=1)
-                                Buffers: shared hit=874
-                                ->  Sort (actual time=4.331..4.333 rows=10.00 loops=1)
+                    Buffers: shared hit=875
+                    ->  Subquery Scan on c (actual time=4.101..4.104 rows=10.00 loops=1)
+                          Buffers: shared hit=875
+                          ->  Limit (actual time=4.100..4.102 rows=10.00 loops=1)
+                                Buffers: shared hit=875
+                                ->  Sort (actual time=4.100..4.102 rows=10.00 loops=1)
                                       Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''гравитац'''::tsquery, 33), ts_rank_cd ...
                                       Sort Method: quicksort  Memory: 30kB
-                                      Buffers: shared hit=874
-                                      ->  Nested Loop Left Join (actual time=4.264..4.328 rows=10.00 loops=1)
-                                            Buffers: shared hit=874
-                                            ->  Nested Loop (actual time=4.252..4.268 rows=10.00 loops=1)
+                                      Buffers: shared hit=875
+                                      ->  Nested Loop Left Join (actual time=4.048..4.098 rows=10.00 loops=1)
+                                            Buffers: shared hit=875
+                                            ->  Nested Loop (actual time=4.041..4.052 rows=10.00 loops=1)
                                                   Buffers: shared hit=828
-                                                  ->  Unique (actual time=4.244..4.248 rows=10.00 loops=1)
+                                                  ->  Unique (actual time=4.038..4.041 rows=10.00 loops=1)
                                                         Buffers: shared hit=798
-                                                        ->  Sort (actual time=4.243..4.245 rows=29.00 loops=1)
+                                                        ->  Sort (actual time=4.038..4.039 rows=29.00 loops=1)
                                                               Sort Key: public_deck.deck_id
                                                               Sort Method: quicksort  Memory: 25kB
                                                               Buffers: shared hit=798
-                                                              ->  Append (actual time=0.520..4.241 rows=29.00 loops=1)
+                                                              ->  Append (actual time=0.459..4.036 rows=29.00 loops=1)
                                                                     Buffers: shared hit=798
-                                                                    ->  Bitmap Heap Scan on public_deck (actual time=0.520..0.522 rows=10.00 loops=1)
-                                                                          Recheck Cond: (search_ru @@ '''гравитац'''::tsquery)
-                                                                          Heap Blocks: exact=9
+                                                                    ->  Limit (actual time=0.459..0.461 rows=10.00 loops=1)
                                                                           Buffers: shared hit=156
-                                                                          ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.516..0.516 rows=10.00 loops=1)
-                                                                                Index Cond: (search_ru @@ '''гравитац'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=147
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.511..0.513 rows=10.00 loops=1)
-                                                                          Recheck Cond: (search_simple @@ '''гравитация'''::tsquery)
-                                                                          Heap Blocks: exact=9
+                                                                          ->  Bitmap Heap Scan on public_deck (actual time=0.459..0.461 rows=10.00 loops=1)
+                                                                                Recheck Cond: (search_ru @@ '''гравитац'''::tsquery)
+                                                                                Heap Blocks: exact=9
+                                                                                Buffers: shared hit=156
+                                                                                ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.456..0.456 rows=10.00 loops= ...
+                                                                                      Index Cond: (search_ru @@ '''гравитац'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=147
+                                                                    ->  Limit (actual time=0.441..0.443 rows=10.00 loops=1)
                                                                           Buffers: shared hit=167
-                                                                          ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.509..0.509 rows=10.00 loops=1)
-                                                                                Index Cond: (search_simple @@ '''гравитация'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=158
-                                                                    ->  Sort (actual time=3.204..3.204 rows=9.00 loops=1)
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.441..0.443 rows=10.00 loops=1)
+                                                                                Recheck Cond: (search_simple @@ '''гравитация'''::tsquery)
+                                                                                Heap Blocks: exact=9
+                                                                                Buffers: shared hit=167
+                                                                                ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.440..0.440 rows=10.00 lo ...
+                                                                                      Index Cond: (search_simple @@ '''гравитация'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=158
+                                                                    ->  Sort (actual time=3.129..3.130 rows=9.00 loops=1)
                                                                           Sort Key: public_deck_2.deck_id
                                                                           Sort Method: quicksort  Memory: 25kB
                                                                           Buffers: shared hit=475
-                                                                          ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=3.172..3.192 rows=9.00 loops=1)
-                                                                                Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'гравитация'::text)
-                                                                                Heap Blocks: exact=9
+                                                                          ->  Limit (actual time=3.108..3.128 rows=9.00 loops=1)
                                                                                 Buffers: shared hit=475
-                                                                                ->  Bitmap Index Scan on public_deck_title_trgm (actual time=3.159..3.159 rows=9.00 loops= ...
-                                                                                      Index Cond: (title_norm OPERATOR(app_learning.%>) 'гравитация'::text)
+                                                                                ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=3.107..3.127 rows=9.00 loop ...
+                                                                                      Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'гравитация'::text)
+                                                                                      Heap Blocks: exact=9
+                                                                                      Buffers: shared hit=475
+                                                                                      ->  Bitmap Index Scan on public_deck_title_trgm (actual time=3.102..3.102 rows=9.00  ...
+                                                                                            Index Cond: (title_norm OPERATOR(app_learning.%>) 'гравитация'::text)
+                                                                                            Index Searches: 1
+                                                                                            Buffers: shared hit=466
+                                                  ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.001..0.001 rows=1.00 loops=10)
+                                                        Index Cond: (deck_id = public_deck.deck_id)
+                                                        Filter: listed
+                                                        Index Searches: 10
+                                                        Buffers: shared hit=30
+                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=10)
+                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
+                                                  Index Searches: 10
+                                                  Buffers: shared hit=39
+Planning:
+  Buffers: shared hit=9
+Planning Time: 0.437 ms
+Execution Time: 4.152 ms
+
+== search, rare Latin word
+   p50 5.47 ms, p95 7.97 ms, max 10.24 ms over 30 runs
+Limit (actual time=3.774..3.776 rows=11.00 loops=1)
+  Buffers: shared hit=878
+  ->  Sort (actual time=3.774..3.776 rows=11.00 loops=1)
+        Sort Key: k."position" DESC, k.public_code COLLATE "C"
+        Sort Method: quicksort  Memory: 30kB
+        Buffers: shared hit=878
+        ->  Subquery Scan on k (actual time=3.769..3.772 rows=11.00 loops=1)
+              Buffers: shared hit=878
+              ->  WindowAgg (actual time=3.769..3.771 rows=11.00 loops=1)
+                    Window: w1 AS ()
+                    Storage: Memory  Maximum Storage: 20kB
+                    Buffers: shared hit=878
+                    ->  Subquery Scan on c (actual time=3.764..3.767 rows=11.00 loops=1)
+                          Buffers: shared hit=878
+                          ->  Limit (actual time=3.763..3.765 rows=11.00 loops=1)
+                                Buffers: shared hit=878
+                                ->  Sort (actual time=3.763..3.764 rows=11.00 loops=1)
+                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''zucchini'''::tsquery, 33), ts_rank_cd ...
+                                      Sort Method: quicksort  Memory: 30kB
+                                      Buffers: shared hit=878
+                                      ->  Nested Loop Left Join (actual time=3.716..3.761 rows=11.00 loops=1)
+                                            Buffers: shared hit=878
+                                            ->  Nested Loop (actual time=3.710..3.722 rows=11.00 loops=1)
+                                                  Buffers: shared hit=831
+                                                  ->  Unique (actual time=3.708..3.711 rows=11.00 loops=1)
+                                                        Buffers: shared hit=798
+                                                        ->  Sort (actual time=3.707..3.709 rows=29.00 loops=1)
+                                                              Sort Key: public_deck.deck_id
+                                                              Sort Method: quicksort  Memory: 25kB
+                                                              Buffers: shared hit=798
+                                                              ->  Append (actual time=0.443..3.706 rows=29.00 loops=1)
+                                                                    Buffers: shared hit=798
+                                                                    ->  Limit (actual time=0.443..0.446 rows=11.00 loops=1)
+                                                                          Buffers: shared hit=158
+                                                                          ->  Bitmap Heap Scan on public_deck (actual time=0.443..0.446 rows=11.00 loops=1)
+                                                                                Recheck Cond: (search_ru @@ '''zucchini'''::tsquery)
+                                                                                Heap Blocks: exact=11
+                                                                                Buffers: shared hit=158
+                                                                                ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.441..0.441 rows=11.00 loops= ...
+                                                                                      Index Cond: (search_ru @@ '''zucchini'''::tsquery)
                                                                                       Index Searches: 1
-                                                                                      Buffers: shared hit=466
-                                                  ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.002..0.002 rows=1.00 loops=10)
+                                                                                      Buffers: shared hit=147
+                                                                    ->  Limit (actual time=0.452..0.454 rows=11.00 loops=1)
+                                                                          Buffers: shared hit=169
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.452..0.453 rows=11.00 loops=1)
+                                                                                Recheck Cond: (search_simple @@ '''zucchini'''::tsquery)
+                                                                                Heap Blocks: exact=11
+                                                                                Buffers: shared hit=169
+                                                                                ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.450..0.451 rows=11.00 lo ...
+                                                                                      Index Cond: (search_simple @@ '''zucchini'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=158
+                                                                    ->  Sort (actual time=2.804..2.804 rows=7.00 loops=1)
+                                                                          Sort Key: public_deck_2.deck_id
+                                                                          Sort Method: quicksort  Memory: 25kB
+                                                                          Buffers: shared hit=471
+                                                                          ->  Limit (actual time=2.792..2.803 rows=7.00 loops=1)
+                                                                                Buffers: shared hit=471
+                                                                                ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=2.792..2.802 rows=7.00 loop ...
+                                                                                      Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'zucchini'::text)
+                                                                                      Heap Blocks: exact=7
+                                                                                      Buffers: shared hit=471
+                                                                                      ->  Bitmap Index Scan on public_deck_title_trgm (actual time=2.788..2.788 rows=7.00  ...
+                                                                                            Index Cond: (title_norm OPERATOR(app_learning.%>) 'zucchini'::text)
+                                                                                            Index Searches: 1
+                                                                                            Buffers: shared hit=464
+                                                  ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.001..0.001 rows=1.00 loops=11)
+                                                        Index Cond: (deck_id = public_deck.deck_id)
+                                                        Filter: listed
+                                                        Index Searches: 11
+                                                        Buffers: shared hit=33
+                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=11)
+                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
+                                                  Index Searches: 11
+                                                  Buffers: shared hit=40
+Planning:
+  Buffers: shared hit=9
+Planning Time: 0.304 ms
+Execution Time: 3.798 ms
+
+== search, Japanese title (trigrams only)
+   p50 4.11 ms, p95 4.18 ms, max 4.32 ms over 30 runs
+Limit (actual time=2.500..2.502 rows=8.00 loops=1)
+  Buffers: shared hit=847
+  ->  Sort (actual time=2.499..2.502 rows=8.00 loops=1)
+        Sort Key: k."position" DESC, k.public_code COLLATE "C"
+        Sort Method: quicksort  Memory: 29kB
+        Buffers: shared hit=847
+        ->  Subquery Scan on k (actual time=2.495..2.499 rows=8.00 loops=1)
+              Buffers: shared hit=847
+              ->  WindowAgg (actual time=2.495..2.498 rows=8.00 loops=1)
+                    Window: w1 AS ()
+                    Storage: Memory  Maximum Storage: 19kB
+                    Buffers: shared hit=847
+                    ->  Subquery Scan on c (actual time=2.490..2.493 rows=8.00 loops=1)
+                          Buffers: shared hit=847
+                          ->  Limit (actual time=2.490..2.492 rows=8.00 loops=1)
+                                Buffers: shared hit=847
+                                ->  Sort (actual time=2.490..2.491 rows=8.00 loops=1)
+                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''ひらがな'''::tsquery, 33), ts_rank_cd(d.s ...
+                                      Sort Method: quicksort  Memory: 29kB
+                                      Buffers: shared hit=847
+                                      ->  Nested Loop Left Join (actual time=2.456..2.488 rows=8.00 loops=1)
+                                            Buffers: shared hit=847
+                                            ->  Nested Loop (actual time=2.451..2.460 rows=8.00 loops=1)
+                                                  Buffers: shared hit=812
+                                                  ->  Unique (actual time=2.449..2.452 rows=8.00 loops=1)
+                                                        Buffers: shared hit=788
+                                                        ->  Sort (actual time=2.448..2.450 rows=23.00 loops=1)
+                                                              Sort Key: public_deck.deck_id
+                                                              Sort Method: quicksort  Memory: 25kB
+                                                              Buffers: shared hit=788
+                                                              ->  Append (actual time=0.362..2.448 rows=23.00 loops=1)
+                                                                    Buffers: shared hit=788
+                                                                    ->  Limit (actual time=0.362..0.364 rows=8.00 loops=1)
+                                                                          Buffers: shared hit=155
+                                                                          ->  Bitmap Heap Scan on public_deck (actual time=0.362..0.363 rows=8.00 loops=1)
+                                                                                Recheck Cond: (search_ru @@ '''ひらがな'''::tsquery)
+                                                                                Heap Blocks: exact=8
+                                                                                Buffers: shared hit=155
+                                                                                ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.360..0.360 rows=8.00 loops=1 ...
+                                                                                      Index Cond: (search_ru @@ '''ひらがな'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=147
+                                                                    ->  Limit (actual time=0.340..0.341 rows=8.00 loops=1)
+                                                                          Buffers: shared hit=166
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.340..0.341 rows=8.00 loops=1)
+                                                                                Recheck Cond: (search_simple @@ '''ひらがな'''::tsquery)
+                                                                                Heap Blocks: exact=8
+                                                                                Buffers: shared hit=166
+                                                                                ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.339..0.339 rows=8.00 loo ...
+                                                                                      Index Cond: (search_simple @@ '''ひらがな'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=158
+                                                                    ->  Sort (actual time=1.741..1.741 rows=7.00 loops=1)
+                                                                          Sort Key: public_deck_2.deck_id
+                                                                          Sort Method: quicksort  Memory: 25kB
+                                                                          Buffers: shared hit=467
+                                                                          ->  Limit (actual time=1.729..1.739 rows=7.00 loops=1)
+                                                                                Buffers: shared hit=467
+                                                                                ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=1.729..1.739 rows=7.00 loop ...
+                                                                                      Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'ひらがな'::text)
+                                                                                      Heap Blocks: exact=7
+                                                                                      Buffers: shared hit=467
+                                                                                      ->  Bitmap Index Scan on public_deck_title_trgm (actual time=1.726..1.726 rows=7.00  ...
+                                                                                            Index Cond: (title_norm OPERATOR(app_learning.%>) 'ひらがな'::text)
+                                                                                            Index Searches: 1
+                                                                                            Buffers: shared hit=460
+                                                  ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.001..0.001 rows=1.00 loops=8)
+                                                        Index Cond: (deck_id = public_deck.deck_id)
+                                                        Filter: listed
+                                                        Index Searches: 8
+                                                        Buffers: shared hit=24
+                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=8)
+                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
+                                                  Index Searches: 8
+                                                  Buffers: shared hit=30
+Planning:
+  Buffers: shared hit=9
+Planning Time: 0.322 ms
+Execution Time: 2.524 ms
+
+== search, typo
+   p50 7.95 ms, p95 9.37 ms, max 17.49 ms over 30 runs
+Limit (actual time=6.258..6.261 rows=25.00 loops=1)
+  Buffers: shared hit=1201
+  ->  Sort (actual time=6.258..6.260 rows=25.00 loops=1)
+        Sort Key: k."position" DESC, k.public_code COLLATE "C"
+        Sort Method: top-N heapsort  Memory: 37kB
+        Buffers: shared hit=1201
+        ->  Subquery Scan on k (actual time=6.238..6.249 rows=51.00 loops=1)
+              Buffers: shared hit=1201
+              ->  WindowAgg (actual time=6.238..6.245 rows=51.00 loops=1)
+                    Window: w1 AS ()
+                    Storage: Memory  Maximum Storage: 33kB
+                    Buffers: shared hit=1201
+                    ->  Subquery Scan on c (actual time=6.220..6.230 rows=51.00 loops=1)
+                          Buffers: shared hit=1201
+                          ->  Limit (actual time=6.220..6.224 rows=51.00 loops=1)
+                                Buffers: shared hit=1201
+                                ->  Sort (actual time=6.219..6.222 rows=51.00 loops=1)
+                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''испнск'' & ''глагол'''::tsquery, 33), ...
+                                      Sort Method: quicksort  Memory: 50kB
+                                      Buffers: shared hit=1201
+                                      ->  Nested Loop Left Join (actual time=5.942..6.205 rows=51.00 loops=1)
+                                            Buffers: shared hit=1201
+                                            ->  Nested Loop (actual time=5.935..5.972 rows=51.00 loops=1)
+                                                  Buffers: shared hit=959
+                                                  ->  Unique (actual time=5.933..5.940 rows=51.00 loops=1)
+                                                        Buffers: shared hit=806
+                                                        ->  Sort (actual time=5.933..5.935 rows=51.00 loops=1)
+                                                              Sort Key: public_deck.deck_id
+                                                              Sort Method: quicksort  Memory: 25kB
+                                                              Buffers: shared hit=806
+                                                              ->  Append (actual time=5.763..5.929 rows=51.00 loops=1)
+                                                                    Buffers: shared hit=806
+                                                                    ->  Sort (actual time=0.687..0.687 rows=0.00 loops=1)
+                                                                          Sort Key: public_deck.deck_id
+                                                                          Sort Method: quicksort  Memory: 25kB
+                                                                          Buffers: shared hit=148
+                                                                          ->  Limit (actual time=0.686..0.686 rows=0.00 loops=1)
+                                                                                Buffers: shared hit=148
+                                                                                ->  Bitmap Heap Scan on public_deck (actual time=0.686..0.686 rows=0.00 loops=1)
+                                                                                      Recheck Cond: (search_ru @@ '''испнск'' & ''глагол'''::tsquery)
+                                                                                      Buffers: shared hit=148
+                                                                                      ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.685..0.685 rows=0.00 l ...
+                                                                                            Index Cond: (search_ru @@ '''испнск'' & ''глагол'''::tsquery)
+                                                                                            Index Searches: 1
+                                                                                            Buffers: shared hit=148
+                                                                    ->  Sort (actual time=0.712..0.712 rows=0.00 loops=1)
+                                                                          Sort Key: public_deck_1.deck_id
+                                                                          Sort Method: quicksort  Memory: 25kB
+                                                                          Buffers: shared hit=159
+                                                                          ->  Limit (actual time=0.711..0.712 rows=0.00 loops=1)
+                                                                                Buffers: shared hit=159
+                                                                                ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.711..0.711 rows=0.00 loop ...
+                                                                                      Recheck Cond: (search_simple @@ '''испнские'' & ''глаголы'''::tsquery)
+                                                                                      Buffers: shared hit=159
+                                                                                      ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.711..0.711 rows=0. ...
+                                                                                            Index Cond: (search_simple @@ '''испнские'' & ''глаголы'''::tsquery)
+                                                                                            Index Searches: 1
+                                                                                            Buffers: shared hit=159
+                                                                    ->  Limit (actual time=4.364..4.528 rows=51.00 loops=1)
+                                                                          Buffers: shared hit=499
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=4.364..4.526 rows=51.00 loops=1)
+                                                                                Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'испнские глаголы'::text)
+                                                                                Rows Removed by Index Recheck: 13
+                                                                                Heap Blocks: exact=27
+                                                                                Buffers: shared hit=499
+                                                                                ->  Bitmap Index Scan on public_deck_title_trgm (actual time=4.358..4.358 rows=65.00 loops ...
+                                                                                      Index Cond: (title_norm OPERATOR(app_learning.%>) 'испнские глаголы'::text)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=472
+                                                  ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.000..0.000 rows=1.00 loops=51)
+                                                        Index Cond: (deck_id = public_deck.deck_id)
+                                                        Filter: listed
+                                                        Index Searches: 51
+                                                        Buffers: shared hit=153
+                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=51)
+                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
+                                                  Index Searches: 51
+                                                  Buffers: shared hit=198
+Planning:
+  Buffers: shared hit=9
+Planning Time: 0.382 ms
+Execution Time: 6.286 ms
+
+== search, topic by synonym
+   p50 14.43 ms, p95 16.06 ms, max 17.62 ms over 30 runs
+Limit (actual time=13.125..13.128 rows=25.00 loops=1)
+  Buffers: shared hit=4593
+  ->  Sort (actual time=13.125..13.127 rows=25.00 loops=1)
+        Sort Key: k."position" DESC, k.public_code COLLATE "C"
+        Sort Method: top-N heapsort  Memory: 37kB
+        Buffers: shared hit=4593
+        ->  Subquery Scan on k (actual time=13.058..13.092 rows=200.00 loops=1)
+              Buffers: shared hit=4593
+              ->  WindowAgg (actual time=13.058..13.079 rows=200.00 loops=1)
+                    Window: w1 AS ()
+                    Storage: Memory  Maximum Storage: 80kB
+                    Buffers: shared hit=4593
+                    ->  Subquery Scan on c (actual time=12.994..13.026 rows=200.00 loops=1)
+                          Buffers: shared hit=4593
+                          ->  Limit (actual time=12.993..13.007 rows=200.00 loops=1)
+                                Buffers: shared hit=4593
+                                ->  Sort (actual time=12.993..12.999 rows=200.00 loops=1)
+                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''испанск'' | ''испанск'' | ''spanish'' ...
+                                      Sort Method: top-N heapsort  Memory: 181kB
+                                      Buffers: shared hit=4593
+                                      ->  Nested Loop Left Join (actual time=8.161..12.856 rows=534.00 loops=1)
+                                            Buffers: shared hit=4593
+                                            ->  Hash Join (actual time=8.141..9.120 rows=534.00 loops=1)
+                                                  Hash Cond: (d.deck_id = public_deck.deck_id)
+                                                  Buffers: shared hit=2160
+                                                  ->  Bitmap Heap Scan on public_deck d (actual time=0.254..0.751 rows=10000.00 loops=1)
+                                                        Recheck Cond: listed
+                                                        Heap Blocks: exact=618
+                                                        Buffers: shared hit=691
+                                                        ->  Bitmap Index Scan on public_deck_updated (actual time=0.226..0.226 rows=10040.00 loops=1)
+                                                              Index Searches: 1
+                                                              Buffers: shared hit=73
+                                                  ->  Hash (actual time=7.883..7.884 rows=534.00 loops=1)
+                                                        Buckets: 2048  Batches: 1  Memory Usage: 42kB
+                                                        Buffers: shared hit=1469
+                                                        ->  HashAggregate (actual time=7.833..7.860 rows=534.00 loops=1)
+                                                              Group Key: public_deck.deck_id
+                                                              Batches: 1  Memory Usage: 89kB
+                                                              Buffers: shared hit=1469
+                                                              ->  Append (actual time=2.179..7.769 rows=853.00 loops=1)
+                                                                    Buffers: shared hit=1469
+                                                                    ->  Limit (actual time=2.179..2.242 rows=353.00 loops=1)
+                                                                          Buffers: shared hit=413
+                                                                          ->  Bitmap Heap Scan on public_deck (actual time=2.179..2.229 rows=353.00 loops=1)
+                                                                                Recheck Cond: (search_ru @@ '''испанск'' | ''испанск'' | ''spanish'' | ''espanol'' | ''spa ...
+                                                                                Heap Blocks: exact=259
+                                                                                Buffers: shared hit=413
+                                                                                ->  Bitmap Index Scan on public_deck_search_ru (actual time=2.166..2.166 rows=355.00 loops ...
+                                                                                      Index Cond: (search_ru @@ '''испанск'' | ''испанск'' | ''spanish'' | ''espanol'' | ' ...
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=154
+                                                                    ->  Limit (actual time=2.291..2.315 rows=141.00 loops=1)
+                                                                          Buffers: shared hit=293
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=2.291..2.310 rows=141.00 loops=1)
+                                                                                Recheck Cond: (search_simple @@ '''испанский'' | ''испанский'' | ''spanish'' | ''espanol'' ...
+                                                                                Heap Blocks: exact=128
+                                                                                Buffers: shared hit=293
+                                                                                ->  Bitmap Index Scan on public_deck_search_simple (actual time=2.285..2.285 rows=141.00 l ...
+                                                                                      Index Cond: (search_simple @@ '''испанский'' | ''испанский'' | ''spanish'' | ''espan ...
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=165
+                                                                    ->  Limit (actual time=2.774..3.148 rows=171.00 loops=1)
+                                                                          Buffers: shared hit=585
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=2.774..3.141 rows=171.00 loops=1)
+                                                                                Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'испанский'::text)
+                                                                                Heap Blocks: exact=120
+                                                                                Buffers: shared hit=585
+                                                                                ->  Bitmap Index Scan on public_deck_title_trgm (actual time=2.765..2.765 rows=172.00 loop ...
+                                                                                      Index Cond: (title_norm OPERATOR(app_learning.%>) 'испанский'::text)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=465
+                                                                    ->  Limit (actual time=0.004..0.033 rows=188.00 loops=1)
+                                                                          Buffers: shared hit=178
+                                                                          ->  Index Only Scan using public_deck_topic on public_deck public_deck_3 (actual time=0.004..0.0 ...
+                                                                                Index Cond: (topic_id = 'spanish'::text)
+                                                                                Heap Fetches: 188
+                                                                                Index Searches: 1
+                                                                                Buffers: shared hit=178
+                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=534)
+                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
+                                                  Index Searches: 534
+                                                  Buffers: shared hit=2018
+Planning:
+  Buffers: shared hit=9
+Planning Time: 0.468 ms
+Execution Time: 13.161 ms
+
+== search, word with a filter
+   p50 7.23 ms, p95 7.40 ms, max 7.47 ms over 30 runs
+Limit (actual time=5.781..5.784 rows=25.00 loops=1)
+  Buffers: shared hit=2665
+  ->  Sort (actual time=5.781..5.783 rows=25.00 loops=1)
+        Sort Key: k."position" DESC, k.public_code COLLATE "C"
+        Sort Method: top-N heapsort  Memory: 37kB
+        Buffers: shared hit=2665
+        ->  Subquery Scan on k (actual time=5.752..5.767 rows=74.00 loops=1)
+              Buffers: shared hit=2665
+              ->  WindowAgg (actual time=5.752..5.762 rows=74.00 loops=1)
+                    Window: w1 AS ()
+                    Storage: Memory  Maximum Storage: 40kB
+                    Buffers: shared hit=2665
+                    ->  Subquery Scan on c (actual time=5.727..5.741 rows=74.00 loops=1)
+                          Buffers: shared hit=2665
+                          ->  Limit (actual time=5.727..5.733 rows=74.00 loops=1)
+                                Buffers: shared hit=2665
+                                ->  Sort (actual time=5.726..5.731 rows=74.00 loops=1)
+                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''глагол'''::tsquery, 33), ts_rank_cd(d ...
+                                      Sort Method: quicksort  Memory: 62kB
+                                      Buffers: shared hit=2665
+                                      ->  Nested Loop Left Join (actual time=4.777..5.710 rows=74.00 loops=1)
+                                            Buffers: shared hit=2665
+                                            ->  Hash Join (actual time=4.771..5.438 rows=74.00 loops=1)
+                                                  Hash Cond: (d.deck_id = public_deck.deck_id)
+                                                  Buffers: shared hit=2354
+                                                  ->  Bitmap Heap Scan on public_deck d (actual time=0.219..0.838 rows=1667.00 loops=1)
+                                                        Recheck Cond: listed
+                                                        Filter: (level = 'B2'::text)
+                                                        Rows Removed by Filter: 8333
+                                                        Heap Blocks: exact=618
+                                                        Buffers: shared hit=691
+                                                        ->  Bitmap Index Scan on public_deck_updated (actual time=0.196..0.196 rows=10040.00 loops=1)
+                                                              Index Searches: 1
+                                                              Buffers: shared hit=73
+                                                  ->  Hash (actual time=4.526..4.527 rows=452.00 loops=1)
+                                                        Buckets: 2048  Batches: 1  Memory Usage: 38kB
+                                                        Buffers: shared hit=1663
+                                                        ->  HashAggregate (actual time=4.482..4.506 rows=452.00 loops=1)
+                                                              Group Key: public_deck.deck_id
+                                                              Batches: 1  Memory Usage: 73kB
+                                                              Buffers: shared hit=1663
+                                                              ->  Append (actual time=0.470..4.396 rows=1260.00 loops=1)
+                                                                    Buffers: shared hit=1663
+                                                                    ->  Limit (actual time=0.470..0.552 rows=452.00 loops=1)
+                                                                          Buffers: shared hit=464
+                                                                          ->  Bitmap Heap Scan on public_deck (actual time=0.470..0.534 rows=452.00 loops=1)
+                                                                                Recheck Cond: (search_ru @@ '''глагол'''::tsquery)
+                                                                                Heap Blocks: exact=317
+                                                                                Buffers: shared hit=464
+                                                                                ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.460..0.460 rows=455.00 loops ...
+                                                                                      Index Cond: (search_ru @@ '''глагол'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=147
+                                                                    ->  Limit (actual time=0.472..0.538 rows=452.00 loops=1)
+                                                                          Buffers: shared hit=475
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.472..0.520 rows=452.00 loops=1)
+                                                                                Recheck Cond: (search_simple @@ '''глаголы'''::tsquery)
+                                                                                Heap Blocks: exact=317
+                                                                                Buffers: shared hit=475
+                                                                                ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.464..0.464 rows=455.00 l ...
+                                                                                      Index Cond: (search_simple @@ '''глаголы'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=158
+                                                                    ->  Limit (actual time=2.552..3.262 rows=356.00 loops=1)
+                                                                          Buffers: shared hit=724
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=2.551..3.249 rows=356.00 loops=1)
+                                                                                Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'глаголы'::text)
+                                                                                Heap Blocks: exact=261
+                                                                                Buffers: shared hit=724
+                                                                                ->  Bitmap Index Scan on public_deck_title_trgm (actual time=2.539..2.539 rows=358.00 loop ...
+                                                                                      Index Cond: (title_norm OPERATOR(app_learning.%>) 'глаголы'::text)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=463
+                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=74)
+                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
+                                                  Index Searches: 74
+                                                  Buffers: shared hit=267
+Planning:
+  Buffers: shared hit=9
+Planning Time: 0.337 ms
+Execution Time: 5.809 ms
+
+== search, common word (worst case: a few percent of the titles)
+   p50 8.46 ms, p95 8.83 ms, max 9.21 ms over 30 runs
+Limit (actual time=8.247..8.252 rows=25.00 loops=1)
+  Buffers: shared hit=4363
+  ->  Sort (actual time=8.247..8.250 rows=25.00 loops=1)
+        Sort Key: k."position" DESC, k.public_code COLLATE "C"
+        Sort Method: top-N heapsort  Memory: 37kB
+        Buffers: shared hit=4363
+        ->  Subquery Scan on k (actual time=8.175..8.211 rows=200.00 loops=1)
+              Buffers: shared hit=4363
+              ->  WindowAgg (actual time=8.175..8.199 rows=200.00 loops=1)
+                    Window: w1 AS ()
+                    Storage: Memory  Maximum Storage: 80kB
+                    Buffers: shared hit=4363
+                    ->  Subquery Scan on c (actual time=8.106..8.143 rows=200.00 loops=1)
+                          Buffers: shared hit=4363
+                          ->  Limit (actual time=8.105..8.121 rows=200.00 loops=1)
+                                Buffers: shared hit=4363
+                                ->  Sort (actual time=8.105..8.114 rows=200.00 loops=1)
+                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''глагол'''::tsquery, 33), ts_rank_cd(d ...
+                                      Sort Method: top-N heapsort  Memory: 195kB
+                                      Buffers: shared hit=4363
+                                      ->  Nested Loop Left Join (actual time=5.241..7.985 rows=452.00 loops=1)
+                                            Buffers: shared hit=4363
+                                            ->  Hash Join (actual time=5.227..6.309 rows=452.00 loops=1)
+                                                  Hash Cond: (d.deck_id = public_deck.deck_id)
+                                                  Buffers: shared hit=2354
+                                                  ->  Bitmap Heap Scan on public_deck d (actual time=0.298..0.888 rows=10000.00 loops=1)
+                                                        Recheck Cond: listed
+                                                        Heap Blocks: exact=618
+                                                        Buffers: shared hit=691
+                                                        ->  Bitmap Index Scan on public_deck_updated (actual time=0.266..0.266 rows=10040.00 loops=1)
+                                                              Index Searches: 1
+                                                              Buffers: shared hit=73
+                                                  ->  Hash (actual time=4.927..4.929 rows=452.00 loops=1)
+                                                        Buckets: 2048  Batches: 1  Memory Usage: 38kB
+                                                        Buffers: shared hit=1663
+                                                        ->  HashAggregate (actual time=4.882..4.907 rows=452.00 loops=1)
+                                                              Group Key: public_deck.deck_id
+                                                              Batches: 1  Memory Usage: 73kB
+                                                              Buffers: shared hit=1663
+                                                              ->  Append (actual time=0.577..4.788 rows=1260.00 loops=1)
+                                                                    Buffers: shared hit=1663
+                                                                    ->  Limit (actual time=0.577..0.708 rows=452.00 loops=1)
+                                                                          Buffers: shared hit=464
+                                                                          ->  Bitmap Heap Scan on public_deck (actual time=0.577..0.692 rows=452.00 loops=1)
+                                                                                Recheck Cond: (search_ru @@ '''глагол'''::tsquery)
+                                                                                Heap Blocks: exact=317
+                                                                                Buffers: shared hit=464
+                                                                                ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.562..0.562 rows=455.00 loops ...
+                                                                                      Index Cond: (search_ru @@ '''глагол'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=147
+                                                                    ->  Limit (actual time=0.546..0.621 rows=452.00 loops=1)
+                                                                          Buffers: shared hit=475
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.546..0.604 rows=452.00 loops=1)
+                                                                                Recheck Cond: (search_simple @@ '''глаголы'''::tsquery)
+                                                                                Heap Blocks: exact=317
+                                                                                Buffers: shared hit=475
+                                                                                ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.536..0.536 rows=455.00 l ...
+                                                                                      Index Cond: (search_simple @@ '''глаголы'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=158
+                                                                    ->  Limit (actual time=2.679..3.410 rows=356.00 loops=1)
+                                                                          Buffers: shared hit=724
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=2.678..3.396 rows=356.00 loops=1)
+                                                                                Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'глаголы'::text)
+                                                                                Heap Blocks: exact=261
+                                                                                Buffers: shared hit=724
+                                                                                ->  Bitmap Index Scan on public_deck_title_trgm (actual time=2.664..2.664 rows=358.00 loop ...
+                                                                                      Index Cond: (title_norm OPERATOR(app_learning.%>) 'глаголы'::text)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=463
+                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=452)
+                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
+                                                  Index Searches: 452
+                                                  Buffers: shared hit=1683
+Planning:
+  Buffers: shared hit=9
+Planning Time: 0.506 ms
+Execution Time: 8.291 ms
+
+== search, page 2 by the keyset
+   p50 7.39 ms, p95 7.61 ms, max 7.63 ms over 30 runs
+Limit (actual time=6.291..6.294 rows=25.00 loops=1)
+  Buffers: shared hit=2887
+  ->  Sort (actual time=6.290..6.293 rows=25.00 loops=1)
+        Sort Key: k."position" DESC, k.public_code COLLATE "C"
+        Sort Method: quicksort  Memory: 38kB
+        Buffers: shared hit=2887
+        ->  Subquery Scan on k (actual time=6.280..6.286 rows=27.00 loops=1)
+              Filter: ((k."position" < '300000'::bigint) OR ((k."position" = '300000'::bigint) AND ((k.public_code)::text > 'zzzzzzzzzz'::text)))
+              Rows Removed by Filter: 173
+              Buffers: shared hit=2887
+              ->  WindowAgg (actual time=6.257..6.279 rows=200.00 loops=1)
+                    Window: w1 AS ()
+                    Storage: Memory  Maximum Storage: 81kB
+                    Buffers: shared hit=2887
+                    ->  Subquery Scan on c (actual time=6.191..6.225 rows=200.00 loops=1)
+                          Buffers: shared hit=2887
+                          ->  Limit (actual time=6.191..6.204 rows=200.00 loops=1)
+                                Buffers: shared hit=2887
+                                ->  Sort (actual time=6.190..6.198 rows=200.00 loops=1)
+                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''испанск'''::tsquery, 33), ts_rank_cd( ...
+                                      Sort Method: quicksort  Memory: 134kB
+                                      Buffers: shared hit=2887
+                                      ->  Nested Loop Left Join (actual time=4.473..6.133 rows=215.00 loops=1)
+                                            Buffers: shared hit=2887
+                                            ->  Hash Join (actual time=4.466..5.354 rows=215.00 loops=1)
+                                                  Hash Cond: (d.deck_id = public_deck.deck_id)
+                                                  Buffers: shared hit=1893
+                                                  ->  Bitmap Heap Scan on public_deck d (actual time=0.217..0.692 rows=10000.00 loops=1)
+                                                        Recheck Cond: listed
+                                                        Heap Blocks: exact=618
+                                                        Buffers: shared hit=691
+                                                        ->  Bitmap Index Scan on public_deck_updated (actual time=0.195..0.195 rows=10040.00 loops=1)
+                                                              Index Searches: 1
+                                                              Buffers: shared hit=73
+                                                  ->  Hash (actual time=4.241..4.242 rows=215.00 loops=1)
+                                                        Buckets: 1024  Batches: 1  Memory Usage: 19kB
+                                                        Buffers: shared hit=1202
+                                                        ->  Unique (actual time=4.193..4.233 rows=215.00 loops=1)
+                                                              Buffers: shared hit=1202
+                                                              ->  Sort (actual time=4.193..4.208 rows=601.00 loops=1)
+                                                                    Sort Key: public_deck.deck_id
+                                                                    Sort Method: quicksort  Memory: 25kB
+                                                                    Buffers: shared hit=1202
+                                                                    ->  Append (actual time=0.475..4.161 rows=601.00 loops=1)
+                                                                          Buffers: shared hit=1202
+                                                                          ->  Limit (actual time=0.475..0.512 rows=215.00 loops=1)
+                                                                                Buffers: shared hit=303
+                                                                                ->  Bitmap Heap Scan on public_deck (actual time=0.475..0.504 rows=215.00 loops=1)
+                                                                                      Recheck Cond: (search_ru @@ '''испанск'''::tsquery)
+                                                                                      Heap Blocks: exact=156
+                                                                                      Buffers: shared hit=303
+                                                                                      ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.470..0.470 rows=217.00 ...
+                                                                                            Index Cond: (search_ru @@ '''испанск'''::tsquery)
+                                                                                            Index Searches: 1
+                                                                                            Buffers: shared hit=147
+                                                                          ->  Limit (actual time=0.483..0.514 rows=215.00 loops=1)
+                                                                                Buffers: shared hit=314
+                                                                                ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.483..0.507 rows=215.00 lo ...
+                                                                                      Recheck Cond: (search_simple @@ '''испанские'''::tsquery)
+                                                                                      Heap Blocks: exact=156
+                                                                                      Buffers: shared hit=314
+                                                                                      ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.479..0.479 rows=21 ...
+                                                                                            Index Cond: (search_simple @@ '''испанские'''::tsquery)
+                                                                                            Index Searches: 1
+                                                                                            Buffers: shared hit=158
+                                                                          ->  Limit (actual time=2.750..3.112 rows=171.00 loops=1)
+                                                                                Buffers: shared hit=585
+                                                                                ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=2.749..3.105 rows=171.00 lo ...
+                                                                                      Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'испанские'::text)
+                                                                                      Heap Blocks: exact=120
+                                                                                      Buffers: shared hit=585
+                                                                                      ->  Bitmap Index Scan on public_deck_title_trgm (actual time=2.742..2.742 rows=172.0 ...
+                                                                                            Index Cond: (title_norm OPERATOR(app_learning.%>) 'испанские'::text)
+                                                                                            Index Searches: 1
+                                                                                            Buffers: shared hit=465
+                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=215)
+                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
+                                                  Index Searches: 215
+                                                  Buffers: shared hit=820
+Planning:
+  Buffers: shared hit=9
+Planning Time: 0.340 ms
+Execution Time: 6.318 ms
+
+== author, first page
+   p50 0.36 ms, p95 0.39 ms, max 0.41 ms over 30 runs
+
+== shelf, new
+   p50 0.36 ms, p95 0.39 ms, max 0.40 ms over 30 runs
+
+== shelf, learning
+   p50 0.41 ms, p95 0.46 ms, max 0.51 ms over 30 runs
+
+== shelf, topic
+   p50 0.40 ms, p95 0.43 ms, max 0.47 ms over 30 runs
+
+== shelf, editorial
+   p50 0.32 ms, p95 0.36 ms, max 0.37 ms over 30 runs
+
+== learners of an author
+   p50 0.32 ms, p95 0.35 ms, max 0.38 ms over 30 runs
+
+== facets (cached for five minutes)
+   p50 2.00 ms, p95 2.05 ms, max 2.09 ms over 30 runs
+
+== sitemap (cached for an hour, 50 000 rows at most)
+   p50 5.17 ms, p95 6.35 ms, max 7.04 ms over 30 runs
+
+the plan of a rare word:
+Limit (actual time=4.789..4.791 rows=10.00 loops=1)
+  Buffers: shared hit=875
+  ->  Sort (actual time=4.785..4.787 rows=10.00 loops=1)
+        Sort Key: k."position" DESC, k.public_code COLLATE "C"
+        Sort Method: quicksort  Memory: 30kB
+        Buffers: shared hit=875
+        ->  Subquery Scan on k (actual time=4.779..4.783 rows=10.00 loops=1)
+              Buffers: shared hit=875
+              ->  WindowAgg (actual time=4.779..4.782 rows=10.00 loops=1)
+                    Window: w1 AS ()
+                    Storage: Memory  Maximum Storage: 20kB
+                    Buffers: shared hit=875
+                    ->  Subquery Scan on c (actual time=4.771..4.775 rows=10.00 loops=1)
+                          Buffers: shared hit=875
+                          ->  Limit (actual time=4.771..4.773 rows=10.00 loops=1)
+                                Buffers: shared hit=875
+                                ->  Sort (actual time=4.771..4.772 rows=10.00 loops=1)
+                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''гравитац'''::tsquery, 33), ts_rank_cd(d.search_simple, '''гравитация'''::tsquery, 33)))::double precision, '0'::double precision)) + ('0.2'::double precision * (app_learning.word_similarity('гравитация'::text, d.title_norm))::double precision)) + ('0.2'::double precision * (COALESCE(r.pop_pct, '0'::real))::double precision)) * CASE WHEN ((d.content_language IS NOT NULL) AND (d.content_language <> 'ru'::text)) THEN '0.85'::double precision ELSE '1'::double precision END) * '1000000'::double precision)))::bigint) DESC, d.public_code COLLATE "C"
+                                      Sort Method: quicksort  Memory: 30kB
+                                      Buffers: shared hit=875
+                                      ->  Nested Loop Left Join (actual time=4.694..4.767 rows=10.00 loops=1)
+                                            Buffers: shared hit=875
+                                            ->  Nested Loop (actual time=4.681..4.698 rows=10.00 loops=1)
+                                                  Buffers: shared hit=828
+                                                  ->  Unique (actual time=4.673..4.677 rows=10.00 loops=1)
+                                                        Buffers: shared hit=798
+                                                        ->  Sort (actual time=4.672..4.673 rows=29.00 loops=1)
+                                                              Sort Key: public_deck.deck_id
+                                                              Sort Method: quicksort  Memory: 25kB
+                                                              Buffers: shared hit=798
+                                                              ->  Append (actual time=0.596..4.669 rows=29.00 loops=1)
+                                                                    Buffers: shared hit=798
+                                                                    ->  Limit (actual time=0.595..0.598 rows=10.00 loops=1)
+                                                                          Buffers: shared hit=156
+                                                                          ->  Bitmap Heap Scan on public_deck (actual time=0.595..0.597 rows=10.00 loops=1)
+                                                                                Recheck Cond: (search_ru @@ '''гравитац'''::tsquery)
+                                                                                Heap Blocks: exact=9
+                                                                                Buffers: shared hit=156
+                                                                                ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.589..0.589 rows=10.00 loops=1)
+                                                                                      Index Cond: (search_ru @@ '''гравитац'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=147
+                                                                    ->  Limit (actual time=0.562..0.564 rows=10.00 loops=1)
+                                                                          Buffers: shared hit=167
+                                                                          ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.562..0.564 rows=10.00 loops=1)
+                                                                                Recheck Cond: (search_simple @@ '''гравитация'''::tsquery)
+                                                                                Heap Blocks: exact=9
+                                                                                Buffers: shared hit=167
+                                                                                ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.561..0.561 rows=10.00 loops=1)
+                                                                                      Index Cond: (search_simple @@ '''гравитация'''::tsquery)
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=158
+                                                                    ->  Sort (actual time=3.503..3.504 rows=9.00 loops=1)
+                                                                          Sort Key: public_deck_2.deck_id
+                                                                          Sort Method: quicksort  Memory: 25kB
+                                                                          Buffers: shared hit=475
+                                                                          ->  Limit (actual time=3.477..3.501 rows=9.00 loops=1)
+                                                                                Buffers: shared hit=475
+                                                                                ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=3.476..3.500 rows=9.00 loops=1)
+                                                                                      Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'гравитация'::text)
+                                                                                      Heap Blocks: exact=9
+                                                                                      Buffers: shared hit=475
+                                                                                      ->  Bitmap Index Scan on public_deck_title_trgm (actual time=3.466..3.466 rows=9.00 loops=1)
+                                                                                            Index Cond: (title_norm OPERATOR(app_learning.%>) 'гравитация'::text)
+                                                                                            Index Searches: 1
+                                                                                            Buffers: shared hit=466
+                                                  ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.001..0.001 rows=1.00 loops=10)
                                                         Index Cond: (deck_id = public_deck.deck_id)
                                                         Filter: listed
                                                         Index Searches: 10
@@ -545,653 +1246,8 @@ Limit (actual time=4.347..4.350 rows=10.00 loops=1)
                                             ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.003..0.003 rows=1.00 loops=10)
                                                   Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
                                                   Index Searches: 10
-                                                  Buffers: shared hit=38
+                                                  Buffers: shared hit=39
 Planning:
   Buffers: shared hit=9
-Planning Time: 0.489 ms
-Execution Time: 4.387 ms
-
-== search, rare Latin word
-   p50 6.36 ms, p95 7.66 ms, max 8.09 ms over 30 runs
-Limit (actual time=4.753..4.756 rows=11.00 loops=1)
-  Buffers: shared hit=880
-  ->  Sort (actual time=4.753..4.755 rows=11.00 loops=1)
-        Sort Key: k."position" DESC, k.public_code COLLATE "C"
-        Sort Method: quicksort  Memory: 30kB
-        Buffers: shared hit=880
-        ->  Subquery Scan on k (actual time=4.745..4.749 rows=11.00 loops=1)
-              Buffers: shared hit=880
-              ->  WindowAgg (actual time=4.744..4.748 rows=11.00 loops=1)
-                    Window: w1 AS ()
-                    Storage: Memory  Maximum Storage: 20kB
-                    Buffers: shared hit=880
-                    ->  Subquery Scan on c (actual time=4.735..4.739 rows=11.00 loops=1)
-                          Buffers: shared hit=880
-                          ->  Limit (actual time=4.734..4.736 rows=11.00 loops=1)
-                                Buffers: shared hit=880
-                                ->  Sort (actual time=4.733..4.735 rows=11.00 loops=1)
-                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''zucchini'''::tsquery, 33), ts_rank_cd ...
-                                      Sort Method: quicksort  Memory: 30kB
-                                      Buffers: shared hit=880
-                                      ->  Nested Loop Left Join (actual time=4.657..4.729 rows=11.00 loops=1)
-                                            Buffers: shared hit=880
-                                            ->  Nested Loop (actual time=4.643..4.664 rows=11.00 loops=1)
-                                                  Buffers: shared hit=831
-                                                  ->  Unique (actual time=4.631..4.635 rows=11.00 loops=1)
-                                                        Buffers: shared hit=798
-                                                        ->  Sort (actual time=4.630..4.632 rows=29.00 loops=1)
-                                                              Sort Key: public_deck.deck_id
-                                                              Sort Method: quicksort  Memory: 25kB
-                                                              Buffers: shared hit=798
-                                                              ->  Append (actual time=0.593..4.624 rows=29.00 loops=1)
-                                                                    Buffers: shared hit=798
-                                                                    ->  Bitmap Heap Scan on public_deck (actual time=0.592..0.596 rows=11.00 loops=1)
-                                                                          Recheck Cond: (search_ru @@ '''zucchini'''::tsquery)
-                                                                          Heap Blocks: exact=11
-                                                                          Buffers: shared hit=158
-                                                                          ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.588..0.588 rows=11.00 loops=1)
-                                                                                Index Cond: (search_ru @@ '''zucchini'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=147
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.549..0.551 rows=11.00 loops=1)
-                                                                          Recheck Cond: (search_simple @@ '''zucchini'''::tsquery)
-                                                                          Heap Blocks: exact=11
-                                                                          Buffers: shared hit=169
-                                                                          ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.547..0.547 rows=11.00 loops=1)
-                                                                                Index Cond: (search_simple @@ '''zucchini'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=158
-                                                                    ->  Sort (actual time=3.475..3.475 rows=7.00 loops=1)
-                                                                          Sort Key: public_deck_2.deck_id
-                                                                          Sort Method: quicksort  Memory: 25kB
-                                                                          Buffers: shared hit=471
-                                                                          ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=3.456..3.471 rows=7.00 loops=1)
-                                                                                Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'zucchini'::text)
-                                                                                Heap Blocks: exact=7
-                                                                                Buffers: shared hit=471
-                                                                                ->  Bitmap Index Scan on public_deck_title_trgm (actual time=3.432..3.432 rows=7.00 loops= ...
-                                                                                      Index Cond: (title_norm OPERATOR(app_learning.%>) 'zucchini'::text)
-                                                                                      Index Searches: 1
-                                                                                      Buffers: shared hit=464
-                                                  ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.002..0.002 rows=1.00 loops=11)
-                                                        Index Cond: (deck_id = public_deck.deck_id)
-                                                        Filter: listed
-                                                        Index Searches: 11
-                                                        Buffers: shared hit=33
-                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.003..0.003 rows=1.00 loops=11)
-                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
-                                                  Index Searches: 11
-                                                  Buffers: shared hit=41
-Planning:
-  Buffers: shared hit=9
-Planning Time: 0.421 ms
-Execution Time: 4.822 ms
-
-== search, Japanese title (trigrams only)
-   p50 5.41 ms, p95 6.80 ms, max 7.26 ms over 30 runs
-Limit (actual time=3.093..3.096 rows=8.00 loops=1)
-  Buffers: shared hit=845
-  ->  Sort (actual time=3.092..3.095 rows=8.00 loops=1)
-        Sort Key: k."position" DESC, k.public_code COLLATE "C"
-        Sort Method: quicksort  Memory: 29kB
-        Buffers: shared hit=845
-        ->  Subquery Scan on k (actual time=3.086..3.090 rows=8.00 loops=1)
-              Buffers: shared hit=845
-              ->  WindowAgg (actual time=3.085..3.089 rows=8.00 loops=1)
-                    Window: w1 AS ()
-                    Storage: Memory  Maximum Storage: 19kB
-                    Buffers: shared hit=845
-                    ->  Subquery Scan on c (actual time=3.078..3.081 rows=8.00 loops=1)
-                          Buffers: shared hit=845
-                          ->  Limit (actual time=3.077..3.079 rows=8.00 loops=1)
-                                Buffers: shared hit=845
-                                ->  Sort (actual time=3.076..3.078 rows=8.00 loops=1)
-                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''ひらがな'''::tsquery, 33), ts_rank_cd(d.s ...
-                                      Sort Method: quicksort  Memory: 29kB
-                                      Buffers: shared hit=845
-                                      ->  Nested Loop Left Join (actual time=3.008..3.073 rows=8.00 loops=1)
-                                            Buffers: shared hit=845
-                                            ->  Nested Loop (actual time=2.996..3.023 rows=8.00 loops=1)
-                                                  Buffers: shared hit=812
-                                                  ->  Unique (actual time=2.988..3.005 rows=8.00 loops=1)
-                                                        Buffers: shared hit=788
-                                                        ->  Sort (actual time=2.988..3.003 rows=23.00 loops=1)
-                                                              Sort Key: public_deck.deck_id
-                                                              Sort Method: quicksort  Memory: 25kB
-                                                              Buffers: shared hit=788
-                                                              ->  Append (actual time=0.491..2.985 rows=23.00 loops=1)
-                                                                    Buffers: shared hit=788
-                                                                    ->  Bitmap Heap Scan on public_deck (actual time=0.490..0.496 rows=8.00 loops=1)
-                                                                          Recheck Cond: (search_ru @@ '''ひらがな'''::tsquery)
-                                                                          Heap Blocks: exact=8
-                                                                          Buffers: shared hit=155
-                                                                          ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.484..0.485 rows=8.00 loops=1)
-                                                                                Index Cond: (search_ru @@ '''ひらがな'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=147
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.442..0.444 rows=8.00 loops=1)
-                                                                          Recheck Cond: (search_simple @@ '''ひらがな'''::tsquery)
-                                                                          Heap Blocks: exact=8
-                                                                          Buffers: shared hit=166
-                                                                          ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.439..0.440 rows=8.00 loops=1)
-                                                                                Index Cond: (search_simple @@ '''ひらがな'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=158
-                                                                    ->  Sort (actual time=2.043..2.043 rows=7.00 loops=1)
-                                                                          Sort Key: public_deck_2.deck_id
-                                                                          Sort Method: quicksort  Memory: 25kB
-                                                                          Buffers: shared hit=467
-                                                                          ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=2.014..2.027 rows=7.00 loops=1)
-                                                                                Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'ひらがな'::text)
-                                                                                Heap Blocks: exact=7
-                                                                                Buffers: shared hit=467
-                                                                                ->  Bitmap Index Scan on public_deck_title_trgm (actual time=2.003..2.003 rows=7.00 loops= ...
-                                                                                      Index Cond: (title_norm OPERATOR(app_learning.%>) 'ひらがな'::text)
-                                                                                      Index Searches: 1
-                                                                                      Buffers: shared hit=460
-                                                  ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.002..0.002 rows=1.00 loops=8)
-                                                        Index Cond: (deck_id = public_deck.deck_id)
-                                                        Filter: listed
-                                                        Index Searches: 8
-                                                        Buffers: shared hit=24
-                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.003..0.003 rows=1.00 loops=8)
-                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
-                                                  Index Searches: 8
-                                                  Buffers: shared hit=29
-Planning:
-  Buffers: shared hit=9
-Planning Time: 0.687 ms
-Execution Time: 3.135 ms
-
-== search, typo
-   p50 9.67 ms, p95 12.14 ms, max 12.19 ms over 30 runs
-Limit (actual time=7.263..7.269 rows=25.00 loops=1)
-  Buffers: shared hit=1214
-  ->  Sort (actual time=7.262..7.267 rows=25.00 loops=1)
-        Sort Key: k."position" DESC, k.public_code COLLATE "C"
-        Sort Method: top-N heapsort  Memory: 37kB
-        Buffers: shared hit=1214
-        ->  Subquery Scan on k (actual time=7.232..7.250 rows=52.00 loops=1)
-              Buffers: shared hit=1214
-              ->  WindowAgg (actual time=7.231..7.243 rows=52.00 loops=1)
-                    Window: w1 AS ()
-                    Storage: Memory  Maximum Storage: 33kB
-                    Buffers: shared hit=1214
-                    ->  Subquery Scan on c (actual time=7.197..7.212 rows=52.00 loops=1)
-                          Buffers: shared hit=1214
-                          ->  Limit (actual time=7.196..7.204 rows=52.00 loops=1)
-                                Buffers: shared hit=1214
-                                ->  Sort (actual time=7.195..7.201 rows=52.00 loops=1)
-                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''испнск'' & ''глагол'''::tsquery, 33), ...
-                                      Sort Method: quicksort  Memory: 51kB
-                                      Buffers: shared hit=1214
-                                      ->  Nested Loop Left Join (actual time=6.662..7.175 rows=52.00 loops=1)
-                                            Buffers: shared hit=1214
-                                            ->  Nested Loop (actual time=6.640..6.745 rows=52.00 loops=1)
-                                                  Buffers: shared hit=962
-                                                  ->  Unique (actual time=6.628..6.644 rows=52.00 loops=1)
-                                                        Buffers: shared hit=806
-                                                        ->  Sort (actual time=6.627..6.634 rows=52.00 loops=1)
-                                                              Sort Key: public_deck.deck_id
-                                                              Sort Method: quicksort  Memory: 25kB
-                                                              Buffers: shared hit=806
-                                                              ->  Append (actual time=6.362..6.617 rows=52.00 loops=1)
-                                                                    Buffers: shared hit=806
-                                                                    ->  Sort (actual time=0.808..0.809 rows=0.00 loops=1)
-                                                                          Sort Key: public_deck.deck_id
-                                                                          Sort Method: quicksort  Memory: 25kB
-                                                                          Buffers: shared hit=148
-                                                                          ->  Bitmap Heap Scan on public_deck (actual time=0.802..0.802 rows=0.00 loops=1)
-                                                                                Recheck Cond: (search_ru @@ '''испнск'' & ''глагол'''::tsquery)
-                                                                                Buffers: shared hit=148
-                                                                                ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.799..0.800 rows=0.00 loops=1 ...
-                                                                                      Index Cond: (search_ru @@ '''испнск'' & ''глагол'''::tsquery)
-                                                                                      Index Searches: 1
-                                                                                      Buffers: shared hit=148
-                                                                    ->  Sort (actual time=0.816..0.816 rows=0.00 loops=1)
-                                                                          Sort Key: public_deck_1.deck_id
-                                                                          Sort Method: quicksort  Memory: 25kB
-                                                                          Buffers: shared hit=159
-                                                                          ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.804..0.804 rows=0.00 loops=1)
-                                                                                Recheck Cond: (search_simple @@ '''испнские'' & ''глаголы'''::tsquery)
-                                                                                Buffers: shared hit=159
-                                                                                ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.802..0.803 rows=0.00 loo ...
-                                                                                      Index Cond: (search_simple @@ '''испнские'' & ''глаголы'''::tsquery)
-                                                                                      Index Searches: 1
-                                                                                      Buffers: shared hit=159
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=4.737..4.985 rows=52.00 loops=1)
-                                                                          Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'испнские глаголы'::text)
-                                                                          Rows Removed by Index Recheck: 13
-                                                                          Heap Blocks: exact=27
-                                                                          Buffers: shared hit=499
-                                                                          ->  Bitmap Index Scan on public_deck_title_trgm (actual time=4.711..4.712 rows=65.00 loops=1)
-                                                                                Index Cond: (title_norm OPERATOR(app_learning.%>) 'испнские глаголы'::text)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=472
-                                                  ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.001..0.001 rows=1.00 loops=52)
-                                                        Index Cond: (deck_id = public_deck.deck_id)
-                                                        Filter: listed
-                                                        Index Searches: 52
-                                                        Buffers: shared hit=156
-                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.002..0.002 rows=1.00 loops=52)
-                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
-                                                  Index Searches: 52
-                                                  Buffers: shared hit=204
-Planning:
-  Buffers: shared hit=9
-Planning Time: 0.539 ms
-Execution Time: 7.305 ms
-
-== search, topic by synonym
-   p50 17.73 ms, p95 25.60 ms, max 25.87 ms over 30 runs
-Limit (actual time=15.196..15.201 rows=25.00 loops=1)
-  Buffers: shared hit=4581
-  ->  Sort (actual time=15.195..15.200 rows=25.00 loops=1)
-        Sort Key: k."position" DESC, k.public_code COLLATE "C"
-        Sort Method: top-N heapsort  Memory: 37kB
-        Buffers: shared hit=4581
-        ->  Subquery Scan on k (actual time=15.123..15.160 rows=200.00 loops=1)
-              Buffers: shared hit=4581
-              ->  WindowAgg (actual time=15.123..15.147 rows=200.00 loops=1)
-                    Window: w1 AS ()
-                    Storage: Memory  Maximum Storage: 80kB
-                    Buffers: shared hit=4581
-                    ->  Subquery Scan on c (actual time=15.054..15.090 rows=200.00 loops=1)
-                          Buffers: shared hit=4581
-                          ->  Limit (actual time=15.053..15.069 rows=200.00 loops=1)
-                                Buffers: shared hit=4581
-                                ->  Sort (actual time=15.052..15.061 rows=200.00 loops=1)
-                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''испанск'' | ''испанск'' | ''spanish'' ...
-                                      Sort Method: top-N heapsort  Memory: 181kB
-                                      Buffers: shared hit=4581
-                                      ->  Nested Loop Left Join (actual time=9.411..14.855 rows=534.00 loops=1)
-                                            Buffers: shared hit=4581
-                                            ->  Hash Join (actual time=9.387..10.742 rows=534.00 loops=1)
-                                                  Hash Cond: (d.deck_id = public_deck.deck_id)
-                                                  Buffers: shared hit=2160
-                                                  ->  Bitmap Heap Scan on public_deck d (actual time=0.331..1.140 rows=10000.00 loops=1)
-                                                        Recheck Cond: listed
-                                                        Heap Blocks: exact=618
-                                                        Buffers: shared hit=691
-                                                        ->  Bitmap Index Scan on public_deck_updated (actual time=0.297..0.297 rows=10040.00 loops=1)
-                                                              Index Searches: 1
-                                                              Buffers: shared hit=73
-                                                  ->  Hash (actual time=9.046..9.048 rows=534.00 loops=1)
-                                                        Buckets: 2048  Batches: 1  Memory Usage: 42kB
-                                                        Buffers: shared hit=1469
-                                                        ->  HashAggregate (actual time=8.993..9.021 rows=534.00 loops=1)
-                                                              Group Key: public_deck.deck_id
-                                                              Batches: 1  Memory Usage: 89kB
-                                                              Buffers: shared hit=1469
-                                                              ->  Append (actual time=2.577..8.903 rows=853.00 loops=1)
-                                                                    Buffers: shared hit=1469
-                                                                    ->  Bitmap Heap Scan on public_deck (actual time=2.576..2.743 rows=353.00 loops=1)
-                                                                          Recheck Cond: (search_ru @@ '''испанск'' | ''испанск'' | ''spanish'' | ''espanol'' | ''spanish'' ...
-                                                                          Heap Blocks: exact=259
-                                                                          Buffers: shared hit=413
-                                                                          ->  Bitmap Index Scan on public_deck_search_ru (actual time=2.560..2.560 rows=355.00 loops=1)
-                                                                                Index Cond: (search_ru @@ '''испанск'' | ''испанск'' | ''spanish'' | ''espanol'' | ''spani ...
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=154
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=2.484..2.511 rows=140.00 loops=1)
-                                                                          Recheck Cond: (search_simple @@ '''испанский'' | ''испанский'' | ''spanish'' | ''espanol'' | ''s ...
-                                                                          Heap Blocks: exact=128
-                                                                          Buffers: shared hit=293
-                                                                          ->  Bitmap Index Scan on public_deck_search_simple (actual time=2.476..2.476 rows=141.00 loops=1 ...
-                                                                                Index Cond: (search_simple @@ '''испанский'' | ''испанский'' | ''spanish'' | ''espanol'' | ...
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=165
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=3.094..3.553 rows=172.00 loops=1)
-                                                                          Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'испанский'::text)
-                                                                          Heap Blocks: exact=120
-                                                                          Buffers: shared hit=585
-                                                                          ->  Bitmap Index Scan on public_deck_title_trgm (actual time=3.075..3.075 rows=172.00 loops=1)
-                                                                                Index Cond: (title_norm OPERATOR(app_learning.%>) 'испанский'::text)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=465
-                                                                    ->  Index Only Scan using public_deck_topic on public_deck public_deck_3 (actual time=0.013..0.054 row ...
-                                                                          Index Cond: (topic_id = 'spanish'::text)
-                                                                          Heap Fetches: 188
-                                                                          Index Searches: 1
-                                                                          Buffers: shared hit=178
-                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=534)
-                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
-                                                  Index Searches: 534
-                                                  Buffers: shared hit=2012
-Planning:
-  Buffers: shared hit=9
-Planning Time: 0.610 ms
-Execution Time: 15.249 ms
-
-== search, word with a filter
-   p50 9.10 ms, p95 11.12 ms, max 11.12 ms over 30 runs
-Limit (actual time=7.241..7.247 rows=25.00 loops=1)
-  Buffers: shared hit=2713
-  ->  Sort (actual time=7.241..7.246 rows=25.00 loops=1)
-        Sort Key: k."position" DESC, k.public_code COLLATE "C"
-        Sort Method: top-N heapsort  Memory: 37kB
-        Buffers: shared hit=2713
-        ->  Subquery Scan on k (actual time=7.197..7.223 rows=78.00 loops=1)
-              Buffers: shared hit=2713
-              ->  WindowAgg (actual time=7.197..7.217 rows=78.00 loops=1)
-                    Window: w1 AS ()
-                    Storage: Memory  Maximum Storage: 41kB
-                    Buffers: shared hit=2713
-                    ->  Subquery Scan on c (actual time=7.162..7.180 rows=78.00 loops=1)
-                          Buffers: shared hit=2713
-                          ->  Limit (actual time=7.160..7.169 rows=78.00 loops=1)
-                                Buffers: shared hit=2713
-                                ->  Sort (actual time=7.159..7.166 rows=78.00 loops=1)
-                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''глагол'''::tsquery, 33), ts_rank_cd(d ...
-                                      Sort Method: quicksort  Memory: 64kB
-                                      Buffers: shared hit=2713
-                                      ->  Nested Loop Left Join (actual time=5.501..7.137 rows=78.00 loops=1)
-                                            Buffers: shared hit=2713
-                                            ->  Hash Join (actual time=5.482..6.701 rows=78.00 loops=1)
-                                                  Hash Cond: (d.deck_id = public_deck.deck_id)
-                                                  Buffers: shared hit=2354
-                                                  ->  Bitmap Heap Scan on public_deck d (actual time=0.310..1.488 rows=1667.00 loops=1)
-                                                        Recheck Cond: listed
-                                                        Filter: (level = 'B2'::text)
-                                                        Rows Removed by Filter: 8333
-                                                        Heap Blocks: exact=618
-                                                        Buffers: shared hit=691
-                                                        ->  Bitmap Index Scan on public_deck_updated (actual time=0.278..0.278 rows=10040.00 loops=1)
-                                                              Index Searches: 1
-                                                              Buffers: shared hit=73
-                                                  ->  Hash (actual time=5.126..5.128 rows=453.00 loops=1)
-                                                        Buckets: 2048  Batches: 1  Memory Usage: 38kB
-                                                        Buffers: shared hit=1663
-                                                        ->  HashAggregate (actual time=5.078..5.103 rows=453.00 loops=1)
-                                                              Group Key: public_deck.deck_id
-                                                              Batches: 1  Memory Usage: 73kB
-                                                              Buffers: shared hit=1663
-                                                              ->  Append (actual time=0.561..4.981 rows=1262.00 loops=1)
-                                                                    Buffers: shared hit=1663
-                                                                    ->  Bitmap Heap Scan on public_deck (actual time=0.561..0.727 rows=453.00 loops=1)
-                                                                          Recheck Cond: (search_ru @@ '''глагол'''::tsquery)
-                                                                          Heap Blocks: exact=317
-                                                                          Buffers: shared hit=464
-                                                                          ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.546..0.547 rows=455.00 loops=1)
-                                                                                Index Cond: (search_ru @@ '''глагол'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=147
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.532..0.592 rows=453.00 loops=1)
-                                                                          Recheck Cond: (search_simple @@ '''глаголы'''::tsquery)
-                                                                          Heap Blocks: exact=317
-                                                                          Buffers: shared hit=475
-                                                                          ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.522..0.522 rows=455.00 loops=1 ...
-                                                                                Index Cond: (search_simple @@ '''глаголы'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=158
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=2.736..3.609 rows=356.00 loops=1)
-                                                                          Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'глаголы'::text)
-                                                                          Heap Blocks: exact=261
-                                                                          Buffers: shared hit=724
-                                                                          ->  Bitmap Index Scan on public_deck_title_trgm (actual time=2.707..2.707 rows=358.00 loops=1)
-                                                                                Index Cond: (title_norm OPERATOR(app_learning.%>) 'глаголы'::text)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=463
-                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.002..0.002 rows=1.00 loops=78)
-                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
-                                                  Index Searches: 78
-                                                  Buffers: shared hit=297
-Planning:
-  Buffers: shared hit=9
-Planning Time: 0.501 ms
-Execution Time: 7.292 ms
-
-== search, common word (worst case: a few percent of the titles)
-   p50 10.76 ms, p95 14.77 ms, max 19.06 ms over 30 runs
-Limit (actual time=9.922..9.929 rows=25.00 loops=1)
-  Buffers: shared hit=4432
-  ->  Sort (actual time=9.921..9.927 rows=25.00 loops=1)
-        Sort Key: k."position" DESC, k.public_code COLLATE "C"
-        Sort Method: top-N heapsort  Memory: 37kB
-        Buffers: shared hit=4432
-        ->  Subquery Scan on k (actual time=9.838..9.881 rows=200.00 loops=1)
-              Buffers: shared hit=4432
-              ->  WindowAgg (actual time=9.837..9.867 rows=200.00 loops=1)
-                    Window: w1 AS ()
-                    Storage: Memory  Maximum Storage: 80kB
-                    Buffers: shared hit=4432
-                    ->  Subquery Scan on c (actual time=9.747..9.796 rows=200.00 loops=1)
-                          Buffers: shared hit=4432
-                          ->  Limit (actual time=9.746..9.770 rows=200.00 loops=1)
-                                Buffers: shared hit=4432
-                                ->  Sort (actual time=9.745..9.761 rows=200.00 loops=1)
-                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''глагол'''::tsquery, 33), ts_rank_cd(d ...
-                                      Sort Method: top-N heapsort  Memory: 193kB
-                                      Buffers: shared hit=4432
-                                      ->  Nested Loop Left Join (actual time=5.764..9.585 rows=453.00 loops=1)
-                                            Buffers: shared hit=4432
-                                            ->  Hash Join (actual time=5.743..7.313 rows=453.00 loops=1)
-                                                  Hash Cond: (d.deck_id = public_deck.deck_id)
-                                                  Buffers: shared hit=2354
-                                                  ->  Bitmap Heap Scan on public_deck d (actual time=0.341..1.289 rows=10000.00 loops=1)
-                                                        Recheck Cond: listed
-                                                        Heap Blocks: exact=618
-                                                        Buffers: shared hit=691
-                                                        ->  Bitmap Index Scan on public_deck_updated (actual time=0.308..0.308 rows=10040.00 loops=1)
-                                                              Index Searches: 1
-                                                              Buffers: shared hit=73
-                                                  ->  Hash (actual time=5.399..5.401 rows=453.00 loops=1)
-                                                        Buckets: 2048  Batches: 1  Memory Usage: 38kB
-                                                        Buffers: shared hit=1663
-                                                        ->  HashAggregate (actual time=5.350..5.376 rows=453.00 loops=1)
-                                                              Group Key: public_deck.deck_id
-                                                              Batches: 1  Memory Usage: 73kB
-                                                              Buffers: shared hit=1663
-                                                              ->  Append (actual time=0.564..5.244 rows=1262.00 loops=1)
-                                                                    Buffers: shared hit=1663
-                                                                    ->  Bitmap Heap Scan on public_deck (actual time=0.563..0.751 rows=453.00 loops=1)
-                                                                          Recheck Cond: (search_ru @@ '''глагол'''::tsquery)
-                                                                          Heap Blocks: exact=317
-                                                                          Buffers: shared hit=464
-                                                                          ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.548..0.548 rows=455.00 loops=1)
-                                                                                Index Cond: (search_ru @@ '''глагол'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=147
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.533..0.589 rows=453.00 loops=1)
-                                                                          Recheck Cond: (search_simple @@ '''глаголы'''::tsquery)
-                                                                          Heap Blocks: exact=317
-                                                                          Buffers: shared hit=475
-                                                                          ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.523..0.524 rows=455.00 loops=1 ...
-                                                                                Index Cond: (search_simple @@ '''глаголы'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=158
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=2.938..3.855 rows=356.00 loops=1)
-                                                                          Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'глаголы'::text)
-                                                                          Heap Blocks: exact=261
-                                                                          Buffers: shared hit=724
-                                                                          ->  Bitmap Index Scan on public_deck_title_trgm (actual time=2.896..2.896 rows=358.00 loops=1)
-                                                                                Index Cond: (title_norm OPERATOR(app_learning.%>) 'глаголы'::text)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=463
-                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=453)
-                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
-                                                  Index Searches: 453
-                                                  Buffers: shared hit=1719
-Planning:
-  Buffers: shared hit=9
-Planning Time: 0.486 ms
-Execution Time: 9.977 ms
-
-== search, page 2 by the keyset
-   p50 9.56 ms, p95 13.45 ms, max 13.54 ms over 30 runs
-Limit (actual time=7.335..7.341 rows=25.00 loops=1)
-  Buffers: shared hit=2888
-  ->  Sort (actual time=7.335..7.340 rows=25.00 loops=1)
-        Sort Key: k."position" DESC, k.public_code COLLATE "C"
-        Sort Method: quicksort  Memory: 37kB
-        Buffers: shared hit=2888
-        ->  Subquery Scan on k (actual time=7.323..7.332 rows=25.00 loops=1)
-              Filter: ((k."position" < '300000'::bigint) OR ((k."position" = '300000'::bigint) AND ((k.public_code)::text > 'zzzzzzzzzz'::text)))
-              Rows Removed by Filter: 175
-              Buffers: shared hit=2888
-              ->  WindowAgg (actual time=7.297..7.324 rows=200.00 loops=1)
-                    Window: w1 AS ()
-                    Storage: Memory  Maximum Storage: 81kB
-                    Buffers: shared hit=2888
-                    ->  Subquery Scan on c (actual time=7.171..7.213 rows=200.00 loops=1)
-                          Buffers: shared hit=2888
-                          ->  Limit (actual time=7.170..7.190 rows=200.00 loops=1)
-                                Buffers: shared hit=2888
-                                ->  Sort (actual time=7.170..7.183 rows=200.00 loops=1)
-                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''испанск'''::tsquery, 33), ts_rank_cd( ...
-                                      Sort Method: quicksort  Memory: 134kB
-                                      Buffers: shared hit=2888
-                                      ->  Nested Loop Left Join (actual time=4.989..7.117 rows=216.00 loops=1)
-                                            Buffers: shared hit=2888
-                                            ->  Hash Join (actual time=4.972..6.166 rows=216.00 loops=1)
-                                                  Hash Cond: (d.deck_id = public_deck.deck_id)
-                                                  Buffers: shared hit=1893
-                                                  ->  Bitmap Heap Scan on public_deck d (actual time=0.274..1.010 rows=10000.00 loops=1)
-                                                        Recheck Cond: listed
-                                                        Heap Blocks: exact=618
-                                                        Buffers: shared hit=691
-                                                        ->  Bitmap Index Scan on public_deck_updated (actual time=0.247..0.248 rows=10040.00 loops=1)
-                                                              Index Searches: 1
-                                                              Buffers: shared hit=73
-                                                  ->  Hash (actual time=4.686..4.687 rows=216.00 loops=1)
-                                                        Buckets: 1024  Batches: 1  Memory Usage: 19kB
-                                                        Buffers: shared hit=1202
-                                                        ->  Unique (actual time=4.637..4.677 rows=216.00 loops=1)
-                                                              Buffers: shared hit=1202
-                                                              ->  Sort (actual time=4.636..4.651 rows=604.00 loops=1)
-                                                                    Sort Key: public_deck.deck_id
-                                                                    Sort Method: quicksort  Memory: 25kB
-                                                                    Buffers: shared hit=1202
-                                                                    ->  Append (actual time=0.617..4.597 rows=604.00 loops=1)
-                                                                          Buffers: shared hit=1202
-                                                                          ->  Bitmap Heap Scan on public_deck (actual time=0.617..0.663 rows=216.00 loops=1)
-                                                                                Recheck Cond: (search_ru @@ '''испанск'''::tsquery)
-                                                                                Heap Blocks: exact=156
-                                                                                Buffers: shared hit=303
-                                                                                ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.612..0.612 rows=217.00 loops ...
-                                                                                      Index Cond: (search_ru @@ '''испанск'''::tsquery)
-                                                                                      Index Searches: 1
-                                                                                      Buffers: shared hit=147
-                                                                          ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.599..0.634 rows=216.00 loops=1)
-                                                                                Recheck Cond: (search_simple @@ '''испанские'''::tsquery)
-                                                                                Heap Blocks: exact=156
-                                                                                Buffers: shared hit=314
-                                                                                ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.568..0.568 rows=217.00 l ...
-                                                                                      Index Cond: (search_simple @@ '''испанские'''::tsquery)
-                                                                                      Index Searches: 1
-                                                                                      Buffers: shared hit=158
-                                                                          ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=2.893..3.275 rows=172.00 loops=1)
-                                                                                Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'испанские'::text)
-                                                                                Heap Blocks: exact=120
-                                                                                Buffers: shared hit=585
-                                                                                ->  Bitmap Index Scan on public_deck_title_trgm (actual time=2.882..2.882 rows=172.00 loop ...
-                                                                                      Index Cond: (title_norm OPERATOR(app_learning.%>) 'испанские'::text)
-                                                                                      Index Searches: 1
-                                                                                      Buffers: shared hit=465
-                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=216)
-                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
-                                                  Index Searches: 216
-                                                  Buffers: shared hit=822
-Planning:
-  Buffers: shared hit=9
-Planning Time: 0.424 ms
-Execution Time: 7.377 ms
-
-== author, first page
-   p50 0.43 ms, p95 0.65 ms, max 0.76 ms over 30 runs
-
-== shelf, new
-   p50 0.41 ms, p95 0.47 ms, max 0.52 ms over 30 runs
-
-== shelf, learning
-   p50 1.11 ms, p95 1.52 ms, max 1.85 ms over 30 runs
-
-== shelf, topic
-   p50 0.47 ms, p95 0.74 ms, max 0.76 ms over 30 runs
-
-== shelf, editorial
-   p50 0.38 ms, p95 0.54 ms, max 0.73 ms over 30 runs
-
-== learners of an author
-   p50 0.35 ms, p95 0.52 ms, max 0.58 ms over 30 runs
-
-== facets (cached for five minutes)
-   p50 2.49 ms, p95 2.93 ms, max 3.15 ms over 30 runs
-
-== sitemap (cached for an hour, 50 000 rows at most)
-   p50 6.82 ms, p95 9.72 ms, max 10.78 ms over 30 runs
-
-the plan of a rare word:
-Limit (actual time=5.677..5.680 rows=10.00 loops=1)
-  Buffers: shared hit=874
-  ->  Sort (actual time=5.676..5.679 rows=10.00 loops=1)
-        Sort Key: k."position" DESC, k.public_code COLLATE "C"
-        Sort Method: quicksort  Memory: 30kB
-        Buffers: shared hit=874
-        ->  Subquery Scan on k (actual time=5.669..5.674 rows=10.00 loops=1)
-              Buffers: shared hit=874
-              ->  WindowAgg (actual time=5.668..5.672 rows=10.00 loops=1)
-                    Window: w1 AS ()
-                    Storage: Memory  Maximum Storage: 20kB
-                    Buffers: shared hit=874
-                    ->  Subquery Scan on c (actual time=5.659..5.663 rows=10.00 loops=1)
-                          Buffers: shared hit=874
-                          ->  Limit (actual time=5.658..5.660 rows=10.00 loops=1)
-                                Buffers: shared hit=874
-                                ->  Sort (actual time=5.657..5.659 rows=10.00 loops=1)
-                                      Sort Key: ((round(((((('0.6'::double precision * GREATEST((GREATEST(ts_rank_cd(d.search_ru, '''гравитац'''::tsquery, 33), ts_rank_cd(d.search_simple, '''гравитация'''::tsquery, 33)))::double precision, '0'::double precision)) + ('0.2'::double precision * (app_learning.word_similarity('гравитация'::text, d.title_norm))::double precision)) + ('0.2'::double precision * (COALESCE(r.pop_pct, '0'::real))::double precision)) * CASE WHEN ((d.content_language IS NOT NULL) AND (d.content_language <> 'ru'::text)) THEN '0.85'::double precision ELSE '1'::double precision END) * '1000000'::double precision)))::bigint) DESC, d.public_code COLLATE "C"
-                                      Sort Method: quicksort  Memory: 30kB
-                                      Buffers: shared hit=874
-                                      ->  Nested Loop Left Join (actual time=5.539..5.653 rows=10.00 loops=1)
-                                            Buffers: shared hit=874
-                                            ->  Nested Loop (actual time=5.520..5.545 rows=10.00 loops=1)
-                                                  Buffers: shared hit=828
-                                                  ->  Unique (actual time=5.504..5.509 rows=10.00 loops=1)
-                                                        Buffers: shared hit=798
-                                                        ->  Sort (actual time=5.503..5.505 rows=29.00 loops=1)
-                                                              Sort Key: public_deck.deck_id
-                                                              Sort Method: quicksort  Memory: 25kB
-                                                              Buffers: shared hit=798
-                                                              ->  Append (actual time=0.799..5.497 rows=29.00 loops=1)
-                                                                    Buffers: shared hit=798
-                                                                    ->  Bitmap Heap Scan on public_deck (actual time=0.797..0.804 rows=10.00 loops=1)
-                                                                          Recheck Cond: (search_ru @@ '''гравитац'''::tsquery)
-                                                                          Heap Blocks: exact=9
-                                                                          Buffers: shared hit=156
-                                                                          ->  Bitmap Index Scan on public_deck_search_ru (actual time=0.780..0.781 rows=10.00 loops=1)
-                                                                                Index Cond: (search_ru @@ '''гравитац'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=147
-                                                                    ->  Bitmap Heap Scan on public_deck public_deck_1 (actual time=0.690..0.693 rows=10.00 loops=1)
-                                                                          Recheck Cond: (search_simple @@ '''гравитация'''::tsquery)
-                                                                          Heap Blocks: exact=9
-                                                                          Buffers: shared hit=167
-                                                                          ->  Bitmap Index Scan on public_deck_search_simple (actual time=0.683..0.683 rows=10.00 loops=1)
-                                                                                Index Cond: (search_simple @@ '''гравитация'''::tsquery)
-                                                                                Index Searches: 1
-                                                                                Buffers: shared hit=158
-                                                                    ->  Sort (actual time=3.995..3.996 rows=9.00 loops=1)
-                                                                          Sort Key: public_deck_2.deck_id
-                                                                          Sort Method: quicksort  Memory: 25kB
-                                                                          Buffers: shared hit=475
-                                                                          ->  Bitmap Heap Scan on public_deck public_deck_2 (actual time=3.957..3.987 rows=9.00 loops=1)
-                                                                                Recheck Cond: (title_norm OPERATOR(app_learning.%>) 'гравитация'::text)
-                                                                                Heap Blocks: exact=9
-                                                                                Buffers: shared hit=475
-                                                                                ->  Bitmap Index Scan on public_deck_title_trgm (actual time=3.922..3.923 rows=9.00 loops=1)
-                                                                                      Index Cond: (title_norm OPERATOR(app_learning.%>) 'гравитация'::text)
-                                                                                      Index Searches: 1
-                                                                                      Buffers: shared hit=466
-                                                  ->  Index Scan using public_deck_pkey on public_deck d (actual time=0.003..0.003 rows=1.00 loops=10)
-                                                        Index Cond: (deck_id = public_deck.deck_id)
-                                                        Filter: listed
-                                                        Index Searches: 10
-                                                        Buffers: shared hit=30
-                                            ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.006..0.006 rows=1.00 loops=10)
-                                                  Index Cond: ((generation = '1'::bigint) AND (deck_id = d.deck_id))
-                                                  Index Searches: 10
-                                                  Buffers: shared hit=38
-Planning:
-  Buffers: shared hit=9
-Planning Time: 0.631 ms
-Execution Time: 5.727 ms
+Planning Time: 0.542 ms
+Execution Time: 4.831 ms
