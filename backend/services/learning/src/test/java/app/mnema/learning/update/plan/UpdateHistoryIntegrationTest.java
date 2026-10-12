@@ -125,7 +125,8 @@ class UpdateHistoryIntegrationTest extends AutoUpdateContext {
         assertThat(automatic.path("deckRevisionId").stringValue(null)).isEqualTo(s.revision().toString());
         assertThat(automatic.path("upstreamRevisionId").stringValue(null)).isEqualTo(s.published().toString());
         assertThat(automatic.path("seen").booleanValue(true)).isFalse();
-        assertThat(automatic.path("counts").path("applied").intValue()).isEqualTo(6);
+        // the new exercise's objective is an implied part of it (Updates/4): adopted and listed below, but not counted as a unit
+        assertThat(automatic.path("counts").path("applied").intValue()).isEqualTo(5);
         assertThat(automatic.path("counts").path("pending").intValue()).isEqualTo(1);
         assertThat(automatic.path("unitsTruncated").booleanValue(true)).isFalse();
         Set<String> listed = new TreeSet<>();
