@@ -99,6 +99,8 @@ export class AdminAuditPageComponent implements OnInit {
             EVENT_DELETE: 'Удалена новость',
             COMPLAINT_DECIDE: 'Решение по жалобе',
             COMPLAINT_UNHIDE: 'Колода возвращена в Сообщество',
+            COMMUNITY_EDITORIAL_UPDATE: 'Изменена полка «Выбор Мнемы»',
+            COMMUNITY_ANOMALY_DISMISS: 'Флаг накрутки просмотрен',
             BAN: 'Блокировка аккаунта',
             UNBAN: 'Разблокировка аккаунта',
             GRANT_ADMIN: 'Выдача прав администратора',
