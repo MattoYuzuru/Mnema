@@ -69,7 +69,7 @@ class JobExecutor implements DisposableBean, WakeTarget {
     private static final long PURGE_EVERY_NANOS = Duration.ofMinutes(1).toNanos();
     private static final long GAUGE_CACHE_NANOS = Duration.ofSeconds(5).toNanos();
 
-    private enum Outcome { CONTINUE, DONE, CANCELLED, LOST }
+    private enum Outcome { CONTINUE, PAUSED, DONE, CANCELLED, LOST }
 
     private record QueueState(JobHandler handler, JobSettings.Queue policy, Semaphore permits, TransactionTemplate transaction) {
     }
@@ -351,6 +351,8 @@ class JobExecutor implements DisposableBean, WakeTarget {
             if (outcome == Outcome.DONE) {
                 count(queue, "succeeded");
                 LOG.info("learning_job_done job_id={} queue={} outcome=SUCCEEDED attempt={}", claimed.id(), queue, claimed.attempt());
+            } else if (outcome == Outcome.PAUSED) {
+                count(queue, "paced");
             } else if (outcome == Outcome.CANCELLED) {
                 count(queue, "cancelled");
                 LOG.info("learning_job_done job_id={} queue={} outcome=CANCELLED", claimed.id(), queue);
@@ -401,6 +403,11 @@ class JobExecutor implements DisposableBean, WakeTarget {
         if (result instanceof Slice.Continue next) {
             if (!repository.progress(claimed.id(), claimed.token(), JobJson.write(next.progress(), "progress"), next.progressCount(), state.policy().lease())) {
                 throw new IllegalStateException("The lease of a locked job disappeared");
+            }
+            if (!next.delay().isZero()) {
+                // paced work: the cursor is committed above, the job goes back to the queue for `delay` (no attempt spent, no thread or connection held meanwhile)
+                if (!repository.release(claimed.id(), claimed.token(), next.delay())) throw new IllegalStateException("The lease of a locked job disappeared");
+                return Outcome.PAUSED;
             }
             return Outcome.CONTINUE;
         }
