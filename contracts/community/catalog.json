@@ -1,6 +1,6 @@
 {
   "contract": "community-catalog-v1",
-  "description": "Shared frontend/backend fixtures of the community catalogue (epic 3, #421): facets, shelves, browse and search, the decks of an author, and the owner's editorial shelf. The public routes are GET/HEAD only with an OPTIONAL bearer, like public-read-v1 (no token is a guest; a present but invalid Bearer token is 401). They read only the catalogue projection public_deck (Community/1) and the current rank generation (Community/3). `invariants` are executable: the backend integration tests and the frontend contract spec compare real answers and parsers with these examples.",
+  "description": "Shared frontend/backend fixtures of the community catalogue (epic 3, #421): facets, shelves, browse and search, the decks of an author, and the owner's editorial shelf. The public routes are GET/HEAD only with an OPTIONAL bearer, like public-read-v1 (no token is a guest; a present but invalid Bearer token is 401). They read the catalogue projection public_deck (Community/1) and the current rank generation (Community/3); only the author list also reads the publication and grant rows for the INVITE decks a signed-in viewer was granted. `invariants` are executable: the backend integration tests and the frontend contract spec compare real answers and parsers with these examples.",
   "constants": {
     "basePath": "/api/public/community",
     "killSwitch": "learning.community.catalog.enabled (default false: every public route of this contract and /api/public/sitemap.xml answer 404 as if absent; the owner's editorial routes keep working)",
@@ -15,23 +15,80 @@
     "audienceMinShown": 10,
     "audienceRounding": "floor to two significant digits (1234 -> 1200, 99 -> 99); below audienceMinShown the field is null, so an exact small audience never leaves the server",
     "catalogThreshold": "listed = at least 10 materials, at least one exercise and a non-blank description of the published revision; a deck below it has no place in facets, shelves, browse or search, but appears in its author's decks",
-    "sizes": {"evening": "itemCount < 50", "month": "50 <= itemCount <= 300", "course": "itemCount > 300"},
-    "media": ["image", "audio", "video"],
-    "mechanics": {"listening": "an exercise with audio in it", "matching": "MATCH or CATEGORIZE", "written": "FREE_RESPONSE or CLOZE", "choice": "CHOICE", "order": "ORDER"},
-    "levels": ["A1", "A2", "B1", "B2", "C1", "C2", "BEGINNER", "INTERMEDIATE", "ADVANCED"],
-    "sorts": {"popular": "rank of the current generation", "learning": "«Учат сейчас» of the current generation, then rank", "new": "first time the deck entered the catalogue, newest first", "updated": "last publication of new content, newest first"},
+    "sizes": {
+      "evening": "itemCount < 50",
+      "month": "50 <= itemCount <= 300",
+      "course": "itemCount > 300"
+    },
+    "media": [
+      "image",
+      "audio",
+      "video"
+    ],
+    "mechanics": {
+      "listening": "an exercise with audio in it",
+      "matching": "MATCH or CATEGORIZE",
+      "written": "FREE_RESPONSE or CLOZE",
+      "choice": "CHOICE",
+      "order": "ORDER"
+    },
+    "levels": [
+      "A1",
+      "A2",
+      "B1",
+      "B2",
+      "C1",
+      "C2",
+      "BEGINNER",
+      "INTERMEDIATE",
+      "ADVANCED"
+    ],
+    "sorts": {
+      "popular": "rank of the current generation",
+      "learning": "«Учат сейчас» of the current generation, then rank",
+      "new": "first time the deck entered the catalogue, newest first",
+      "updated": "last publication of new content, newest first"
+    },
     "freshDays": 30,
     "rankGenerationRetention": "PT24H: a cursor of an older generation is 412 VERSION_CONFLICT and the client restarts the list",
     "rateLimit": "the public read admission of public-read-v1 (per guest network, per IPv6 /48, per account; the shared bulkhead): 429 RATE_LIMITED and 503 PUBLIC_READ_BUSY as there"
   },
   "routes": [
-    {"method": "GET", "path": "/api/public/community/facets", "answers": "facets"},
-    {"method": "GET", "path": "/api/public/community/shelves", "answers": "shelves"},
-    {"method": "GET", "path": "/api/public/community/decks?q=&topic=&learn=&level=&size=&media=&mechanics=&fresh=&sort=&limit=&cursor=", "answers": "decks"},
-    {"method": "GET", "path": "/api/public/community/authors/{accountId}/decks?limit=&cursor=", "answers": "author"},
-    {"method": "GET", "path": "/api/public/sitemap.xml", "answers": "sitemap"},
-    {"method": "GET", "path": "/api/admin/community/editorial", "answers": "editorial.state"},
-    {"method": "PUT", "path": "/api/admin/community/editorial", "answers": "editorial.state"}
+    {
+      "method": "GET",
+      "path": "/api/public/community/facets",
+      "answers": "facets"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/community/shelves",
+      "answers": "shelves"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/community/decks?q=&topic=&learn=&level=&size=&media=&mechanics=&fresh=&sort=&limit=&cursor=",
+      "answers": "decks"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/community/authors/{accountId}/decks?limit=&cursor=",
+      "answers": "author"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/sitemap.xml",
+      "answers": "sitemap"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/community/editorial",
+      "answers": "editorial.state"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/community/editorial",
+      "answers": "editorial.state"
+    }
   ],
   "invariants": [
     "a card never carries a deck id, a revision id, a score, a rank or an exact audience below audienceMinShown",
@@ -44,7 +101,7 @@
     "topic may be a leaf or a top-level topic (a top-level topic includes its children); unknown topic, learn, level, size, media, mechanics or sort values are 400",
     "media and mechanics are comma-separated lists; a deck must have ALL listed values; fresh=true keeps decks whose updatedAt is within freshDays",
     "limit outside 1..pageMax, repeated parameters and malformed cursors are 400; a cursor is bound to the query and filters (another query with an old cursor is 400) and to the rank generation (an expired generation is 412)",
-    "pages never repeat or lose a deck within one generation; nextCursor is null on the last page; search returns at most searchCandidates decks in total",
+    "pages never repeat a deck within one list; popular, learning and search pages also never lose one within a generation; new, updated and the author list are keyset pages on a time that a republication can move, so a deck republished while the list is read may be skipped or appear again at its new place (accepted); nextCursor is null on the last page; search returns at most searchCandidates decks in total",
     "total counts the matching decks up to 1000 (browse) or up to searchCandidates (search); totalCapped is true when the real number may be larger",
     "shelves contain only shelves with at least shelfMinDecks decks, each at most shelfMaxDecks; an empty catalogue answers listedCount 0 and shelves []",
     "slug is always present (every deck here is PUBLIC) and the deck page is /d/{code}/{slug}"
@@ -54,15 +111,29 @@
     "slug": "ispanskiy-yazyk-bazovye-glagoly",
     "title": "Испанский язык: базовые глаголы",
     "description": "Сорок глаголов на каждый день: настоящее время, примеры и упражнения на слух.",
-    "topic": {"id": "spanish", "name": "Испанский", "parentId": "languages"},
+    "topic": {
+      "id": "spanish",
+      "name": "Испанский",
+      "parentId": "languages"
+    },
     "contentLanguage": "ru",
     "targetLanguage": "es",
     "level": "A1",
-    "tags": ["глаголы", "настоящее время"],
+    "tags": [
+      "глаголы",
+      "настоящее время"
+    ],
     "itemCount": 40,
     "exerciseCount": 120,
-    "media": ["image", "audio"],
-    "mechanics": ["listening", "choice", "written"],
+    "media": [
+      "image",
+      "audio"
+    ],
+    "mechanics": [
+      "listening",
+      "choice",
+      "written"
+    ],
     "addedCount": 1200,
     "learningNowCount": 34,
     "updatedAt": "2026-10-11T09:30:00Z",
@@ -73,16 +144,64 @@
     "response": {
       "listedCount": 37,
       "topics": [
-        {"id": "languages", "parentId": null, "name": "Языки", "count": 20},
-        {"id": "spanish", "parentId": "languages", "name": "Испанский", "count": 12},
-        {"id": "english", "parentId": "languages", "name": "Английский", "count": 8},
-        {"id": "it", "parentId": null, "name": "IT и программирование", "count": 17},
-        {"id": "sql-data", "parentId": "it", "name": "SQL и данные", "count": 17}
+        {
+          "id": "languages",
+          "parentId": null,
+          "name": "Языки",
+          "count": 20
+        },
+        {
+          "id": "spanish",
+          "parentId": "languages",
+          "name": "Испанский",
+          "count": 12
+        },
+        {
+          "id": "english",
+          "parentId": "languages",
+          "name": "Английский",
+          "count": 8
+        },
+        {
+          "id": "it",
+          "parentId": null,
+          "name": "IT и программирование",
+          "count": 17
+        },
+        {
+          "id": "sql-data",
+          "parentId": "it",
+          "name": "SQL и данные",
+          "count": 17
+        }
       ],
-      "languages": [{"code": "es", "count": 12}, {"code": "en", "count": 8}],
-      "levels": [{"level": "A1", "count": 9}, {"level": "B2", "count": 3}]
+      "languages": [
+        {
+          "code": "es",
+          "count": 12
+        },
+        {
+          "code": "en",
+          "count": 8
+        }
+      ],
+      "levels": [
+        {
+          "level": "A1",
+          "count": 9
+        },
+        {
+          "level": "B2",
+          "count": 3
+        }
+      ]
     },
-    "empty": {"listedCount": 0, "topics": [], "languages": [], "levels": []},
+    "empty": {
+      "listedCount": 0,
+      "topics": [],
+      "languages": [],
+      "levels": []
+    },
     "rules": "counts of listed decks; a top-level topic counts its own decks and its children's; languages are the targetLanguage values (what is learned); entries with count 0 are absent; ordered by count descending, then id; cached per instance for at most 5 minutes"
   },
   "shelves": {
@@ -90,25 +209,94 @@
     "response": {
       "listedCount": 37,
       "shelves": [
-        {"kind": "editorial", "decks": ["<card>", "<card>", "<card>", "<card>"]},
-        {"kind": "learning", "decks": ["<card>", "<card>", "<card>", "<card>"], "more": {"sort": "learning"}},
-        {"kind": "new", "decks": ["<card>", "<card>", "<card>", "<card>"], "more": {"sort": "new"}},
-        {"kind": "topic", "topic": {"id": "spanish", "name": "Испанский", "parentId": "languages"}, "decks": ["<card>", "<card>", "<card>", "<card>"], "more": {"topic": "spanish", "sort": "popular"}}
+        {
+          "kind": "editorial",
+          "decks": [
+            "<card>",
+            "<card>",
+            "<card>",
+            "<card>"
+          ]
+        },
+        {
+          "kind": "learning",
+          "decks": [
+            "<card>",
+            "<card>",
+            "<card>",
+            "<card>"
+          ],
+          "more": {
+            "sort": "learning"
+          }
+        },
+        {
+          "kind": "new",
+          "decks": [
+            "<card>",
+            "<card>",
+            "<card>",
+            "<card>"
+          ],
+          "more": {
+            "sort": "new"
+          }
+        },
+        {
+          "kind": "topic",
+          "topic": {
+            "id": "spanish",
+            "name": "Испанский",
+            "parentId": "languages"
+          },
+          "decks": [
+            "<card>",
+            "<card>",
+            "<card>",
+            "<card>"
+          ],
+          "more": {
+            "topic": "spanish",
+            "sort": "popular"
+          }
+        }
       ]
     },
-    "empty": {"listedCount": 0, "shelves": []},
+    "empty": {
+      "listedCount": 0,
+      "shelves": []
+    },
     "rules": "order editorial, learning, new, then topic shelves (leaf topics with the most listed decks, at most topicShelvesMax, popular order inside); editorial is the owner's order; learning holds decks with at least one learner in 30 days by «Учат сейчас» then rank; a deck may appear on several shelves; «<card>» stands for an object of the shape of `card`; the shelf titles are the client's («Выбор Мнемы», «Учат сейчас», «Новое», the topic name); `more` is the browse query behind «Все»"
   },
   "decks": {
     "browse": {
       "request": "GET /api/public/community/decks?topic=languages&media=audio&sort=popular&limit=24",
-      "response": {"decks": ["<card>"], "total": 12, "totalCapped": false, "nextCursor": "eyJrIjoicG9wdWxhciJ9"}
+      "response": {
+        "decks": [
+          "<card>"
+        ],
+        "total": 12,
+        "totalCapped": false,
+        "nextCursor": "eyJrIjoicG9wdWxhciJ9"
+      }
     },
     "search": {
       "request": "GET /api/public/community/decks?q=%D0%B8%D1%81%D0%BF%D0%B0%D0%BD%D1%81%D0%BA%D0%B8%D0%B9&limit=24",
-      "response": {"decks": ["<card>"], "total": 3, "totalCapped": false, "nextCursor": null}
+      "response": {
+        "decks": [
+          "<card>"
+        ],
+        "total": 3,
+        "totalCapped": false,
+        "nextCursor": null
+      }
     },
-    "nothing": {"decks": [], "total": 0, "totalCapped": false, "nextCursor": null},
+    "nothing": {
+      "decks": [],
+      "total": 0,
+      "totalCapped": false,
+      "nextCursor": null
+    },
     "searchRules": [
       "candidates: listed decks matching the filters whose search vectors match the query (russian with stemming, simple_unaccent without), whose normalized title is similar to the normalized query (pg_trgm word similarity), or whose topic is named by the query through topic aliases («испанский», «spanish» and «español» name the topic spanish; its names and aliases also extend the text query)",
       "relevance = 0.6 * text rank + 0.2 * title word similarity + 0.2 * popularity percentile of the current generation (0 for a deck the generation does not know yet), multiplied by 0.85 when the deck's content language is set and differs from the query's detected language (Russian when unsure)",
@@ -121,8 +309,32 @@
     "response": {
       "learningNowTotal": 120,
       "decks": [
-        {"access": "PUBLIC", "deck": "<card>"},
-        {"access": "GRANTEE", "deck": {"code": "Hs9Bd2kLfM", "slug": null, "title": "Для группы", "description": "Только для своих", "topic": null, "contentLanguage": "ru", "targetLanguage": null, "level": null, "tags": [], "itemCount": 12, "exerciseCount": 3, "media": [], "mechanics": [], "addedCount": null, "learningNowCount": null, "updatedAt": "2026-10-11T09:30:00Z", "ownerId": "0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35"}}
+        {
+          "access": "PUBLIC",
+          "deck": "<card>"
+        },
+        {
+          "access": "GRANTEE",
+          "deck": {
+            "code": "Hs9Bd2kLfM",
+            "slug": null,
+            "title": "Для группы",
+            "description": "Только для своих",
+            "topic": null,
+            "contentLanguage": "ru",
+            "targetLanguage": null,
+            "level": null,
+            "tags": [],
+            "itemCount": 12,
+            "exerciseCount": 3,
+            "media": [],
+            "mechanics": [],
+            "addedCount": null,
+            "learningNowCount": null,
+            "updatedAt": "2026-10-11T09:30:00Z",
+            "ownerId": "0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35"
+          }
+        }
       ],
       "nextCursor": null
     },
@@ -135,11 +347,27 @@
   "editorial": {
     "state": {
       "request": "GET /api/admin/community/editorial",
-      "response": {"rowVersion": "3", "entries": [{"code": "Kq7xT3mNpR", "title": "Испанский язык: базовые глаголы", "listed": true, "addedAt": "2026-10-12T10:00:00Z"}]}
+      "response": {
+        "rowVersion": "3",
+        "entries": [
+          {
+            "code": "Kq7xT3mNpR",
+            "title": "Испанский язык: базовые глаголы",
+            "listed": true,
+            "addedAt": "2026-10-12T10:00:00Z"
+          }
+        ]
+      }
     },
     "put": {
       "request": "PUT /api/admin/community/editorial (If-Match: \"3\")",
-      "body": {"commandId": "0f8f8c62-4a7e-4a8b-9a1e-6d1f9a2b3c4d", "codes": ["Kq7xT3mNpR", "Zp4WcA8vQe"]},
+      "body": {
+        "commandId": "0f8f8c62-4a7e-4a8b-9a1e-6d1f9a2b3c4d",
+        "codes": [
+          "Kq7xT3mNpR",
+          "Zp4WcA8vQe"
+        ]
+      },
       "rules": "the owner console only (the admin chain and its owner account check); the body is the whole ordered list (at most editorialMax public codes, no duplicates); a code that is not a PUBLIC published deck is 400 with the offending codes; idempotent by commandId; If-Match is the rowVersion (412 on a stale one); every effective change writes one admin_audit row; an entry whose deck later stops being listed stays in the list with listed=false and is skipped by the shelf"
     }
   }

@@ -7,8 +7,10 @@ import { CatalogFiltersComponent } from '../shared/catalog-filters.component';
 import { CommunityEmptyComponent } from '../shared/community-empty.component';
 import { DeckGridComponent, DeckResults } from '../shared/deck-grid.component';
 import { DeckShelfComponent, ShelfAction } from '../shared/deck-shelf.component';
+import { ActionMenuItem } from '../shared/action-menu.component';
 import { PublicDeckCard } from '../shared/public-deck-card';
 import { PublicDeckCardComponent } from '../shared/public-deck-card.component';
+import { SHARE_MENU_ITEM } from '../shared/share-link.service';
 import { SgSpecimenComponent } from './sg-specimen.component';
 import {
     COMMUNITY_CARDS, DEMO_AUTHOR, DEMO_AUTHOR_BARE, DEMO_LANGUAGES, DEMO_TOPICS, INVITATION_CARD, INVITATION_NOTE, demoCards
@@ -77,6 +79,9 @@ export class SgCommunityComponent {
     }
 
     protected readonly link = (deck: PublicDeckCard): string[] => ['/styleguide', deck.id];
+    /** The rows of one card's «⋯» menu: «Пожаловаться» is everywhere but on one's own deck (here the first one). */
+    protected readonly menuFor = (deck: PublicDeckCard): readonly ActionMenuItem[] =>
+        deck.id === COMMUNITY_CARDS[0].id ? [SHARE_MENU_ITEM] : [SHARE_MENU_ITEM, { id: 'complain', label: 'Пожаловаться' }];
 
     /** The grid: a search gives a count, the first page and a cursor; the rest comes by itself while the specimen is scrolled. */
     protected readonly searchNumber = signal(1);

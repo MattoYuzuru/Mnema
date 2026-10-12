@@ -30,7 +30,8 @@ const SIZE_OPTIONS: readonly SegmentedOption[] = [{ value: ANY_SIZE, label: 'Л�
  * On a narrow container the controls sit behind one button «Фильтры» (or «Фильтры · 3» with the number that is on) that carries
  * `aria-expanded`; on a wide one they are a wrapped grid and the button is not drawn. The sorting is always in view. Every filter that is
  * on is also a chip that says its category («Уровень: B1», «Внутри: аудио»), a button named «Убрать фильтр «Уровень: B1»»; «Сбросить всё» removes them all and leaves the sorting alone. After a chip is
- * removed the focus goes to the next chip, or to the «Фильтры» button when none is left.
+ * removed the focus goes to the next chip, or to the «Фильтры» button when none is left. With `sortDisabled` (a text search is ordered by closeness to the query)
+ * the sorting is drawn disabled and a line under it says why.
  */
 @Component({
     selector: 'app-catalog-filters',
@@ -41,8 +42,10 @@ const SIZE_OPTIONS: readonly SegmentedOption[] = [{ value: ANY_SIZE, label: 'Л�
         <div class="bar">
           <button #toggle type="button" class="button disclosure" [attr.aria-expanded]="open()" [attr.aria-controls]="panelId"
             (click)="open.set(!open())">{{ toggleLabel() }}</button>
-          <app-segmented-choice class="sort" legend="Сортировка" [options]="sortOptions" [value]="value().sort" (valueChange)="setSort($event)" />
+          <app-segmented-choice class="sort" legend="Сортировка" [options]="sortOptions" [value]="value().sort" [disabled]="sortDisabled()"
+            [describedBy]="sortDisabled() ? sortNoteId : null" (valueChange)="setSort($event)" />
         </div>
+        @if (sortDisabled()) { <p class="hint sort-note" [id]="sortNoteId">Найденные колоды идут по близости к запросу.</p> }
         <div class="panel" [id]="panelId" [class.is-open]="open()">
           <div class="grid">
             <div class="field">
@@ -96,6 +99,8 @@ export class CatalogFiltersComponent {
     /** The topics to choose from, parents and children; a child names its parent and is drawn under its heading. */
     readonly topics = input<readonly TopicOption[]>([]);
     readonly languages = input<readonly LanguageOption[]>([]);
+    /** The sorting does not apply (a text search orders by closeness to the query): the control is drawn disabled, with a line that says why. */
+    readonly sortDisabled = input(false);
     /** The new value; the sorting alone changing is also a new value. */
     readonly changed = output<CatalogFilters>();
 
@@ -107,6 +112,7 @@ export class CatalogFiltersComponent {
 
     private readonly uid = `mn-filters-${nextFilters++}`;
     protected readonly panelId = `${this.uid}-panel`;
+    protected readonly sortNoteId = `${this.uid}-sort-note`;
     protected readonly topicId = `${this.uid}-topic`;
     protected readonly learnId = `${this.uid}-learn`;
     protected readonly levelId = `${this.uid}-level`;

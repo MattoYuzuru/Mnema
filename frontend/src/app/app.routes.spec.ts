@@ -16,6 +16,7 @@ import { WorkshopPageComponent } from './features/generation/workshop-page.compo
 import { StudySessionPageComponent } from './features/study/study-session-page.component';
 import { StyleguidePageComponent } from './styleguide/styleguide-page.component';
 import { PublicDeckPageComponent } from './features/public-deck/public-deck-page.component';
+import { CommunityPageComponent } from './features/community/community-page.component';
 import { publicDeckMatcher } from './features/public-deck/public-deck-routing';
 import { UrlSegment } from '@angular/router';
 
@@ -132,5 +133,14 @@ describe('appRoutes', () => {
         expect(match('d')).toBeNull();
         expect(match('d', 'a', 'b', 'c')).toBeNull();
         expect(match('decks', 'Kq7xT3mNpR')).toBeNull();
+    });
+
+    it('opens the community catalogue to guests: one lazy public route, no guard, before the catch-all', async () => {
+        const route = appRoutes.find(candidate => candidate.path === 'community')!;
+        expect(route).toBeDefined();
+        expect(route.canActivate).toBeUndefined();
+        expect(route.component).toBeUndefined();
+        expect(appRoutes.indexOf(route)).toBeLessThan(appRoutes.findIndex(candidate => candidate.path === '**'));
+        expect(await route.loadComponent!()).toBe(CommunityPageComponent);
     });
 });

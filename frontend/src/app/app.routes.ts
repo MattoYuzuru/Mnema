@@ -195,6 +195,14 @@ export const appRoutes: Routes = [
         matcher: publicDeckMatcher,
         loadComponent: () => import('./features/public-deck/public-deck-page.component').then(module => module.PublicDeckPageComponent)
     },
+    {
+        // Public, guests included, no authGuard: the community catalogue. The address is the state (`q` and the filters). The server switch
+        // `learning.community.catalog.enabled` answers 404 until the owner opens it, and the page says so calmly.
+        // Deliberately reachable while `COMMUNITY_LAUNCHED` is false: the flag only hides the entry points (masthead, own-decks link), so the browser
+        // harness can test this route before the launch. Do not guard it behind the flag.
+        path: 'community',
+        loadComponent: () => import('./features/community/community-page.component').then(module => module.CommunityPageComponent)
+    },
     // Public: the footer and the «Что это?» toggletips of the AI actions link here, signed in or not.
     {
         path: 'ai',

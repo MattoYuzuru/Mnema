@@ -45,7 +45,7 @@ interface GridRow { readonly deck: PublicDeckCard; readonly delay: number }
       <ul #list class="grid" role="list">
         @for (row of rows(); track row.deck.id) {
           <li class="cell" [style.--mn-cascade-delay]="row.delay + 'ms'">
-            <app-public-deck-card [deck]="row.deck" [headingLevel]="headingLevel()" [link]="deckLink()(row.deck)" [menuItems]="menuItems()"
+            <app-public-deck-card [deck]="row.deck" [headingLevel]="headingLevel()" [link]="deckLink()(row.deck)" [menuItems]="menuFor()?.(row.deck) ?? menuItems()"
               (action)="action.emit({ id: $event, deck: row.deck })" />
           </li>
         }
@@ -62,6 +62,8 @@ export class DeckGridComponent {
     readonly headingLevel = input<2 | 3 | 4>(3);
     readonly deckLink = input<(deck: PublicDeckCard) => string | readonly string[] | null>(() => null);
     readonly menuItems = input<readonly ActionMenuItem[]>([SHARE_MENU_ITEM]);
+    /** The rows of one deck's «⋯» menu where they differ from deck to deck (no «Пожаловаться» on one's own deck); wins over `menuItems`. */
+    readonly menuFor = input<((deck: PublicDeckCard) => readonly ActionMenuItem[]) | null>(null);
     /** The next cursor, `null` at the end. Passed to `app-auto-load` together with the next five inputs. */
     readonly continuation = input<string | null>(null);
     readonly loading = input(false);

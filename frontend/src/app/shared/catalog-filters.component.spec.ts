@@ -343,3 +343,34 @@ describe('CatalogFiltersComponent', () => {
         });
     });
 });
+
+@Component({
+    imports: [CatalogFiltersComponent],
+    template: `<app-catalog-filters [value]="value" [topics]="topics" [languages]="languages" [sortDisabled]="disabled()" />`
+})
+class SortHostComponent {
+    readonly value = NO_FILTERS;
+    readonly topics = TOPICS;
+    readonly languages = LANGUAGES;
+    readonly disabled = signal(false);
+}
+
+describe('CatalogFiltersComponent with a sorting that does not apply', () => {
+    it('draws the sorting disabled with a line that says why, only while it does not apply', () => {
+        const fixture = TestBed.createComponent(SortHostComponent);
+        const root = fixture.nativeElement as HTMLElement;
+        fixture.detectChanges();
+        expect(root.querySelector('.sort-note')).toBeNull();
+        expect(root.querySelector('fieldset.segmented')!.hasAttribute('disabled')).toBe(false);
+        fixture.componentInstance.disabled.set(true);
+        fixture.detectChanges();
+        const note = root.querySelector('.sort-note')!;
+        expect(note.textContent).toBe('Найденные колоды идут по близости к запросу.');
+        const group = root.querySelector('.sort fieldset.segmented')!;
+        expect(group.hasAttribute('disabled')).toBe(true);
+        expect(group.getAttribute('aria-describedby')).toContain(note.id);
+        expect([...group.querySelectorAll('input')].every(input => input.matches(':disabled'))).toBe(true);
+        // The other controls are not affected.
+        expect(root.querySelector('.check-row input')!.matches(':disabled')).toBe(false);
+    });
+});

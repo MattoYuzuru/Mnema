@@ -9,7 +9,7 @@ const base = (patch: Partial<PublicDeckCard> & Pick<PublicDeckCard, 'id' | 'titl
     addedCount: 0, learningNowCount: 0, updatedAt: '2026-10-03T09:00:00Z', shareUrl: `https://mnema.app/d/${patch.id}/demo`, ...patch
 });
 
-/** Восемь разных карточек: с автором и без, малые и большие счётчики, все виды медиа, колода по приглашению с пометкой. */
+/** Восемь разных карточек: с автором и без, счётчики `null` (каталог не присылает числа меньше 10) и большие, все виды медиа, колода по приглашению с пометкой. */
 export const COMMUNITY_CARDS: readonly PublicDeckCard[] = [
     base({
         id: 'cm-spanish', title: 'Испанские глаголы: 300 самых частых',
@@ -18,7 +18,7 @@ export const COMMUNITY_CARDS: readonly PublicDeckCard[] = [
     }),
     base({
         id: 'cm-capitals', title: 'Столицы Европы', description: 'Страна и столица, без картинок.', topic: 'География', language: 'Русский',
-        author: { username: null, avatarSrc: null }, materialCount: 44, exerciseCount: 44, addedCount: 9, learningNowCount: 3, updatedAt: '2025-12-20T09:00:00Z'
+        author: { username: null, avatarSrc: null }, materialCount: 44, exerciseCount: 44, addedCount: null, learningNowCount: null, updatedAt: '2025-12-20T09:00:00Z'
     }),
     base({
         id: 'cm-anatomy', title: 'Анатомия: кости, суставы и мышцы', description: 'Атлас на латыни и по-русски. Каждая кость с рисунком, суставы с типами движений, мышцы с местами прикрепления.',

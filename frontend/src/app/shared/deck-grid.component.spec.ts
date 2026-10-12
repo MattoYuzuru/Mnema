@@ -198,3 +198,25 @@ describe('DeckGridComponent', () => {
         });
     });
 });
+
+@Component({
+    imports: [DeckGridComponent],
+    template: `<app-deck-grid [decks]="decks" [menuFor]="menuFor" />`
+})
+class MenuHostComponent {
+    readonly decks = decks(0, 3);
+    menuFor = (card: PublicDeckCard) => card.id === 'deck-1' ? [{ id: 'share', label: 'Поделиться' }] : [{ id: 'share', label: 'Поделиться' }, { id: 'complain', label: 'Пожаловаться' }];
+}
+
+describe('DeckGridComponent menu per card', () => {
+    it('asks for the rows of each card\'s «⋯» menu when `menuFor` is given, and the shared rows otherwise', () => {
+        installPopoverShim();
+        TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: ShareLinkService, useValue: { share: vi.fn() } }] });
+        const fixture = TestBed.createComponent(MenuHostComponent);
+        fixture.detectChanges();
+        const rows = [...(fixture.nativeElement as HTMLElement).querySelectorAll('li.cell')]
+            .map(cell => [...cell.querySelectorAll('[role=menuitem]')].map(item => item.textContent!.trim()));
+        expect(rows).toEqual([['Поделиться', 'Пожаловаться'], ['Поделиться'], ['Поделиться', 'Пожаловаться']]);
+        removePopoverShim();
+    });
+});

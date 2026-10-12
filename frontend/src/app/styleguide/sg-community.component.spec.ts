@@ -47,8 +47,8 @@ describe('SgCommunityComponent', () => {
 
     it('draws the fixtures the brief asks for: with and without an author, small and large counts, every medium, a note', () => {
         expect(COMMUNITY_CARDS.some(card => card.author.username === null)).toBe(true);
-        expect(COMMUNITY_CARDS.some(card => card.addedCount < 10)).toBe(true);
-        expect(COMMUNITY_CARDS.some(card => card.addedCount >= 10_000)).toBe(true);
+        expect(COMMUNITY_CARDS.some(card => card.addedCount === null && card.learningNowCount === null)).toBe(true);
+        expect(COMMUNITY_CARDS.some(card => (card.addedCount ?? 0) >= 10_000)).toBe(true);
         expect(new Set(COMMUNITY_CARDS.flatMap(card => card.media))).toEqual(new Set(['audio', 'image', 'video']));
         expect(DEMO_TOPICS.some(topic => topic.parentName !== undefined)).toBe(true);
         expect(root.querySelector('app-public-deck-card .stamp.solid')?.textContent).toBe('Доступна вам');

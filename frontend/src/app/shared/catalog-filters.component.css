@@ -10,6 +10,7 @@
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 1rem 1.5rem; align-items: start; min-inline-size: 0; }
 .field { display: grid; gap: .5rem; min-inline-size: 0; }
 .field label { color: var(--mn-ink); font-weight: 650; }
+.sort-note { margin: 0; }
 .check-field .hint { margin-block-start: -.25rem; padding-inline-start: 2rem; }
 
 .active { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }

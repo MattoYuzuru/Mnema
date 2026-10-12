@@ -54,9 +54,9 @@
   </app-sg-specimen>
 
   <app-sg-specimen title="Фильтры и сортировка" selector="<app-catalog-filters>"
-    when="Над выдачей. Значение целиком приходит снаружи (value), новое уходит наружу (changed): страница хранит его в адресе (toQueryParams, fromQueryParams) и перезагружает выдачу. Тема (с группами по родителю), «Что учим» и «Уровень» это app-mnema-select, «Размер» и сортировка это сегменты, «Внутри», «Упражнения» и «Живая» это флажки. На узком экране всё за кнопкой «Фильтры» (с числом включённых, aria-expanded), на широком в ряд. Каждый включённый фильтр ещё и чип-кнопка, который называет и категорию («Уровень: B1», «Внутри: аудио», «Живая»), с именем «Убрать фильтр «Уровень: B1»», вместе с «Сбросить всё», которая сортировку не трогает. После удаления чипа фокус переходит на следующий чип, а когда чипов нет, на кнопку «Фильтры»; если читатель успел перейти на другой элемент, фокус не отбирается. «Для вас» появится вместе с рекомендациями и пока не рисуется."
+    when="Над выдачей. Значение целиком приходит снаружи (value), новое уходит наружу (changed): страница хранит его в адресе (toQueryParams, fromQueryParams) и перезагружает выдачу. Тема (с группами по родителю), «Что учим» и «Уровень» это app-mnema-select, «Размер» и сортировка это сегменты, «Внутри», «Упражнения» и «Живая» это флажки. На узком экране всё за кнопкой «Фильтры» (с числом включённых, aria-expanded), на широком в ряд. Каждый включённый фильтр ещё и чип-кнопка, который называет и категорию («Уровень: B1», «Внутри: аудио», «Живая»), с именем «Убрать фильтр «Уровень: B1»», вместе с «Сбросить всё», которая сортировку не трогает. После удаления чипа фокус переходит на следующий чип, а когда чипов нет, на кнопку «Фильтры»; если читатель успел перейти на другой элемент, фокус не отбирается. «Для вас» появится вместе с рекомендациями и пока не рисуется. Вход sortDisabled нужен там, где сортировка не действует (выдачу по тексту сервер упорядочивает по близости к запросу): сегменты недоступны, строка под ними говорит почему."
     [tokens]="['--mn-ink', '--mn-rule', '--mn-field-border', '--mn-touch-min']"
-    usage='<app-catalog-filters [value]="filters()" [topics]="topics" [languages]="languages" (changed)="filters.set($event)" />'>
+    usage='<app-catalog-filters [value]="filters()" [topics]="topics" [languages]="languages" [sortDisabled]="searching()" (changed)="filters.set($event)" />'>
     <div class="sg-stack">
       <h4 class="sg-group">Ничего не выбрано</h4>
       <app-catalog-filters [value]="emptyFilters()" [topics]="topics" [languages]="languages" (changed)="emptyFilters.set($event)" />
@@ -64,6 +64,8 @@
       <h4 class="sg-group">Выбрано несколько</h4>
       <app-catalog-filters [value]="activeFilters()" [topics]="topics" [languages]="languages" (changed)="activeFilters.set($event)" />
       <p class="hint sg-address">Адрес: <code>{{ activeAddress() }}</code></p>
+      <h4 class="sg-group">Поиск по тексту: сортировка не действует</h4>
+      <app-catalog-filters [value]="emptyFilters()" [topics]="topics" [languages]="languages" [sortDisabled]="true" (changed)="emptyFilters.set($event)" />
       <h4 class="sg-group">Узкий экран (телефон)</h4>
       <div class="sg-narrow">
         <app-catalog-filters [value]="activeFilters()" [topics]="topics" [languages]="languages" (changed)="activeFilters.set($event)" />
@@ -82,12 +84,12 @@
   </app-sg-specimen>
 
   <app-sg-specimen title="Полка" selector="<app-deck-shelf>"
-    when="Раздел страницы «Сообщество» (section без имени: область на каждую полку была бы шумом, ориентир h2): h2 с названием, строка под ним, ссылка «Все» (её имя «Все колоды: …») и список карточек с заголовками h3. На широком контейнере карточки лежат сеткой, на узком идут рядом с прокруткой в сторону и прилипанием к карточке; следующая карточка выглядывает из-за края, а затуханий поверх текста нет. Список не берёт фокус: остановки это ссылки и кнопки карточек, и сфокусированная карточка сама прокручивается в видимое. Правило страницы: полка меньше чем из 4 колод не рисуется (чтобы не было одинокой карточки), на полку попадает не больше одного ряда, остальное за «Все»."
+    when="Раздел страницы «Сообщество» (section без имени: область на каждую полку была бы шумом, ориентир h2): h2 с названием, строка под ним, ссылка «Все» (её имя «Все колоды: …») и список карточек с заголовками h3. На широком контейнере карточки лежат сеткой, на узком идут рядом с прокруткой в сторону и прилипанием к карточке; следующая карточка выглядывает из-за края, а затуханий поверх текста нет. Список не берёт фокус: остановки это ссылки и кнопки карточек, и сфокусированная карточка сама прокручивается в видимое. Правило страницы: полка меньше чем из 4 колод не рисуется (чтобы не было одинокой карточки), на полку попадает не больше одного ряда, остальное за «Все». «Все» ведёт на страницу, чьё состояние лежит в адресе: запрос ссылки задаёт вход moreQueryParams. Где пункты меню «⋯» разные у разных колод (нет «Пожаловаться» на свою), их выдаёт функция menuFor."
     [tokens]="['--mn-ink', '--mn-muted', '--mn-sheet', '--mn-rule', '--mn-font-display']"
-    usage='<app-deck-shelf title="Учат сейчас" subtitle="За последние 30 дней" [moreLink]="[&apos;/community&apos;]" [decks]="decks" [deckLink]="linkOf" (action)="onAction($event)" />'>
+    usage='<app-deck-shelf title="Учат сейчас" subtitle="За последние 30 дней" [moreLink]="[&apos;/community&apos;]" [moreQueryParams]="{ sort: &apos;learning&apos; }" [decks]="decks" [deckLink]="linkOf" [menuFor]="menuFor" (action)="onAction($event)" />'>
     <div class="sg-stack">
       <h4 class="sg-group">Широкий контейнер</h4>
-      <app-deck-shelf title="Учат сейчас" subtitle="Колоды, которые открывали на этой неделе" [moreLink]="['/styleguide']" [decks]="shelfDecks" [deckLink]="link" (action)="shelfAction($event)" />
+      <app-deck-shelf title="Учат сейчас" subtitle="Колоды, которые открывали на этой неделе" [moreLink]="['/styleguide']" [moreQueryParams]="{ sort: 'learning' }" [decks]="shelfDecks" [deckLink]="link" [menuFor]="menuFor" (action)="shelfAction($event)" />
       <p class="hint" role="status">{{ lastAction() }}</p>
       <h4 class="sg-group">Узкий контейнер (телефон): ряд с прокруткой</h4>
       <div class="sg-shelf-narrow">
@@ -97,9 +99,9 @@
   </app-sg-specimen>
 
   <app-sg-specimen title="Выдача плитками" selector="<app-deck-grid>"
-    when="Результат поиска и список колод автора. Карточки лежат сеткой, продолжение идёт через общую app-auto-load: кнопок страниц и «Показать ещё» нет. Новая карточка появляется чернильным открытием mn-ink-in (до 600 мс) с лёгким каскадом: 40 мс на карточку, не больше восьми карточек в порции; то, что уже на экране, не трогается, при уменьшенном движении нет ни открытия, ни каскада. Число результатов звучит вежливо один раз на поиск (область role=status всегда в разметке, текст попадает в неё после первого рендера) («Нашли 37 колод», «Нашли больше 200 колод», «Ничего не нашли. Попробуйте другое слово или уберите фильтры.») и видно строкой над сеткой; догруженные страницы молчат. Страница передаёт results после первой порции поиска и null, пока она грузится или читатель просто листает."
+    when="Результат поиска и список колод автора. Карточки лежат сеткой, продолжение идёт через общую app-auto-load: кнопок страниц и «Показать ещё» нет. Новая карточка появляется чернильным открытием mn-ink-in (до 600 мс) с лёгким каскадом: 40 мс на карточку, не больше восьми карточек в порции; то, что уже на экране, не трогается, при уменьшенном движении нет ни открытия, ни каскада. Число результатов звучит вежливо один раз на поиск (область role=status всегда в разметке, текст попадает в неё после первого рендера) («Нашли 37 колод», «Нашли больше 200 колод», «Ничего не нашли. Попробуйте другое слово или уберите фильтры.») и видно строкой над сеткой; догруженные страницы молчат. Страница передаёт results после первой порции поиска и null, пока она грузится или читатель просто листает. Пункты меню «⋯» у разных колод могут различаться (нет «Пожаловаться» на свою): их выдаёт функция menuFor, иначе у всех карточек menuItems."
     [tokens]="['--mn-ink', '--mn-rule', '--mn-sheet']"
-    usage='<app-deck-grid [decks]="decks()" [results]="results()" [continuation]="cursor()" [loading]="loading()" [error]="error()" [deckLink]="linkOf" (loadNext)="loadNextPage()" />'>
+    usage='<app-deck-grid [decks]="decks()" [results]="results()" [continuation]="cursor()" [loading]="loading()" [error]="error()" [deckLink]="linkOf" [menuFor]="menuFor" (loadNext)="loadNextPage()" />'>
     <div class="sg-actions">
       <button type="button" class="button small" (click)="search('found')">Новый поиск: нашли 37</button>
       <button type="button" class="button small" (click)="search('capped')">Нашли больше 200</button>
@@ -108,7 +110,7 @@
     </div>
     <div #gridPanel class="sg-auto-load-scroll">
       <app-deck-grid [decks]="gridDecks()" [results]="gridResults()" [continuation]="gridCursor()" [loading]="gridLoading()" [error]="gridError()"
-        [root]="gridPanel" [context]="searchNumber()" [deckLink]="link" (loadNext)="loadGridPage()" (action)="shelfAction($event)" />
+        [root]="gridPanel" [context]="searchNumber()" [deckLink]="link" [menuFor]="menuFor" (loadNext)="loadGridPage()" (action)="shelfAction($event)" />
     </div>
   </app-sg-specimen>
 

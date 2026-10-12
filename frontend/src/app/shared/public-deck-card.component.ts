@@ -16,7 +16,7 @@ let nextCard = 0;
  * source and the actions are wired by the screens that use it; «Поделиться» is done by the card itself). Title (a link when `link` is given), a two-line
  * description, topic and language (each with a hidden «Тема:» / «Язык:» prefix, plus the optional `note` stamp), the author chip, the size, media badges with words, the audience counts (only from
  * 10 and rounded), the update date and the «⋯» menu. There are no stars and no likes. Without an author (hidden
- * profile) the chip draws nothing; without media or with small audiences the row is simply absent.
+ * profile) the chip draws nothing; without media or with small audiences (`null` or below 10) the row is simply absent, and so is a topic or a language that is empty.
  */
 @Component({
     selector: 'app-public-deck-card',
@@ -35,11 +35,13 @@ let nextCard = 0;
           <app-action-menu [label]="'Действия с колодой «' + deck().title + '»'" [items]="menuItems()" (chosen)="chosen($event)" />
         </div>
         <p class="description">{{ deck().description }}</p>
-        <p class="tags">
-          <span class="stamp"><span class="visually-hidden">Тема: </span>{{ deck().topic }}</span>
-          <span class="stamp"><span class="visually-hidden">Язык: </span>{{ deck().language }}</span>
-          @if (note(); as text) { <span class="stamp solid">{{ text }}</span> }
-        </p>
+        @if (deck().topic !== '' || deck().language !== '' || note()) {
+          <p class="tags">
+            @if (deck().topic !== '') { <span class="stamp"><span class="visually-hidden">Тема: </span>{{ deck().topic }}</span> }
+            @if (deck().language !== '') { <span class="stamp"><span class="visually-hidden">Язык: </span>{{ deck().language }}</span> }
+            @if (note(); as text) { <span class="stamp solid">{{ text }}</span> }
+          </p>
+        }
         <app-author-chip [username]="deck().author.username" [avatarSrc]="deck().author.avatarSrc" />
         <p class="size">{{ size() }}</p>
         @if (deck().media.length > 0) {

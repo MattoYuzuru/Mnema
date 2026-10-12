@@ -81,3 +81,35 @@ describe('DeckShelfComponent', () => {
         expect(fixture.componentInstance.actions).toEqual([{ id: 'report', deck: fixture.componentInstance.decks[1] }]);
     });
 });
+
+@Component({
+    imports: [DeckShelfComponent],
+    template: `<app-deck-shelf title="Новое" [moreLink]="['/community']" [moreQueryParams]="query" [decks]="decks" [menuFor]="menuFor" />`
+})
+class MoreHostComponent {
+    query = { topic: 'spanish', sort: 'popular' };
+    decks = [deck('a', 'Падежи'), deck('b', 'Глаголы'), deck('c', 'Артикли'), deck('d', 'Предлоги')];
+    menuFor = (card: PublicDeckCard) => card.id === 'a' ? [{ id: 'share', label: 'Поделиться' }] : [{ id: 'share', label: 'Поделиться' }, { id: 'complain', label: 'Пожаловаться' }];
+}
+
+describe('DeckShelfComponent «Все» query and menu per card', () => {
+    beforeEach(() => {
+        installPopoverShim();
+        TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: ShareLinkService, useValue: { share: vi.fn() } }] });
+    });
+    afterEach(() => removePopoverShim());
+
+    it('leads «Все» to the route with the shelf\'s own query', () => {
+        const fixture = TestBed.createComponent(MoreHostComponent);
+        fixture.detectChanges();
+        expect((fixture.nativeElement as HTMLElement).querySelector('a.more')?.getAttribute('href')).toBe('/community?topic=spanish&sort=popular');
+    });
+
+    it('asks for the rows of each card\'s «⋯» menu when `menuFor` is given', () => {
+        const fixture = TestBed.createComponent(MoreHostComponent);
+        fixture.detectChanges();
+        const rows = [...(fixture.nativeElement as HTMLElement).querySelectorAll('ul.row > li')]
+            .map(item => [...item.querySelectorAll('[role=menuitem]')].map(entry => entry.textContent!.trim()));
+        expect(rows).toEqual([['Поделиться'], ['Поделиться', 'Пожаловаться'], ['Поделиться', 'Пожаловаться'], ['Поделиться', 'Пожаловаться']]);
+    });
+});

@@ -144,4 +144,21 @@ describe('PublicDeckCardComponent', () => {
         fixture.detectChanges();
         expect(root.querySelector<HTMLInputElement>('app-share-link-field input')?.value).toBe(FULL.shareUrl);
     });
+
+    it('draws no audience row for null counts (the catalogue sends nothing below 10)', () => {
+        const { root } = create({ deck: { ...FULL, addedCount: null, learningNowCount: null } });
+        expect(root.querySelector('.audience')).toBeNull();
+        TestBed.resetTestingModule();
+        expect(audience(create({ deck: { ...FULL, addedCount: null, learningNowCount: 15 } }).root)).toEqual([['Учат сейчас', '15']]);
+    });
+
+    it('draws no stamp for a topic or a language that is empty, and no empty line when nothing is left', () => {
+        const { root } = create({ deck: { ...FULL, topic: '', language: 'Испанский' } });
+        expect([...root.querySelectorAll('.tags .stamp')].map(stamp => stamp.textContent!.trim())).toEqual(['Язык: Испанский']);
+        TestBed.resetTestingModule();
+        const bare = create({ deck: { ...FULL, topic: '', language: '' } }).root;
+        expect(bare.querySelector('.tags')).toBeNull();
+        TestBed.resetTestingModule();
+        expect(create({ deck: { ...FULL, topic: '', language: '' }, note: 'Доступна вам' }).root.querySelector('.tags .stamp.solid')?.textContent).toBe('Доступна вам');
+    });
 });
