@@ -181,6 +181,8 @@ export class CommunityPageComponent {
     private shelvesSubscription: Subscription | null = null;
     private facetsSubscription: Subscription | null = null;
     private sortTimer: ReturnType<typeof setTimeout> | null = null;
+    /** False until the first address has been read: the page that has just been opened is the router's to focus, not ours. */
+    private addressChanged = false;
 
     constructor() {
         this.titles.setTitle(`Сообщество — ${SHELL_TITLE}`);
@@ -196,6 +198,10 @@ export class CommunityPageComponent {
                 // The address moved by itself (back, forward, a link): a sorting that was still waiting belongs to the address that is gone.
                 this.clearSortTimer();
                 void this.load();
+                // The shelves give way to the list when «Все» is pressed, and the link that had the focus goes with them: the focus is on the body then, and the heading takes it.
+                // A control the reader is using (the book, a filter, a chip) keeps it.
+                if (this.addressChanged) afterNextRender(() => this.keepFocus(), { injector: this.injector });
+                this.addressChanged = true;
             });
         });
         // Authors of the cards that are on the page, in chunks; a hidden author is a card without a name, and never holds a card back.
@@ -253,6 +259,12 @@ export class CommunityPageComponent {
         void this.load();
         // The dialog is removed in the next render and may hand the focus to its opener on the way out: the heading takes it after that.
         afterNextRender(() => this.focusHeading(), { injector: this.injector });
+    }
+
+    /** The focus was lost with an element that this change removed: the heading takes it. */
+    private keepFocus(): void {
+        const active = this.document.activeElement;
+        if (active === null || active === this.document.body) this.focusHeading();
     }
 
     private focusHeading(): void {

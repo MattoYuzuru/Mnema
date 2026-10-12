@@ -51,6 +51,9 @@ describe('canonical bearer interceptor', () => {
             '/api/public/decks/Kq7xT3mNpR/media/7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
             '/api/public/decks/Kq7xT3mNpR/complaints', '/api/public/profiles/ivan.k/complaints',
             '/api/topics', '/api/invites:redeem', '/api/public/decks/Kq7xT3mNpR/access-requests', '/api/public/decks/Kq7xT3mNpR/access-requests:withdraw',
+            // the community catalogue: the bearer is optional, and a signed-in viewer's must reach it (limits by account, the author's invitation-only decks)
+            '/api/public/community/facets', '/api/public/community/shelves', '/api/public/community/decks?q=spanish&limit=24',
+            '/api/public/community/authors/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35/decks?limit=24&cursor=abc',
             '/api/admin/complaints?status=OPEN&limit=50', '/api/admin/complaints/journal?limit=50',
             '/api/admin/complaints/0199c478-b000-7000-8000-000000000001', '/api/admin/complaints/0199c478-b000-7000-8000-000000000001/units?kind=ITEM',
             '/api/admin/complaints/0199c478-b000-7000-8000-000000000001:decide', '/api/admin/complaints/0199c478-b000-7000-8000-000000000001:unhide',
@@ -101,6 +104,11 @@ describe('canonical bearer interceptor', () => {
             // topics, invitation redemption and access requests: exactly the documented routes
             '/api/topics/x', '/api/topics-other', '/api/invites', '/api/invites:other', '/api/invites:redeem/x',
             '/api/public/decks/Kq7xT3mNpR/access-requests/x', '/api/public/decks/Kq7xT3mNpR/access-requests:other', '/api/public/decks/Kq7xT3mNp0/access-requests',
+            // the catalogue: exactly its four read routes (the sitemap and the owner's editorial shelf are not the page's)
+            '/api/public/community', '/api/public/community/', '/api/public/community/facets/x', '/api/public/community/shelves/x', '/api/public/community/decks/x',
+            '/api/public/community/authors', '/api/public/community/authors/x/decks', '/api/public/community/authors/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35',
+            '/api/public/community/authors/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35/decks/x', '/api/public/community/authors/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35%2fdecks',
+            '/api/public/community/other', '/api/public/sitemap.xml', '/api/x/public/community/facets', 'https://evil.test/api/public/community/facets',
             'https://evil.test/api/decks', '//evil.test/api/decks', 'https://user@identity.example.test/userinfo']) {
             expect(isCredentialTarget(url, identity, '/api', window.location.origin), url).toBe(false);
             http.get(url).subscribe();

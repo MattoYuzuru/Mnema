@@ -138,6 +138,22 @@ describe('CommunityPageComponent', () => {
             expect(more.map(link => link.getAttribute('aria-label'))).toEqual(['Все колоды: Учат сейчас', 'Все колоды: Новое', 'Все колоды: Испанский']);
         });
 
+        it('puts the focus on the heading when «Все» replaces the shelves with the list, and leaves a control that is in use alone', async () => {
+            const more = all<HTMLAnchorElement>('app-deck-shelf a.more').find(link => link.getAttribute('aria-label') === 'Все колоды: Новое')!;
+            more.focus();
+            expect(document.activeElement).toBe(more);
+            more.click();
+            await settle();
+            expect(one('app-deck-shelf')).toBeNull();
+            expect(document.activeElement).toBe(one('h1'));
+            // A filter chosen in the list keeps the focus where the reader put it.
+            const box = all<HTMLLabelElement>('app-catalog-filters .check-row').find(row => row.textContent?.trim() === 'Живая')!.querySelector('input')!;
+            box.focus();
+            check('Живая');
+            await settle();
+            expect(document.activeElement).toBe(box);
+        });
+
         it('shows cards that link to the deck page, with the author from Identity and without one for a hidden profile', async () => {
             const first = one('app-deck-shelf app-public-deck-card')!;
             expect(first.querySelector('h3 a')?.getAttribute('href')).toBe('/d/Kq7xT3mNp1/kolonda-1');

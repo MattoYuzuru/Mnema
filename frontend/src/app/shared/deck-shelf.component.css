@@ -11,6 +11,9 @@
     display: grid; grid-auto-flow: column; grid-auto-columns: min(82%, 19rem); gap: 1rem;
     margin: 0; padding: 0 0 .75rem; list-style: none;
     overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: 0; scrollbar-width: thin;
+    /* The row is the containing block of what the cards position absolutely (the hidden words for a screen reader): without it they sit outside the scroller and
+       stretch the page to the width of the whole row, and the page scrolls sideways. */
+    position: relative;
 }
 .row > li { display: grid; min-inline-size: 0; scroll-snap-align: start; }
 

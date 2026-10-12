@@ -564,8 +564,8 @@ SPA without nginx SSI); the other outcomes of invitation links (a one-time link 
 block after a revocation, the 1000-person limit, a bad token) and of requests (limits, requests switched off); grant by login and «Закрыть доступ»; the
 complaint dialog's other outcomes (404 «Колода больше недоступна», 429 «Попробуйте позже», an ended session), a complaint filed by a guest or about a
 profile, the owner console and its decisions, hiding and takedown (Share/15 is covered by its own tests); that the `Referer` of requests after the redemption
-is clean (the address is rewritten before the first sub-request, which is not observed per request); the catalog, Community page, profile `/u/{username}` and
-update review (other epics); zero-load and 100k-MAU (scenario H) behaviour; production.
+is clean (the address is rewritten before the first sub-request, which is not observed per request); the catalogue, the Community page and the profile `/u/{username}` (`--catalog`) and the
+update review (`--updates`); zero-load and 100k-MAU (scenario H) behaviour; production.
 
 ## Update of a copy (`--updates`, #446)
 
@@ -613,6 +613,73 @@ Not verified here: Chrome only; no real touch input, screen reader or Safari/Fir
 (auto-load of the rows, `APPLYING` as a background job and its polling, 409 `UPDATE_PLAN_STALE` mid-review); the automatic acceptance itself (only the setting is
 checked); exercises other than `FREE_RESPONSE`, media in a compared material, moderation takedowns of a side, a source that closed under the review, the
 author's own view of who updated; the `Referer`/privacy checks of `--community`.
+
+## Community catalogue (`--catalog`, Community/8, #455)
+
+`python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node "$NODE24" --catalog` (no `--authoring` needed; default deadline 900 s, about
+4 minutes of run time; **exclusive**: it cannot be combined with `--community`, `--updates`, `--authoring`, `--media`, `--mechanics`, `--generation`, `--assessment`,
+`--only-promo` or `--admin`, because it must start from an empty catalogue). It is the integrated check of epic 3 on one commit, against the real Identity, Learning
+and PostgreSQL; nothing is stubbed or intercepted.
+
+The composition is the one of `--community` (the ordinary Learning, the three community kill switches on) plus:
+
+- `LEARNING_COMMUNITY_CATALOG_ENABLED=true` (the catalogue's own switch, `false` as shipped) and `LEARNING_COMMUNITY_CATALOG_FACETS_TTL=PT1S` (the facets and the topic
+  shelves are cached up to five minutes per instance; one second is the smallest value the setting takes, so a poll sees the projection). The guest limit
+  (`learning.community.public-routes.guest-per-minute`, 120) stays as shipped: the limit stage hammers the real one.
+- A short rank schedule (`LEARNING_COMMUNITY_RANK_INITIAL_DELAY=PT3S`, `…_SCHEDULE_INTERVAL=PT5S`). The hourly job (dedupe key: the UTC hour) therefore runs at the first
+  tick, while the catalogue is still empty, which the first stage waits for. Every later generation is a job with a key of its own, `rank:harness-<n>`, inserted into
+  `app_learning.learning_job` through the harness fixture endpoint `/__fixture/catalog-rank`; the real queue and the real `CatalogRank` build it, and the scenario waits
+  for the completed generation (`rank_generation`) before it reads a number.
+- **The launch flag of the frontend.** `COMMUNITY_LAUNCHED` is a code constant (`false` until the enabling pull request). The harness serves the built `dist` with
+  `window.MNEMA_APP_CONFIG = {…, communityLaunched: true}` in its `app-config.js`; `resolveAppConfig` keeps that key **only on a loopback host** (`localhost`, `127.0.0.1`,
+  `admin.localhost`) and drops it everywhere else, so a runtime file on a real host can never open the Community. With the flag open the masthead carries the closed
+  book, which is also why the base flow's `submit()` and its «primary action» probe skip the `search` landmark and the masthead.
+- A **console owner**: the `events_fixture` account is the configured owner (`MNEMA_ADMIN_OWNER_ACCOUNT_ID`) and Identity registers the admin client because the run sets
+  `MNEMA_IDENTITY_ADMIN_ORIGIN=https://admin.localhost` (never served). `/__fixture/catalog-admin-token` mints a bearer of the `mnema-admin-web` client by the same
+  authorization-code + PKCE exchange the console uses (the redirect is read from its `Location` header). The console routes themselves are called through the API.
+- `/__fixture/catalog-accounts` registers synthetic accounts through the real Identity (register, login, PKCE) and returns their bearers. Identity allows ten
+  registrations from one address in 15 minutes and every request of this run is one address (the base flow and the console owner already spent three), so the endpoint first
+  clears `app_identity.rate_limit` of the disposable database.
+
+Who is who: the **author** is the first account (first tab), the **learner** the second (second tab, the holder of an invitation to the INVITE deck), the **guest** a third tab in a
+new browser context. A second author (`catalog_shelf_author`, consent given) holds 30 filler decks, so the lists are longer than one page while the first author's page stays one
+page and can be read whole; `catalog_no_consent` is an account without a public profile; nine more accounts (`catalog_copier_1…9`) copy a deck. The decks are seeded through the real
+Learning API in the shape the product's own clients send (deck, ten materials in one bulk publication, one `FREE_RESPONSE` exercise, the publication with topic, language and level);
+the authoring UI is `--community`'s business. Everything a reader does (the page, the book, the filters, the keyboard) goes through the real UI with CDP key events.
+
+Seed: nine listed decks of the author (three Spanish: «Испанские глаголы», «Spanish verbs for travel», «Español para principiantes»; four English, two
+«SQL и данные»), one PUBLIC deck below the threshold (9 materials), one LINK deck, one INVITE deck; thirty fillers of the second author in «Другое». The catalogue lists 39.
+
+| Stage | Assertions |
+|---|---|
+| `catalog_empty` | the schedule's own first generation exists; facets `listedCount: 0`, shelves `[]`; a guest's `/community` says «Пока здесь пусто.» and the approved sentence, no shelf, no card, no filters, the book is there with its label, exactly one `search` landmark and one `h1`; Tab reaches «Как поделиться колодой» with a visible focus ring, Enter opens it (the three approved steps), Enter closes it, Space opens it; a signed-in reader is led to «Мои колоды», a guest to «Войти»; 390 px: no overflow |
+| `catalog_seed` | profile consent through Identity; the decks, the invitation redeemed by the learner; the **projection jobs** are waited for (facets list 39); one more rank generation (`sort=popular` lists 39) |
+| `catalog_shelves` | «Новое» (6 cards), «Другое» (6) and «Английский» (4) are shown; «Испанский» (3), «SQL и данные» (2), «Выбор Мнемы» and «Учат сейчас» (nothing in them) are not; no shelf has fewer than four cards; no sub-threshold, LINK or INVITE deck on any shelf; no card shows an audience yet; «Все» of «Новое» by Enter leads to `/community?sort=new` and the list, and the focus is on the page heading, visible; 390 px: each shelf is a row that scrolls sideways and the page does not |
+| `catalog_search` | typing sends no request (no live search); Enter puts `?q=` into the address; «испанский» finds exactly the three Spanish decks; «Spanish» the same three; the typo «испнские глаголы» puts «Испанские глаголы» first and leaves «Английские фразовые глаголы» out; the count text is a `role=status` region, announced once per search (three searches, three announcements; the observer counts each `p.count` when it first has text and when its text changes); the sorting says why it is off; the sub-threshold, LINK and INVITE decks are not found by their own words, with no bearer, the author's and the learner's; the empty result has its sentence; 390 px: three cards, no overflow |
+| `catalog_filters` | topic «Английский» (4), level «A2» (2), «Письменный ответ» (2), «Аудио» (no result sentence) by keyboard, the address gains each in the canonical order; the four chips are named «Убрать фильтр «…»»; a reload restores the address, the chips and «Фильтры · 4»; removing a chip by Enter moves the focus to the chip that took its place (visible); «Сбросить всё» empties the address, brings the shelves back and puts the focus on the first control of the panel (the button is not drawn on a wide page); the sorting by ArrowRight x2 reaches the address after the wait; 390 px: «Фильтры · 3» is a disclosure (`aria-expanded`), the chips and the reset keep the focus on a chip and then on «Фильтры» |
+| `catalog_scroll` | `/community?sort=new`: 24 cards, no «Показать ещё»/next button anywhere; a real scroll to the end brings the other 15 by itself; no duplicate, the same order as the API's walk of the list; no list request failed |
+| `catalog_counts` | the learner finds «Испанские глаголы» through the search and copies it with the keyboard (Tab to «Добавить к себе», Enter); after **one** copy, then after **nine**, neither the API nor the card shows an audience; after the **tenth** the API says 10 and the card reads «Добавили 10»; the author's own copy attempt is refused (409) and his visit to his own deck followed by one more generation leaves 10; a card carries no score, rank, deck id or revision |
+| `catalog_author` | `/u/<author>`: «Колоды автора», the nine listed decks **and** the sub-threshold one; a guest sees neither the INVITE nor the LINK deck and no «Доступна вам»; the learner who holds the grant sees the INVITE deck marked «Доступна вам» with the address `/d/{code}` (the server's own list is checked first, with his bearer and without); the author sees «Так ваш профиль видят другие» with «Настроить профиль», no invitation part, and the profile settings' «Открыть публичную страницу профиля» leads back to the page; an account without consent and a name nobody has both say «Профиль не найден» and the approved sentence; 390 px: no overflow |
+| `catalog_masthead` | the closed book is in the masthead of `/` (not on `/community`, where the open book is the only `search` landmark); Enter opens it and the focus is in the field; text + Enter leads to `/community?q=…` with the three decks; Escape folds it and returns the focus to «Открыть поиск колод»; `scrollWidth <= width` at 390, 768, 900 and 1280 px on `/`, `/community` (guest and author) and `/decks` (author), measured once the page has settled |
+| `catalog_motion` | with motion allowed the book opens (`mn-book-open`) and the cards arrive with `mn-ink-in`; with `prefers-reduced-motion: reduce` both are `animation-name: none`, no animation is running on the page and the typewriter hint does not change over 2.8 s |
+| `catalog_a11y` | on the shelves, a search, a filtered list, the signed-in page and the author's page: the browser's accessibility tree has no link, button, text field, combobox, checkbox, radio, switch, tab or menu item without a name, exactly one `search` landmark and one `h1`; after opening a deck from a card by Enter the focus is on the page heading and is `:focus-visible` |
+| `catalog_console` | a learner's token is 403 on the editorial route; five decks are saved into «Выбор Мнемы», then reordered: the shelf is the first one and reads in the owner's order (a shelf needs four decks, so two would not show); the learner files a complaint, the owner's `HIDDEN` decision removes the deck from the shelf (four stay, in order), from the search, from the browse list and from the facets, and a guest gets «Колода не найдена» |
+| `catalog_limits` (last) | `GET /api/public/community/decks` as a guest until 429: `RATE_LIMITED`, `Retry-After` between 1 and 60 s, `no-store`, within 125 requests; the page then says «Слишком много запросов. …» with «Повторить», and after the wait the button brings the page back |
+
+A failed stage writes `failure-catalog-<stage>-<owner|member|guest>.png` and `failure-catalog_<stage>.txt` (the reason carries `[after: …]`, the last API or fixture call), the stages
+after it that need the seed are `skipped`, and the run fails. The stages run in this order on purpose: the limit stage uses up the minute's guest allowance of the loopback address
+and the console stage hides a deck, so they are last. Screenshots: `catalog-<desktop|mobile>-{empty,shelves,browse,search,filters,scroll,counts,author,editorial,reduced-motion,limited,masthead}-<guest|member>.png`.
+
+Defects this scenario found and that are fixed with their own tests: the catalogue's four read routes were not in the credential allowlist of `auth.interceptor.ts`, so a signed-in viewer's
+bearer never reached them (the author's page could never show «Доступна вам», and the limits were never keyed by the account); the sideways row of a shelf did not contain the cards'
+`position: absolute` screen-reader words, so at 390 px the whole page scrolled sideways (`deck-shelf.component.css`, `deck-shelf.css.spec.ts`); the focus fell to the body when «Все»
+replaced the shelves with the list (`community-page.component.ts`).
+
+Not verified here: Chrome only; no real touch input, screen reader (the accessibility tree is checked, not what a reader says), Safari/Firefox or physical phone (the mobile pass is a 390 px
+emulated viewport); media filters with real media (the «Внутри: аудио» filter is exercised against a catalogue without any, so it proves the empty result, not a match), the «Учат сейчас»
+shelf and the study-days half of the audience (no scheduled session is run), the author's own study sessions (his visit and his copy attempt are), «Для вас» (epic 4), the sitemap, anomaly flags
+and the console's own pages (the editorial and complaint routes are called through the API with a real admin-client token; the console UI is `--admin`'s), a catalogue past 1000 decks or 200
+search candidates, a rank generation expiring (412 `VERSION_CONFLICT` of an old cursor), the 503 `PUBLIC_READ_BUSY` bulkhead, the nginx server-side includes of the link previews, production.
 
 ## Infinite scroll (`--authoring --media --mechanics`, #397)
 
