@@ -145,4 +145,40 @@
       <app-update-unit-row [headingLevel]="4" [unit]="goalUnit" />
     </div>
   </app-sg-specimen>
+
+  <app-sg-specimen title="Что нового в хабе копии" selector="<app-update-news>"
+    when="Хаб копии, когда автоматический приём взял безопасное, а владелец ещё не смотрел. Заголовок «Что нового» и одно предложение со склонением («Автор обновил колоду, мы взяли 3 изменения автоматически. 2 ждут вашего решения.»; если ничего не ждёт, второго предложения нет). Действия кладёт страница: ссылка «Посмотреть, что изменилось» ведёт в историю и сразу отмечает запись просмотренной, ссылка «Решить, что взять» нужна, только если рядом нет «Посмотреть обновление». Не живая область: обновление пришло, пока владельца не было."
+    [tokens]="['--mn-ink', '--mn-sheet', '--mn-body']"
+    usage='<app-update-news [applied]="3" [pending]="2">
+  <a class="button secondary" routerLink="…/update/history">Посмотреть, что изменилось</a>
+</app-update-news>'>
+    <div class="sg-stack">
+      <app-update-news [applied]="3" [pending]="2"><a class="button secondary" href="#update">{{ newsLook }}</a><a class="button secondary" href="#update">{{ newsDecide }}</a></app-update-news>
+      <app-update-news [applied]="1" [pending]="0"><a class="button secondary" href="#update">{{ newsLook }}</a></app-update-news>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Строка истории обновлений" selector="<app-update-history-unit>"
+    when="Одна единица, которую изменило обновление: вид (знак и слово), что с ней сделали штампом («Добавлено», «Исправлено», «Удалено», «Порядок»), название целиком и, если единица уже не такая, как после обновления, предложение («Вы уже вернули», «Вы изменили после обновления»). Действие строки кладёт страница: «Вернуть как было» (только у материала и упражнения, которые остались ровно такими, как сделало обновление) и подтверждение прямо под ней в одно предложение («Вернём «…» к тому, что было до обновления.») с кнопками «Вернуть» и «Отмена». Если вместе с единицей возвращаются другие (материал и взятые с ним упражнения), подтверждение называет их и просит ещё раз."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-muted', '--mn-font-mono', '--mn-caution']"
+    usage='<app-update-history-unit [unit]="unit">
+  <button type="button" class="button small">Вернуть как было</button>
+</app-update-history-unit>'>
+    <ul class="sg-unit-list sg-history">
+      @for (unit of historyUnits; track unit.id) {
+        <li>
+          <app-update-history-unit [unit]="unit">
+            @if (unit.id === 'h2') {
+              <div class="notice warning sg-revert">
+                <p><strong>{{ confirmText }}</strong></p>
+                <div class="actions"><button type="button" class="button primary">{{ revertConfirmText }}</button><button type="button" class="button quiet">{{ cancelText }}</button></div>
+              </div>
+            } @else if (!unit.state && unit.id !== 'h4' && unit.id !== 'h5') {
+              <button type="button" class="button small">{{ revertText }}</button>
+            }
+          </app-update-history-unit>
+        </li>
+      }
+    </ul>
+  </app-sg-specimen>
 </section>

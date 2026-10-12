@@ -19,6 +19,7 @@ import { CopyStatusComponent } from '../../shared/copy-status.component';
 import { ToggletipComponent } from '../../shared/toggletip.component';
 import { UnavailableNoteComponent } from '../../shared/unavailable-note.component';
 import { UpdateBadgeComponent } from '../../shared/update-badge.component';
+import { UpdateNewsComponent } from '../../shared/update-news.component';
 import { sizeLine } from '../../shared/public-deck-card';
 import { PublicationBlockComponent } from './publication/publication-block.component';
 import { DeckDescriptionComponent } from './deck-description.component';
@@ -47,7 +48,7 @@ import {
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
         DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent, DeckModerationComponent,
-        CopyOriginComponent, CopyStatusComponent, ToggletipComponent, UnavailableNoteComponent, UpdateBadgeComponent],
+        CopyOriginComponent, CopyStatusComponent, ToggletipComponent, UnavailableNoteComponent, UpdateBadgeComponent, UpdateNewsComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',
@@ -99,6 +100,14 @@ export class OwnDeckDetailPageComponent {
     readonly updateOffer = computed(() => {
         const fork = this.fork();
         return fork !== null && fork.updateAvailable && !fork.detached && !fork.preparing && fork.sourceAvailable;
+    });
+    /**
+     * «Что нового»: an automatic update of a ready, attached copy that its owner has not looked at yet (`fork.lastUpdate`, which the server only
+     * sends then). Opening the history marks it seen; the block is gone at the next read of the deck.
+     */
+    readonly lastUpdate = computed(() => {
+        const fork = this.fork();
+        return fork !== null && !fork.detached && !fork.preparing ? fork.lastUpdate ?? null : null;
     });
     /** «Проверить обновления»: a quiet link for a ready, attached copy whose source opens and that has no update waiting. */
     readonly updateCheck = computed(() => {

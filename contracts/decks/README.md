@@ -711,3 +711,32 @@ New: `UPDATE_SOURCE_UNAVAILABLE` (409: the source can no longer be read by the o
 preparing copy), `UPDATE_PLAN_STALE` (409), `IDEMPOTENCY_CONFLICT` (409), `INVALID_REQUEST` (400, with the members `reason`, `unitId` and, for `dependency_declined`, `dependency`),
 `RESOURCE_LIMIT_EXCEEDED` (422, `limit`), `UPDATE_PLAN_BUSY` (503), `RESOURCE_NOT_FOUND` (404: not the caller's live copy), `AUTHENTICATION_REQUIRED` (401), `ACCESS_DENIED` (403: no write scope).
 Nothing was written by any refusal. Problem text never echoes titles, codes or identifiers other than the unit ids the request named.
+
+## «Что нового»: the automatic mode and returning a unit (Updates/6 part B, #445)
+
+After the author publishes, the copies that follow the source **automatically** (`PUT …/fork:auto-update`, Updates/6 part A) get the SAFE changes in the background, and «Что нового» shows
+what came, with a way to take one unit back. Exact examples and executable invariants are in [`updates.json`](updates.json) (`history`, `seen`, `revert`, the two new problems); the optional deck notice
+is in [`forks.json`](forks.json) (`fork.lastUpdate`); the architecture is [community decks §7](../../docs/architecture/community-decks.md#7-обновления-cd-5), the migration is `V65__fork_update_log.sql`.
+
+- **The automatic mode** (no route; `learning.updates.auto.enabled`, default **false**). When the published revision of a source moves, one job per (source, revision) walks the copies that are
+  ready, attached, live and automatic, and hands the ACTIVE ones (made in the last 30 days, or studied by their owner in the last 30 days) to a job per copy, at most `learning.updates.auto.per-minute`
+  (50) copies per minute per instance. That job does what «accept all safe» does for the owner: it takes the `NEW` and `SAFE` units (with their dependencies), moves the base, and leaves
+  conflicts, the author's removals and questions asked again exactly as they are (`PENDING` rows: the badge stays). A copy with nothing safe is not touched at all. The read paths (plan, deck, history)
+  never write.
+- **`GET /api/decks/{id}/update-history?limit=`** (`learning.read`, owner of the copy): `{deckId, entries: [{deckRevisionId, upstreamRevisionId, mode (AUTO|MANUAL), appliedAt, seen, counts:
+  {applied, pending}, units: [{unitId, kind, key, change (ADDED|CHANGED|REMOVED|REORDERED), title, previousRevisionId, revisionId, state (CURRENT|RETURNED|CHANGED_SINCE|null), revertible}],
+  unitsTruncated}]}`, newest first, 1..20 entries (default 5), at most 100 units each. Every apply that made a revision of the copy is an entry, the owner's own included, so the screen can show
+  «последнее обновление» whatever its origin.
+- **`POST …/update-history/{deckRevisionId}:seen`** (`learning.write`): `{deckId, deckRevisionId, seen: true}`; idempotent. `fork.lastUpdate` on the deck is the newest unseen AUTO entry.
+- **`POST …/update-history/{deckRevisionId}/units/{kind}/{key}:revert`** (`learning.write`): body `{commandId, with?: ["KIND:key", …]}`; `200 {commandId, state: "REVERTED", deckRevisionId, units}`
+  (`Idempotency-Replayed: true` for the stored answer). Only a `MATERIAL` or an `EXERCISE` in the state `CURRENT` can be returned: a changed unit gets the revision the apply replaced as its head again, an
+  added unit is removed, a removed unit comes back right behind the member it followed. One new revision of the copy; a decision (`KEEP_MINE` / `DECLINE_NEW`) keeps the next update from putting the unit back until the author changes it again.
+  **A material and the exercises taken with it are returned together**: the refusal `400 unit_needed` lists the units of the group the command left out; send them in `with`. `409 UPDATE_REVERT_STALE`:
+  the unit is not what the apply made it any more (the owner edited, deleted or returned it) or the copy moved meanwhile; `409 FORK_DETACHED`; an apply or unit the copy has not is the opaque 404.
+- **`fork.lastUpdate`** (optional member of the owner's deck JSON): `{deckRevisionId, mode: "AUTO", appliedAt, seen: false, counts: {applied, pending}}`, only while an unseen AUTO entry exists.
+
+### Codes
+
+New: `UPDATE_REVERT_STALE` (409, with `unitId` when known). Used: `INVALID_REQUEST` (400: `reason` `unit_needed` with `unitId` and `units`, `material_still_used` with `unitId` and `dependency`, `duplicate_unit`,
+`unit_not_returnable`, `publication_refused`), `FORK_DETACHED`, `DECK_PREPARING`, `IDEMPOTENCY_CONFLICT`, `RESOURCE_NOT_FOUND`, `UPDATE_PLAN_BUSY` (the routes share the plan routes' places), `AUTHENTICATION_REQUIRED`,
+`ACCESS_DENIED`.

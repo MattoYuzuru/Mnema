@@ -1,6 +1,6 @@
 {
   "contract": "updates-v1",
-  "description": "Shared frontend/backend fixtures for the update plan of a copy (Updates/3, #442): what the author published since the copy's base, unit by unit, against what the copy holds now, and the two sides of one unit for the review screen. Private chain, owner of the copy only, learning.read, every answer is Cache-Control: private, no-store. Both routes only READ: they create no revision, row, pin or job. The shapes below are executable: the integration tests compare real answers with the property sets of these examples. The apply command (Updates/4, #443) takes the owner's choices on this plan and makes ONE new revision of the copy from the author's published revisions; the plan states APPLYING and lastApplyFailed tell the review screen about an apply that runs as a job. The decisions table the apply writes is migration V61; V63 gives it the room and the index it needs.",
+  "description": "Shared frontend/backend fixtures for the update plan of a copy (Updates/3, #442): what the author published since the copy's base, unit by unit, against what the copy holds now, and the two sides of one unit for the review screen. Private chain, owner of the copy only, learning.read, every answer is Cache-Control: private, no-store. Both routes only READ: they create no revision, row, pin or job. The shapes below are executable: the integration tests compare real answers with the property sets of these examples. The apply command (Updates/4, #443) takes the owner's choices on this plan and makes ONE new revision of the copy from the author's published revisions; the plan states APPLYING and lastApplyFailed tell the review screen about an apply that runs as a job. The decisions table the apply writes is migration V61; V63 gives it the room and the index it needs. Updates/6 part B (#445, migration V65) adds «Что нового»: the log of the applies of a copy (the owner's and the background job's automatic ones) with the units each changed, the owner's mark that he has seen one, and the return of one unit of an apply to what it was before.",
   "constants": {
     "planPath": "/api/decks/{forkDeckId}/update-plan?cursor=&limit=",
     "unitPath": "/api/decks/{forkDeckId}/update-plan/units/{kind}/{key}?planVersion=",
@@ -18,8 +18,28 @@
     "choicesPerClassNote": "METADATA, ORDER and OBJECTIVE units take the choices of their class. The first choice of NEW, SAFE, CONFLICT and ASK_AGAIN takes the author's version (ACCEPT); for DELETED, DELETE removes the unit from the copy and KEEP keeps it. `defaultChoices` are what the review screen starts with, not what the server assumes: a unit the request does not name is left pending, unless `acceptSafe` takes it",
     "applyReasons": ["unknown_unit", "choice_not_allowed", "duplicate_unit", "exercise_needs_material", "dependency_declined", "material_still_used", "publication_refused"],
     "applyReasonsNote": "the `reason` member of the 400 INVALID_REQUEST the apply command answers for a choice it cannot honour, with `unitId` (and `dependency` where noted): unknown_unit (the current plan does not list it), choice_not_allowed (not a choice of its class), duplicate_unit (named twice, answered before the plan is read), exercise_needs_material (ACCEPT of an exercise whose material the copy deleted, or of an objective one of whose exercises is such an exercise: unitId is the exercise), dependency_declined (a unit taken by name whose dependency was declined by name; an objective taken by name needs every exercise that evidences it, so one of them declined by name is this reason too; `dependency` is the declined unit), material_still_used (DELETE of a material that exercises of the copy are still about, when the plan does not list those exercises as removals the command takes, or they were kept by name; `dependency` is the exercise when the plan lists it), publication_refused (the combined publication refused a result the selection did not foresee: nothing was written; no 400 of the command is without a reason)",
-    "jobFailureCodes": ["stale_head", "plan_invalid", "taken_down", "not_found", "deck_preparing", "deck_gone", "command_missing", "cancelled"],
+    "jobFailureCodes": ["stale_head", "plan_invalid", "taken_down", "not_found", "deck_preparing", "deck_gone", "command_missing", "auto_disabled", "cancelled"],
     "jobFailureCodesNote": "the open set of codes `lastApplyFailed.code` can carry: the code the background job ended with (short, lowercase, never a message); `cancelled` for a cancelled one. The frontend shows one text for all of them",
+    "historyPath": "/api/decks/{forkDeckId}/update-history?limit=",
+    "historyDefaultLimit": 5,
+    "historyMaxLimit": 20,
+    "historyMaxUnits": 100,
+    "historyMaxUnitsNote": "an entry lists at most this many units (chosen in the order METADATA, MATERIAL, EXERCISE, OBJECTIVE, ORDER, then the journal's) and says `unitsTruncated`; `counts.applied` is how many units the apply took. A unit that is not listed can still be returned by naming it. At most 50 entries of a copy are kept; older ones are deleted by the apply that overflows it",
+    "seenPath": "/api/decks/{forkDeckId}/update-history/{deckRevisionId}:seen",
+    "revertPath": "/api/decks/{forkDeckId}/update-history/{deckRevisionId}/units/{kind}/{key}:revert",
+    "revertMaxBytes": 4096,
+    "revertMaxWith": 20,
+    "modes": ["AUTO", "MANUAL"],
+    "modesNote": "AUTO: the background job (learning.updates.auto) took the safe units after the author published; MANUAL: the owner's own apply command. Both are logged when they made a revision of the copy",
+    "changes": ["ADDED", "CHANGED", "REMOVED", "REORDERED"],
+    "changesNote": "what the apply did to the unit: added it, replaced it with the author's revision, removed it, or (the ORDER unit only) moved a material without changing it",
+    "unitStates": ["CURRENT", "RETURNED", "CHANGED_SINCE"],
+    "unitStatesNote": "where the unit stands NOW: CURRENT the copy holds exactly what the apply made (the only state that can be returned), RETURNED it is back at what it was before the apply, CHANGED_SINCE the owner edited it after the apply. null for METADATA and ORDER",
+    "revertibleKinds": ["MATERIAL", "EXERCISE"],
+    "revertibleKindsNote": "METADATA, ORDER and OBJECTIVE units are listed (revertible=false); an objective moves with the exercises that evidence it and is adopted by the server, never named by the client",
+    "revertReasons": ["unit_needed", "material_still_used", "duplicate_unit", "unit_not_returnable", "publication_refused"],
+    "revertReasonsNote": "the `reason` member of the 400 INVALID_REQUEST the return command answers: unit_needed (the unit belongs to a group of the same apply, a material and the exercises taken with it, that is returned only together: `units` lists the units of the group that the command did not name and that can still be returned, `unitId` the unit of the path), material_still_used (an exercise of the copy that is not part of the apply is bound to a material the command would remove: `dependency` is that exercise), duplicate_unit (a unit named twice, or `with` names the unit of the path), unit_not_returnable (an objective, the title or the order), publication_refused (the combined publication refused a result nothing above foresaw; nothing was written)",
+    "autoUpdate": "learning.updates.auto.enabled (default false), per-minute (50), active-window (P30D), slice-size (25), scan-size (200); queues learning.jobs.deck.update.fanout.* and deck.update.auto.*. Off: a publication enqueues no fan-out and the jobs end without writing; an automatic apply already queued as the combined job ends FAILED with `auto_disabled` and writes nothing. The badge, the plan and the owner's own apply are not affected",
     "kinds": ["METADATA", "MATERIAL", "EXERCISE", "OBJECTIVE", "ORDER"],
     "kindsNote": "the declaration order is the order of kinds inside one class of the plan; METADATA and ORDER are single units whose key is the copy's own deck id; MATERIAL keys are member keys, EXERCISE keys exercise ids, OBJECTIVE keys objective ids",
     "classes": ["NEW", "SAFE", "CONFLICT", "DELETED", "ASK_AGAIN"],
@@ -67,7 +87,10 @@
   "routes": [
     {"method": "GET", "path": "/api/decks/{forkDeckId}/update-plan", "scope": "learning.read", "answers": "plan page"},
     {"method": "GET", "path": "/api/decks/{forkDeckId}/update-plan/units/{kind}/{key}", "scope": "learning.read", "answers": "unit sides"},
-    {"method": "POST", "path": "/api/decks/{forkDeckId}/update-plan:apply", "scope": "learning.write", "answers": "200 applied | 202 applying"}
+    {"method": "POST", "path": "/api/decks/{forkDeckId}/update-plan:apply", "scope": "learning.write", "answers": "200 applied | 202 applying"},
+    {"method": "GET", "path": "/api/decks/{forkDeckId}/update-history", "scope": "learning.read", "answers": "history entries"},
+    {"method": "POST", "path": "/api/decks/{forkDeckId}/update-history/{deckRevisionId}:seen", "scope": "learning.write", "answers": "200 seen"},
+    {"method": "POST", "path": "/api/decks/{forkDeckId}/update-history/{deckRevisionId}/units/{kind}/{key}:revert", "scope": "learning.write", "answers": "200 reverted"}
   ],
   "plan": {
     "request": "GET /api/decks/33333333-3333-4333-8333-333333333333/update-plan?limit=50",
@@ -258,6 +281,79 @@
       "side": {"moved": [{"memberKey": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "title": "comer — есть", "from": 7, "to": 2}], "total": 1, "truncated": false}
     }
   },
+  "history": {
+    "request": "GET /api/decks/33333333-3333-4333-8333-333333333333/update-history?limit=5",
+    "status": 200,
+    "headers": {"Cache-Control": "private, no-store"},
+    "note": "«Что нового»: the applies of the copy that made a revision of it, newest first (at most `limit`, 1..20, default 5), each with the units it changed, read from the journals the combined publication wrote in the same transaction. A read: nothing is written. A copy that has no apply yet answers an empty `entries`; a copy that is not the caller's live copy is the opaque 404; a malformed or repeated `limit` is 400",
+    "body": {
+      "deckId": "33333333-3333-4333-8333-333333333333",
+      "entries": [
+        {
+          "deckRevisionId": "44444444-4444-4444-8444-444444444444",
+          "upstreamRevisionId": "55555555-5555-4555-8555-555555555555",
+          "mode": "AUTO",
+          "appliedAt": "2026-10-12T09:30:00.123456Z",
+          "seen": false,
+          "counts": {"applied": 3, "pending": 2},
+          "units": [
+            {
+              "unitId": "MATERIAL:cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+              "kind": "MATERIAL",
+              "key": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+              "change": "CHANGED",
+              "title": "hola",
+              "previousRevisionId": "66666666-6666-4666-8666-666666666666",
+              "revisionId": "77777777-7777-4777-8777-777777777777",
+              "state": "CURRENT",
+              "revertible": true
+            }
+          ],
+          "unitsTruncated": false
+        }
+      ]
+    },
+    "unitNote": "previousRevisionId is null for ADDED and revisionId is null for REMOVED; METADATA and ORDER have both null and `state` null, METADATA's title is the deck's new title and ORDER's is null; the title of a taken-down revision is empty. `revertible` is true only for a MATERIAL or an EXERCISE in the state CURRENT of a copy that is not detached",
+    "counts": "counts.applied is the units the apply took (dependencies included), counts.pending the units it left to the owner (conflicts, removals by the author, questions asked again, safe units that wait for them)"
+  },
+  "seen": {
+    "request": "POST /api/decks/33333333-3333-4333-8333-333333333333/update-history/44444444-4444-4444-8444-444444444444:seen",
+    "status": 200,
+    "headers": {"Cache-Control": "private, no-store"},
+    "note": "no body; marks the entry seen (the notice `fork.lastUpdate` of the deck stops showing it). Idempotent: the first call sets the time, later calls change nothing. An entry the copy does not have is the opaque 404",
+    "body": {
+      "deckId": "33333333-3333-4333-8333-333333333333",
+      "deckRevisionId": "44444444-4444-4444-8444-444444444444",
+      "seen": true
+    }
+  },
+  "revert": {
+    "request": {
+      "method": "POST",
+      "path": "/api/decks/33333333-3333-4333-8333-333333333333/update-history/44444444-4444-4444-8444-444444444444/units/MATERIAL/cccccccc-cccc-4ccc-8ccc-cccccccccccc:revert",
+      "body": {"commandId": "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd", "with": ["EXERCISE:99999999-9999-4999-8999-999999999999"]},
+      "note": "`with` is optional ([]): the OTHER units of the same apply returned in the same command (at most 20, none repeated, not the unit of the path); the body is at most 4 KiB and has nothing else"
+    },
+    "reverted": {
+      "status": 200,
+      "headers": {"Cache-Control": "private, no-store"},
+      "body": {
+        "commandId": "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+        "state": "REVERTED",
+        "deckRevisionId": "88888888-8888-4888-8888-888888888888",
+        "units": ["MATERIAL:cccccccc-cccc-4ccc-8ccc-cccccccccccc", "EXERCISE:99999999-9999-4999-8999-999999999999"]
+      },
+      "note": "ONE new revision of the copy (deckRevisionId) in which the units are what they were before the apply: a changed unit has the revision the apply replaced as its head again, an added unit is removed, a removed unit is back right behind the member it followed in the manifest the apply was made from (found even when the same apply added or removed members before it; at the very front when nothing before it survives; if none of the 50 members before it is still there, at the place number the apply recorded, kept inside the manifest). Exercises come back at their recorded place. `units` lists what was returned, the unit of the path first. The objective heads follow the exercises on their own"
+    },
+    "replayed": {
+      "status": 200,
+      "headers": {"Cache-Control": "private, no-store", "Idempotency-Replayed": "true"},
+      "note": "the same command again: the stored answer, byte for byte, whatever the copy is now"
+    },
+    "decisions": "in the same transaction a decision row keeps the next update from putting the unit back: KEEP_MINE for a change undone and for a removal undone (the latter with the author's state «removed»), DECLINE_NEW for an addition removed, each remembering the author's revision the apply took. The plan hides the unit until the author changes it again, and then lists it as ASK_AGAIN",
+    "order": "body (400) -> ids (400) -> bulkhead (503 UPDATE_PLAN_BUSY) -> the copy (404; preparing 409 DECK_PREPARING) -> the stored answer of the same command (200 replayed) -> detached (409 FORK_DETACHED) -> the apply and the units in the log (404) -> every named unit is exactly what the apply made it (409 UPDATE_REVERT_STALE) -> the group (400 unit_needed, material_still_used) -> the combined publication (409 UPDATE_REVERT_STALE when the head moved meanwhile)",
+    "group": "a material and the exercises of the same apply that are bound to it (any role) are returned only together, so the owner never ends with an exercise that quotes a revision that is gone, nor with an older exercise over a newer material; units of the group that the owner has changed since the apply are not required (they cannot be returned). The group is closed transitively; the refusal lists what the command left out so the client can send it again with `with`"
+  },
   "problems": {
     "notFound": {
       "status": 404,
@@ -275,6 +371,33 @@
     "stale": {
       "status": 409,
       "body": {"type": "urn:mnema:problem:update-plan-stale", "title": "Update plan stale", "status": 409, "detail": "The copy or its source changed after the plan was read; read the plan again.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan", "code": "UPDATE_PLAN_STALE"}
+    },
+    "revertStale": {
+      "status": 409,
+      "body": {
+        "type": "urn:mnema:problem:update-revert-stale",
+        "title": "Update revert stale",
+        "status": 409,
+        "detail": "The unit changed after the update was applied; read what is new again.",
+        "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-history/44444444-4444-4444-8444-444444444444/units/MATERIAL/cccccccc-cccc-4ccc-8ccc-cccccccccccc:revert",
+        "code": "UPDATE_REVERT_STALE",
+        "unitId": "MATERIAL:cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+      },
+      "note": "`unitId` names the unit that is not what the apply made it; it is absent when the copy moved while the command was built"
+    },
+    "unitNeeded": {
+      "status": 400,
+      "body": {
+        "type": "urn:mnema:problem:invalid-request",
+        "title": "Invalid request",
+        "status": 400,
+        "detail": "The request is invalid or cannot be read.",
+        "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-history/44444444-4444-4444-8444-444444444444/units/MATERIAL/cccccccc-cccc-4ccc-8ccc-cccccccccccc:revert",
+        "code": "INVALID_REQUEST",
+        "reason": "unit_needed",
+        "unitId": "MATERIAL:cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "units": ["EXERCISE:99999999-9999-4999-8999-999999999999"]
+      }
     },
     "invalidChoice": {
       "status": 400,

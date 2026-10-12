@@ -415,7 +415,7 @@ class ApplyUnitsTest {
         assertThat(rows.stream().filter(row -> row.op() == Op.REMOVE)).extracting(Row::key).containsExactlyInAnyOrder(takenAskAgain.key(), taken.key());
         assertThat(rows).hasSize(11);
         // the rows survive the final writes
-        ApplyWrites writes = new ApplyWrites(UUID.randomUUID(), VERSION, base, author, JSON.createObjectNode().put("deckId", DECK.toString()), 2, 7, 2, 0, rows);
+        ApplyWrites writes = new ApplyWrites(UUID.randomUUID(), VERSION, base, author, JSON.createObjectNode().put("deckId", DECK.toString()), 2, 7, 2, 0, rows, ApplyWrites.MANUAL, List.of());
         ApplyWrites again = ApplyWrites.of(writes.toFinalWrites());
         assertThat(again.rows()).isEqualTo(rows);
         assertThat(again.base()).isEqualTo(base);
@@ -429,11 +429,11 @@ class ApplyUnitsTest {
     void aCommandWithMoreRowsThanTheFinalWritesCanCarryIsALimitProblem() {
         List<Row> rows = new ArrayList<>();
         for (int index = 0; index <= ApplyWrites.MAX_ROWS; index++) rows.add(new Row(Op.PENDING, UnitKind.MATERIAL, UUID.randomUUID(), UUID.randomUUID().toString(), UUID.randomUUID().toString()));
-        ApplyWrites writes = new ApplyWrites(UUID.randomUUID(), VERSION, UUID.randomUUID(), UUID.randomUUID(), JSON.createObjectNode(), 0, 0, rows.size(), 0, rows);
+        ApplyWrites writes = new ApplyWrites(UUID.randomUUID(), VERSION, UUID.randomUUID(), UUID.randomUUID(), JSON.createObjectNode(), 0, 0, rows.size(), 0, rows, ApplyWrites.MANUAL, List.of());
         assertThatThrownBy(writes::toFinalWrites).isInstanceOf(app.mnema.learning.platform.api.ResourceLimitExceededException.class);
         // the biggest command that is allowed fits the final writes with room to spare
         ApplyWrites biggest = new ApplyWrites(UUID.randomUUID(), VERSION, UUID.randomUUID(), UUID.randomUUID(), JSON.createObjectNode(), 0, 0, ApplyWrites.MAX_ROWS, 0,
-                rows.subList(0, ApplyWrites.MAX_ROWS));
+                rows.subList(0, ApplyWrites.MAX_ROWS), ApplyWrites.MANUAL, List.of());
         JsonNode body = biggest.toFinalWrites().body();
         assertThat(body.path("rows")).hasSize(ApplyWrites.MAX_ROWS);
         assertThat(body.toString().getBytes(StandardCharsets.UTF_8).length).isLessThan(app.mnema.learning.update.FinalWrites.MAX_BYTES);

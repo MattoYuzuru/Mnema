@@ -10,6 +10,7 @@ import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
+import app.mnema.learning.update.auto.AutoUpdateFanout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -63,15 +64,17 @@ public class PublicationService {
     private final TransactionTemplate transaction;
     private final TransactionTemplate readOnly;
     private final SecureRandom random;
+    private final AutoUpdateFanout fanout;
 
     @Autowired
     PublicationService(PublicationRepository repository, PublishedMediaRepository publishedMedia, TopicDirectory topics, CommandReceiptService receipts,
-                       PlatformTransactionManager transactions, MeterRegistry meters) {
-        this(repository, publishedMedia, topics, receipts, transactions, meters, new SecureRandom());
+                       PlatformTransactionManager transactions, MeterRegistry meters, AutoUpdateFanout fanout) {
+        this(repository, publishedMedia, topics, receipts, transactions, meters, new SecureRandom(), fanout);
     }
 
     PublicationService(PublicationRepository repository, PublishedMediaRepository publishedMedia, TopicDirectory topics, CommandReceiptService receipts,
-                       PlatformTransactionManager transactions, MeterRegistry meters, SecureRandom random) {
+                       PlatformTransactionManager transactions, MeterRegistry meters, SecureRandom random, AutoUpdateFanout fanout) {
+        this.fanout = fanout;
         this.repository = repository;
         this.meters = meters;
         this.publishedMedia = publishedMedia;
@@ -178,6 +181,9 @@ public class PublicationService {
             if (result.isEmpty()) throw new VersionConflictException();
             // The media non-owners may use follow the pointer, in the same transaction: the set of the new published revision, from the journal range.
             if (moves) advanceMedia(deck, current.map(Row::publishedRevisionId).orElse(null), head);
+            // Updates/6 part B: the published revision of a deck somebody could already copy moved, so the copies that follow it automatically are handed to the background job
+            // (one job per source and revision, enqueued in this very transaction; nothing when the kill switch is off). Not the first publication, nobody has a copy yet.
+            if (moves && current.map(Row::publishedRevisionId).isPresent() && command.visibility() != DeckVisibility.PRIVATE) fanout.published(deck, pointer);
             // One outbox row per effective write while the deck is public, so the catalog projector never misses a metadata edit; otherwise a level or revision change.
             boolean publicWrite = command.visibility() == DeckVisibility.PUBLIC;
             if ((publicWrite || before != command.visibility() || moves) && pointer != null) repository.appendEvent(deck, pointer, command.visibility());

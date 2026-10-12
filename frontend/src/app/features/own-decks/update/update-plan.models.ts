@@ -317,6 +317,11 @@ export interface ReviewUnit {
     readonly dependsOn: readonly string[];
 }
 
+/** The word of the shared rows for a wire kind. */
+export function viewKindOf(kind: WireKind): UpdateUnitKind {
+    return KIND_VIEW[kind];
+}
+
 export function toReviewUnit(unit: PlanUnit): ReviewUnit {
     const kind = KIND_VIEW[unit.kind];
     const title = unit.title !== null && unit.title.trim().length > 0 ? unit.title : UPDATE_TEXT.untitled[kind];
@@ -487,10 +492,12 @@ export function retryAfterSeconds(error: unknown): number | null {
     return typeof seconds === 'number' && Number.isInteger(seconds) && seconds >= 1 && seconds <= 86_400 ? seconds : null;
 }
 
-export const INVALID_REASONS = ['unknown_unit', 'choice_not_allowed', 'duplicate_unit', 'exercise_needs_material', 'dependency_declined'] as const;
+export const INVALID_REASONS = [
+    'unknown_unit', 'choice_not_allowed', 'duplicate_unit', 'exercise_needs_material', 'dependency_declined', 'material_still_used', 'publication_refused'
+] as const;
 export type InvalidReason = (typeof INVALID_REASONS)[number];
 
-/** The 400 of the apply command that names a choice it cannot honour: the reason, the unit and, for a declined dependency, the dependency. */
+/** The 400 of the apply command that names a choice it cannot honour: the reason, the unit and, for a declined dependency or a material still used, the dependency. */
 export interface InvalidChoice {
     readonly reason: InvalidReason;
     readonly unitId: string | null;
@@ -504,7 +511,7 @@ export function invalidChoiceOf(error: unknown): InvalidChoice | null {
     const reason = INVALID_REASONS.find(candidate => candidate === body['reason']);
     if (reason === undefined) return null;
     const unit = (value: unknown): string | null => typeof value === 'string' && UNIT_ID.test(value) ? value : null;
-    return { reason, unitId: unit(body['unitId']), dependency: reason === 'dependency_declined' ? unit(body['dependency']) : null };
+    return { reason, unitId: unit(body['unitId']), dependency: reason === 'dependency_declined' || reason === 'material_still_used' ? unit(body['dependency']) : null };
 }
 
 // ---------------------------------------------------------------------------------------------

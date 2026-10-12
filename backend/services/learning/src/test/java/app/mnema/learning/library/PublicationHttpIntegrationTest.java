@@ -332,6 +332,9 @@ class PublicationHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(republished.path("publication").path("releaseNote").stringValue(null)).isEqualTo("Новые материалы");
         assertThat(republished.path("publication").path("rowVersion").stringValue(null)).isEqualTo("2");
         assertThat(events(deck.id())).isEqualTo(events + 1);
+        // Updates/6 part B: the automatic mode is off by default, so moving the published revision enqueued no fan-out job (the hook is tested with the mode on in AutoUpdateIntegrationTest)
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.learning_job WHERE queue = 'deck.update.fanout' AND payload ->> 'deckId' = :deck").param("deck", deck.id().toString())
+                .query(Long.class).single()).isZero();
     }
 
     // ---- the checklist ----

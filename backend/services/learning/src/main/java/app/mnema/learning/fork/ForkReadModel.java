@@ -54,8 +54,15 @@ public class ForkReadModel {
             // is not the one the copy stands on or a unit the learner left for later is still on offer (the base rule of the architecture, section 7).
             boolean updateAvailable = available && !link.preparing() && !link.detached()
                     && (!link.baseRevisionId().equals(resolution.deck().published().revisionId()) || link.pendingUpdates());
-            result.add(json.put("sourceAvailable", available).put("preparing", link.preparing()).put("failed", link.failed()).put("detached", link.detached())
-                    .put("updateAvailable", updateAvailable).put("autoUpdate", link.autoUpdate()));
+            json.put("sourceAvailable", available).put("preparing", link.preparing()).put("failed", link.failed()).put("detached", link.detached())
+                    .put("updateAvailable", updateAvailable).put("autoUpdate", link.autoUpdate());
+            // «Что нового»: the newest automatic update the owner has not marked seen; absent otherwise (read with the deck, nothing is written here)
+            ForkLink.LastUpdate last = link.lastUpdate();
+            if (last != null && !link.preparing() && !link.detached()) {
+                json.putObject("lastUpdate").put("deckRevisionId", last.deckRevisionId().toString()).put("mode", "AUTO").put("appliedAt", last.appliedAt().toString())
+                        .put("seen", false).putObject("counts").put("applied", last.applied()).put("pending", last.pending());
+            }
+            result.add(json);
         }
         return result;
     }
