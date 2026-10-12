@@ -632,7 +632,7 @@ Both routes only **read**: they create no revision, row, pin or job, whatever th
   title and description, and the order of materials). A unit has `class` (`NEW`, `SAFE`, `CONFLICT`, `DELETED`, `ASK_AGAIN`), a `reason` for a conflict, a `title` of at most 160 code points
   (the text of the revision shown: the author's, or the copy's for a unit the author removed; `null` for the order), the lineage revisions of the three sides (`authorRevisionId`,
   `mineRevisionId`, `baseRevisionId`; for `METADATA` and `ORDER` deck revisions of the source and the copy; `null` is "does not exist there"), `dependsOn` (unit ids that must be accepted
-  with it) and `defaultChoice` (`ACCEPT`, `KEEP_MINE`, `KEEP`).
+  with it; an objective that a NEW exercise introduces and the copy has no head for is not a unit at all, it comes with the exercise: it is not listed, not counted in `summary` and not in `dependsOn`) and `defaultChoice` (`ACCEPT`, `KEEP_MINE`, `KEEP`).
 - **Classes.** The author added what the copy has not got: `NEW`. The author changed it and the learner did not, or both ended with the same content: `SAFE`. Both changed it differently,
   or the learner deleted what the author changed, or an exercise cannot work with the learner's materials or objective: `CONFLICT` (the learner's version is the default). The author removed
   what the copy still has: `DELETED` (asked, never applied by «accept all safe»). A decision was recorded and the author changed the unit after it: `ASK_AGAIN`. Units equal on both sides,

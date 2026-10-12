@@ -150,11 +150,12 @@ public class UpdatePlanService {
         SourceRevision base = repository.sourceRevision(copy.upstreamDeckId(), copy.baseRevisionId())
                 .orElseThrow(() -> new IllegalStateException("The base revision of a copy is missing"));
         List<Decision> decisions = repository.decisions(copy.deckId());
-        List<PlanUnit> units = new PlanComputation(repository, diffs, contents, copy, base, published, decisions, budget).units();
+        PlanComputation.PlanUnits computed = new PlanComputation(repository, diffs, contents, copy, base, published, decisions, budget).units();
+        List<PlanUnit> units = computed.units();
         String version = PlanVersion.of(copy.headRevisionId(), published.revisionId(), copy.baseRevisionId(), decisions);
         String note = units.isEmpty() ? null : repository.releaseNote(copy.upstreamDeckId(), published.revisionId()).orElse(null);
         UpdatePlan plan = new UpdatePlan(units.isEmpty() ? UpdatePlan.State.UP_TO_DATE : UpdatePlan.State.READY, copy.deckId(), copy.headRevisionId(), published.revisionId(),
-                copy.baseRevisionId(), version, note, UpdatePlan.Summary.of(units), units);
+                copy.baseRevisionId(), version, note, UpdatePlan.Summary.of(units), units, computed.implicit());
         return new Computed(plan, copy, published);
     }
 
