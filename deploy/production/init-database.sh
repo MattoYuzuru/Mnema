@@ -13,4 +13,6 @@ CREATE SCHEMA app_identity AUTHORIZATION app_identity;
 CREATE SCHEMA app_learning AUTHORIZATION app_learning;
 REVOKE ALL ON SCHEMA app_identity, app_learning FROM PUBLIC;
 CREATE EXTENSION pg_trgm WITH SCHEMA app_learning;
+-- The community catalogue search (Learning V66): both are created by the superuser because app_learning has no CREATE on the database.
+CREATE EXTENSION unaccent WITH SCHEMA app_learning;
 SQL

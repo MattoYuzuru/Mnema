@@ -2211,6 +2211,21 @@ time-zone boundary, generations unreferenced and current, chunked eviction, a st
 (backfill, exact constraint, index and guard inventory, guard behaviour), `StudyRetentionWorkerTest` (kill switch, role gate, settings validation, the environment-variable name of the switch). The replay tests cover the 60-hour offset case, the 120-hour boundary, and a replay
 whose second batch refills after its source is past the horizon.
 
+### Catalog search dictionaries (Community/0, #447, migration `V66__catalog_search_dictionaries.sql`)
+
+The text search building blocks of the community catalogue (epic 3, [community decks architecture §10](../../../docs/architecture/community-decks.md#10-каталог-поиск-ранг-рекомендации-cd-7-cd-8)).
+`V66` **requires** `pg_trgm` (typo tolerance; V28 kept it optional for the generation module, which still checks for it at run time) and
+`unaccent`, both in `app_learning`, and creates the text search configuration `app_learning.simple_unaccent` (a copy of `simple` whose word
+tokens go through `app_learning.unaccent` first: no stemming, marks and `ё` folded, so «Español», «espanol» and «Ёлка»/«елка» meet). The
+dictionary is schema-qualified, so the configuration does not depend on a session's `search_path`. Both extensions are *trusted*: a role with
+`CREATE` on the database (tests, local stacks, the black-box harness) creates them; production's `app_learning` has no such privilege, so the
+administrator installed `unaccent` once as the superuser (2026-10-12) and `deploy/production/init-database.sh` does it for a new cluster; a
+missing extension fails the migration on purpose. Production check (read-only, 2026-10-12): PostgreSQL 18.6 on musl, database locale
+`en_US.utf8` (libc), `show_trgm('Привет')` has 7 trigrams, so Cyrillic trigrams work without a locale change. Evidence:
+[epic 3](../../../docs/engineering/evidence/community-decks/epic-3/README.md). Tests: `CatalogSearchDictionariesIntegrationTest`, and
+`scripts/tests/test_vps_search_extensions.py`, which runs `V66` as `app_learning` against the production PostgreSQL image initialised by the
+reviewed init script (CI step "Verify VPS runtime and isolated local restore").
+
 ## Notification center
 
 `app.mnema.learning.notification` implements [`contracts/notifications`](../../../contracts/notifications/README.md)

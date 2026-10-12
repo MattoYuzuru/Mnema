@@ -100,8 +100,8 @@ SQL и тесты — в [guide Learning](../../backend/services/learning/guide.
   на сервере, но во frontend страницы профиля ещё нет.
 - **Исполнитель задач (§2, §15).** Вопрос закрыт: общий исполнитель `platform.jobs` построен
   на паттерне `platform/wake` и lease, нового фреймворка и зависимостей нет.
-- **Открытые технические вопросы §15.** frontier-diff закрыт Updates/1 (§7). Остаются
-  `show_trgm('Привет')` и установка `unaccent` на production (Community/0).
+- **Открытые технические вопросы §15.** frontier-diff закрыт Updates/1 (§7), `show_trgm('Привет')` и
+  `unaccent` на production — Community/0 (эпик 3).
 
 ### Уточнено реализацией (эпик 2)
 
@@ -565,5 +565,6 @@ erDiagram
 
 - Исполнитель задач: переиспользовать паттерн wake и leases или общий модуль.
 - Порядок переноса FK Study на строки линии и время окна миграции (прототип).
-- Проверка `show_trgm('Привет')` на production-образе и установка `unaccent`
-  (изменение `init-database.sh`).
+- ~~Проверка `show_trgm('Привет')` на production-образе и установка `unaccent`~~ — закрыто
+  Community/0 (#447): на production 7 триграмм (`en_US.utf8`, libc), `unaccent` установлен,
+  `V66` создаёт `simple_unaccent`; [evidence эпика 3](../engineering/evidence/community-decks/epic-3/README.md).
