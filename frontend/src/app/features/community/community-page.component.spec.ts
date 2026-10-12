@@ -213,6 +213,9 @@ describe('CommunityPageComponent', () => {
         expect(one('app-deck-shelf')).toBeNull();
         expect(one('app-community-empty')).toBeNull();
         expect(api.decks).toHaveBeenCalledTimes(1);
+        // Too few for a shelf: the newest first, and the control says so.
+        expect(lastQuery().filters).toMatchObject({ sort: 'new' });
+        expect(one<HTMLInputElement>('app-catalog-filters .sort input[type=radio]:checked')!.value).toBe('new');
         expect(all('app-deck-grid app-public-deck-card')).toHaveLength(3);
     });
 
@@ -227,12 +230,57 @@ describe('CommunityPageComponent', () => {
             expect(all('app-deck-grid ul.grid h2')).toHaveLength(3);
         });
 
-        it('disables the sorting with a text search, and says why', async () => {
+        it('orders a text search by closeness unless the address names a sorting, and offers that only with a text', async () => {
+            const labels = () => all('app-catalog-filters .sort label').map(label => label.textContent!.trim());
             await open('/community?q=кот');
-            expect(one('app-catalog-filters fieldset.segmented[disabled]')).not.toBeNull();
-            expect(one('app-catalog-filters .sort-note')?.textContent).toContain('по близости к запросу');
-            await go('/community?topic=spanish');
+            expect(one('app-catalog-filters fieldset.segmented[disabled]')).toBeNull();
             expect(one('app-catalog-filters .sort-note')).toBeNull();
+            expect(labels()[0]).toBe('По близости к запросу');
+            expect(one<HTMLInputElement>('app-catalog-filters .sort input:checked')!.value).toBe('relevance');
+            expect(api.decks.mock.lastCall![0]).toMatchObject({ q: 'кот', filters: { sort: 'relevance' } });
+            await go('/community?topic=spanish');
+            expect(labels()).not.toContain('По близости к запросу');
+            await go('/community?q=кот&sort=new');
+            expect(one<HTMLInputElement>('app-catalog-filters .sort input:checked')!.value).toBe('new');
+            expect(lastQuery().filters).toMatchObject({ sort: 'new' });
+        });
+
+        it('keeps the text when another sorting is chosen, and writes popular too because a missing sort means closeness', async () => {
+            await open('/community?q=кот&topic=spanish');
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            sort('new');
+            await vi.advanceTimersByTimeAsync(SORT_DEBOUNCE_MS);
+            vi.useRealTimers();
+            await settle();
+            expect(router().url).toBe('/community?q=%D0%BA%D0%BE%D1%82&topic=spanish&sort=new');
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            sort('popular');
+            await vi.advanceTimersByTimeAsync(SORT_DEBOUNCE_MS);
+            vi.useRealTimers();
+            await settle();
+            expect(router().url).toBe('/community?q=%D0%BA%D0%BE%D1%82&topic=spanish&sort=popular');
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            sort('relevance');
+            await vi.advanceTimersByTimeAsync(SORT_DEBOUNCE_MS);
+            vi.useRealTimers();
+            await settle();
+            expect(router().url).toBe('/community?q=%D0%BA%D0%BE%D1%82&topic=spanish');
+            expect(lastQuery().filters).toMatchObject({ sort: 'relevance' });
+        });
+
+        it('starts a new text with closeness, keeps a sorting the address names, and drops closeness when the text is cleared', async () => {
+            await open('/community?topic=spanish');
+            type('кот');
+            await settle();
+            expect(router().url).toBe('/community?q=%D0%BA%D0%BE%D1%82&topic=spanish');
+            await go('/community?q=%D0%BA%D0%BE%D1%82&sort=updated');
+            type('пёс');
+            await settle();
+            expect(router().url).toBe('/community?q=%D0%BF%D1%91%D1%81&sort=updated');
+            await go('/community?q=%D0%BA%D0%BE%D1%82');
+            type('');
+            await settle();
+            expect(router().url).toBe('/community');
         });
 
         it('browses with a named sorting alone, silently, and offers the language names and topics of the facets', async () => {
@@ -529,6 +577,27 @@ describe('CommunityPageComponent', () => {
             expect(navigate.mock.calls.some(call => (call[1] as { replaceUrl?: boolean }).replaceUrl === true)).toBe(true);
             expect(lastQuery().filters).toMatchObject({ topic: null, learn: null, level: 'B1' });
             expect(all('app-catalog-filters .chips button').map(chip => chip.textContent!.replace(/\s+/gu, ' ').trim())).toEqual(['Уровень: B1×', 'Внутри: аудио×']);
+        });
+
+        it('says once, politely, which language was dropped when it has a name, and does not show a raw value', async () => {
+            await open('/community?learn=de');
+            expect(router().url).toBe('/community');
+            expect(one('.stale[role=status]')!.textContent).toBe('Фильтр «Немецкий» больше недоступен, показываем без него.');
+            await go('/community?topic=ghost&learn=zz');
+            const note = one('.stale[role=status]')!.textContent!;
+            expect(note).toBe('Один из фильтров больше недоступен, показываем без него.');
+            expect(note).not.toContain('ghost');
+            expect(note).not.toContain('zz');
+        });
+
+        it('says nothing when no filter was dropped, and clears the note with the next search', async () => {
+            await open('/community?topic=spanish');
+            expect(one('.stale')!.textContent).toBe('');
+            await go('/community?topic=ghost');
+            expect(one('.stale')!.textContent).toContain('больше недоступен');
+            type('кот');
+            await settle();
+            expect(one('.stale')!.textContent).toBe('');
         });
 
         it('keeps a topic and a language that the facets have', async () => {

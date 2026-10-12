@@ -32,7 +32,7 @@ const page = (decks: readonly AuthorDeckEntry[], patch: Partial<AuthorDeckPage> 
 describe('AuthorPageComponent', () => {
     let api: { authorDecks: ReturnType<typeof vi.fn> };
     let status: ReturnType<typeof signal<AuthStatus>>;
-    let user: ReturnType<typeof signal<{ accountId: string } | null>>;
+    let user: ReturnType<typeof signal<{ accountId: string; profileUsername?: string | null; displayName?: string | null } | null>>;
     let authors: { byUsername: ReturnType<typeof vi.fn>; avatarUrl: ReturnType<typeof vi.fn> };
     let complaints: { fileProfile: ReturnType<typeof vi.fn>; fileDeck: ReturnType<typeof vi.fn> };
     let share: ReturnType<typeof vi.fn>;
@@ -225,6 +225,30 @@ describe('AuthorPageComponent', () => {
             expect(api.authorDecks).not.toHaveBeenCalled();
             expect(one('app-author-header')).toBeNull();
             expect(document.activeElement).toBe(one('h1'));
+        });
+
+        it('tells the signed-in author that their own profile is hidden, with a way to the settings, instead of «не найден»', async () => {
+            status.set('authenticated');
+            user.set({ accountId: '30000000-0000-4000-8000-000000000003', profileUsername: 'Hidden.Author', displayName: null });
+            await open('/u/hidden.author');
+            expect(one('h1')?.textContent).toBe('Ваш профиль скрыт от других');
+            expect(one('app-access-screen .message p')?.textContent).toBe('Включите публичный профиль в настройках.');
+            const link = one<HTMLAnchorElement>('app-access-screen a.button')!;
+            expect(link.getAttribute('href')).toBe('/profile');
+            expect(title()).toBe('Профиль скрыт — Mnema');
+            expect(api.authorDecks).not.toHaveBeenCalled();
+            expect(root().textContent).not.toContain('Профиль не найден');
+        });
+
+        it('keeps «Профиль не найден» for another login, for a guest and for another signed-in reader', async () => {
+            status.set('authenticated');
+            user.set({ accountId: '30000000-0000-4000-8000-000000000003', profileUsername: 'someone.else', displayName: null });
+            await open('/u/nobody.here');
+            expect(one('h1')?.textContent).toBe('Профиль не найден');
+            status.set('anonymous');
+            user.set(null);
+            await go('/u/hidden.author');
+            expect(one('h1')?.textContent).toBe('Профиль не найден');
         });
 
         it('says the same for a login that cannot exist', async () => {

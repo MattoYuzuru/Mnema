@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, O
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom, map } from 'rxjs';
 import { learnerOrigin } from '../../app.config';
+import { SHELF_DECKS_MAX, SHELF_MIN_DECKS } from '../community/community-view';
 import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { OrderRowComponent } from '../../shared/order-row.component';
 import { AdminApiService, AdminSession } from './admin-api.service';
@@ -51,8 +52,8 @@ const sameCodes = (a: readonly string[], b: readonly string[]): boolean => a.len
   <section class="rule-section" aria-labelledby="shelf-title">
     <h2 id="shelf-title">Выбор Мнемы</h2>
     <p class="hint">
-      До {{ max }} публичных колод, которые Сообщество показывает первыми, в порядке списка. Колода со штампом «Не в каталоге» остаётся в списке,
-      но читатели её не видят: она скрыта или больше не публична.
+      До {{ max }} колод. Сообщество показывает первые {{ shown }}, а полка видна, когда в каталоге не меньше {{ minimum }} из них. Колода со штампом
+      «Не в каталоге» остаётся в списке, но читатели её не видят: она скрыта, больше не публична или ещё не дотягивает до каталога.
     </p>
     @if (shelfError()) {
       <div class="notice error" role="alert">
@@ -153,6 +154,8 @@ export class AdminCommunityPageComponent implements OnInit {
     private readonly destroy = inject(DestroyRef);
     private readonly injector = inject(Injector);
     protected readonly max = EDITORIAL_MAX;
+    protected readonly shown = SHELF_DECKS_MAX;
+    protected readonly minimum = SHELF_MIN_DECKS;
     protected readonly fullHint = FULL_HINT;
 
     protected readonly rows = signal<readonly ShelfRow[]>([]);

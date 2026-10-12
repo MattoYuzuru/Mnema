@@ -38,6 +38,12 @@ describe('CommunityEmptyComponent', () => {
         ]);
     });
 
+    it('says in plain words what a deck needs to be listed, after the steps', () => {
+        const rule = root.querySelector('details.how .threshold')!;
+        expect(rule.textContent).toBe('В колоде должно быть не меньше 10 материалов, хотя бы одно упражнение и описание.');
+        expect(rule.previousElementSibling!.tagName).toBe('OL');
+    });
+
     it('sends a guest to the sign-in page', () => {
         const link = root.querySelector('a.button')!;
         expect(link.textContent).toBe('Войти');

@@ -1,7 +1,7 @@
 import { convertToParamMap } from '@angular/router';
 
 import {
-    CATALOG_SORTS, CatalogFilters, NO_FILTERS, activeCount, fromQueryParams, sameFilters, toQueryParams, withoutFilter, withoutFilters
+    CATALOG_SORTS, CatalogFilters, NO_FILTERS, RELEVANCE_SORT, activeCount, fromQueryParams, sameFilters, toQueryParams, withoutFilter, withoutFilters
 } from './catalog-filters';
 
 const FULL: CatalogFilters = {
@@ -18,6 +18,48 @@ describe('catalog filters', () => {
 
     it('draws only the four sortings that exist until «Для вас» arrives', () => {
         expect(CATALOG_SORTS.map(sort => sort.label)).toEqual(['Популярные', 'Учат сейчас', 'Новые', 'Обновлённые']);
+    });
+
+    it('knows «По близости к запросу» apart from the four wire sortings', () => {
+        expect(RELEVANCE_SORT).toEqual({ value: 'relevance', label: 'По близости к запросу' });
+        expect(CATALOG_SORTS.map(sort => sort.value)).not.toContain('relevance');
+    });
+
+    describe('the sorting behind a text query', () => {
+        it('never writes «По близости»: it is the absence of sort with a text', () => {
+            expect(toQueryParams({ ...NO_FILTERS, sort: 'relevance' }, true)).toEqual({});
+            expect(toQueryParams({ ...NO_FILTERS, sort: 'relevance' })).toEqual({});
+        });
+
+        it('writes every wire sorting with a text, the default popular too, because a missing sort there means closeness', () => {
+            expect(toQueryParams({ ...NO_FILTERS, sort: 'popular' }, true)).toEqual({ sort: 'popular' });
+            expect(toQueryParams({ ...NO_FILTERS, sort: 'new' }, true)).toEqual({ sort: 'new' });
+            expect(toQueryParams({ ...NO_FILTERS, sort: 'popular' }, false)).toEqual({});
+        });
+
+        it('reads a missing or unknown sort as closeness with a text and as popular without one', () => {
+            expect(fromQueryParams({ q: 'кот' }).sort).toBe('relevance');
+            expect(fromQueryParams({ q: 'кот', sort: 'bogus' }).sort).toBe('relevance');
+            expect(fromQueryParams({ q: 'кот', sort: 'relevance' }).sort).toBe('relevance');
+            expect(fromQueryParams({ q: 'кот', sort: 'popular' }).sort).toBe('popular');
+            expect(fromQueryParams({ q: 'кот', sort: 'new' }).sort).toBe('new');
+            expect(fromQueryParams({ q: '   ' }).sort).toBe('popular');
+            expect(fromQueryParams({ sort: 'relevance' }).sort).toBe('popular');
+            expect(fromQueryParams(convertToParamMap({ q: 'кот' })).sort).toBe('relevance');
+        });
+
+        it('round-trips both through a ParamMap', () => {
+            for (const sort of ['relevance', 'popular', 'learning', 'new', 'updated'] as const) {
+                const filters = { ...FULL, sort };
+                expect(fromQueryParams(convertToParamMap({ q: 'кот', ...toQueryParams(filters, true) }))).toEqual(filters);
+            }
+            expect(fromQueryParams(convertToParamMap(toQueryParams({ ...FULL, sort: 'popular' })))).toEqual({ ...FULL, sort: 'popular' });
+        });
+
+        it('tells closeness from popular, though neither is written without a text', () => {
+            expect(sameFilters({ ...NO_FILTERS, sort: 'relevance' }, { ...NO_FILTERS, sort: 'popular' })).toBe(false);
+            expect(sameFilters({ ...NO_FILTERS, sort: 'relevance' }, { ...NO_FILTERS, sort: 'relevance' })).toBe(true);
+        });
     });
 
     describe('query parameters', () => {

@@ -37,13 +37,21 @@ export const CATALOG_SORTS = [
     { value: 'new', label: 'Новые' }, { value: 'updated', label: 'Обновлённые' }
 ] as const;
 
+/**
+ * «По близости к запросу»: the order of a text search. It is not a wire sorting: with a text query it is the absence of `sort` in the address and in
+ * the request, and it is offered (and valid) only while there is a text query.
+ */
+export const RELEVANCE_SORT = { value: 'relevance', label: 'По близости к запросу' } as const;
+
 export type CatalogLevel = typeof CATALOG_LEVELS[number]['value'];
 export type CatalogSize = typeof CATALOG_SIZES[number]['value'];
 export type CatalogMedia = typeof CATALOG_MEDIA[number]['value'];
 export type CatalogMechanic = typeof CATALOG_MECHANICS[number]['value'];
-export type CatalogSort = typeof CATALOG_SORTS[number]['value'];
+export type CatalogWireSort = typeof CATALOG_SORTS[number]['value'];
+export type CatalogSort = CatalogWireSort | typeof RELEVANCE_SORT.value;
 
-export const DEFAULT_SORT: CatalogSort = 'popular';
+/** The sorting of the browse list: no `sort` in the address, no `sort` unless it is chosen. */
+export const DEFAULT_SORT: CatalogWireSort = 'popular';
 
 export interface CatalogFilters {
     /** A topic id, a leaf or a parent. */
@@ -98,8 +106,12 @@ function canonical<T extends string>(list: readonly { readonly value: T }[], val
     return list.map(item => item.value).filter(value => values.includes(value));
 }
 
-/** The address parameters of the filters, in a fixed key order; what is off, empty or the default sorting is left out. */
-export function toQueryParams(filters: CatalogFilters): Record<string, string | string[]> {
+/**
+ * The address parameters of the filters, in a fixed key order; what is off or empty is left out. The sorting: «По близости» is never written (it is the
+ * absence of `sort` with a text query); without a text query the default `popular` is left out; with a text query every other sorting, `popular` too,
+ * is written, because a missing `sort` there would mean relevance.
+ */
+export function toQueryParams(filters: CatalogFilters, searching = false): Record<string, string | string[]> {
     const params: Record<string, string | string[]> = {};
     if (filters.topic !== null) params['topic'] = filters.topic;
     if (filters.learn !== null) params['learn'] = filters.learn;
@@ -110,7 +122,7 @@ export function toQueryParams(filters: CatalogFilters): Record<string, string | 
     const mechanics = canonical(CATALOG_MECHANICS, filters.mechanics);
     if (mechanics.length > 0) params['mechanics'] = mechanics;
     if (filters.fresh) params['fresh'] = 'true';
-    if (filters.sort !== DEFAULT_SORT) params['sort'] = filters.sort;
+    if (filters.sort !== RELEVANCE_SORT.value && (searching || filters.sort !== DEFAULT_SORT)) params['sort'] = filters.sort;
     return params;
 }
 
@@ -129,7 +141,8 @@ const LANGUAGE = /^[a-z]{2,3}$/;
 
 /**
  * The filters of an address. Strict: a value that is not one of the known ones is dropped (it never reaches the server),
- * a repeated single value takes the first, a repeated list keeps each known value once in the order of the list.
+ * a repeated single value takes the first, a repeated list keeps each known value once in the order of the list. No (or an unknown) `sort` is
+ * «По близости к запросу» with a text query `q` and `popular` without one.
  */
 export function fromQueryParams(source: QueryParamsSource): CatalogFilters {
     const first = (name: string): string | null => all(source, name)[0] ?? null;
@@ -138,6 +151,7 @@ export function fromQueryParams(source: QueryParamsSource): CatalogFilters {
     const level = first('level');
     const size = first('size');
     const sort = first('sort');
+    const searching = (first('q') ?? '').trim() !== '';
     return {
         topic: topic !== null && TOPIC_ID.test(topic) ? topic : null,
         learn: learn !== null && LANGUAGE.test(learn) ? learn : null,
@@ -146,11 +160,11 @@ export function fromQueryParams(source: QueryParamsSource): CatalogFilters {
         media: canonical(CATALOG_MEDIA, all(source, 'media')),
         mechanics: canonical(CATALOG_MECHANICS, all(source, 'mechanics')),
         fresh: first('fresh') === 'true',
-        sort: CATALOG_SORTS.find(item => item.value === sort)?.value ?? DEFAULT_SORT
+        sort: CATALOG_SORTS.find(item => item.value === sort)?.value ?? (searching ? RELEVANCE_SORT.value : DEFAULT_SORT)
     };
 }
 
 /** The filters are the same value (lists compared in order; both sides come from {@link fromQueryParams} or the component). */
 export function sameFilters(a: CatalogFilters, b: CatalogFilters): boolean {
-    return JSON.stringify(toQueryParams(a)) === JSON.stringify(toQueryParams(b));
+    return a.sort === b.sort && JSON.stringify(toQueryParams(a)) === JSON.stringify(toQueryParams(b));
 }

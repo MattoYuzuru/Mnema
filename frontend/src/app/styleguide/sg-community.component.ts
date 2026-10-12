@@ -65,17 +65,20 @@ export class SgCommunityComponent {
 
     /** The filters, with the address they would write. */
     protected readonly emptyFilters = signal<CatalogFilters>(NO_FILTERS);
+    protected readonly searchFilters = signal<CatalogFilters>({ ...NO_FILTERS, sort: 'relevance' });
     protected readonly activeFilters = signal<CatalogFilters>({
         topic: 'spanish', learn: 'es', level: 'B1', size: 'month', media: ['audio'], mechanics: ['listening', 'order'], fresh: true, sort: 'new'
     });
     protected readonly activeAddress = computed(() => this.address(this.activeFilters()));
     protected readonly emptyAddress = computed(() => this.address(this.emptyFilters()));
+    protected readonly searchAddress = computed(() => this.address(this.searchFilters(), 'кот'));
 
-    private address(filters: CatalogFilters): string {
+    private address(filters: CatalogFilters, text = ''): string {
         const query = new URLSearchParams();
-        for (const [key, value] of Object.entries(toQueryParams(filters))) for (const item of [value].flat()) query.append(key, item);
-        const text = query.toString();
-        return text === '' ? '/community' : `/community?${text}`;
+        if (text !== '') query.append('q', text);
+        for (const [key, value] of Object.entries(toQueryParams(filters, text !== ''))) for (const item of [value].flat()) query.append(key, item);
+        const written = query.toString();
+        return written === '' ? '/community' : `/community?${written}`;
     }
 
     protected readonly link = (deck: PublicDeckCard): string[] => ['/styleguide', deck.id];

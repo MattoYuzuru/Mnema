@@ -63,6 +63,8 @@ describe('owner console community page: «Выбор Мнемы»', () => {
     it('lists the shelf in order with the code, a stamp for a deck outside the catalogue and disabled ends', async () => {
         await setup();
         expect(root.querySelector('h1')!.textContent).toBe('Сообщество');
+        const rule = root.querySelector('#shelf-title + .hint')!.textContent!.replace(/\s+/gu, ' ');
+        expect(rule).toContain('До 24 колод. Сообщество показывает первые 12, а полка видна, когда в каталоге не меньше 4 из них.');
         expect(codes()).toEqual([A, B, C]);
         expect(rowOf(A).textContent).toContain('Испанский язык: базовые глаголы');
         expect(rowOf(A).textContent).toContain(A);

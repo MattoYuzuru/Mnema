@@ -42,6 +42,11 @@ describe('resultsText', () => {
         expect(text(112)).toBe('Нашли 112 колод');
     });
 
+    it('says «больше N» only when the server says it capped the count, never from the number alone', () => {
+        expect(resultsText({ key: 1, count: 200, capped: false })).toBe('Нашли 200 колод');
+        expect(resultsText({ key: 1, count: 1000, capped: false })).toBe('Нашли 1000 колод');
+    });
+
     it('says «больше N» when the server counted only up to a cap', () => {
         expect(resultsText({ key: 1, count: 200, capped: true })).toBe('Нашли больше 200 колод');
         expect(resultsText({ key: 1, count: 1000, capped: true })).toBe('Нашли больше 1000 колод');

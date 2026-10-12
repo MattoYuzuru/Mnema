@@ -12,7 +12,7 @@ import { AuthorCardsService } from '../../author-cards.service';
 import { AUTHOR_CARD_BATCH_MAX } from '../../public-profile';
 import { ActionMenuItem } from '../../shared/action-menu.component';
 import { BookSearchComponent } from '../../shared/book-search.component';
-import { CatalogFilters, DEFAULT_SORT, activeCount, sameFilters } from '../../shared/catalog-filters';
+import { CatalogFilters, DEFAULT_SORT, RELEVANCE_SORT, activeCount, sameFilters } from '../../shared/catalog-filters';
 import { CatalogFiltersComponent } from '../../shared/catalog-filters.component';
 import { CommunityEmptyComponent } from '../../shared/community-empty.component';
 import { ComplaintDialogComponent } from '../../shared/complaint-dialog.component';
@@ -27,7 +27,7 @@ import { CommunityApiService, CommunityQuery } from './community-api.service';
 import { CommunityPager } from './community-pager';
 import { CommunityCard, CommunityFacets, CommunityShelves } from './community.models';
 import {
-    SHELF_MIN_DECKS, addressOf, addressParams, displayCard, isShelvesView, languageOptions, moreParams, requestKey, shelfKey, shelfLimit, shelfTitle, topicOptions
+    SHELF_MIN_DECKS, addressOf, addressParams, displayCard, isShelvesView, languageName, languageOptions, moreParams, requestKey, shelfKey, shelfLimit, shelfTitle, topicOptions
 } from './community-view';
 
 /** How long the sorting waits for the next arrow key before the address (and the request) follows. */
@@ -92,10 +92,7 @@ export class CommunityPageComponent {
     private readonly q = computed(() => this.address().q);
     protected readonly searching = computed(() => this.q() !== '');
     /** The filters as the control shows them; the address follows (the sorting after a short wait). */
-    protected readonly draft = linkedSignal<CatalogFilters>(() => {
-        const { q, filters } = this.address();
-        return q === '' ? filters : { ...filters, sort: DEFAULT_SORT };
-    });
+    protected readonly draft = linkedSignal<CatalogFilters>(() => this.address().filters);
     /** The text in the book: the address's text, and typed-but-unsubmitted words survive a change of the filters. */
     protected readonly bookText = linkedSignal(() => this.q());
 
@@ -110,6 +107,8 @@ export class CommunityPageComponent {
     /** The shelves view found no shelf to draw although decks are listed: the page browses instead. */
     private readonly browsing = signal(false);
     private readonly booting = signal(true);
+    /** Said once, politely, when a filter of a stale link is dropped from the address; the next search or filter change clears it. */
+    protected readonly staleNote = signal('');
 
     protected readonly pager = new CommunityPager(cursor => this.api.decks(this.query, cursor), this.destroyRef);
     protected readonly complaint = signal<{ readonly code: string; readonly title: string } | null>(null);
@@ -217,6 +216,11 @@ export class CommunityPageComponent {
             const topic = filters.topic !== null && !facets.topics.some(entry => entry.id === filters.topic) ? null : filters.topic;
             const learn = filters.learn !== null && !facets.languages.some(entry => entry.code === filters.learn) ? null : filters.learn;
             if (topic === filters.topic && learn === filters.learn) return;
+            // Only a language has a name without the facets; a topic that is gone has none, and a raw value is never shown.
+            const name = topic === filters.topic && filters.learn !== null ? languageName(filters.learn) : null;
+            this.staleNote.set(name !== null && name !== filters.learn
+                ? `Фильтр «${name}» больше недоступен, показываем без него.`
+                : 'Один из фильтров больше недоступен, показываем без него.');
             untracked(() => void this.router.navigate([], { relativeTo: this.route, queryParams: addressParams(q, { ...filters, topic, learn }), replaceUrl: true }));
         });
     }
@@ -231,7 +235,12 @@ export class CommunityPageComponent {
     /** A search from the book: a new entry in the history. The text is the address's; the filters stay. */
     protected search(text: string): void {
         this.clearSortTimer();
-        void this.router.navigate([], { relativeTo: this.route, queryParams: addressParams(text, this.draft()) });
+        this.staleNote.set('');
+        const draft = this.draft();
+        // «По близости» belongs to a text and only to it: a sorting the reader picked stays, otherwise a text starts with the closeness and no text without it.
+        const sort = text.trim() === '' ? (draft.sort === RELEVANCE_SORT.value ? DEFAULT_SORT : draft.sort)
+            : this.address().sortGiven ? draft.sort : RELEVANCE_SORT.value;
+        void this.router.navigate([], { relativeTo: this.route, queryParams: addressParams(text, { ...draft, sort }) });
     }
 
     protected filtersChanged(next: CatalogFilters): void {
@@ -273,6 +282,7 @@ export class CommunityPageComponent {
 
     private applyFilters(): void {
         this.sortTimer = null;
+        this.staleNote.set('');
         void this.router.navigate([], { relativeTo: this.route, queryParams: addressParams(this.address().q, this.draft()), replaceUrl: true });
     }
 
@@ -314,6 +324,8 @@ export class CommunityPageComponent {
                 // A few decks make no shelf (a shelf needs four): the page then shows them as a list rather than nothing.
                 if (shelves.listedCount > 0 && shelves.shelves.every(shelf => shelf.decks.length < SHELF_MIN_DECKS)) {
                     this.browsing.set(true);
+                    // Too few decks for a shelf: the newest first, so a new deck is not buried under a popularity that does not exist yet.
+                    this.draft.update(filters => ({ ...filters, sort: 'new' }));
                     this.query = { q: '', filters: this.draft() };
                     this.pager.start();
                 }

@@ -346,30 +346,30 @@ describe('CatalogFiltersComponent', () => {
 
 @Component({
     imports: [CatalogFiltersComponent],
-    template: `<app-catalog-filters [value]="value" [topics]="topics" [languages]="languages" [sortDisabled]="disabled()" />`
+    template: `<app-catalog-filters [value]="value" [topics]="topics" [languages]="languages" [searching]="searching()" />`
 })
 class SortHostComponent {
     readonly value = NO_FILTERS;
     readonly topics = TOPICS;
     readonly languages = LANGUAGES;
-    readonly disabled = signal(false);
+    readonly searching = signal(false);
 }
 
-describe('CatalogFiltersComponent with a sorting that does not apply', () => {
-    it('draws the sorting disabled with a line that says why, only while it does not apply', () => {
+describe('CatalogFiltersComponent behind a text search', () => {
+    const labels = (root: HTMLElement) => [...root.querySelectorAll('.sort fieldset.segmented label')].map(label => label.textContent!.trim());
+
+    it('offers «По близости к запросу» first, only while there is a text, and no line about a disabled sorting', () => {
         const fixture = TestBed.createComponent(SortHostComponent);
         const root = fixture.nativeElement as HTMLElement;
         fixture.detectChanges();
-        expect(root.querySelector('.sort-note')).toBeNull();
-        expect(root.querySelector('fieldset.segmented')!.hasAttribute('disabled')).toBe(false);
-        fixture.componentInstance.disabled.set(true);
+        expect(labels(root)).toEqual(['Популярные', 'Учат сейчас', 'Новые', 'Обновлённые']);
+        fixture.componentInstance.searching.set(true);
         fixture.detectChanges();
-        const note = root.querySelector('.sort-note')!;
-        expect(note.textContent).toBe('Найденные колоды идут по близости к запросу.');
+        expect(labels(root)).toEqual(['По близости к запросу', 'Популярные', 'Учат сейчас', 'Новые', 'Обновлённые']);
+        expect(root.querySelector('.sort-note')).toBeNull();
         const group = root.querySelector('.sort fieldset.segmented')!;
-        expect(group.hasAttribute('disabled')).toBe(true);
-        expect(group.getAttribute('aria-describedby')).toContain(note.id);
-        expect([...group.querySelectorAll('input')].every(input => input.matches(':disabled'))).toBe(true);
+        expect(group.hasAttribute('disabled')).toBe(false);
+        expect(root.textContent).not.toContain('Найденные колоды идут');
         // The other controls are not affected.
         expect(root.querySelector('.check-row input')!.matches(':disabled')).toBe(false);
     });

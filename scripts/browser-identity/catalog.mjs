@@ -28,7 +28,7 @@ const WORDS = {
   how: 'Как поделиться колодой',
   steps: ['Откройте свою колоду.', 'В разделе «Доступ и публикация» выберите «Публичная».', 'Пройдите чек-лист: описание, тема и язык, публичный профиль.'],
   nothing: 'Ничего не нашли. Попробуйте другое слово или уберите фильтры.',
-  sortNote: 'Найденные колоды идут по близости к запросу.',
+  relevance: 'По близости к запросу',
   notFound: 'Профиль не найден',
   notFoundBody: 'Такого профиля нет, или автор его скрыл.',
   self: 'Так ваш профиль видят другие',
@@ -396,9 +396,11 @@ export async function runCatalog(ctx) {
     need(JSON.stringify(await countText(guest)) === JSON.stringify(['Нашли 3 колоды']), 'the count text is ' + JSON.stringify(await countText(guest)));
     need((await announced(guest)).length === 1, 'the count was announced ' + (await announced(guest)).length + ' times');
     need(await guest.page(`return document.querySelector('app-deck-grid .status')?.getAttribute('role') === 'status';`), 'the count has no status region');
-    const sortDisabled = await guest.page(`return { disabled: document.querySelector('app-catalog-filters app-segmented-choice.sort fieldset')?.disabled ?? document.querySelector('app-catalog-filters app-segmented-choice.sort input')?.disabled,
-      note: document.querySelector('app-catalog-filters .sort-note')?.textContent.trim() };`);
-    need(sortDisabled.note === WORDS.sortNote, 'the sorting note is ' + sortDisabled.note);
+    // With a text the sorting is enabled and starts with «По близости к запросу», which is the checked one when the address names no sort.
+    const sorting = await guest.page(`const group = document.querySelector('app-catalog-filters app-segmented-choice.sort fieldset');
+      return { disabled: group?.disabled === true, note: document.querySelector('app-catalog-filters .sort-note') !== null,
+        first: group?.querySelector('label')?.textContent.trim(), checked: group?.querySelector('input:checked')?.value };`);
+    need(!sorting.disabled && !sorting.note && sorting.first === WORDS.relevance && sorting.checked === 'relevance', 'the sorting of a search is ' + JSON.stringify(sorting));
     await shoot(guest, 'catalog-desktop-search-guest.png', { full: true });
     // The same three for the English word of the same topic.
     await typeInBook(guest, 'Spanish');

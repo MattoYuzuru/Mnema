@@ -13,12 +13,13 @@
     <app-book-search class="book" mode="open" [(value)]="bookText" (searched)="search($event)" />
 
     @if (filtersShown()) {
-      <app-catalog-filters class="filters" [value]="draft()" [topics]="topics()" [languages]="languages()" [sortDisabled]="searching()"
+      <app-catalog-filters class="filters" [value]="draft()" [topics]="topics()" [languages]="languages()" [searching]="searching()"
         (changed)="filtersChanged($event)" />
     }
 
     <!-- The region is in the DOM, empty, before its first text: a region that appears with its text is not announced reliably. -->
     <p class="status" role="status">{{ status() === 'loading' ? 'Загружаем колоды…' : '' }}</p>
+    <p class="status stale" role="status">{{ staleNote() }}</p>
 
     @switch (status()) {
       @case ('rate-limited') {

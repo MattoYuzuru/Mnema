@@ -56,7 +56,7 @@
   <app-sg-specimen title="Фильтры и сортировка" selector="<app-catalog-filters>"
     when="Над выдачей. Значение целиком приходит снаружи (value), новое уходит наружу (changed): страница хранит его в адресе (toQueryParams, fromQueryParams) и перезагружает выдачу. Тема (с группами по родителю), «Что учим» и «Уровень» это app-mnema-select, «Размер» и сортировка это сегменты, «Внутри», «Упражнения» и «Живая» это флажки. На узком экране всё за кнопкой «Фильтры» (с числом включённых, aria-expanded), на широком в ряд. Каждый включённый фильтр ещё и чип-кнопка, который называет и категорию («Уровень: B1», «Внутри: аудио», «Живая»), с именем «Убрать фильтр «Уровень: B1»», вместе с «Сбросить всё», которая сортировку не трогает. После удаления чипа фокус переходит на следующий чип, а когда чипов нет, на кнопку «Фильтры»; если читатель успел перейти на другой элемент, фокус не отбирается. «Для вас» появится вместе с рекомендациями и пока не рисуется. Вход sortDisabled нужен там, где сортировка не действует (выдачу по тексту сервер упорядочивает по близости к запросу): сегменты недоступны, строка под ними говорит почему."
     [tokens]="['--mn-ink', '--mn-rule', '--mn-field-border', '--mn-touch-min']"
-    usage='<app-catalog-filters [value]="filters()" [topics]="topics" [languages]="languages" [sortDisabled]="searching()" (changed)="filters.set($event)" />'>
+    usage='<app-catalog-filters [value]="filters()" [topics]="topics" [languages]="languages" [searching]="searching()" (changed)="filters.set($event)" />'>
     <div class="sg-stack">
       <h4 class="sg-group">Ничего не выбрано</h4>
       <app-catalog-filters [value]="emptyFilters()" [topics]="topics" [languages]="languages" (changed)="emptyFilters.set($event)" />
@@ -64,8 +64,9 @@
       <h4 class="sg-group">Выбрано несколько</h4>
       <app-catalog-filters [value]="activeFilters()" [topics]="topics" [languages]="languages" (changed)="activeFilters.set($event)" />
       <p class="hint sg-address">Адрес: <code>{{ activeAddress() }}</code></p>
-      <h4 class="sg-group">Поиск по тексту: сортировка не действует</h4>
-      <app-catalog-filters [value]="emptyFilters()" [topics]="topics" [languages]="languages" [sortDisabled]="true" (changed)="emptyFilters.set($event)" />
+      <h4 class="sg-group">Поиск по тексту: первой идёт «По близости к запросу»</h4>
+      <app-catalog-filters [value]="searchFilters()" [topics]="topics" [languages]="languages" [searching]="true" (changed)="searchFilters.set($event)" />
+      <p class="hint sg-address">Адрес: <code>{{ searchAddress() }}</code></p>
       <h4 class="sg-group">Узкий экран (телефон)</h4>
       <div class="sg-narrow">
         <app-catalog-filters [value]="activeFilters()" [topics]="topics" [languages]="languages" (changed)="activeFilters.set($event)" />

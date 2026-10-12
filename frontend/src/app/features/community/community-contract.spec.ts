@@ -57,7 +57,8 @@ describe('Community catalogue wire contract (contracts/community/catalog.json)',
         expect(CATALOG_MEDIA.map(item => item.value).sort()).toEqual([...contract.constants.media].sort());
         expect(CATALOG_MECHANICS.map(item => item.value).sort()).toEqual(Object.keys(contract.constants.mechanics).sort());
         // «Для вас» arrives with the recommendations; the contract's sorts are the ones the control draws.
-        expect(CATALOG_SORTS.map(item => item.value).sort()).toEqual(Object.keys(contract.constants.sorts).sort());
+        expect(CATALOG_SORTS.map(item => item.value).sort()).toEqual(Object.keys(contract.constants.sorts).filter(key => key !== 'withQuery').sort());
+        // «По близости к запросу» is not a wire sort: with q and no sort the order is relevance (a note key such as `withQuery` is not a sort).
         expect(Object.keys(contract.constants.sizes).sort()).toEqual(['course', 'evening', 'month']);
     });
 
@@ -70,7 +71,7 @@ describe('Community catalogue wire contract (contracts/community/catalog.json)',
             [api.shelves(), '/api/public/community/shelves'],
             // The contract's own examples, letter for letter.
             [api.decks(query('', { topic: 'languages', media: ['audio'], sort: 'popular' })), '/api/public/community/decks?topic=languages&media=audio&sort=popular&limit=24'],
-            [api.decks(query('испанский')), contract.decks.search.request.replace('GET ', '')],
+            [api.decks(query('испанский', { sort: 'relevance' })), contract.decks.search.request.replace('GET ', '')],
             [api.authorDecks(AUTHOR_ID), contract.author.request.replace('GET ', '')],
             [api.authorDecks(AUTHOR_ID, 'eyJrIjoiMSJ9', 48), `/api/public/community/authors/${AUTHOR_ID}/decks?limit=48&cursor=eyJrIjoiMSJ9`]
         ];
@@ -83,15 +84,21 @@ describe('Community catalogue wire contract (contracts/community/catalog.json)',
         }
     });
 
-    it('sends every filter once, lists comma-separated, the text trimmed and cut at 100 code points, and no sorting with a text', () => {
+    it('sends every filter once, lists comma-separated, the text trimmed and cut at 100 code points, and the sorting with a text only when it is chosen', () => {
         const all = filters({ topic: 'spanish', learn: 'es', level: 'B1', size: 'month', media: ['audio', 'video'], mechanics: ['listening', 'order'], fresh: true, sort: 'new' });
         api.decks({ q: '', filters: all }, 'eyJrIjoiMSJ9').subscribe({ error: () => undefined });
         http.expectOne('/api/public/community/decks?topic=spanish&learn=es&level=B1&size=month&media=audio,video&mechanics=listening,order&fresh=true&sort=new&limit=24&cursor=eyJrIjoiMSJ9')
             .flush({}, { status: 404, statusText: 'Not Found' });
 
         api.decks({ q: '  кот  ', filters: all }, null, 48).subscribe({ error: () => undefined });
-        http.expectOne(request => request.url === '/api/public/community/decks' && request.params.get('q') === 'кот' && !request.params.has('sort')
+        http.expectOne(request => request.url === '/api/public/community/decks' && request.params.get('q') === 'кот' && request.params.get('sort') === 'new'
             && request.params.get('limit') === '48' && request.params.get('topic') === 'spanish').flush({}, { status: 404, statusText: 'Not Found' });
+
+        // «По близости к запросу» is the absence of sort; without a text it cannot be asked for and is popular.
+        api.decks({ q: 'кот', filters: filters({ sort: 'relevance' }) }).subscribe({ error: () => undefined });
+        http.expectOne(request => request.params.get('q') === 'кот' && !request.params.has('sort')).flush({}, { status: 404, statusText: 'Not Found' });
+        api.decks({ q: '', filters: filters({ sort: 'relevance' }) }).subscribe({ error: () => undefined });
+        http.expectOne(request => !request.params.has('q') && request.params.get('sort') === 'popular').flush({}, { status: 404, statusText: 'Not Found' });
 
         const long = '😀'.repeat(COMMUNITY_QUERY_MAX + 20);
         expect(Array.from(normalizeQuery(long))).toHaveLength(COMMUNITY_QUERY_MAX);

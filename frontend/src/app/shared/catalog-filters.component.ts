@@ -5,7 +5,7 @@ import {
 
 import { MnemaSelectComponent, MnemaSelectOption } from '../core/controls/mnema-select.component';
 import {
-    CATALOG_LEVELS, CATALOG_MECHANICS, CATALOG_MEDIA, CATALOG_SIZES, CATALOG_SORTS, CatalogFilters, CatalogMechanic, CatalogMedia, CatalogSize, CatalogSort,
+    CATALOG_LEVELS, CATALOG_MECHANICS, CATALOG_MEDIA, CATALOG_SIZES, CATALOG_SORTS, CatalogFilters, RELEVANCE_SORT, CatalogMechanic, CatalogMedia, CatalogSize, CatalogSort,
     FilterRef, LanguageOption, TopicOption, activeCount, withoutFilter, withoutFilters
 } from './catalog-filters';
 import { SegmentedChoiceComponent, SegmentedOption } from './segmented-choice.component';
@@ -19,6 +19,7 @@ interface FilterChip { readonly id: string; readonly text: string; readonly ref:
 
 const ANY_SIZE = 'any';
 const SORT_OPTIONS: readonly SegmentedOption<CatalogSort>[] = CATALOG_SORTS.map(({ value, label }) => ({ value, label }));
+const SEARCH_SORT_OPTIONS: readonly SegmentedOption<CatalogSort>[] = [{ value: RELEVANCE_SORT.value, label: RELEVANCE_SORT.label }, ...SORT_OPTIONS];
 const SIZE_OPTIONS: readonly SegmentedOption[] = [{ value: ANY_SIZE, label: 'Любой' }, ...CATALOG_SIZES.map(({ value, label, hint }) => ({ value, label, hint }))];
 
 /**
@@ -30,8 +31,8 @@ const SIZE_OPTIONS: readonly SegmentedOption[] = [{ value: ANY_SIZE, label: 'Л�
  * On a narrow container the controls sit behind one button «Фильтры» (or «Фильтры · 3» with the number that is on) that carries
  * `aria-expanded`; on a wide one they are a wrapped grid and the button is not drawn. The sorting is always in view. Every filter that is
  * on is also a chip that says its category («Уровень: B1», «Внутри: аудио»), a button named «Убрать фильтр «Уровень: B1»»; «Сбросить всё» removes them all and leaves the sorting alone. After a chip is
- * removed the focus goes to the next chip, or to the «Фильтры» button when none is left. With `sortDisabled` (a text search is ordered by closeness to the query)
- * the sorting is drawn disabled and a line under it says why.
+ * removed the focus goes to the next chip, or to the «Фильтры» button when none is left. With `searching` (a text search) the sorting
+ * starts with «По близости к запросу», the order of a search; without a text it is not offered.
  */
 @Component({
     selector: 'app-catalog-filters',
@@ -42,10 +43,8 @@ const SIZE_OPTIONS: readonly SegmentedOption[] = [{ value: ANY_SIZE, label: 'Л�
         <div class="bar">
           <button #toggle type="button" class="button disclosure" [attr.aria-expanded]="open()" [attr.aria-controls]="panelId"
             (click)="open.set(!open())">{{ toggleLabel() }}</button>
-          <app-segmented-choice class="sort" legend="Сортировка" [options]="sortOptions" [value]="value().sort" [disabled]="sortDisabled()"
-            [describedBy]="sortDisabled() ? sortNoteId : null" (valueChange)="setSort($event)" />
+          <app-segmented-choice class="sort" legend="Сортировка" [options]="sortOptions()" [value]="value().sort" (valueChange)="setSort($event)" />
         </div>
-        @if (sortDisabled()) { <p class="hint sort-note" [id]="sortNoteId">Найденные колоды идут по близости к запросу.</p> }
         <div class="panel" [id]="panelId" [class.is-open]="open()">
           <div class="grid">
             <div class="field">
@@ -99,12 +98,12 @@ export class CatalogFiltersComponent {
     /** The topics to choose from, parents and children; a child names its parent and is drawn under its heading. */
     readonly topics = input<readonly TopicOption[]>([]);
     readonly languages = input<readonly LanguageOption[]>([]);
-    /** The sorting does not apply (a text search orders by closeness to the query): the control is drawn disabled, with a line that says why. */
-    readonly sortDisabled = input(false);
+    /** A text search is on: «По близости к запросу» is the first sorting. */
+    readonly searching = input(false);
     /** The new value; the sorting alone changing is also a new value. */
     readonly changed = output<CatalogFilters>();
 
-    protected readonly sortOptions = SORT_OPTIONS;
+    protected readonly sortOptions = computed(() => this.searching() ? SEARCH_SORT_OPTIONS : SORT_OPTIONS);
     protected readonly sizeOptions = SIZE_OPTIONS;
     protected readonly media = CATALOG_MEDIA;
     protected readonly mechanics = CATALOG_MECHANICS;
@@ -112,7 +111,6 @@ export class CatalogFiltersComponent {
 
     private readonly uid = `mn-filters-${nextFilters++}`;
     protected readonly panelId = `${this.uid}-panel`;
-    protected readonly sortNoteId = `${this.uid}-sort-note`;
     protected readonly topicId = `${this.uid}-topic`;
     protected readonly learnId = `${this.uid}-learn`;
     protected readonly levelId = `${this.uid}-level`;

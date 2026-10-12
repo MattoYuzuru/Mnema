@@ -34,9 +34,12 @@ describe('the address of the community page', () => {
         expect(address({ sort: 'bogus' }).sortGiven).toBe(false);
     });
 
-    it('writes the text and the filters back, repeated lists as they are, no sorting with a text, and nothing that is off', () => {
+    it('writes the text and the filters back, repeated lists as they are, the sorting behind a text, and nothing that is off', () => {
         expect(addressParams('', NO_FILTERS)).toEqual({});
-        expect(addressParams('  кот ', { ...NO_FILTERS, topic: 'spanish', media: ['audio', 'video'], sort: 'new' })).toEqual({ q: 'кот', topic: 'spanish', media: ['audio', 'video'] });
+        expect(addressParams('  кот ', { ...NO_FILTERS, topic: 'spanish', media: ['audio', 'video'], sort: 'new' })).toEqual({ q: 'кот', topic: 'spanish', media: ['audio', 'video'], sort: 'new' });
+        expect(addressParams('кот', { ...NO_FILTERS, sort: 'relevance' })).toEqual({ q: 'кот' });
+        expect(addressParams('кот', { ...NO_FILTERS, sort: 'popular' })).toEqual({ q: 'кот', sort: 'popular' });
+        expect(addressParams('', { ...NO_FILTERS, sort: 'relevance' })).toEqual({});
         expect(addressParams('', { ...NO_FILTERS, fresh: true, sort: 'learning' })).toEqual({ fresh: 'true', sort: 'learning' });
     });
 
@@ -44,7 +47,8 @@ describe('the address of the community page', () => {
         const key = (params: Record<string, string | string[]>) => requestKey(address(params));
         expect(key({})).toBe(key({ topic: '!!!' }));
         expect(key({ topic: 'spanish' })).not.toBe(key({}));
-        expect(key({ q: 'кот', sort: 'new' })).toBe(key({ q: 'кот' }));
+        expect(key({ q: 'кот', sort: 'new' })).not.toBe(key({ q: 'кот' }));
+        expect(key({ q: 'кот', sort: 'bogus' })).toBe(key({ q: 'кот' }));
         expect(key({ q: 'кот' })).not.toBe(key({ q: 'пёс' }));
         expect(key({ sort: 'new' })).not.toBe(key({ sort: 'learning' }));
         expect(key({ media: ['video', 'audio'] })).toBe(key({ media: ['audio', 'video'] }));

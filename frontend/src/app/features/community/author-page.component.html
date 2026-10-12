@@ -4,10 +4,17 @@
 
   @switch (view()) {
     @case ('not-found') {
-      <app-access-screen heading="Профиль не найден" eyebrow="Профиль">
-        <p>Такого профиля нет, или автор его скрыл.</p>
-        <a access-actions class="button" routerLink="/community">В Сообщество</a>
-      </app-access-screen>
+      @if (ownHidden()) {
+        <app-access-screen heading="Ваш профиль скрыт от других" eyebrow="Профиль">
+          <p>Включите публичный профиль в настройках.</p>
+          <a access-actions class="button primary" routerLink="/profile">Настройки профиля</a>
+        </app-access-screen>
+      } @else {
+        <app-access-screen heading="Профиль не найден" eyebrow="Профиль">
+          <p>Такого профиля нет, или автор его скрыл.</p>
+          <a access-actions class="button" routerLink="/community">В Сообщество</a>
+        </app-access-screen>
+      }
     }
     @case ('unavailable') {
       <app-access-screen heading="Не удалось открыть профиль" eyebrow="Профиль">

@@ -25,22 +25,19 @@ export function addressOf(params: ParamMap): CommunityAddress {
 }
 
 /**
- * The shelves are the page when nothing narrows or orders the catalogue: no search text, no filter and no sorting in the address. With a text query
- * the order is the server's relevance, so a sorting in the address does not apply and is not sent.
+ * The shelves are the page when nothing narrows or orders the catalogue: no search text, no filter and no sorting in the address.
  */
 export function isShelvesView(address: CommunityAddress): boolean {
     return address.q === '' && activeCount(address.filters) === 0 && !address.sortGiven;
 }
 
-/** The address parameters of a search: the text, then the filters (`toQueryParams`). A sorting does not go with a text query. */
+/** The address parameters of a search: the text, then the filters (`toQueryParams`); behind a text query «По близости» is the missing `sort`. */
 export function addressParams(q: string, filters: CatalogFilters): Params {
     const text = normalizeQuery(q);
-    const params: Params = { ...(text === '' ? {} : { q: text }), ...toQueryParams(filters) };
-    if (text !== '') delete params['sort'];
-    return params;
+    return { ...(text === '' ? {} : { q: text }), ...toQueryParams(filters, text !== '') };
 }
 
-/** A key that changes exactly when the request to the server changes (the sorting does not count behind a text query). */
+/** A key that changes exactly when the request to the server changes. */
 export function requestKey(address: CommunityAddress): string {
     return JSON.stringify(isShelvesView(address) ? { shelves: true } : addressParams(address.q, address.filters));
 }

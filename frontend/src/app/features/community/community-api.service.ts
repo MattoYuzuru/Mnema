@@ -4,7 +4,7 @@ import { Observable, catchError, defer, map, of, throwError } from 'rxjs';
 
 import { appConfig } from '../../app.config';
 import { ACCOUNT_ID } from '../../public-profile';
-import { CatalogFilters } from '../../shared/catalog-filters';
+import { CatalogFilters, DEFAULT_SORT, RELEVANCE_SORT } from '../../shared/catalog-filters';
 import { publicFailureOf } from '../public-deck/public-deck.models';
 import {
     AuthorDeckPage,
@@ -34,7 +34,8 @@ export function normalizeQuery(text: string | null | undefined): string {
 
 /**
  * The query string of `GET /api/public/community/decks` (`contracts/community/catalog.json`). `media` and `mechanics` are comma-separated lists
- * (the address of the page keeps them as repeated parameters); with a text query the order is relevance, so `sort` is left out.
+ * (the address of the page keeps them as repeated parameters); `sort` is sent when a sorting is chosen. With a text query and no `sort` the order is
+ * relevance («По близости к запросу», the page's `relevance`, which is never sent); without a text query `relevance` cannot be asked for and is `popular`.
  */
 export function deckParams(query: CommunityQuery, cursor: string | null, limit: number = COMMUNITY_PAGE_SIZE): HttpParams {
     const { filters } = query;
@@ -48,7 +49,8 @@ export function deckParams(query: CommunityQuery, cursor: string | null, limit: 
     if (filters.media.length > 0) params = params.set('media', filters.media.join(','));
     if (filters.mechanics.length > 0) params = params.set('mechanics', filters.mechanics.join(','));
     if (filters.fresh) params = params.set('fresh', 'true');
-    if (q === '') params = params.set('sort', filters.sort);
+    if (filters.sort !== RELEVANCE_SORT.value) params = params.set('sort', filters.sort);
+    else if (q === '') params = params.set('sort', DEFAULT_SORT);
     params = params.set('limit', String(limit));
     return cursor === null ? params : params.set('cursor', cursor);
 }

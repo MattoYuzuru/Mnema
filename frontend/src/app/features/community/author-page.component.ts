@@ -84,6 +84,11 @@ export class AuthorPageComponent {
             accountId: card.accountId, profileUsername: card.profileUsername, displayName: card.displayName, bio: card.bio, avatarSrc: this.authors.avatarUrl(card)
         };
     });
+    /** The signed-in reader opened their own login and Identity has no public card for it (the consent is off): the page says so instead of «не найден». */
+    protected readonly ownHidden = computed(() => {
+        const mine = this.auth.user()?.profileUsername;
+        return this.signedIn() && typeof mine === 'string' && mine.toLowerCase() === this.username().toLowerCase();
+    });
     protected readonly isSelf = computed(() => this.card() !== null && this.card()?.accountId === this.me());
     protected readonly profileUrl = computed(() => `${this.origin}/u/${encodeURIComponent(this.card()?.profileUsername ?? this.username())}`);
     /** «Учат сейчас» over the author's public decks; `null` below the server's minimum, and until the first page is in. */
@@ -200,7 +205,7 @@ export class AuthorPageComponent {
         }
         if (sequence !== this.sequence || this.destroyRef.destroyed) return;
         if (card === null) {
-            this.settle('not-found', `Профиль не найден — ${SHELL_TITLE}`);
+            this.settle('not-found', `${this.ownHidden() ? 'Профиль скрыт' : 'Профиль не найден'} — ${SHELL_TITLE}`);
             return;
         }
         this.card.set(card);
