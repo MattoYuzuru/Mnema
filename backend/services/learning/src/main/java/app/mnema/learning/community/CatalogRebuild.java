@@ -2,9 +2,13 @@ package app.mnema.learning.community;
 
 import app.mnema.learning.platform.jobs.Job;
 import app.mnema.learning.platform.jobs.JobHandler;
+import app.mnema.learning.platform.jobs.JobState;
 import app.mnema.learning.platform.jobs.LearningJobs;
 import app.mnema.learning.platform.jobs.PermanentJobException;
 import app.mnema.learning.platform.jobs.Slice;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -24,16 +28,19 @@ import java.util.UUID;
  */
 @Component
 public class CatalogRebuild implements JobHandler {
+    private static final Logger LOG = LoggerFactory.getLogger(CatalogRebuild.class);
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private final ProjectionRepository repository;
     private final LearningJobs jobs;
     private final CatalogSettings settings;
+    private final MeterRegistry meters;
 
-    CatalogRebuild(ProjectionRepository repository, LearningJobs jobs, CatalogSettings settings) {
+    CatalogRebuild(ProjectionRepository repository, LearningJobs jobs, CatalogSettings settings, MeterRegistry meters) {
         this.repository = repository;
         this.jobs = jobs;
         this.settings = settings;
+        this.meters = meters;
     }
 
     @Override
@@ -49,6 +56,14 @@ public class CatalogRebuild implements JobHandler {
         long handed = job.progressCount() + decks.size();
         if (decks.size() < settings.rebuildSize) return Slice.done(handed);
         return Slice.proceed(JSON.createObjectNode().put("after", decks.getLast().toString()), handed);
+    }
+
+    /** A rebuild that ends {@code FAILED} or {@code CANCELLED} leaves the catalogue as it was: counted and logged (job id and the last deck handed over, nothing of any content) so that it is noticed and retried. */
+    @Override
+    public void onEnded(Job job, JobState state) {
+        meters.counter("mnema_catalog_rebuild_ended_total", "outcome", state.name().toLowerCase(java.util.Locale.ROOT)).increment();
+        LOG.warn("catalog_rebuild_ended job_id={} state={} handed_over={} after_deck_id={}", job.id(), state, job.progressCount(),
+                job.progress() == null ? "" : job.progress().path("after").stringValue(""));
     }
 
     private static UUID after(ObjectNode progress) {

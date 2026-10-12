@@ -57,6 +57,8 @@ class PublicDeckProjectionIntegrationTest extends PostgresIntegrationTest {
     @Autowired private CatalogProjector projector;
     @Autowired private CatalogRepository catalog;
     @Autowired private CatalogOutbox outbox;
+    @Autowired private ProjectionRepository projection;
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meters;
     private CatalogWorlds worlds;
 
     @BeforeEach
@@ -77,6 +79,12 @@ class PublicDeckProjectionIntegrationTest extends PostgresIntegrationTest {
     private List<String> jobKeys(World world) {
         return jdbc.sql("SELECT dedupe_key FROM app_learning.learning_job WHERE queue = 'catalog.project' AND payload ->> 'deckId' = :deck ORDER BY job_id")
                 .param("deck", world.deck().toString()).query(String.class).list();
+    }
+
+    /** The date the catalogue remembers for the deck, whether or not it has a row right now. */
+    private Instant listedAt(World world) {
+        return jdbc.sql("SELECT first_listed_at FROM app_learning.catalog_listing WHERE deck_id = :d").param("d", world.deck())
+                .query((rs, n) -> rs.getTimestamp(1) == null ? null : rs.getTimestamp(1).toInstant()).optional().orElse(null);
     }
 
     private List<Instant> publicEvents(World world) {
@@ -126,7 +134,7 @@ class PublicDeckProjectionIntegrationTest extends PostgresIntegrationTest {
         assertThat(row.mediaMask()).isZero();
         assertThat(row.mechanics()).containsExactlyInAnyOrder(CatalogMechanic.WRITTEN, CatalogMechanic.CHOICE);
         assertThat(row.listed()).isTrue();
-        assertThat(row.firstListedAt()).isEqualTo(events.getFirst());
+        assertThat(row.firstListedAt()).as("the day the projection found the deck listed").isNotNull().isEqualTo(listedAt(world)).isAfterOrEqualTo(events.getFirst());
         assertThat(row.contentUpdatedAt()).isEqualTo(jdbc.sql("SELECT published_at FROM app_learning.deck_publication WHERE deck_id = :d").param("d", world.deck())
                 .query((rs, n) -> rs.getTimestamp(1).toInstant()).single());
         assertThat(row.titleNorm()).isEqualTo("espanol basico");
@@ -174,6 +182,8 @@ class PublicDeckProjectionIntegrationTest extends PostgresIntegrationTest {
             worlds.project(projector, world.deck());
             // a deck below the threshold keeps its row (the author's page shows it) but is not listed
             assertThat(row(world).listed()).as("%s", c).isEqualTo(c.listed());
+            // only a listed deck has entered the catalogue, so only it has a date
+            assertThat(row(world).firstListedAt() != null).as("%s", c).isEqualTo(c.listed());
         }
         // a blank description is below the threshold, though the owner's command never lets such a deck become public: the revision was published at LINK
         World blank = publicDeckNoPublish(10, 1, "");
@@ -196,30 +206,34 @@ class PublicDeckProjectionIntegrationTest extends PostgresIntegrationTest {
     // ---- level, moderation, deletion ----
 
     @Test
-    void loweringTheLevelRemovesTheRowAndRaisingItBringsItBackWithTheSameFirstListedDate() {
+    void loweringTheLevelRemovesTheRowAtOnceAndRaisingItBringsItBackWithTheSameFirstListedDate() {
         World world = publicDeck("Колода уровня", "Описание", 10, 1);
         worlds.project(projector, world.deck());
         Instant first = row(world).firstListedAt();
-        assertThat(first).isEqualTo(publicEvents(world).getFirst());
+        assertThat(first).isEqualTo(listedAt(world));
 
         worlds.setLevel(world, DeckVisibility.LINK);
         assertThat(jobKeys(world)).as("one job per effective change").hasSize(2);
+        assertThat(hasRow(world)).as("no executor runs here: the command itself took the deck out of the catalogue").isFalse();
         worlds.project(projector, world.deck());
         assertThat(hasRow(world)).as("by-link decks are not in the catalogue").isFalse();
+        assertThat(listedAt(world)).as("the catalogue remembers the date while the deck has no row").isEqualTo(first);
 
         worlds.setLevel(world, DeckVisibility.PUBLIC);
+        assertThat(hasRow(world)).as("coming back is the job's work").isFalse();
         worlds.project(projector, world.deck());
         assertThat(publicEvents(world)).hasSize(2);
         assertThat(row(world).firstListedAt()).as("the date of the FIRST time, not of the latest promotion").isEqualTo(first).isNotEqualTo(publicEvents(world).get(1));
         assertThat(row(world).listed()).isTrue();
 
         worlds.setLevel(world, DeckVisibility.PRIVATE);
+        assertThat(hasRow(world)).isFalse();
         worlds.project(projector, world.deck());
         assertThat(hasRow(world)).isFalse();
     }
 
     @Test
-    void aRowThatWasRemovedAndCreatedAgainKeepsTheJournalDate() {
+    void aRowThatWasRemovedAndCreatedAgainKeepsTheListingDate() {
         World world = publicDeck("Колода дат", "Описание", 10, 1);
         worlds.project(projector, world.deck());
         Instant first = row(world).firstListedAt();
@@ -229,47 +243,84 @@ class PublicDeckProjectionIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void hidingRemovesTheDeckFromTheCatalogueAndUnhidingBringsItBack() {
+    void aDeckEntersTheCatalogueWhenItIsFirstListedAndTogglingNeverMovesItUp() {
+        // a public deck below the threshold has a row but no date: it has not entered «Новое»
+        World late = publicDeckNoPublish(9, 1, "Описание");
+        worlds.publish(late);
+        worlds.project(projector, late.deck());
+        assertThat(row(late).listed()).isFalse();
+        assertThat(row(late).firstListedAt()).isNull();
+        assertThat(listedAt(late)).isNull();
+        World early = publicDeck("Раньше", "Описание", 10, 1);
+        worlds.project(projector, early.deck());
+        Instant earlyDate = row(early).firstListedAt();
+
+        // it reaches the threshold later: the date is that moment, later than the other deck's
+        worlds.addMaterial(late);
+        worlds.publish(late);
+        worlds.project(projector, late.deck());
+        Instant lateDate = row(late).firstListedAt();
+        assertThat(lateDate).isNotNull().isAfter(earlyDate);
+
+        // the older deck is hidden and shown, lowered and raised: it must not climb above the newer one
+        worlds.hide(early);
+        worlds.project(projector, early.deck());
+        worlds.unhide(early);
+        worlds.project(projector, early.deck());
+        worlds.setLevel(early, DeckVisibility.LINK);
+        worlds.setLevel(early, DeckVisibility.PUBLIC);
+        worlds.project(projector, early.deck());
+        assertThat(row(early).firstListedAt()).isEqualTo(earlyDate);
+        List<UUID> order = catalog.listedPage(null, null, 1_000).stream().map(PublicDeckRow::deckId).toList();
+        assertThat(order).containsSubsequence(late.deck(), early.deck());
+
+        // and a republication with the deck below the threshold again cannot take the date away
+        assertThat(listedAt(late)).isEqualTo(lateDate);
+    }
+
+    @Test
+    void hidingRemovesTheDeckFromTheCatalogueAtOnceAndUnhidingBringsItBack() {
         World world = publicDeck("Скрываемая", "Описание", 10, 1);
         worlds.project(projector, world.deck());
         Instant first = row(world).firstListedAt();
         int jobs = jobKeys(world).size();
 
         worlds.hide(world);
-        assertThat(jobKeys(world)).as("the hiding transaction enqueued the projection").hasSize(jobs + 1);
-        assertThat(hasRow(world)).as("the row goes when the job runs, not before").isTrue();
+        assertThat(jobKeys(world)).as("the hiding transaction also enqueued the projection, the backstop").hasSize(jobs + 1);
+        assertThat(hasRow(world)).as("gone when the transaction committed, with no executor running").isFalse();
         worlds.project(projector, world.deck());
         assertThat(hasRow(world)).isFalse();
 
         worlds.unhide(world);
         assertThat(jobKeys(world)).hasSize(jobs + 2);
+        assertThat(hasRow(world)).isFalse();
         worlds.project(projector, world.deck());
         assertThat(row(world).firstListedAt()).isEqualTo(first);
-        assertThat(row(world).projectedRevisionId()).isEqualTo(worlds.publishedRevision(world));
+        assertThat(row(world).projectedRevisionId()).as("the scan result came back with the row").isEqualTo(worlds.publishedRevision(world));
     }
 
     @Test
-    void deletingTheDeckRemovesItsRowAndAPrivateDeckLeavesNoJob() {
+    void deletingTheDeckRemovesItsRowAtOnceAndAnUnpublishedDeckLeavesNoJob() {
         World world = publicDeck("Удаляемая", "Описание", 10, 1);
         worlds.project(projector, world.deck());
         int jobs = jobKeys(world).size();
         worlds.delete(world);
+        assertThat(hasRow(world)).as("gone when the transaction committed, with no executor running").isFalse();
         assertThat(jobKeys(world)).hasSize(jobs + 1).last().isEqualTo(world.deck() + ":deleted");
         worlds.project(projector, world.deck());
         assertThat(hasRow(world)).isFalse();
 
         World privateDeck = worlds.deck("Личная", "Описание", 1);
         worlds.delete(privateDeck);
-        assertThat(jobKeys(privateDeck)).as("a deck the catalogue never held needs no job").isEmpty();
+        assertThat(jobKeys(privateDeck)).as("a deck that never had a published revision needs no job").isEmpty();
 
-        // a deck that was public and has no row any more (lowered and projected) does not enqueue either
+        // a deck that was public once and has a published revision still gets the backstop job
         World lowered = publicDeck("Была публичной", "Описание", 10, 1);
         worlds.project(projector, lowered.deck());
         worlds.setLevel(lowered, DeckVisibility.PRIVATE);
-        worlds.project(projector, lowered.deck());
         int before = jobKeys(lowered).size();
         worlds.delete(lowered);
-        assertThat(jobKeys(lowered)).hasSize(before);
+        assertThat(jobKeys(lowered)).hasSize(before + 1);
     }
 
     @Test
@@ -408,6 +459,67 @@ class PublicDeckProjectionIntegrationTest extends PostgresIntegrationTest {
         assertThat(row(disabled).exerciseCount()).isEqualTo(1);
     }
 
+    @Test
+    void theMediaBitsAreComputedOnlyWhenThePublishedRevisionChanged() {
+        World world = worlds.deck("Медиа по ревизии", "Описание", 10);
+        worlds.exercise(world.materials().getFirst(), ExerciseType.FREE_RESPONSE);
+        worlds.publish(world);
+        worlds.project(projector, world.deck());
+        assertThat(row(world).mediaMask()).isZero();
+
+        // a value only a stale remembered answer could give: a tag edit must reuse it, not look at the assets again
+        jdbc.sql("UPDATE app_learning.catalog_listing SET media_mask = 5 WHERE deck_id = :d").param("d", world.deck()).update();
+        worlds.setLevel(world, DeckVisibility.PUBLIC, CatalogWorlds.metadata("другой тег"));
+        worlds.project(projector, world.deck());
+        assertThat(row(world).mediaMask()).isEqualTo(5);
+        // and a row made again takes it from the listing at once
+        worlds.hide(world);
+        worlds.unhide(world);
+        worlds.project(projector, world.deck());
+        assertThat(row(world).mediaMask()).isEqualTo(5);
+
+        // a new published revision looks at the assets again
+        worlds.addMaterial(world);
+        worlds.publish(world);
+        worlds.project(projector, world.deck());
+        assertThat(row(world).mediaMask()).isZero();
+        assertThat(jdbc.sql("SELECT media_revision_id FROM app_learning.catalog_listing WHERE deck_id = :d").param("d", world.deck()).query(UUID.class).single())
+                .isEqualTo(worlds.publishedRevision(world));
+    }
+
+    @Test
+    void theLagGaugeCountsOnlyRowsThatAreBehindTheirRevisionForTenMinutes() {
+        World world = publicDeck("Отстающая", "Описание", 10, 1);
+        worlds.project(projector, world.deck());
+        long[] clock = {0};
+        CatalogLagGauge gauge = new CatalogLagGauge(projection, new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), () -> clock[0]);
+        double baseline = gauge.value();
+
+        // behind its revision but only just: not yet counted
+        jdbc.sql("UPDATE app_learning.public_deck SET projected_revision_id = NULL, projected_at = now() WHERE deck_id = :d").param("d", world.deck()).update();
+        clock[0] += java.util.concurrent.TimeUnit.MINUTES.toNanos(2);
+        assertThat(gauge.value()).isEqualTo(baseline);
+        // behind for eleven minutes: counted, but the answer is cached for a minute
+        jdbc.sql("UPDATE app_learning.public_deck SET projected_at = now() - interval '11 minutes' WHERE deck_id = :d").param("d", world.deck()).update();
+        clock[0] += java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+        assertThat(gauge.value()).as("cached for a minute").isEqualTo(baseline);
+        clock[0] += java.util.concurrent.TimeUnit.SECONDS.toNanos(31);
+        assertThat(gauge.value()).isEqualTo(baseline + 1);
+        // caught up: not counted
+        worlds.project(projector, world.deck());
+        clock[0] += java.util.concurrent.TimeUnit.MINUTES.toNanos(2);
+        assertThat(gauge.value()).isEqualTo(baseline);
+        // the one registered in the application is there too, and an unreadable database is NaN, not zero
+        assertThat(meters.get(CatalogLagGauge.NAME).gauge().value()).isGreaterThanOrEqualTo(0);
+        CatalogLagGauge broken = new CatalogLagGauge(new ProjectionRepository(jdbc) {
+            @Override
+            long lagging(java.time.Duration age) {
+                throw new org.springframework.dao.DataAccessResourceFailureException("down");
+            }
+        }, new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), () -> 0L);
+        assertThat(broken.value()).isNaN();
+    }
+
     // ---- jobs of one deck in any order ----
 
     @Test
@@ -465,6 +577,7 @@ class PublicDeckProjectionIntegrationTest extends PostgresIntegrationTest {
         World world = publicDeck("Исходящие", "Описание", 10, 1);
         assertThatThrownBy(() -> outbox.publicationChanged(world.deck(), worlds.publishedRevision(world), DeckVisibility.PUBLIC)).isInstanceOf(IllegalTransactionStateException.class);
         assertThatThrownBy(() -> outbox.deckDeleted(world.deck())).isInstanceOf(IllegalTransactionStateException.class);
+        assertThatThrownBy(() -> outbox.withdrawn(world.deck())).isInstanceOf(IllegalTransactionStateException.class);
 
         // an unchanged command writes nothing: no event, no job
         int events = publicEvents(world).size();

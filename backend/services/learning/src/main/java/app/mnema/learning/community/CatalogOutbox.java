@@ -18,9 +18,9 @@ import java.util.UUID;
  * publication transaction (that would be O(N) against bounded transactions) and a change is never lost: the job exists exactly when the change committed.
  *
  * <p>Two things can change the catalogue entry of a deck. A change of the publication (a level, the published revision, the metadata, the moderation flag) appends one
- * append-only {@code deck_publication_event} row (the journal that also holds {@code first_listed_at}) AND enqueues {@code catalog.project}, in
- * {@link #publicationChanged}. The deletion of a deck leaves no journal row (the deck row says it is deleted) and enqueues only when the deck has a row to remove,
- * in {@link #deckDeleted}.
+ * append-only {@code deck_publication_event} row AND enqueues {@code catalog.project}, in {@link #publicationChanged}. The deletion of a deck leaves no journal row (the deck row
+ * says it is deleted) and enqueues when the deck ever had a published revision, in {@link #deckDeleted}. <b>Removal does not wait for the queue</b>: the commands that end a deck's place
+ * in the catalogue also delete its row in their own transaction ({@link #withdrawn}).
  *
  * <p><b>The job key is unique per change</b> ({@code deckId:eventId}, or {@code deckId:deleted}), because the idempotency horizon of a job is its retention (7 days): a key
  * that repeated would be swallowed by an earlier finished job and the new change would never be looked at. The job reads the CURRENT state of the deck, never the event, so
@@ -61,16 +61,26 @@ public class CatalogOutbox {
     }
 
     /**
-     * Called after a deck was tombstoned, in the same transaction. Enqueues the projection only when the catalogue holds a row of the deck (a private deck, which is
-     * almost every deck, costs one primary-key probe). The projector locks the deck row, so a projection running at this moment either sees the deletion or has
-     * committed its row before this statement reads it.
+     * Takes the deck out of the catalogue NOW, in the caller's transaction: one primary-key delete. Called by every command that ends a deck's place in it (a hiding by the moderator, a
+     * level below PUBLIC, a deletion), so that removal never waits for the queue. The projection job that the same command enqueues stays the convergence backstop (it also removes
+     * a row that a slice of a projection already in flight wrote after this delete).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void withdrawn(UUID deck) {
+        UuidPolicy.requireEntityId(deck, "deckId");
+        jdbc.sql("DELETE FROM app_learning.public_deck WHERE deck_id = :deck").param("deck", deck).update();
+    }
+
+    /**
+     * Called after a deck was tombstoned, in the same transaction: removes its row at once ({@link #withdrawn}) and, when the deck ever had a published revision (a primary-key probe of its
+     * publication row; for every other deck, almost all of them, nothing more), enqueues the projection that makes sure no row survives a projection that raced with the deletion.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void deckDeleted(UUID deck) {
-        UuidPolicy.requireEntityId(deck, "deckId");
-        boolean listedSomewhere = jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.public_deck WHERE deck_id = :deck)").param("deck", deck)
+        withdrawn(deck);
+        boolean published = jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.deck_publication WHERE deck_id = :deck AND published_revision_id IS NOT NULL)").param("deck", deck)
                 .query(Boolean.class).single();
-        if (listedSomewhere) jobs.enqueue(PROJECT_QUEUE, deck + ":deleted", null, payload(deck));
+        if (published) jobs.enqueue(PROJECT_QUEUE, deck + ":deleted", null, payload(deck));
     }
 
     static ObjectNode payload(UUID deck) {

@@ -88,6 +88,32 @@ class PublicDeckBackfillIntegrationTest extends PostgresIntegrationTest {
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.learning_job WHERE queue = 'catalog.rebuild' AND dedupe_key = 'v67-backfill'").query(Long.class).single()).isOne();
     }
 
+    @Test
+    void theBackfillGivesDecksThatWerePublicBeforeTheProjectorTheirDateFromTheJournal() {
+        World listed = publicDeck("Старая публичная", 1);
+        World small = worlds.deck("Старая маленькая", "Описание", 3);
+        worlds.publish(small);
+        World hidden = publicDeck("Старая скрытая", 1);
+        worlds.hide(hidden);
+        jdbc.sql("DELETE FROM app_learning.catalog_listing WHERE deck_id IN (:ids)").param("ids", List.of(listed.deck(), small.deck(), hidden.deck())).update();
+        java.time.Instant firstPublic = jdbc.sql("SELECT min(occurred_at) FROM app_learning.deck_publication_event WHERE deck_id = :d AND visibility = 'PUBLIC'")
+                .param("d", listed.deck()).query((rs, n) -> rs.getTimestamp(1).toInstant()).single();
+
+        String migration = migration();
+        String backfill = migration.substring(migration.indexOf("-- BACKFILL BEGIN"), migration.indexOf("-- BACKFILL END"));
+        String statement = java.util.Arrays.stream(backfill.split("\n")).filter(line -> !line.startsWith("--")).collect(java.util.stream.Collectors.joining("\n")).replace(";", "");
+        jdbc.sql(statement).update();
+        jdbc.sql(statement).update();
+
+        assertThat(jdbc.sql("SELECT first_listed_at FROM app_learning.catalog_listing WHERE deck_id = :d").param("d", listed.deck())
+                .query((rs, n) -> rs.getTimestamp(1).toInstant()).single()).as("the day it became public").isEqualTo(firstPublic);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.catalog_listing WHERE deck_id IN (:ids)").param("ids", List.of(small.deck(), hidden.deck())).query(Long.class).single())
+                .as("a deck below the threshold or hidden has not entered the catalogue").isZero();
+        // and the projection that follows takes the date as it is
+        worlds.project(projector, listed.deck());
+        assertThat(catalog.find(listed.deck()).orElseThrow().firstListedAt()).isEqualTo(firstPublic);
+    }
+
     private static String migration() {
         try (var stream = PublicDeckBackfillIntegrationTest.class.getResourceAsStream("/db/learning/migration/V67__public_deck.sql")) {
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
@@ -176,6 +202,17 @@ class PublicDeckBackfillIntegrationTest extends PostgresIntegrationTest {
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.learning_job WHERE queue = 'catalog.project' AND dedupe_key = :k")
                 .param("k", world.deck() + ":rebuild:" + rebuildId).query(Long.class).single()).isOne();
         assertThat(rebuild.queue()).isEqualTo("catalog.rebuild");
+    }
+
+    @Test
+    void aRebuildThatEndsWithoutSuccessIsCountedAndLogged() {
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry meters = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        CatalogRebuild counting = new CatalogRebuild(null, jobs, new CatalogSettings(500, 2), meters);
+        counting.onEnded(new Job(UUID.randomUUID(), CatalogOutbox.REBUILD_QUEUE, null, JSON.createObjectNode(), null, 0, 1), JobState.FAILED);
+        counting.onEnded(new Job(UUID.randomUUID(), CatalogOutbox.REBUILD_QUEUE, null, JSON.createObjectNode(), JSON.createObjectNode().put("after", UUID.randomUUID().toString()), 4, 1),
+                JobState.CANCELLED);
+        assertThat(meters.get("mnema_catalog_rebuild_ended_total").tag("outcome", "failed").counter().count()).isEqualTo(1.0);
+        assertThat(meters.get("mnema_catalog_rebuild_ended_total").tag("outcome", "cancelled").counter().count()).isEqualTo(1.0);
     }
 
     @Test

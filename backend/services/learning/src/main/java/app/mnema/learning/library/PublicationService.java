@@ -191,6 +191,8 @@ public class PublicationService {
             // The same call enqueues the projection job (Community/1), in this transaction: the catalogue is never built here, only asked to look at the deck again.
             boolean publicWrite = command.visibility() == DeckVisibility.PUBLIC;
             if ((publicWrite || before != command.visibility() || moves) && pointer != null) outbox.publicationChanged(deck, pointer, command.visibility());
+            // a level below PUBLIC takes the deck out of the catalogue in this transaction, not when the job runs
+            if (!publicWrite) outbox.withdrawn(deck);
         }
         ObjectNode acknowledgement = JsonNodeFactory.instance.objectNode();
         acknowledgement.put("commandId", command.commandId().toString()).put("changed", changed);

@@ -16,8 +16,8 @@ import java.util.UUID;
  * The SQL of the catalogue projector and of the rebuild. Every statement is keyed by one deck (a primary-key or short index range) except {@link #publicDecksAfter}, which is a
  * keyset page of the rebuild. Nothing here reads a deck's head or journal: the projection is built from the deck's PUBLISHED revision only.
  *
- * <p>TODO(account-deletion task #409; owner: Learning's account-purge epic): the purge of an account must delete the account's {@code public_deck} rows ({@code WHERE owner_id = :account},
- * before it deletes the decks the rows reference) so that the author's public decks leave the catalogue with the account; the rows are derived data and hold the
+ * <p>TODO(account-deletion task #409; owner: Learning's account-purge epic): the purge of an account must delete the account's {@code public_deck} rows ({@code WHERE owner_id = :account}) and
+ * their {@code catalog_listing} rows (by the account's decks), before it deletes the decks the rows reference, so that the author's public decks leave the catalogue with the account; the rows are derived data and hold the
  * title, description and tags of the account's decks. Learning has no account purge path yet; see "Retention" in the Learning guide.
  */
 @Repository
@@ -31,6 +31,9 @@ class ProjectionRepository {
 
     /** The row as the projector left it: which revision its metadata and its mechanics were derived from. */
     record Projected(UUID publishedRevisionId, UUID projectedRevisionId) { }
+
+    /** What the catalogue keeps about a deck apart from its row ({@code catalog_listing}); the instants and revisions are null until known. */
+    record Listing(java.time.Instant firstListedAt, UUID scannedRevisionId, int mechanicsMask, UUID mediaRevisionId, int mediaMask) { }
 
     /** A group of exercises of one published manifest slice: the mechanic, whether the revision pins audio, whether it is enabled, how many. */
     record ExerciseKind(String type, boolean audio, boolean enabled, int count) { }
@@ -49,13 +52,12 @@ class ProjectionRepository {
               FROM app_learning.deck d
               JOIN app_learning.deck_publication p ON p.deck_id = d.deck_id
               JOIN app_learning.deck_revision r ON r.deck_id = p.deck_id AND r.revision_id = p.published_revision_id
-             WHERE d.deck_id = :deck AND d.deleted_at IS NULL AND p.visibility = 'PUBLIC' AND NOT p.hidden_by_moderation
-               FOR SHARE OF d""";
+             WHERE d.deck_id = :deck AND d.deleted_at IS NULL AND p.visibility = 'PUBLIC' AND NOT p.hidden_by_moderation""";
 
     /**
-     * The deck as the catalogue wants it, or empty when it does not belong (not PUBLIC, no published revision, hidden by moderation, deleted). The deck row is
-     * locked {@code FOR SHARE}: a deletion that is in flight is waited for and then seen (the row is re-checked after the wait), so a projection can never insert a row
-     * for a deck whose tombstone is about to commit without {@link CatalogOutbox#deckDeleted} seeing that row afterwards. An editor's save waits for this short transaction.
+     * The deck as the catalogue wants it, or empty when it does not belong (not PUBLIC, no published revision, hidden by moderation, deleted), judged by this statement's own
+     * snapshot. Nothing is locked: a deletion, a hiding or a lowering that commits after this read has deleted the row itself and enqueued a job of its own (see {@link CatalogOutbox}),
+     * which runs after it and converges whatever this slice wrote.
      */
     Optional<Published> published(UUID deck) {
         return jdbc.sql(PUBLISHED_SQL).param("deck", deck).query((row, ignored) -> new Published(row.getObject("deck_id", UUID.class), row.getObject("reuse_scope_id", UUID.class),
@@ -84,42 +86,78 @@ class ProjectionRepository {
              WHERE pm.deck_id = :deck""";
 
     /**
-     * Creates or refreshes the row from the published revision {@code published.revisionId()}; {@code mechanics_mask} and {@code projected_revision_id} are NOT touched here (the
-     * scan owns them), and the row keeps its {@code first_listed_at}. Nothing is written when nothing the row is built from differs, so a replayed job leaves no dead tuple and
-     * no new vector. The statement re-checks that the publication still names the revision the caller read: if it moved, nothing is written and the job that the move enqueued
-     * does the work.
+     * Makes sure the deck has its {@code catalog_listing} row and, the first time the published revision passes the catalogue threshold ({@code catalog_listed}, the very function of
+     * the generated column), stamps {@code first_listed_at} with now. The stamp is set ONCE: an already stamped row is never touched, so demotion and promotion, hiding and republishing
+     * cannot bring the deck back to the top of «Новое». Written only while the publication still names {@code published.revisionId()}.
      */
-    void upsert(Published published, String titleNorm, int mediaMask) {
-        jdbc.sql(UPSERT_SQL).param("deck", published.deckId()).param("revision", published.revisionId()).param("media", mediaMask).param("norm", titleNorm).update();
+    void touchListing(Published published) {
+        jdbc.sql(TOUCH_LISTING_SQL).param("deck", published.deckId()).param("revision", published.revisionId()).update();
+    }
+
+    static final String TOUCH_LISTING_SQL = """
+            INSERT INTO app_learning.catalog_listing AS l (deck_id, first_listed_at)
+            SELECT d.deck_id, CASE WHEN app_learning.catalog_listed(r.member_count, r.exercise_count, r.description) THEN statement_timestamp() END
+              FROM app_learning.deck d
+              JOIN app_learning.deck_publication p ON p.deck_id = d.deck_id
+              JOIN app_learning.deck_revision r ON r.deck_id = p.deck_id AND r.revision_id = p.published_revision_id
+             WHERE d.deck_id = :deck AND p.published_revision_id = :revision
+               AND d.deleted_at IS NULL AND p.visibility = 'PUBLIC' AND NOT p.hidden_by_moderation
+            ON CONFLICT (deck_id) DO UPDATE SET first_listed_at = EXCLUDED.first_listed_at
+             WHERE l.first_listed_at IS NULL AND EXCLUDED.first_listed_at IS NOT NULL""";
+
+    /** The deck's {@code catalog_listing} row, or empty when {@link #touchListing} wrote none (the publication moved). */
+    Optional<Listing> listing(UUID deck) {
+        return jdbc.sql("SELECT first_listed_at, scanned_revision_id, mechanics_mask, media_revision_id, media_mask FROM app_learning.catalog_listing WHERE deck_id = :deck")
+                .param("deck", deck).query((row, ignored) -> new Listing(instant(row.getTimestamp("first_listed_at")), row.getObject("scanned_revision_id", UUID.class),
+                        row.getInt("mechanics_mask"), row.getObject("media_revision_id", UUID.class), row.getInt("media_mask"))).optional();
+    }
+
+    private static java.time.Instant instant(java.sql.Timestamp value) { return value == null ? null : value.toInstant(); }
+
+    /** Remembers the media bits of {@code revision}: they are recomputed only when the published revision changes, not on every edit of a tag. */
+    void storeMedia(UUID deck, UUID revision, int mediaMask) {
+        jdbc.sql("UPDATE app_learning.catalog_listing SET media_revision_id = :revision, media_mask = :mask WHERE deck_id = :deck")
+                .param("revision", revision).param("mask", mediaMask).param("deck", deck).update();
+    }
+
+    /**
+     * Creates or refreshes the row from the published revision {@code published.revisionId()}. The date, the media bits and the scan result (mechanics and the revision they were
+     * scanned for) are COPIED from {@code catalog_listing}, so a row made again after a hiding or a lowering is complete at once when its revision was scanned before. Nothing is written
+     * when nothing the row is built from differs, so a replayed job leaves no dead tuple and no new vector. The statement re-checks that the publication still names the revision
+     * the caller read: if it moved, nothing is written and the job that the move enqueued does the work.
+     */
+    void upsert(Published published, String titleNorm) {
+        jdbc.sql(UPSERT_SQL).param("deck", published.deckId()).param("revision", published.revisionId()).param("norm", titleNorm).update();
     }
 
     static final String UPSERT_SQL = """
-                INSERT INTO app_learning.public_deck AS c (deck_id, public_code, owner_id, published_revision_id, title, description, topic_id, parent_topic_id,
-                        content_language, target_language, level, tags, item_count, exercise_count, media_mask, first_listed_at, content_updated_at, title_norm, projected_at)
-                SELECT d.deck_id, p.public_code, d.owner_id, p.published_revision_id, r.title, r.description, p.topic_id, t.parent_id,
-                       p.content_language, p.target_language, p.level, p.tags, r.member_count, r.exercise_count, CAST(:media AS smallint),
-                       COALESCE((SELECT x.first_listed_at FROM app_learning.public_deck x WHERE x.deck_id = d.deck_id),
-                                (SELECT min(e.occurred_at) FROM app_learning.deck_publication_event e WHERE e.deck_id = d.deck_id AND e.visibility = 'PUBLIC'),
-                                p.published_at, statement_timestamp()),
-                       p.published_at, :norm, statement_timestamp()
-                  FROM app_learning.deck d
-                  JOIN app_learning.deck_publication p ON p.deck_id = d.deck_id
-                  JOIN app_learning.deck_revision r ON r.deck_id = p.deck_id AND r.revision_id = p.published_revision_id
-                  LEFT JOIN app_learning.topic t ON t.topic_id = p.topic_id
-                 WHERE d.deck_id = :deck AND p.published_revision_id = :revision
-                   AND d.deleted_at IS NULL AND p.visibility = 'PUBLIC' AND NOT p.hidden_by_moderation
-                ON CONFLICT (deck_id) DO UPDATE SET
-                       public_code = EXCLUDED.public_code, owner_id = EXCLUDED.owner_id, published_revision_id = EXCLUDED.published_revision_id, title = EXCLUDED.title,
-                       description = EXCLUDED.description, topic_id = EXCLUDED.topic_id, parent_topic_id = EXCLUDED.parent_topic_id,
-                       content_language = EXCLUDED.content_language, target_language = EXCLUDED.target_language, level = EXCLUDED.level, tags = EXCLUDED.tags,
-                       item_count = EXCLUDED.item_count, exercise_count = EXCLUDED.exercise_count, media_mask = EXCLUDED.media_mask,
-                       content_updated_at = EXCLUDED.content_updated_at, title_norm = EXCLUDED.title_norm, projected_at = EXCLUDED.projected_at
-                 WHERE (c.public_code, c.owner_id, c.published_revision_id, c.title, c.description, c.topic_id, c.parent_topic_id, c.content_language, c.target_language,
-                        c.level, c.tags, c.item_count, c.exercise_count, c.media_mask, c.content_updated_at, c.title_norm)
-                       IS DISTINCT FROM
-                       (EXCLUDED.public_code, EXCLUDED.owner_id, EXCLUDED.published_revision_id, EXCLUDED.title, EXCLUDED.description, EXCLUDED.topic_id,
-                        EXCLUDED.parent_topic_id, EXCLUDED.content_language, EXCLUDED.target_language, EXCLUDED.level, EXCLUDED.tags, EXCLUDED.item_count,
-                        EXCLUDED.exercise_count, EXCLUDED.media_mask, EXCLUDED.content_updated_at, EXCLUDED.title_norm)""";
+            INSERT INTO app_learning.public_deck AS c (deck_id, public_code, owner_id, published_revision_id, title, description, topic_id, parent_topic_id,
+                    content_language, target_language, level, tags, item_count, exercise_count, media_mask, mechanics_mask, projected_revision_id, first_listed_at,
+                    content_updated_at, title_norm, projected_at)
+            SELECT d.deck_id, p.public_code, d.owner_id, p.published_revision_id, r.title, r.description, p.topic_id, t.parent_id,
+                   p.content_language, p.target_language, p.level, p.tags, r.member_count, r.exercise_count, l.media_mask, l.mechanics_mask, l.scanned_revision_id,
+                   l.first_listed_at, p.published_at, :norm, statement_timestamp()
+              FROM app_learning.deck d
+              JOIN app_learning.deck_publication p ON p.deck_id = d.deck_id
+              JOIN app_learning.deck_revision r ON r.deck_id = p.deck_id AND r.revision_id = p.published_revision_id
+              JOIN app_learning.catalog_listing l ON l.deck_id = d.deck_id
+              LEFT JOIN app_learning.topic t ON t.topic_id = p.topic_id
+             WHERE d.deck_id = :deck AND p.published_revision_id = :revision
+               AND d.deleted_at IS NULL AND p.visibility = 'PUBLIC' AND NOT p.hidden_by_moderation
+            ON CONFLICT (deck_id) DO UPDATE SET
+                   public_code = EXCLUDED.public_code, owner_id = EXCLUDED.owner_id, published_revision_id = EXCLUDED.published_revision_id, title = EXCLUDED.title,
+                   description = EXCLUDED.description, topic_id = EXCLUDED.topic_id, parent_topic_id = EXCLUDED.parent_topic_id,
+                   content_language = EXCLUDED.content_language, target_language = EXCLUDED.target_language, level = EXCLUDED.level, tags = EXCLUDED.tags,
+                   item_count = EXCLUDED.item_count, exercise_count = EXCLUDED.exercise_count, media_mask = EXCLUDED.media_mask, mechanics_mask = EXCLUDED.mechanics_mask,
+                   projected_revision_id = EXCLUDED.projected_revision_id, first_listed_at = EXCLUDED.first_listed_at,
+                   content_updated_at = EXCLUDED.content_updated_at, title_norm = EXCLUDED.title_norm, projected_at = EXCLUDED.projected_at
+             WHERE (c.public_code, c.owner_id, c.published_revision_id, c.title, c.description, c.topic_id, c.parent_topic_id, c.content_language, c.target_language,
+                    c.level, c.tags, c.item_count, c.exercise_count, c.media_mask, c.mechanics_mask, c.projected_revision_id, c.first_listed_at, c.content_updated_at, c.title_norm)
+                   IS DISTINCT FROM
+                   (EXCLUDED.public_code, EXCLUDED.owner_id, EXCLUDED.published_revision_id, EXCLUDED.title, EXCLUDED.description, EXCLUDED.topic_id,
+                    EXCLUDED.parent_topic_id, EXCLUDED.content_language, EXCLUDED.target_language, EXCLUDED.level, EXCLUDED.tags, EXCLUDED.item_count,
+                    EXCLUDED.exercise_count, EXCLUDED.media_mask, EXCLUDED.mechanics_mask, EXCLUDED.projected_revision_id, EXCLUDED.first_listed_at,
+                    EXCLUDED.content_updated_at, EXCLUDED.title_norm)""";
 
     /** The revisions the deck's row was derived from, or empty when it has no row. */
     Optional<Projected> projected(UUID deck) {
@@ -158,17 +196,31 @@ class ProjectionRepository {
              GROUP BY x.exercise_type, x.enabled, x.audio""";
 
     /**
-     * Records the result of a finished scan, only while the row still shows the revision that was scanned.
+     * Records the result of a finished scan: in {@code catalog_listing}, keyed by the revision it was done for (a fact about that revision, kept whatever happens to the row),
+     * and in the deck's row, only while the row still shows that revision.
      *
      * @return whether the row was written
      */
     boolean finishScan(UUID deck, UUID revision, int mechanicsMask) {
+        jdbc.sql("""
+                UPDATE app_learning.catalog_listing SET scanned_revision_id = :revision, mechanics_mask = :mask, scanned_at = statement_timestamp()
+                 WHERE deck_id = :deck
+                """).param("mask", mechanicsMask).param("revision", revision).param("deck", deck).update();
         return jdbc.sql("""
                 UPDATE app_learning.public_deck
                    SET mechanics_mask = :mask, projected_revision_id = :revision, projected_at = statement_timestamp()
                  WHERE deck_id = :deck AND published_revision_id = :revision
                 """).param("mask", mechanicsMask).param("revision", revision).param("deck", deck).update() > 0;
     }
+
+    /** Rows whose scan is behind their revision for longer than {@code age}: the lag of the projection (the partial index {@code public_deck_lag} holds only these). */
+    long lagging(java.time.Duration age) {
+        return jdbc.sql(LAGGING_SQL).param("age", java.sql.Timestamp.from(java.time.Instant.now().minus(age))).query(Long.class).single();
+    }
+
+    static final String LAGGING_SQL = """
+            SELECT count(*) FROM app_learning.public_deck
+             WHERE projected_revision_id IS DISTINCT FROM published_revision_id AND projected_at < :age""";
 
     /** The next page of the rebuild: decks in id order that are PUBLIC or have a catalogue row (a stale one to remove). */
     List<UUID> publicDecksAfter(UUID after, int limit) {

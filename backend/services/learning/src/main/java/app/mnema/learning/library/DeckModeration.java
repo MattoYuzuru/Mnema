@@ -90,6 +90,7 @@ public class DeckModeration {
                 """).param("hidden", hidden).param("at", hidden ? Timestamp.from(now) : null, java.sql.Types.TIMESTAMP).param("deck", deckId)
                 .query((row, ignored) -> new Flipped(row.getObject("published_revision_id", UUID.class), DeckVisibility.valueOf(row.getString("visibility")))).single();
         // the outbox row and the projection job in this very transaction: the catalogue removes a hidden deck (and brings it back) as soon as the job runs
+        if (hidden) outbox.withdrawn(deckId);
         if (flipped.revision() != null) outbox.publicationChanged(deckId, flipped.revision(), flipped.visibility());
         return true;
     }

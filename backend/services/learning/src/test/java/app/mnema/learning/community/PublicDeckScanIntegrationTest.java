@@ -187,13 +187,37 @@ class PublicDeckScanIntegrationTest extends PostgresIntegrationTest {
         Slice third = run(world.deck(), cursorOf(second));
         assertThat(third).isInstanceOf(Slice.Continue.class);
         assertThat(cursorOf(third).has("revisionId")).isFalse();
-        // the next slice writes the row again and scans from the first entry
-        Slice fourth = run(world.deck(), cursorOf(third));
-        assertThat(cursorOf(fourth).path("next").intValue()).isEqualTo(3);
-        assertThat(catalog.find(world.deck())).isPresent();
-        Slice last = fourth;
-        while (last instanceof Slice.Continue next) last = run(world.deck(), next.progress());
-        assertThat(catalog.find(world.deck()).orElseThrow().mechanicsMask()).isEqualTo(CatalogMechanic.ALL);
+        // the scan result was kept in the listing, keyed by its revision: the next slice writes the row again, complete, and has nothing left to scan
+        assertThat(run(world.deck(), cursorOf(third))).isInstanceOf(Slice.Done.class);
+        PublicDeckRow back = catalog.find(world.deck()).orElseThrow();
+        assertThat(back.mechanicsMask()).isEqualTo(CatalogMechanic.ALL);
+        assertThat(back.projectedRevisionId()).isEqualTo(back.publishedRevisionId());
+    }
+
+    @Test
+    void aRowMadeAgainAfterAHidingIsCompleteAtOnceWithoutAnotherScan() {
+        World world = eightExercises();
+        assertThat(worlds.project(projector, world.deck())).isEqualTo(3);
+        PublicDeckRow before = catalog.find(world.deck()).orElseThrow();
+        worlds.hide(world);
+        assertThat(catalog.find(world.deck())).isEmpty();
+        worlds.unhide(world);
+        // one slice, no cursor: the mechanics and the revision they were scanned for come from the listing, so the deck is in every mechanic filter at once
+        assertThat(worlds.project(projector, world.deck())).isEqualTo(1);
+        PublicDeckRow after = catalog.find(world.deck()).orElseThrow();
+        assertThat(after.mechanicsMask()).isEqualTo(CatalogMechanic.ALL);
+        assertThat(after.projectedRevisionId()).isEqualTo(after.publishedRevisionId());
+        assertThat(after.firstListedAt()).isEqualTo(before.firstListedAt());
+        // while a NEW revision is not scanned yet, the row made again carries the previous scan (and says so by its projected revision)
+        worlds.hide(world);
+        worlds.exercise(worlds.addMaterial(world), ExerciseType.ORDER);
+        worlds.publish(world);
+        worlds.unhide(world);
+        Slice first = run(world.deck(), null);
+        assertThat(first).isInstanceOf(Slice.Continue.class);
+        PublicDeckRow during = catalog.find(world.deck()).orElseThrow();
+        assertThat(during.mechanicsMask()).isEqualTo(CatalogMechanic.ALL);
+        assertThat(during.projectedRevisionId()).isNotEqualTo(during.publishedRevisionId());
     }
 
     @Test
@@ -271,6 +295,19 @@ class PublicDeckScanIntegrationTest extends PostgresIntegrationTest {
         CatalogProjector late = new CatalogProjector(moved, manifests, settings, new SimpleMeterRegistry());
         assertThat(worlds.run(late, CatalogWorlds.job(world.deck(), null, 0))).isInstanceOf(Slice.Done.class);
         answer.set(java.util.Optional.of(new ProjectionRepository.Projected(UUID.randomUUID(), null)));
+        assertThat(worlds.run(late, CatalogWorlds.job(world.deck(), null, 0))).isInstanceOf(Slice.Done.class);
+    }
+
+    @Test
+    void aListingThatIsNotThereBecauseThePublicationMovedEndsTheJob() {
+        World world = eightExercises();
+        ProjectionRepository none = new ProjectionRepository(jdbc) {
+            @Override
+            java.util.Optional<Listing> listing(UUID deck) {
+                return java.util.Optional.empty();
+            }
+        };
+        CatalogProjector late = new CatalogProjector(none, manifests, settings, new SimpleMeterRegistry());
         assertThat(worlds.run(late, CatalogWorlds.job(world.deck(), null, 0))).isInstanceOf(Slice.Done.class);
     }
 

@@ -34,7 +34,7 @@ class CatalogRepository {
 
     CatalogRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
 
-    private static Instant instant(Timestamp value) { return value.toInstant(); }
+    private static Instant instant(Timestamp value) { return value == null ? null : value.toInstant(); }
 
     private static List<String> tags(java.sql.ResultSet row) throws SQLException {
         return List.of((String[]) row.getArray("tags").getArray());

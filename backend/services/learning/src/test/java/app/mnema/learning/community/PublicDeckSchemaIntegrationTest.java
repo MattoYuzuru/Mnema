@@ -111,13 +111,41 @@ class PublicDeckSchemaIntegrationTest extends PostgresIntegrationTest {
         assertThat(jdbc.sql("""
                 SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
                  WHERE d.adrelid = 'app_learning.public_deck'::regclass AND a.attname = 'search_simple'""").query(String.class).single()).contains("simple_unaccent");
-        // listed: ten materials, one exercise, a description (the constants of the publication checklist)
+        // listed: ten materials, one exercise, a description (the constants of the publication checklist), defined once as a function that the projector also calls
         assertThat(jdbc.sql("SELECT listed FROM app_learning.public_deck WHERE deck_id = :d").param("d", world.deck()).query(Boolean.class).single()).isTrue();
         assertThat(app.mnema.learning.library.PublicationService.NEED_MATERIALS).isEqualTo(10);
         assertThat(app.mnema.learning.library.PublicationService.NEED_EXERCISES).isEqualTo(1);
         assertThat(jdbc.sql("SELECT pg_get_expr(d.adbin, d.adrelid) FROM pg_attrdef d JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum "
-                + "WHERE d.adrelid = 'app_learning.public_deck'::regclass AND a.attname = 'listed'").query(String.class).single())
-                .contains(">= 10").contains(">= 1").contains("btrim");
+                + "WHERE d.adrelid = 'app_learning.public_deck'::regclass AND a.attname = 'listed'").query(String.class).single()).contains("catalog_listed");
+        assertThat(jdbc.sql("SELECT prosrc || provolatile::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'app_learning' AND p.proname = 'catalog_listed'")
+                .query(String.class).single()).contains(">= 10").contains(">= 1").contains("btrim").endsWith("i");
+        for (Object[] c : new Object[][] {{9, 1, "d", false}, {10, 1, "d", true}, {10, 0, "d", false}, {10, 1, "  ", false}}) {
+            assertThat(jdbc.sql("SELECT app_learning.catalog_listed(:i, :e, :d)").param("i", c[0]).param("e", c[1]).param("d", c[2]).query(Boolean.class).single()).isEqualTo(c[3]);
+        }
+    }
+
+    @Test
+    void aListedRowAlwaysHasItsDateAndTheListingTableHasItsOwnChecks() {
+        UUID revision = worlds.publishedRevision(world);
+        String insert = """
+                INSERT INTO app_learning.public_deck(deck_id, public_code, owner_id, published_revision_id, title, description, item_count, exercise_count,
+                        first_listed_at, content_updated_at, title_norm, projected_at)
+                VALUES (:d, '2ZkQ8mXn5T', :owner, :revision, 't', 'd', :items, 1, NULL, now(), 't', now())""";
+        jdbc.sql("DELETE FROM app_learning.public_deck WHERE deck_id = :d").param("d", world.deck()).update();
+        assertThat(sqlState(() -> jdbc.sql(insert).param("d", world.deck()).param("owner", world.owner()).param("revision", revision).param("items", 10).update()))
+                .as("a listed row without a date").isEqualTo("23514");
+        assertThat(sqlState(() -> jdbc.sql(insert).param("d", world.deck()).param("owner", world.owner()).param("revision", revision).param("items", 9).update()))
+                .as("a row below the threshold needs none").isEqualTo("none");
+        // catalog_listing
+        assertThat(sqlState(() -> jdbc.sql("UPDATE app_learning.catalog_listing SET mechanics_mask = 32 WHERE deck_id = :d").param("d", world.deck()).update())).isEqualTo("23514");
+        assertThat(sqlState(() -> jdbc.sql("UPDATE app_learning.catalog_listing SET media_mask = 8 WHERE deck_id = :d").param("d", world.deck()).update())).isEqualTo("23514");
+        assertThat(sqlState(() -> jdbc.sql("UPDATE app_learning.catalog_listing SET scanned_at = NULL WHERE deck_id = :d").param("d", world.deck()).update()))
+                .as("a scan result has its revision and its time together").isEqualTo("23514");
+        assertThat(sqlState(() -> jdbc.sql("INSERT INTO app_learning.catalog_listing(deck_id) VALUES (gen_random_uuid())").update())).as("only a real deck").isEqualTo("23503");
+        World other = worlds.deck("Чужая ревизия", "Описание", 1);
+        UUID foreign = UUID.fromString(decks.read(other.owner(), other.deck()).path("revisionId").stringValue(null));
+        assertThat(sqlState(() -> jdbc.sql("UPDATE app_learning.catalog_listing SET media_revision_id = :r WHERE deck_id = :d").param("r", foreign).param("d", world.deck()).update()))
+                .as("a revision of the deck itself").isEqualTo("23503");
     }
 
     @Test
@@ -144,7 +172,7 @@ class PublicDeckSchemaIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void everyIndexIsThereAsDocumentedAndTheOutboxIndexIsPartial() {
+    void everyIndexIsThereAsDocumentedAndTheJournalHasNone() {
         List<String> definitions = jdbc.sql("SELECT indexname || ' ' || indexdef FROM pg_indexes WHERE schemaname = 'app_learning' AND tablename = 'public_deck' ORDER BY indexname")
                 .query(String.class).list();
         assertThat(String.join("\n", definitions))
@@ -155,9 +183,10 @@ class PublicDeckSchemaIntegrationTest extends PostgresIntegrationTest {
                 .contains("public_deck_new ON app_learning.public_deck USING btree (first_listed_at DESC, deck_id DESC) WHERE listed")
                 .contains("public_deck_updated ON app_learning.public_deck USING btree (content_updated_at DESC, deck_id DESC) WHERE listed")
                 .contains("public_deck_topic ON app_learning.public_deck USING btree (topic_id, first_listed_at DESC, deck_id DESC) WHERE listed")
-                .contains("public_deck_parent_topic ON app_learning.public_deck USING btree (parent_topic_id, first_listed_at DESC, deck_id DESC) WHERE listed");
-        assertThat(jdbc.sql("SELECT indexdef FROM pg_indexes WHERE schemaname = 'app_learning' AND indexname = 'deck_publication_event_public'").query(String.class).single())
-                .contains("(deck_id, occurred_at)").contains("visibility = 'PUBLIC'");
+                .contains("public_deck_parent_topic ON app_learning.public_deck USING btree (parent_topic_id, first_listed_at DESC, deck_id DESC) WHERE listed")
+                .contains("public_deck_lag ON app_learning.public_deck USING btree (projected_at) WHERE (projected_revision_id IS DISTINCT FROM published_revision_id)");
+        assertThat(jdbc.sql("SELECT count(*) FROM pg_indexes WHERE schemaname = 'app_learning' AND tablename = 'deck_publication_event' AND indexname <> 'deck_publication_event_pkey'")
+                .query(Long.class).single()).as("the journal is read once, by the backfill, and gets no index").isZero();
     }
 
     // ---- the plans of the queries that use the indexes ----
@@ -221,9 +250,12 @@ class PublicDeckSchemaIntegrationTest extends PostgresIntegrationTest {
         String mediaTypes = plan(ProjectionRepository.MEDIA_TYPES_SQL, spec -> spec.param("deck", deck));
         assertThat(mediaTypes).contains("published_media_pkey").doesNotContain("Seq Scan on published_media");
 
-        String upsert = plan(ProjectionRepository.UPSERT_SQL, spec -> spec.param("deck", deck).param("revision", revision).param("media", 0).param("norm", "t"));
-        assertThat(upsert).as("first_listed_at is a probe of the journal's partial index, not a read of the journal").contains("deck_publication_event_public")
-                .doesNotContain("Seq Scan on deck_publication_event").doesNotContain("Seq Scan on published_media");
+        String upsert = plan(ProjectionRepository.UPSERT_SQL, spec -> spec.param("deck", deck).param("revision", revision).param("norm", "t"));
+        assertThat(upsert).as("the listing facts are one key probe").contains("catalog_listing_pkey").doesNotContain("Seq Scan");
+        String touch = plan(ProjectionRepository.TOUCH_LISTING_SQL, spec -> spec.param("deck", deck).param("revision", revision));
+        assertThat(touch).doesNotContain("Seq Scan");
+        String lagging = plan(ProjectionRepository.LAGGING_SQL, spec -> spec.param("age", Timestamp.from(Instant.now())));
+        assertThat(lagging).as("the gauge reads the partial index of the lagging rows only").contains("public_deck_lag").doesNotContain("Seq Scan");
 
         String kinds = plan(ProjectionRepository.KINDS_SQL, spec -> spec.param("pairs", "[]").param("scope", UUID.randomUUID()));
         assertThat(kinds).contains("Nested Loop").containsPattern("Index Scan using exercise_revision_\\w+ on exercise_revision").containsPattern("exercise_id = m\\.k").contains("exercise_media_ref_pkey").doesNotContain("Seq Scan on exercise_revision")

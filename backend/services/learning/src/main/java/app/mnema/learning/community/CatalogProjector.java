@@ -30,9 +30,10 @@ import java.util.UUID;
  * <ol>
  *   <li>The deck does not belong (not PUBLIC, no published revision, hidden by moderation, deleted): the row is deleted and the job ends. Lowering the level, hiding and deleting
  *       all end here; un-hiding and promoting to PUBLIC end in the next step.</li>
- *   <li>First slice (and again whenever the published revision has moved under a scan): one upsert of the metadata, the composition counts, the media bits and the
- *       {@code first_listed_at} of the row, all from the PUBLISHED revision. The generated columns ({@code listed}, the vectors) follow by themselves.</li>
- *   <li>If the row's {@code projected_revision_id} is not the published revision, the exercises manifest of that revision is scanned for the mechanics, {@code learning.community.catalog.slice-size} entries
+ *   <li>First slice (and again whenever the published revision has moved under a scan): {@code catalog_listing} (the facts the catalogue keeps while the deck has no row) is touched, which
+ *       stamps {@code first_listed_at} ONCE, the first time the deck is found listed; the media bits are computed only if the published revision changed; one upsert then writes the metadata, the
+ *       composition counts and COPIES the date, the media bits and the scan result of the listing, all from the PUBLISHED revision. The generated columns ({@code listed}, the vectors) follow by themselves.</li>
+ *   <li>If the row's {@code projected_revision_id} (the listing's {@code scanned_revision_id}) is not the published revision, the exercises manifest of that revision is scanned for the mechanics, {@code learning.community.catalog.slice-size} entries
  *       (500) per slice, in chunks of {@value #CHUNK} (the reader's page); the bits are OR-ed into the cursor {@code {revisionId, next, mask}}, and the slice that reads the last entry writes the mask
  *       and {@code projected_revision_id} in the same transaction that ends the job. A republication that changed only the metadata, a rebuild of an unchanged deck and a replay read no manifest.</li>
  * </ol>
@@ -40,7 +41,8 @@ import java.util.UUID;
  * <p><b>Restart.</b> Every slice re-reads the deck first. If the published revision is not the one the cursor scans, the scan starts over from the beginning of the new revision (steps 2 and 3 again); if the deck
  * no longer belongs, the row is deleted. A cursor is therefore never trusted beyond the revision it names. The mechanics of the previous revision stay in the row until the new scan finishes, so a deck does not flicker out of a filter.
  *
- * <p><b>The deck row is locked {@code FOR SHARE}</b> by the state read: a concurrent deletion is waited for and seen, and {@link CatalogOutbox#deckDeleted} sees any row this job committed.
+ * <p><b>Nothing but the deck's advisory lock is taken.</b> A hiding, a lowering or a deletion deletes the row in its own transaction and enqueues its own job (see {@link CatalogOutbox}); a slice that raced
+ * with it and wrote after it is corrected by that job, which runs later and judges the state again in its own snapshot.
  * Failure: a storage or database hiccup is retried by the executor; an unresolvable manifest ends the job {@code FAILED} ({@code manifest_unresolved}), the row keeps its previous mechanics, and the rebuild is the repair.
  */
 @Component
@@ -79,8 +81,18 @@ public class CatalogProjector implements JobHandler {
         ProjectionRepository.Published published = found.orElseThrow();
         Cursor cursor = Cursor.read(job.progress(), published);
         if (cursor == null) {
-            // the first slice, or the published revision moved under a scan: (re)write the row, then see whether its mechanics are those of this revision
-            repository.upsert(published, AliasNormalizer.normalize(published.title()), CatalogMedia.maskOf(repository.mediaTypes(deck)));
+            // the first slice, or the published revision moved under a scan: remember the listing facts, (re)write the row, then see whether its mechanics are those of this revision
+            repository.touchListing(published);
+            Optional<ProjectionRepository.Listing> listing = repository.listing(deck);
+            if (listing.isEmpty()) {
+                outcome("moved");
+                return Slice.done(job.progressCount());
+            }
+            // the media bits depend on the published revision only: a republication computes them, a tag edit and a row made again reuse them
+            if (!published.revisionId().equals(listing.orElseThrow().mediaRevisionId())) {
+                repository.storeMedia(deck, published.revisionId(), CatalogMedia.maskOf(repository.mediaTypes(deck)));
+            }
+            repository.upsert(published, AliasNormalizer.normalize(published.title()));
             Optional<ProjectionRepository.Projected> row = repository.projected(deck);
             if (row.isEmpty() || !row.orElseThrow().publishedRevisionId().equals(published.revisionId())) {
                 // the publication moved between the state read and the upsert (the change enqueued its own job), or the deck is gone: nothing more to do here
@@ -132,7 +144,7 @@ public class CatalogProjector implements JobHandler {
     @Override
     public void onEnded(Job job, JobState state) {
         meters.counter("mnema_catalog_projection_ended_total", "outcome", state.name().toLowerCase(Locale.ROOT)).increment();
-        LOG.warn("catalog_projection_ended job_id={} state={} progress_count={}", job.id(), state, job.progressCount());
+        LOG.warn("catalog_projection_ended job_id={} deck_id={} state={} progress_count={}", job.id(), job.payload().path("deckId").stringValue(""), state, job.progressCount());
     }
 
     private void outcome(String outcome) {
