@@ -51,7 +51,13 @@
     },
     "freshDays": 30,
     "rankGenerationRetention": "PT24H: a cursor of an older generation is 412 VERSION_CONFLICT and the client restarts the list",
-    "rateLimit": "the public read admission of public-read-v1 (per guest network, per IPv6 /48, per account; the shared bulkhead): 429 RATE_LIMITED and 503 PUBLIC_READ_BUSY as there"
+    "rateLimit": "the public read admission of public-read-v1 (per guest network, per IPv6 /48, per account; the shared bulkhead): 429 RATE_LIMITED and 503 PUBLIC_READ_BUSY as there",
+    "anomaly": {
+      "minForks": 20,
+      "windowDays": 7,
+      "newAccountHours": 48,
+      "newShareAbove": 0.7
+    }
   },
   "routes": [
     {
@@ -88,6 +94,16 @@
       "method": "PUT",
       "path": "/api/admin/community/editorial",
       "answers": "editorial.state"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/community/anomalies?cursor=",
+      "answers": "anomalies.list"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/community/anomalies/{code}:dismiss",
+      "answers": "anomalies.dismiss"
     }
   ],
   "invariants": [
@@ -370,5 +386,41 @@
       },
       "rules": "the owner console only (the admin chain and its owner account check); the body is the whole ordered list (at most editorialMax public codes, no duplicates); a code that is not a PUBLIC published deck is 400 with the offending codes; idempotent by commandId; If-Match is the rowVersion (412 on a stale one); every effective change writes one admin_audit row; an entry whose deck later stops being listed stays in the list with listed=false and is skipped by the shelf"
     }
+  },
+  "anomalies": {
+    "list": {
+      "request": "GET /api/admin/community/anomalies",
+      "response": {
+        "entries": [
+          {
+            "code": "Kq7xT3mNpR",
+            "title": "Испанский язык: базовые глаголы",
+            "ownerId": "0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35",
+            "detectedAt": "2026-10-12T03:00:00Z",
+            "windowForks": 42,
+            "newShare": 0.83,
+            "dismissedAt": null
+          },
+          {
+            "code": "Zp4WcA8vQe",
+            "title": "Столицы мира",
+            "ownerId": "0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c36",
+            "detectedAt": "2026-10-05T03:00:00Z",
+            "windowForks": 25,
+            "newShare": 0.72,
+            "dismissedAt": "2026-10-06T08:15:00Z"
+          }
+        ],
+        "next": null
+      }
+    },
+    "dismiss": {
+      "request": "POST /api/admin/community/anomalies/Kq7xT3mNpR:dismiss",
+      "body": {
+        "commandId": "5b0e9a1c-7d2f-4e6a-9c3b-1a2b3c4d5e6f"
+      },
+      "status": 204
+    },
+    "rules": "the owner console only (the admin chain and its owner check, like /api/admin/complaints); a flag is raised by the daily job when at least 20 copies were made in the last 7 days and more than 70 % of them by accounts younger than 48 hours; open flags first, then dismissed ones, newest first, 50 per page with an opaque `next`; dismiss is idempotent by commandId and writes one admin_audit row; a dismissed deck is flagged again only by a later window that crosses the threshold again; `code` is the deck's current public code (a deck that is no longer public is still listed with its last code and title); newShare is a fraction 0..1 rounded to two decimals"
   }
 }

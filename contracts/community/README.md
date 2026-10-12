@@ -13,6 +13,7 @@ the behaviour [the product contract](../../docs/product/community-decks.md) («�
 | Decks of an author | `GET /api/public/community/authors/{accountId}/decks?limit=&cursor=` | 200, public decks of the author and, for a viewer with a grant, his invitation-only decks |
 | Sitemap | `GET /api/public/sitemap.xml` | 200, XML, `/sitemap.xml` for crawlers |
 | Editorial shelf (owner console) | `GET`/`PUT /api/admin/community/editorial` | 200, the ordered list |
+| Anomaly flags (owner console) | `GET /api/admin/community/anomalies`, `POST …/{code}:dismiss` | 200 list, 204 |
 
 - **Same public rules as the public read** ([`decks/public-read.json`](../decks/public-read.json)): GET/HEAD only, optional bearer
   (an invalid one is 401), the same rate limits (429 `RATE_LIMITED`) and bulkhead (503 `PUBLIC_READ_BUSY`), `no-store` with
