@@ -9,12 +9,12 @@ import java.util.concurrent.Semaphore;
  * of them must not queue for the pool the private API shares. {@code tryAcquire} never waits: the excess request is refused at once, before any transaction or connection.
  */
 @Component
-final class UpdatePlanBulkhead {
+public final class UpdatePlanBulkhead {
     private final Semaphore places;
 
     UpdatePlanBulkhead(UpdatePlanSettings settings) { this.places = new Semaphore(settings.maxConcurrent); }
 
-    boolean tryAcquire() { return places.tryAcquire(); }
+    public boolean tryAcquire() { return places.tryAcquire(); }
 
-    void release() { places.release(); }
+    public void release() { places.release(); }
 }

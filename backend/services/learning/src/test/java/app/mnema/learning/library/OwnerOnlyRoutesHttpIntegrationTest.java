@@ -148,6 +148,9 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         rows.add(Row.absent("GET /decks/{deckId}/update-plan", w -> get("/decks/" + w.deck().id() + "/update-plan")));
         rows.add(Row.absent("GET /decks/{deckId}/update-plan/units/{kind}/{key}",
                 w -> get("/decks/" + w.deck().id() + "/update-plan/units/MATERIAL/" + random + "?planVersion=sha256:" + "0".repeat(64))));
+        // the apply command of the update plan (Updates/4): an ordinary deck is not a copy, so the owner's own answer is the same opaque 404
+        rows.add(Row.absent("POST /decks/{deckId}/update-plan:apply", w -> send("POST", "/decks/" + w.deck().id() + "/update-plan:apply",
+                command().put("planVersion", "sha256:" + "0".repeat(64)), null)));
         // materials
         rows.add(Row.of("GET /decks/{deckId}/items", w -> get("/decks/" + w.deck().id() + "/items")));
         rows.add(Row.of("GET /decks/{deckId}/items/{memberKey}", w -> get("/decks/" + w.deck().id() + "/items/" + w.deck().material().member())));

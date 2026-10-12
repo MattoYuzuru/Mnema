@@ -63,7 +63,7 @@ class CombinedPublicationRepository {
 
     /** The header of a stored command (the metadata and the final writes as JSON text). */
     record Header(UUID commandId, UUID deckId, UUID actorId, UUID expectedHeadRevisionId, byte[] digest, int unitCount, int manifestUnitCount,
-                  String metadata, String finalWrites) { }
+                  String metadata) { }
 
     // ---- deck ----
 
@@ -530,13 +530,21 @@ class CombinedPublicationRepository {
 
     Optional<Header> header(UUID command) {
         return jdbc.sql("""
-                SELECT command_id,deck_id,actor_id,expected_head_revision_id,digest,unit_count,manifest_unit_count,metadata::text AS metadata,
-                       final_writes
+                SELECT command_id,deck_id,actor_id,expected_head_revision_id,digest,unit_count,manifest_unit_count,metadata::text AS metadata
                   FROM app_learning.combined_publication WHERE command_id=:command
                 """).param("command", command)
                 .query((row, ignored) -> new Header(row.getObject("command_id", UUID.class), row.getObject("deck_id", UUID.class),
                         row.getObject("actor_id", UUID.class), row.getObject("expected_head_revision_id", UUID.class), row.getBytes("digest"),
-                        row.getInt("unit_count"), row.getInt("manifest_unit_count"), row.getString("metadata"), row.getString("final_writes"))).optional();
+                        row.getInt("unit_count"), row.getInt("manifest_unit_count"), row.getString("metadata"))).optional();
+    }
+
+    /**
+     * The final writes of a stored command, as the caller's text. Read ONLY by the last slice ({@code restore}): they can be megabytes (the decisions of an apply command), and the
+     * header every slice reads does not carry them.
+     */
+    Optional<String> finalWrites(UUID command) {
+        return jdbc.sql("SELECT final_writes FROM app_learning.combined_publication WHERE command_id=:command").param("command", command)
+                .query((row, ignored) -> row.getString("final_writes")).optional().filter(text -> text != null);
     }
 
     /** The stored operations {@code [from, to)} in unit order. */

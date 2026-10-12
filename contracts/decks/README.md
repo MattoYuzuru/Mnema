@@ -599,9 +599,9 @@ codes, titles or identifiers.
 
 ## The update plan of a copy (Updates/3, #442)
 
-What the author published since the copy was made, unit by unit, against what the copy holds now: the plan the review screen shows and the apply command (a later task) consumes.
+What the author published since the copy was made, unit by unit, against what the copy holds now: the plan the review screen shows and the apply command (next section) consumes.
 Exact examples and executable invariants are in [`updates.json`](updates.json); the architecture is [community decks §7](../../docs/architecture/community-decks.md#7-обновления-cd-5).
-Both routes only **read**: they create no revision, row, pin or job, whatever the size of the deck. Private chain, `learning.read`, owner of the copy only, every answer
+Both routes only **read**: they create no revision, row, pin or job, whatever the size of the deck (the apply command is the one that writes). Private chain, `learning.read`, owner of the copy only, every answer
 `Cache-Control: private, no-store`.
 
 | Operation | Request | Success |
@@ -616,7 +616,7 @@ Both routes only **read**: they create no revision, row, pin or job, whatever th
   title and description, and the order of materials). A unit has `class` (`NEW`, `SAFE`, `CONFLICT`, `DELETED`, `ASK_AGAIN`), a `reason` for a conflict, a `title` of at most 160 code points
   (the text of the revision shown: the author's, or the copy's for a unit the author removed; `null` for the order), the lineage revisions of the three sides (`authorRevisionId`,
   `mineRevisionId`, `baseRevisionId`; for `METADATA` and `ORDER` deck revisions of the source and the copy; `null` is "does not exist there"), `dependsOn` (unit ids that must be accepted
-  with it) and `defaultChoice` (`ACCEPT`, `KEEP_MINE`, `KEEP`).
+  with it; an objective that a NEW exercise introduces and the copy has no head for is not a unit at all, it comes with the exercise: it is not listed, not counted in `summary` and not in `dependsOn`) and `defaultChoice` (`ACCEPT`, `KEEP_MINE`, `KEEP`).
 - **Classes.** The author added what the copy has not got: `NEW`. The author changed it and the learner did not, or both ended with the same content: `SAFE`. Both changed it differently,
   or the learner deleted what the author changed, or an exercise cannot work with the learner's materials or objective: `CONFLICT` (the learner's version is the default). The author removed
   what the copy still has: `DELETED` (asked, never applied by «accept all safe»). A decision was recorded and the author changed the unit after it: `ASK_AGAIN`. Units equal on both sides,
@@ -629,9 +629,69 @@ Both routes only **read**: they create no revision, row, pin or job, whatever th
   node ids whose text, attributes, type or children differ between the two documents of a material. Only a unit of the **current** plan is readable (the opaque 404 otherwise): the route
   never reads a revision by an id from the request.
 - **Decisions** (migration V61, written by the apply command): the table `fork_unit_decision` keeps what the learner decided per unit (`KEEP_MINE`, `DECLINE_NEW`, `KEEP_DELETED`, or
-  `PENDING` for a unit left for later, which keeps its own old base when the base of the copy moves to the published revision). The plan reads it; nothing in this contract writes it.
+  `PENDING` for a unit left for later, which keeps its own old base when the base of the copy moves to the published revision). The plan reads it; the apply command (next section) writes it.
 
 ### Codes
 
 New: `UPDATE_PLAN_STALE` (409) and `UPDATE_PLAN_BUSY` (503, member `retryAfter`, header `Retry-After: 1`: the instance computes as many plans as `learning.updates.plan.max-concurrent` allows; nothing was computed, send the request again). Existing codes keep their status/title/detail (`RESOURCE_NOT_FOUND` 404, `INVALID_REQUEST` 400, `AUTHENTICATION_REQUIRED` 401, `ACCESS_DENIED` 403).
 Problem text never echoes titles, codes or identifiers.
+
+## Applying an update (Updates/4, #443)
+
+`POST /api/decks/{forkDeckId}/update-plan:apply` takes the owner's choices on the plan he read and makes **one** new revision of the copy from the author's published revisions, moves the
+copy's base to the published revision of the plan and records the decisions, all in one transaction. Private chain, `learning.write`, owner of the copy only, no `If-Match` (the
+`planVersion` of the body is the precondition), every answer `Cache-Control: private, no-store`. Exact examples and executable invariants are in [`updates.json`](updates.json); the
+architecture is [community decks §7](../../docs/architecture/community-decks.md#7-обновления-cd-5).
+
+```json
+{ "commandId": "…", "planVersion": "sha256:…", "acceptSafe": true,
+  "choices": [ { "unitId": "MATERIAL:…", "choice": "ACCEPT" }, { "unitId": "MATERIAL:…", "choice": "DELETE" } ] }
+```
+
+| Answer | When | Body |
+|---|---|---|
+| 200 | applied in the request (up to `learning.updates.sync-max-units`, 100, units) | `{commandId, state: "APPLIED", deckRevisionId, applied, declined, pending, alsoAccepted, baseRevisionId}`; `Idempotency-Replayed: true` when it is the stored answer of an earlier identical request |
+| 202 | more units: a job applies them | `{commandId, state: "APPLYING"}`; the plan route answers `APPLYING` until the job ends, then the same command answers 200 |
+
+- **The client names units; the server builds the operations.** The body has `commandId` (UUIDv4/v7), `planVersion` and nothing else but the two optional members; at most 64 KiB; a unit is
+  named at most once; a `unitId` is `KIND:key` (kind in capitals, key in lowercase). No revision id and no ordinal is ever sent: the server recomputes the plan and builds every operation
+  from the author's revisions in the source's published manifests. A different current `planVersion` is `409 UPDATE_PLAN_STALE` and nothing is written (also when the copy is edited, the
+  source republished or a decision changed in the instant between the recomputation and the write: the pins are checked again under a lock in the same transaction).
+- **Choices per class** (`constants.choicesPerClass`): `NEW` and `SAFE` take `ACCEPT` (the author's version) or `DECLINE`; `CONFLICT` and `ASK_AGAIN` take `ACCEPT` (the author's) or
+  `KEEP_MINE`; `DELETED` takes `DELETE` (remove it from the copy) or `KEEP`. `METADATA`, `ORDER` and `OBJECTIVE` follow their class. Any other combination, a unit the current plan does not
+  list and a unit named twice are `400 INVALID_REQUEST` with `reason` and the `unitId`. An exercise that needs a material the copy deleted (`MATERIAL_DELETED`) cannot be `ACCEPT`ed
+  (`exercise_needs_material`).
+- **«Принять всё безопасное»** is `acceptSafe: true`: every `NEW` and `SAFE` unit that `choices` does not name is taken, and nothing else (never a `CONFLICT`, a `DELETED` or an `ASK_AGAIN`
+  unit, so what the learner changed stays his and what the author removed stays). Units neither named nor taken stay **pending**.
+- **Dependencies.** Taking a unit takes its `dependsOn` units, whatever their class (`alsoAccepted` counts those taken only for that reason; it is a part of `applied`). A unit taken by name
+  whose dependency was declined by name is `400 INVALID_REQUEST` with `reason: "dependency_declined"`, `unitId` and `dependency`. A unit taken only by `acceptSafe` whose dependency was
+  declined by name waits instead (it stays pending). **An objective moves only with the exercises that evidence it:** taken by name it takes every exercise of the plan that lists it in
+  `dependsOn` (`dependency_declined` if one was declined by name); taken only by `acceptSafe` it waits unless every such exercise is taken (or one is taken by name). **`DELETE` of a material**
+  takes the removal of the exercises of the copy that are about it when the plan lists them as removals; kept by name, or not removals in the plan, it is `400` `material_still_used`
+  (`unitId` the material, `dependency` the exercise when the plan lists it). No `400` of the command is without a `reason`: what the checks above did not foresee and the combined publication
+  refuses is `publication_refused`.
+- **What is written.** One revision of the copy (`deckRevisionId`; `null` when the command had nothing to adopt: it only declined or left pending), the base moved to `baseRevisionId` (the
+  published revision of the plan, always), and the decisions: a unit taken loses its row; a unit declined gets `KEEP_MINE`, `DECLINE_NEW` (an addition) or `KEEP_DELETED` (a unit the learner had
+  deleted) with the author's state it was declined at (an *absent* author state for «the author removed it and I keep it»); a unit left pending gets `PENDING` with its **own old base** and the
+  author's state offered in this plan. So the next plan lists exactly the pending units (as they were), the units the author changes again (a declined one as `ASK_AGAIN`), and nothing the
+  command took or declined. A pending `ASK_AGAIN` unit comes back as a `CONFLICT` (judged from its own old base; the learner's version is the default).
+- **Idempotent by `commandId`.** The same command (the same body, the choices in any order) answers the stored answer with `Idempotency-Replayed: true`, also when the plan has changed since
+  and also after the copy was detached or the source went away. The same id with another body is `409 IDEMPOTENCY_CONFLICT` (also while it runs as a job). A job that ended `FAILED` or `CANCELLED`
+  is not restarted: sending its command again is `409 UPDATE_PLAN_STALE`; read the plan and send a new command. While a job of the copy runs, another command is `409 UPDATE_PLAN_STALE`.
+- **The plan while a job runs.** `GET …/update-plan` answers `200 {state: "APPLYING", forkDeckId, units: [], nextCursor: null, commandId}` while the job is queued or running (a malformed
+  query is still `400`). After a failed job, and until the next successful apply of the copy (also one that creates no revision) or the job is purged (7 days), the plan is answered as usual with the extra member
+  `lastApplyFailed: {code}` (`stale_head` when the copy was edited meanwhile, `plan_invalid`, `taken_down`, …, `cancelled`; a short code, never a message).
+- **Limits.** The body is at most 64 KiB, about 650 units named in `choices` (`acceptSafe` covers the rest). At most `learning.updates.max-units` (10 000) operations (units taken, plus the
+  moves the order unit needs) and 20 000 units written as decisions per command, else `422 RESOURCE_LIMIT_EXCEEDED` with `limit`. The order unit scans both manifests: copies of at most 20 000
+  materials (the same 422 above that). A job that never runs (no worker, the queue switched off) keeps the copy `APPLYING`: there is no cancel route in this version, and every other command
+  of the copy is `409 UPDATE_PLAN_STALE` until it ends. The route takes a place of the plan routes' bulkhead
+  (`learning.updates.plan.max-concurrent`): the excess is `503 UPDATE_PLAN_BUSY`.
+- **The rest of the product.** Study uses the new heads from the next issue; a presentation already shown keeps its snapshot; an exercise that changed keeps the schedule of its objective; the
+  media of an adopted material is readable by the copier (the `COPY` grant is decided by his heads).
+
+### Codes
+
+New: `UPDATE_SOURCE_UNAVAILABLE` (409: the source can no longer be read by the owner; nothing is said about it) and `FORK_DETACHED` (409: the copy was detached). Used: `DECK_PREPARING` (409, a
+preparing copy), `UPDATE_PLAN_STALE` (409), `IDEMPOTENCY_CONFLICT` (409), `INVALID_REQUEST` (400, with the members `reason`, `unitId` and, for `dependency_declined`, `dependency`),
+`RESOURCE_LIMIT_EXCEEDED` (422, `limit`), `UPDATE_PLAN_BUSY` (503), `RESOURCE_NOT_FOUND` (404: not the caller's live copy), `AUTHENTICATION_REQUIRED` (401), `ACCESS_DENIED` (403: no write scope).
+Nothing was written by any refusal. Problem text never echoes titles, codes or identifiers other than the unit ids the request named.

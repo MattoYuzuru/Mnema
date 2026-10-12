@@ -89,8 +89,11 @@ final class PlanComputation {
 
     private enum Raw { NOTHING, NEW, SAFE, IDENTICAL, CONFLICT, LEARNER_DELETED, DELETED }
 
+    /** The units of the plan in their final order, and the implicit ones (not listed, brought by the exercises that need them). */
+    record PlanUnits(List<PlanUnit> units, List<PlanUnit> implicit) { }
+
     /** All units of the plan in their final order. */
-    List<PlanUnit> units() {
+    PlanUnits units() {
         Result memberDiff = diffs.members(scope, base.membersRootId(), base.memberCount(), published.membersRootId(), published.memberCount());
         Result exerciseDiff = diffs.exercises(scope, base.exercisesRootId(), base.exerciseCount(), published.exercisesRootId(), published.exerciseCount());
         List<Entry> entries = new ArrayList<>();
@@ -108,7 +111,7 @@ final class PlanComputation {
         entries.addAll(finishExercises(exercises, bindings, materialUnits, objectives));
         entries.sort(Comparator.comparingInt((Entry entry) -> entry.unit().unitClass().ordinal()).thenComparingInt(entry -> entry.unit().kind().ordinal())
                 .thenComparing(Entry::removed).thenComparingInt(Entry::ordinal).thenComparing(entry -> entry.unit().key()));
-        return entries.stream().map(Entry::unit).toList();
+        return new PlanUnits(entries.stream().map(Entry::unit).toList(), objectives.hidden());
     }
 
     // ---- materials and exercises ----
@@ -313,6 +316,7 @@ final class PlanComputation {
                 continue;
             }
             TreeSet<String> dependencies = new TreeSet<>();
+            TreeSet<String> implied = new TreeSet<>();
             Reason issue = null;
             for (Binding binding : bindings.getOrDefault(new Pair(unit.key(), laned.author()), List.of())) {
                 Rev head = heads.get(binding.memberKey());
@@ -331,14 +335,15 @@ final class PlanComputation {
                 if (!"ASSESSED".equals(binding.role()) || binding.objectiveId() == null) continue;
                 PlanUnit objective = objectives.units().get(binding.objectiveId());
                 if (objective != null) {
-                    dependencies.add(objective.unitId());
+                    (objectives.implicit().contains(binding.objectiveId()) ? implied : dependencies).add(objective.unitId());
                     if (objective.unitClass() != SAFE) issue = worse(issue, Reason.OBJECTIVE_RENAMED);
                 } else if (objectives.declined().contains(binding.objectiveId())) {
                     issue = worse(issue, Reason.OBJECTIVE_RENAMED);
                 }
             }
             boolean offered = unit.unitClass() == NEW || unit.unitClass() == SAFE;
-            PlanUnit finished = offered && issue != null ? unit.with(CONFLICT, issue, List.copyOf(dependencies)) : unit.with(unit.unitClass(), unit.reason(), List.copyOf(dependencies));
+            PlanUnit finished = offered && issue != null ? unit.with(CONFLICT, issue, List.copyOf(dependencies), List.copyOf(implied))
+                    : unit.with(unit.unitClass(), unit.reason(), List.copyOf(dependencies), List.copyOf(implied));
             result.add(new Entry(finished, laned.entry().removed(), laned.entry().ordinal()));
         }
         return result;
@@ -370,12 +375,16 @@ final class PlanComputation {
 
     // ---- objectives ----
 
-    /** The objective units, the objectives a recorded decision keeps as they are, and the units as entries. */
-    private record Objectives(Map<UUID, PlanUnit> units, Set<UUID> declined, List<Entry> entries) { }
+    /**
+     * The objective units (listed and implicit alike, for the dependencies of the exercises), the objectives a recorded decision keeps as they are, the listed units as entries,
+     * the ids of the implicit ones and those units.
+     */
+    private record Objectives(Map<UUID, PlanUnit> units, Set<UUID> declined, List<Entry> entries, Set<UUID> implicit, List<PlanUnit> hidden) { }
 
     private Objectives objectives(List<Laned> exercises, Map<Pair, List<Binding>> bindings) {
         // objective -> the revisions the author's exercises pin, and the place of its first exercise
         Map<UUID, Set<UUID>> pinned = new LinkedHashMap<>();
+        Map<UUID, Boolean> onlyNew = new HashMap<>();
         Map<UUID, Integer> place = new HashMap<>();
         for (Laned laned : exercises) {
             if (laned.author() == null) continue;
@@ -383,9 +392,10 @@ final class PlanComputation {
                 if (!"ASSESSED".equals(binding.role()) || binding.objectiveId() == null) continue;
                 pinned.computeIfAbsent(binding.objectiveId(), ignored -> new LinkedHashSet<>()).add(binding.objectiveRevisionId());
                 place.merge(binding.objectiveId(), laned.entry().ordinal(), Math::min);
+                onlyNew.merge(binding.objectiveId(), laned.entry().unit().unitClass() == NEW, Boolean::logicalAnd);
             }
         }
-        if (pinned.isEmpty()) return new Objectives(Map.of(), Set.of(), List.of());
+        if (pinned.isEmpty()) return new Objectives(Map.of(), Set.of(), List.of(), Set.of(), List.of());
         Map<UUID, UUID> heads = repository.objectiveHeads(deck, pinned.keySet());
         Set<Pair> wanted = new HashSet<>();
         pinned.forEach((objective, revisions) -> revisions.forEach(revision -> wanted.add(new Pair(objective, revision))));
@@ -405,6 +415,8 @@ final class PlanComputation {
         Map<UUID, PlanUnit> units = new LinkedHashMap<>();
         Set<UUID> declined = new HashSet<>();
         List<Entry> entries = new ArrayList<>();
+        Set<UUID> implicit = new HashSet<>();
+        List<PlanUnit> hidden = new ArrayList<>();
         for (Map.Entry<UUID, UUID> entry : target.entrySet()) {
             UUID objective = entry.getKey();
             UUID author = entry.getValue();
@@ -433,9 +445,15 @@ final class PlanComputation {
             }
             PlanUnit unit = new PlanUnit(UnitKind.OBJECTIVE, objective, unitClass, reason, author, head, null, List.of(), PlanUnit.defaultFor(unitClass));
             units.put(objective, unit);
-            entries.add(new Entry(unit, false, place.getOrDefault(objective, Integer.MAX_VALUE)));
+            if (head == null && onlyNew.getOrDefault(objective, false)) {
+                // the copy has no head for it and only the author's NEW exercises pin it: it comes with them, it is nothing to review
+                implicit.add(objective);
+                hidden.add(unit);
+            } else {
+                entries.add(new Entry(unit, false, place.getOrDefault(objective, Integer.MAX_VALUE)));
+            }
         }
-        return new Objectives(units, declined, entries);
+        return new Objectives(units, declined, entries, implicit, hidden);
     }
 
     // ---- the deck's own text and the order of materials ----

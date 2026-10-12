@@ -1,6 +1,6 @@
 {
   "contract": "updates-v1",
-  "description": "Shared frontend/backend fixtures for the update plan of a copy (Updates/3, #442): what the author published since the copy's base, unit by unit, against what the copy holds now, and the two sides of one unit for the review screen. Private chain, owner of the copy only, learning.read, every answer is Cache-Control: private, no-store. Both routes only READ: they create no revision, row, pin or job. The shapes below are executable: the integration tests compare real answers with the property sets of these examples. The apply command is a later task (Updates/4); this contract defines the plan it consumes and the decisions table it writes (migration V61).",
+  "description": "Shared frontend/backend fixtures for the update plan of a copy (Updates/3, #442): what the author published since the copy's base, unit by unit, against what the copy holds now, and the two sides of one unit for the review screen. Private chain, owner of the copy only, learning.read, every answer is Cache-Control: private, no-store. Both routes only READ: they create no revision, row, pin or job. The shapes below are executable: the integration tests compare real answers with the property sets of these examples. The apply command (Updates/4, #443) takes the owner's choices on this plan and makes ONE new revision of the copy from the author's published revisions; the plan states APPLYING and lastApplyFailed tell the review screen about an apply that runs as a job. The decisions table the apply writes is migration V61; V63 gives it the room and the index it needs.",
   "constants": {
     "planPath": "/api/decks/{forkDeckId}/update-plan?cursor=&limit=",
     "unitPath": "/api/decks/{forkDeckId}/update-plan/units/{kind}/{key}?planVersion=",
@@ -8,6 +8,18 @@
     "maxLimit": 100,
     "titleMaxCodePoints": 160,
     "states": ["READY", "UP_TO_DATE", "SOURCE_UNAVAILABLE", "DETACHED", "PREPARING"],
+    "applyingState": "APPLYING",
+    "applyingStateNote": "a sixth state, answered only while an apply command of the copy runs as a job (queued or running): {state, forkDeckId, units: [], nextCursor: null, commandId}, no plan is computed. It is not in `states`, which are the states of a plan that can be read and applied",
+    "applyPath": "/api/decks/{forkDeckId}/update-plan:apply",
+    "applyMaxBytes": 65536,
+    "applyStates": ["APPLIED", "APPLYING"],
+    "applyChoices": ["ACCEPT", "KEEP_MINE", "DECLINE", "DELETE", "KEEP"],
+    "choicesPerClass": {"NEW": ["ACCEPT", "DECLINE"], "SAFE": ["ACCEPT", "DECLINE"], "CONFLICT": ["ACCEPT", "KEEP_MINE"], "ASK_AGAIN": ["ACCEPT", "KEEP_MINE"], "DELETED": ["DELETE", "KEEP"]},
+    "choicesPerClassNote": "METADATA, ORDER and OBJECTIVE units take the choices of their class. The first choice of NEW, SAFE, CONFLICT and ASK_AGAIN takes the author's version (ACCEPT); for DELETED, DELETE removes the unit from the copy and KEEP keeps it. `defaultChoices` are what the review screen starts with, not what the server assumes: a unit the request does not name is left pending, unless `acceptSafe` takes it",
+    "applyReasons": ["unknown_unit", "choice_not_allowed", "duplicate_unit", "exercise_needs_material", "dependency_declined", "material_still_used", "publication_refused"],
+    "applyReasonsNote": "the `reason` member of the 400 INVALID_REQUEST the apply command answers for a choice it cannot honour, with `unitId` (and `dependency` where noted): unknown_unit (the current plan does not list it), choice_not_allowed (not a choice of its class), duplicate_unit (named twice, answered before the plan is read), exercise_needs_material (ACCEPT of an exercise whose material the copy deleted, or of an objective one of whose exercises is such an exercise: unitId is the exercise), dependency_declined (a unit taken by name whose dependency was declined by name; an objective taken by name needs every exercise that evidences it, so one of them declined by name is this reason too; `dependency` is the declined unit), material_still_used (DELETE of a material that exercises of the copy are still about, when the plan does not list those exercises as removals the command takes, or they were kept by name; `dependency` is the exercise when the plan lists it), publication_refused (the combined publication refused a result the selection did not foresee: nothing was written; no 400 of the command is without a reason)",
+    "jobFailureCodes": ["stale_head", "plan_invalid", "taken_down", "not_found", "deck_preparing", "deck_gone", "command_missing", "cancelled"],
+    "jobFailureCodesNote": "the open set of codes `lastApplyFailed.code` can carry: the code the background job ended with (short, lowercase, never a message); `cancelled` for a cancelled one. The frontend shows one text for all of them",
     "kinds": ["METADATA", "MATERIAL", "EXERCISE", "OBJECTIVE", "ORDER"],
     "kindsNote": "the declaration order is the order of kinds inside one class of the plan; METADATA and ORDER are single units whose key is the copy's own deck id; MATERIAL keys are member keys, EXERCISE keys exercise ids, OBJECTIVE keys objective ids",
     "classes": ["NEW", "SAFE", "CONFLICT", "DELETED", "ASK_AGAIN"],
@@ -20,6 +32,7 @@
     "planVersionPattern": "^sha256:[0-9a-f]{64}$",
     "planVersionNote": "SHA-256 over the copy's head revision, the source's published revision, the copy's base revision and a digest of the copy's recorded decisions: any change of the three heads or of one decision is another plan",
     "decisionsTable": "app_learning.fork_unit_decision (V61): (deck_id, unit_kind, unit_key) -> decision KEEP_MINE | DECLINE_NEW | KEEP_DELETED | PENDING, the author's state it covers (resolved_upstream_revision_id or resolved_upstream_absent), the unit's own old base of a PENDING unit (pending_base_revision_id or pending_base_absent). Written by Updates/4, read by the plan.",
+    "applyLimits": "the request is at most 64 KiB, which is about 650 units named in `choices` (acceptSafe covers the rest); the units taken, plus the item and exercise moves of the order, are at most learning.updates.max-units (10 000, 422 RESOURCE_LIMIT_EXCEEDED with `limit`); at most 20 000 units are written as decisions of one command (the same 422); the order unit scans both manifests, at most 20 000 materials each (the same 422); up to learning.updates.sync-max-units (100) units run in the request, more is a job (202)",
     "baseRule": "an apply moves deck_fork.base_revision_id to the plan's upstreamRevisionId and records a PENDING row, with the unit's OLD base, for every listed unit the learner neither accepted nor declined; a unit with a PENDING row keeps comparing the author with its own old base. The badge «Есть обновление» is then (base <> published revision) OR (a PENDING row exists)"
   },
   "invariants": [
@@ -29,9 +42,9 @@
     "the plan is the three-way comparison base B / author's published revision P / copy head H, by units. The author's changes are the frontier diff of the manifests of B and P (cost O(changes), not O(deck)); a unit the author did not change since its base is not on offer, and what the learner changed alone is never listed",
     "classification (a = the author's state in P, b = the unit's base, c = the copy's head): a = c or a = b: nothing; the author removed what the copy has: DELETED (asked, never applied by «accept all safe»); the author added what the copy has not got: NEW; the author changed it and c = b: SAFE; the author changed it and c has the same learner-relevant content as a (the learner made or reverted to the same edit): SAFE; the learner changed it differently: CONFLICT BOTH_CHANGED; the learner deleted what the author changed: CONFLICT DELETED_BY_YOU. Content is compared by fingerprint (materials: the native document; exercises: type, enabled, content, answerKey, evaluatorPolicy; objectives: title), never by revision id",
     "an exercise of the author depends on the materials its bindings target: a material the copy has not got that the plan brings (NEW) is a dependency; a material the copy deleted (or declined) makes the exercise a CONFLICT MATERIAL_DELETED; when the copy keeps a head different from the revision the binding pins (the author's exercise may pin a non-head revision, a lineage revision of the author's), the quoted node ids must exist in the copy's head (yes: the exercise stays safe; no: CONFLICT MATERIAL_CHANGED), unless the author's safe fix of that material brings them (then the material is a dependency)",
-    "an exercise depends on the OBJECTIVE unit of its ASSESSED binding when the copy's objective head is another revision than the one the exercise pins. An objective is SAFE when the copy's head is an ancestor of the author's revision by the parent chain (or the copy has no head), or has the same title; otherwise CONFLICT. An exercise whose objective is not SAFE (or was declined) is a CONFLICT OBJECTIVE_RENAMED instead of NEW/SAFE",
+    "an exercise depends on the OBJECTIVE unit of its ASSESSED binding when the copy's objective head is another revision than the one the exercise pins. An objective is SAFE when the copy's head is an ancestor of the author's revision by the parent chain (or the copy has no head), or has the same title; otherwise CONFLICT. An exercise whose objective is not SAFE (or was declined) is a CONFLICT OBJECTIVE_RENAMED instead of NEW/SAFE. An objective the copy has NO head for that only the author's NEW exercises pin is not a unit at all: it belongs to those exercises (the plan does not list it, `summary` does not count it, the exercises' dependsOn does not name it), and the apply command takes it with any exercise that is taken and never alone",
     "METADATA (title and description) and ORDER (the order of materials) are three-way units: SAFE when only the author changed them, CONFLICT BOTH_CHANGED when the learner changed them too (for ORDER: when the learner reordered at all)",
-    "dependsOn lists unit ids (KIND:key) that must be accepted together with the unit; it is empty for materials, deck-wide units and objectives. Updates/4 refuses a selection that accepts a unit without its dependencies",
+    "dependsOn lists the listed unit ids (KIND:key) that must be accepted together with the unit; it is empty for materials, deck-wide units and objectives (and never names the implicit objective of a new exercise). the apply command takes a unit's dependencies together with it (counted in `alsoAccepted`) and refuses, by name, a unit taken whose dependency was declined",
     "a recorded decision (KEEP_MINE, DECLINE_NEW, KEEP_DELETED) hides its unit while the author's state is still the one it covers; when the author changes the unit after it, the unit is listed again as ASK_AGAIN (judged from the decision's state as the base) and is never applied by «accept all safe». The exception is a unit whose content now equals the learner's: it is SAFE. A unit with a PENDING row is judged against its own old base",
     "when the compute budget or the pair bound is spent the classes are only ever more cautious (a SAFE may be reported as a CONFLICT, never the reverse); because the budget is time, two reads of an unchanged state may differ at that margin",
     "the units the author's change makes unusable are NOT listed: a revision of the author that a legal takedown named, an exercise that quotes such a material",
@@ -39,11 +52,22 @@
     "GET /api/decks/{forkDeckId}/update-plan/units/{kind}/{key}?planVersion= answers {unitId, kind, key, class, reason, planVersion, mine, author, changedNodeIds}: the two sides of exactly ONE unit of the CURRENT plan. planVersion is required (a malformed or missing one is 400); another planVersion is 409 UPDATE_PLAN_STALE; a unit the current plan does not list (an unknown key, a unit of another kind, a unit already decided) and a copy that is not READY are the opaque 404; an unknown kind is 400. It reads only the revisions the plan names, never a revision by an id from the request",
     "a side is null when the unit does not exist on that side. MATERIAL: {memberKey, itemRevisionId, document} (the native document of the editor); EXERCISE: {exerciseId, exerciseRevisionId, exerciseVersion, type, enabled, subject, objective, content, answerKey, evaluatorPolicy} (the copier owns the copy and the author published it, so the answer key is included); OBJECTIVE: {objectiveId, objectiveRevisionId, title}; METADATA: {title, description}; ORDER: {moved: [{memberKey, title, from, to}], total, truncated} (from = place in the unit's base manifest, to = place in the manifest of that side; positions and titles are null above 5000 materials, at most 50 are listed). A taken-down revision of the copy's own head is {…ids, unavailable: true} without content",
     "changedNodeIds (materials only; [] otherwise): the stable node ids whose type, version, attributes or list of children differ between the two documents, plus the nodes only one of them has",
-    "the plan never lists more than the author published and never exposes more than the copier may already read: the source is resolved through DeckAccess with the code the copier used, and the sides are the lineage revisions of the three manifests the plan compared"
+    "the plan never lists more than the author published and never exposes more than the copier may already read: the source is resolved through DeckAccess with the code the copier used, and the sides are the lineage revisions of the three manifests the plan compared",
+    "POST /api/decks/{forkDeckId}/update-plan:apply needs learning.write, is owner-only, has no If-Match (the planVersion of the body is the precondition) and a body of at most 64 KiB: {commandId, planVersion, acceptSafe?, choices?} and nothing else (unknown members, a unit named twice, a lowercase or padded choice, a unit id that is not KIND:lowercase-uuid are 400 INVALID_REQUEST). The client never sends a revision id or an ordinal: every operation is built by the server from the plan it recomputes, whose revisions come only from the source's published manifests",
+    "the plan is recomputed inside the command: a planVersion other than the current one is 409 UPDATE_PLAN_STALE and nothing is written. The pins are checked again, under a lock of the copy's link to its source, in the same transaction as the heads: a copy edited, a source republished or a decision changed in the instant between is the same 409",
+    "acceptSafe takes every NEW and SAFE unit the choices do not name, and nothing else: never a CONFLICT, a DELETED or an ASK_AGAIN unit. A unit taken only by acceptSafe whose dependency was declined by name waits (it stays pending). Units neither named nor taken stay pending",
+    "taking a unit takes the units it dependsOn, whatever their class (counted in alsoAccepted); a unit taken by name whose dependency was declined by name is 400 INVALID_REQUEST with reason dependency_declined and both unit ids. An OBJECTIVE moves only together with the exercises that evidence it: taken by name it takes every exercise of the plan that lists it in dependsOn (declined by name: dependency_declined), taken only by acceptSafe it waits unless every such exercise is taken (or one is taken by name). DELETE of a material takes the removal of the exercises about it when the plan lists them as removals (kept by name, or not in the plan: material_still_used)",
+    "ONE new revision of the copy holds everything the command took: materials, exercises, objectives, the title and description, the order. A command that takes nothing to adopt (it only declines, or leaves pending, or the copy already holds everything) creates no revision (deckRevisionId null) but still moves the base and records the decisions",
+    "the base of the copy always moves to the published revision of the plan (upstreamRevisionId). Every unit listed and not taken gets a row: a declined one KEEP_MINE, DECLINE_NEW (an addition) or KEEP_DELETED (a unit the learner had deleted) with the author's state it was declined at (KEEP_MINE with an absent author state for «the author removed it and I keep it»); a unit left pending gets a PENDING row with its OWN old base and the author's state offered in THIS plan; a unit taken loses its row. Every PENDING row of the copy is replaced by those of this command",
+    "idempotent by commandId: the same command (same body, in any order of the choices) answers the stored answer with Idempotency-Replayed: true even when the plan has changed since, also after the copy was detached or its source went away; the same id with another body is 409 IDEMPOTENCY_CONFLICT. A command that runs as a job answers 202 again until the job ends. A command whose job ended FAILED or CANCELLED is not restarted: it is 409 UPDATE_PLAN_STALE, read the plan and send a new command",
+    "a preparing copy is 409 DECK_PREPARING, a detached one 409 FORK_DETACHED, a source the owner cannot read any more 409 UPDATE_SOURCE_UNAVAILABLE (nothing about the source is said), a deck that is not the caller's live copy the opaque 404; nothing is written in any of them. While an apply of the copy runs as a job, another command is 409 UPDATE_PLAN_STALE",
+    "while a job applies, GET update-plan answers 200 {state: APPLYING, forkDeckId, units: [], nextCursor: null, commandId} (a malformed query is still 400). After a job ended FAILED or CANCELLED and until the next successful apply of the copy (also one that creates no revision) or the job is purged (7 days), the plan is answered as READY/UP_TO_DATE with the extra member lastApplyFailed: {code}",
+    "Study after an apply: the next issues use the new heads; a presentation already shown keeps its snapshot; a changed exercise keeps the schedule of its objective (progress is kept by objective), and the media of an adopted material is readable by the copier through the COPY grant"
   ],
   "routes": [
     {"method": "GET", "path": "/api/decks/{forkDeckId}/update-plan", "scope": "learning.read", "answers": "plan page"},
-    {"method": "GET", "path": "/api/decks/{forkDeckId}/update-plan/units/{kind}/{key}", "scope": "learning.read", "answers": "unit sides"}
+    {"method": "GET", "path": "/api/decks/{forkDeckId}/update-plan/units/{kind}/{key}", "scope": "learning.read", "answers": "unit sides"},
+    {"method": "POST", "path": "/api/decks/{forkDeckId}/update-plan:apply", "scope": "learning.write", "answers": "200 applied | 202 applying"}
   ],
   "plan": {
     "request": "GET /api/decks/33333333-3333-4333-8333-333333333333/update-plan?limit=50",
@@ -138,6 +162,50 @@
     "note": "the same body for PREPARING, DETACHED and SOURCE_UNAVAILABLE, with the state named: nothing about the source",
     "body": {"state": "SOURCE_UNAVAILABLE", "forkDeckId": "33333333-3333-4333-8333-333333333333", "units": [], "nextCursor": null}
   },
+  "applying": {
+    "request": "GET /api/decks/33333333-3333-4333-8333-333333333333/update-plan",
+    "status": 200,
+    "note": "while an apply command of the copy runs as a job (queued or running): the closed shape plus the command id; nothing is computed, no pins are given. Poll until the state is READY or UP_TO_DATE",
+    "body": {"state": "APPLYING", "forkDeckId": "33333333-3333-4333-8333-333333333333", "units": [], "nextCursor": null, "commandId": "abababab-abab-4bab-8bab-abababababab"}
+  },
+  "lastApplyFailed": {
+    "note": "an extra member of the READY and UP_TO_DATE bodies after the job of an apply command ended FAILED or CANCELLED, until the next successful apply of the copy (also one that creates no revision) or the job is purged. The code is short and lowercase (see constants.jobFailureCodes), never a message; the plan itself is the current one and can be applied with a NEW command",
+    "member": {"lastApplyFailed": {"code": "stale_head"}}
+  },
+  "apply": {
+    "request": {
+      "method": "POST",
+      "path": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan:apply",
+      "body": {
+        "commandId": "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+        "planVersion": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "acceptSafe": true,
+        "choices": [
+          {"unitId": "MATERIAL:cccccccc-cccc-4ccc-8ccc-cccccccccccc", "choice": "ACCEPT"},
+          {"unitId": "MATERIAL:12121212-1212-4212-8212-121212121212", "choice": "DELETE"},
+          {"unitId": "EXERCISE:99999999-9999-4999-8999-999999999999", "choice": "DECLINE"}
+        ]
+      },
+      "note": "acceptSafe and choices are optional (false and []); a unit is named at most once; the unitId is KIND:key with the key in lowercase; the body is at most 64 KiB"
+    },
+    "applied": {
+      "status": 200,
+      "headers": {"Cache-Control": "private, no-store"},
+      "body": {"commandId": "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd", "state": "APPLIED", "deckRevisionId": "44444444-4444-4444-8444-444444444444", "applied": 9, "declined": 1, "pending": 2, "alsoAccepted": 1, "baseRevisionId": "55555555-5555-4555-8555-555555555555"},
+      "note": "applied: units taken (named, taken by acceptSafe, and taken as dependencies), declined: units declined by name, pending: units left for later; alsoAccepted (a subset of applied) counts the units taken only because a taken unit depends on them. baseRevisionId is the copy's base now: the published revision of the plan. deckRevisionId is the one new revision of the copy, or null when nothing had to change in the copy (only decisions and the base were written)"
+    },
+    "replayed": {
+      "status": 200,
+      "headers": {"Cache-Control": "private, no-store", "Idempotency-Replayed": "true"},
+      "note": "the same command again: the stored answer, byte for byte, whatever the copy and the plan are now"
+    },
+    "queued": {
+      "status": 202,
+      "headers": {"Cache-Control": "private, no-store"},
+      "body": {"commandId": "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd", "state": "APPLYING"},
+      "note": "more than learning.updates.sync-max-units (100) units: a job applies them in slices; the plan route says APPLYING until it ends, then the same command answers 200 applied with Idempotency-Replayed: true"
+    }
+  },
   "unit": {
     "material": {
       "request": "GET /api/decks/33333333-3333-4333-8333-333333333333/update-plan/units/MATERIAL/cccccccc-cccc-4ccc-8ccc-cccccccccccc?planVersion=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -149,9 +217,9 @@
         "class": "CONFLICT",
         "reason": "BOTH_CHANGED",
         "planVersion": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "mine": {"memberKey": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "itemRevisionId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "document": {"formatVersion": 1, "root": {"id": "10101010-1010-4010-8010-101010101010", "type": "doc", "version": 1, "attrs": {}, "content": []}}},
-        "author": {"memberKey": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "itemRevisionId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "document": {"formatVersion": 1, "root": {"id": "10101010-1010-4010-8010-101010101010", "type": "doc", "version": 1, "attrs": {}, "content": []}}},
-        "changedNodeIds": ["20202020-2020-4020-8020-202020202020"]
+        "mine": {"memberKey": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "itemRevisionId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "document": {"formatVersion": 1, "root": {"id": "10101010-1010-4010-8010-101010101010", "type": "doc", "version": 1, "attrs": {}, "content": [{"id": "20202020-2020-4020-8020-202020202020", "type": "paragraph", "version": 1, "attrs": {}, "content": [{"id": "21212121-2121-4121-8121-212121212121", "type": "text", "version": 1, "attrs": {"text": "comer — есть (моя правка)"}, "content": []}]}]}}},
+        "author": {"memberKey": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "itemRevisionId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "document": {"formatVersion": 1, "root": {"id": "10101010-1010-4010-8010-101010101010", "type": "doc", "version": 1, "attrs": {}, "content": [{"id": "20202020-2020-4020-8020-202020202020", "type": "paragraph", "version": 1, "attrs": {}, "content": [{"id": "22222222-2222-4222-8222-222222222222", "type": "text", "version": 1, "attrs": {"text": "comer — есть (правка автора)"}, "content": []}]}]}}},
+        "changedNodeIds": ["20202020-2020-4020-8020-202020202020", "21212121-2121-4121-8121-212121212121", "22222222-2222-4222-8222-222222222222"]
       }
     },
     "exercise": {
@@ -207,12 +275,40 @@
     "stale": {
       "status": 409,
       "body": {"type": "urn:mnema:problem:update-plan-stale", "title": "Update plan stale", "status": 409, "detail": "The copy or its source changed after the plan was read; read the plan again.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan", "code": "UPDATE_PLAN_STALE"}
+    },
+    "invalidChoice": {
+      "status": 400,
+      "body": {"type": "urn:mnema:problem:invalid-request", "title": "Invalid request", "status": 400, "detail": "The request is invalid or cannot be read.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan:apply", "code": "INVALID_REQUEST", "reason": "choice_not_allowed", "unitId": "MATERIAL:cccccccc-cccc-4ccc-8ccc-cccccccccccc"}
+    },
+    "dependencyDeclined": {
+      "status": 400,
+      "body": {"type": "urn:mnema:problem:invalid-request", "title": "Invalid request", "status": 400, "detail": "The request is invalid or cannot be read.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan:apply", "code": "INVALID_REQUEST", "reason": "dependency_declined", "unitId": "EXERCISE:99999999-9999-4999-8999-999999999999", "dependency": "MATERIAL:77777777-7777-4777-8777-777777777777"}
+    },
+    "preparing": {
+      "status": 409,
+      "body": {"type": "urn:mnema:problem:deck-preparing", "title": "Deck is preparing", "status": 409, "detail": "The copy is still being prepared; try again when it is ready.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan:apply", "code": "DECK_PREPARING"}
+    },
+    "detached": {
+      "status": 409,
+      "body": {"type": "urn:mnema:problem:fork-detached", "title": "Copy detached", "status": 409, "detail": "The copy was detached from its source, so there is no update to apply.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan:apply", "code": "FORK_DETACHED"}
+    },
+    "sourceUnavailable": {
+      "status": 409,
+      "body": {"type": "urn:mnema:problem:update-source-unavailable", "title": "Update source unavailable", "status": 409, "detail": "The source of the copy can no longer be read, so there is no update to apply.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan:apply", "code": "UPDATE_SOURCE_UNAVAILABLE"}
+    },
+    "idempotencyConflict": {
+      "status": 409,
+      "body": {"type": "urn:mnema:problem:idempotency-conflict", "title": "Idempotency conflict", "status": 409, "detail": "The command identifier was already used for a different command.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan:apply", "code": "IDEMPOTENCY_CONFLICT"}
+    },
+    "limit": {
+      "status": 422,
+      "body": {"type": "urn:mnema:problem:resource-limit-exceeded", "title": "Resource limit exceeded", "status": 422, "detail": "The account or resource limit would be exceeded.", "instance": "/api/decks/33333333-3333-4333-8333-333333333333/update-plan:apply", "code": "RESOURCE_LIMIT_EXCEEDED", "limit": 10000}
     }
   },
   "load": {
     "zero": "no copy, no work: nothing runs. A plan of an up-to-date copy is two root comparisons (no page read) and a handful of statements",
     "scenarioH": "the viral source (20k copies) with 10 changed units: each copier's plan reads O(10 · log N) pages per manifest pair, once per request and per copier; nothing is stored, so a thousand copiers cost a thousand independent bounded reads",
-    "measured": "see the guide of the Learning service (Update plan, Updates/3): 1000 materials in the copy, 10 and 100 author changes"
+    "measured": "see the guide of the Learning service (Update plan, Updates/3): 1000 materials in the copy, 10 and 100 author changes. The apply command (Applying an update, Updates/4): 100 units in one request on a 300-material copy, 1 000 units as a job"
   },
   "texts": {
     "note": "the backend returns codes, flags and the author's text only. The frontend owns every string: tab names «Новое», «Исправления», «Конфликты», «Удалено автором», the columns «Сейчас у вас» | «Вариант автора» and the wording of the reasons."

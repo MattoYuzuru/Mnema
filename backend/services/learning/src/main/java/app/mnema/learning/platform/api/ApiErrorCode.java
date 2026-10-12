@@ -11,6 +11,8 @@ enum ApiErrorCode {
     FORK_OWN_DECK(HttpStatus.CONFLICT, "Own deck", "A deck cannot be copied by its owner."),
     DECK_PREPARING(HttpStatus.CONFLICT, "Deck is preparing", "The copy is still being prepared; try again when it is ready."),
     UPDATE_PLAN_STALE(HttpStatus.CONFLICT, "Update plan stale", "The copy or its source changed after the plan was read; read the plan again."),
+    UPDATE_SOURCE_UNAVAILABLE(HttpStatus.CONFLICT, "Update source unavailable", "The source of the copy can no longer be read, so there is no update to apply."),
+    FORK_DETACHED(HttpStatus.CONFLICT, "Copy detached", "The copy was detached from its source, so there is no update to apply."),
     UPDATE_PLAN_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "Update plans busy", "Too many update plans are being computed right now; retry after the time in Retry-After."),
     PUBLIC_READ_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "Public reads busy", "Public reads are busy; retry after the time in Retry-After."),
     FORKS_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "Copies busy", "Too many copies are being prepared right now; retry after the time in Retry-After."),

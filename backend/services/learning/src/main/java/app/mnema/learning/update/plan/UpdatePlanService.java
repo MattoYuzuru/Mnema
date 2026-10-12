@@ -60,6 +60,15 @@ public class UpdatePlanService {
         return compute(owner, deckId).plan();
     }
 
+    /**
+     * The recorded decisions of a copy, in the order {@link PlanVersion#of} digests them: THE query of the plan version. The apply command (Updates/4) reads the rows through this
+     * method, in its own transaction and again inside the final transaction of its publication, so the two versions it compares cannot be computed from different statements.
+     * Not transactional itself (it joins the caller's); no ownership check, so only code that has already authorized the copy may call it.
+     */
+    public List<Decision> decisions(UUID deckId) {
+        return repository.decisions(deckId);
+    }
+
     /** One page of the plan as the wire shape. {@code cursor} and {@code limit} are the raw query values (null: absent). */
     @Transactional(timeout = 10, isolation = Isolation.REPEATABLE_READ)
     public ObjectNode page(UUID owner, UUID deckId, String cursor, String limit) {
@@ -141,11 +150,12 @@ public class UpdatePlanService {
         SourceRevision base = repository.sourceRevision(copy.upstreamDeckId(), copy.baseRevisionId())
                 .orElseThrow(() -> new IllegalStateException("The base revision of a copy is missing"));
         List<Decision> decisions = repository.decisions(copy.deckId());
-        List<PlanUnit> units = new PlanComputation(repository, diffs, contents, copy, base, published, decisions, budget).units();
+        PlanComputation.PlanUnits computed = new PlanComputation(repository, diffs, contents, copy, base, published, decisions, budget).units();
+        List<PlanUnit> units = computed.units();
         String version = PlanVersion.of(copy.headRevisionId(), published.revisionId(), copy.baseRevisionId(), decisions);
         String note = units.isEmpty() ? null : repository.releaseNote(copy.upstreamDeckId(), published.revisionId()).orElse(null);
         UpdatePlan plan = new UpdatePlan(units.isEmpty() ? UpdatePlan.State.UP_TO_DATE : UpdatePlan.State.READY, copy.deckId(), copy.headRevisionId(), published.revisionId(),
-                copy.baseRevisionId(), version, note, UpdatePlan.Summary.of(units), units);
+                copy.baseRevisionId(), version, note, UpdatePlan.Summary.of(units), units, computed.implicit());
         return new Computed(plan, copy, published);
     }
 

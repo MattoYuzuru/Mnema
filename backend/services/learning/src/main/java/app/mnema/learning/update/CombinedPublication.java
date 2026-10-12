@@ -112,7 +112,7 @@ public class CombinedPublication {
     private final ObjectProvider<FinalWriter> writers;
     private final MeterRegistry meters;
     private final TransactionTemplate transaction;
-    private volatile FinalWriter writer;
+    private volatile List<FinalWriter> allWriters;
 
     CombinedPublication(CombinedPublicationRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas, ImmutableStorage storage,
                         ForkGuard forkGuard, UpdateSettings settings, LearningJobs jobs, CanonicalJsonHasher canonical, ObjectProvider<FinalWriter> writers,
@@ -140,7 +140,7 @@ public class CombinedPublication {
      * @throws ResourceNotFoundException when the deck is not the actor's (or is deleted)
      * @throws app.mnema.learning.fork.DeckPreparingException when the deck is a copy that is not materialized yet
      * @throws VersionConflictException when the deck head is not {@code expectedHeadRevisionId}, or an operation does not describe the manifest or the heads it meets
-     * @throws IdempotencyConflictException when the command id was used for another command
+     * @throws IdempotencyConflictException when the command id was used for another command, or is the id of a stored command that a job has not finished yet
      */
     public Applied publish(CombinedUnits units) {
         admit(units, true);
@@ -155,9 +155,12 @@ public class CombinedPublication {
             return new Applied(CombinedResult.fromJson(replay.get()), true);
         }
         requireCopy(deck);
+        // a command id that is already a stored command (a job that has not ended) is that job's: a body that runs here under its id is another command
+        if (repository.header(units.commandId()).isPresent()) throw new IdempotencyConflictException();
         boolean[] applied = {false};
         JsonNode stored = transaction.execute(status -> receipts.execute(identity, envelope, () -> {
             applied[0] = true;
+            if (repository.header(units.commandId()).isPresent()) throw new IdempotencyConflictException();
             return applySynchronously(units).toJson();
         }));
         CombinedResult result = CombinedResult.fromJson(stored);
@@ -586,18 +589,24 @@ public class CombinedPublication {
 
     private void hook(CombinedUnits units, DeckState deck, CombinedResult result) {
         if (units.finalWrites() == null) return;
-        writer().write(units.finalWrites(), new FinalWriter.Context(deck.deckId(), units.actorId(), units.commandId(), deck.revisionId(),
+        writerFor(units.finalWrites().type()).write(units.finalWrites(), new FinalWriter.Context(deck.deckId(), units.actorId(), units.commandId(), deck.revisionId(),
                 result.deckRevisionId(), result.deckVersion(), result.changed()));
     }
 
-    private FinalWriter writer() {
-        FinalWriter found = writer;
-        if (found != null) return found;
-        List<FinalWriter> all = writers.orderedStream().toList();
-        if (all.size() > 1) throw new IllegalStateException("More than one FinalWriter bean");
-        found = all.isEmpty() ? FinalWriter.NONE : all.getFirst();
-        writer = found;
-        return found;
+    /**
+     * The writer of this type of final writes: with no {@link FinalWriter} bean at all the writes are dropped (a bare engine), otherwise exactly one bean must handle the type, so that
+     * a type nobody handles is a loud failure and never a silent loss of what the command asked to be written with its revision.
+     */
+    private FinalWriter writerFor(String type) {
+        List<FinalWriter> all = allWriters;
+        if (all == null) {
+            all = writers.orderedStream().toList();
+            allWriters = all;
+        }
+        if (all.isEmpty()) return FinalWriter.NONE;
+        List<FinalWriter> handling = all.stream().filter(candidate -> candidate.handles(type)).toList();
+        if (handling.size() != 1) throw new IllegalStateException(handling.isEmpty() ? "No FinalWriter handles the type of the final writes" : "More than one FinalWriter handles the type of the final writes");
+        return handling.getFirst();
     }
 
     private void releasePins(UUID scope, List<StagedRoot> pins, List<UUID> otherPins) {
@@ -687,7 +696,7 @@ public class CombinedPublication {
         for (int at = 0; at < total; at += UNIT_READ) rows.addAll(repository.units(header.commandId(), at, Math.min(total, at + UNIT_READ)));
         return CombinedUnits.restore(header.commandId(), header.deckId(), header.actorId(), header.expectedHeadRevisionId(),
                 header.metadata() == null ? null : JSON.readTree(header.metadata()),
-                header.finalWrites() == null ? null : JSON.readTree(header.finalWrites()), rows);
+                repository.finalWrites(header.commandId()).map(text -> JSON.readTree(text)).orElse(null), rows);
     }
 
     /** The job ended without applying the command ({@code FAILED} or {@code CANCELLED}): its staged pins and its stored command go with it, in the same transaction. */
