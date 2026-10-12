@@ -12,7 +12,7 @@ class ForkLinkTest {
     private static final UUID BASE = UUID.randomUUID();
 
     private static ForkLink of(boolean preparing, String jobState, boolean detached) {
-        return ForkLink.of(SOURCE, "c", preparing, jobState, detached, BASE, false, false);
+        return ForkLink.of(SOURCE, "c", preparing, jobState, detached, BASE, false, false, null);
     }
 
     @Test
@@ -27,6 +27,6 @@ class ForkLinkTest {
     @Test
     void aReadyCopyIsNeverFailedWhateverBecameOfItsJob() {
         assertThat(of(false, "SUCCEEDED", false).failed()).isFalse();
-        assertThat(of(false, null, true)).isEqualTo(new ForkLink(SOURCE, "c", false, false, true, BASE, false, false));
+        assertThat(of(false, null, true)).isEqualTo(new ForkLink(SOURCE, "c", false, false, true, BASE, false, false, null));
     }
 }

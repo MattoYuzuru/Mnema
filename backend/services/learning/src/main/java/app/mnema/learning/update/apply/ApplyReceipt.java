@@ -23,9 +23,21 @@ final class ApplyReceipt {
         return new CommandIdentity(derive(command), owner, SCOPE, TYPE);
     }
 
+    /**
+     * The command id of the automatic apply (Updates/6 part B): deterministic in the copy, the published revision and the plan version, so a slice that runs again builds the same
+     * command, and a plan that changed since (the learner edited the copy) is another command rather than a conflict with the first.
+     */
+    static UUID autoCommand(UUID copy, UUID published, String planVersion) {
+        return digest("mnema.deck.update.auto:" + copy + ":" + published + ":" + planVersion);
+    }
+
     static UUID derive(UUID command) {
+        return digest("mnema.deck.update.apply:" + command);
+    }
+
+    private static UUID digest(String text) {
         try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(("mnema.deck.update.apply:" + command).getBytes(StandardCharsets.UTF_8));
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
             ByteBuffer bytes = ByteBuffer.wrap(digest);
             long high = (bytes.getLong() & ~0xF000L) | 0x4000L;
             long low = (bytes.getLong() & 0x3FFF_FFFF_FFFF_FFFFL) | 0x8000_0000_0000_0000L;

@@ -1,5 +1,6 @@
 package app.mnema.learning.fork;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -9,14 +10,20 @@ import java.util.UUID;
  * there), {@code autoUpdate} the stored setting. The badge itself needs the source's published revision too, which only {@link ForkReadModel} knows.
  */
 public record ForkLink(UUID upstreamDeckId, String upstreamCode, boolean preparing, boolean failed, boolean detached, UUID baseRevisionId, boolean pendingUpdates,
-                       boolean autoUpdate) {
+                       boolean autoUpdate, LastUpdate lastUpdate) {
+    /**
+     * The newest AUTOMATIC update of the copy that its owner has not marked seen (the notice «Что нового», Updates/6 part B): the revision of the copy it made, when, and its counts.
+     * Read with the deck in the same statement; the member of the deck JSON exists only while such an entry exists.
+     */
+    public record LastUpdate(UUID deckRevisionId, Instant appliedAt, int applied, int pending) { }
+
     /**
      * Builds the link from the columns of the read: {@code jobState} is the state of the copy's materialization job ({@code null} when its record is gone). An unfinished copy whose
      * job ended {@code FAILED} or {@code CANCELLED}, or was purged, is failed.
      */
     public static ForkLink of(UUID upstreamDeckId, String upstreamCode, boolean preparing, String jobState, boolean detached, UUID baseRevisionId, boolean pendingUpdates,
-                              boolean autoUpdate) {
-        return new ForkLink(upstreamDeckId, upstreamCode, preparing, preparing && endedWithoutSuccess(jobState), detached, baseRevisionId, pendingUpdates, autoUpdate);
+                              boolean autoUpdate, LastUpdate lastUpdate) {
+        return new ForkLink(upstreamDeckId, upstreamCode, preparing, preparing && endedWithoutSuccess(jobState), detached, baseRevisionId, pendingUpdates, autoUpdate, lastUpdate);
     }
 
     /** Whether a job in this state (or without a record) can no longer finish a copy by itself. */

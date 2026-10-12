@@ -26,6 +26,7 @@ import app.mnema.learning.speech.SpeechConsentOutdatedException;
 import app.mnema.learning.speech.SpeechConsentRequiredException;
 import app.mnema.learning.update.apply.ForkDetachedException;
 import app.mnema.learning.update.apply.UpdateSourceUnavailableException;
+import app.mnema.learning.update.history.UpdateRevertStaleException;
 import app.mnema.learning.update.plan.UpdatePlanBusyException;
 import app.mnema.learning.update.plan.UpdatePlanStaleException;
 import app.mnema.learning.usage.SpecNotSupportedException;
@@ -125,6 +126,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(UpdatePlanStaleException.class)
     ResponseEntity<Object> handleUpdatePlanStale(UpdatePlanStaleException exception, HttpServletRequest request) {
         return response(ApiErrorCode.UPDATE_PLAN_STALE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(UpdateRevertStaleException.class)
+    ResponseEntity<Object> handleUpdateRevertStale(UpdateRevertStaleException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.UPDATE_REVERT_STALE, request, exception);
     }
 
     @ExceptionHandler(UpdateSourceUnavailableException.class)

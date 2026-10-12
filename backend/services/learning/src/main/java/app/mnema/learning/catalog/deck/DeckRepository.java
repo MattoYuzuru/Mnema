@@ -5,6 +5,9 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -22,7 +25,13 @@ class DeckRepository {
                    f.detached_at IS NOT NULL AS fork_detached, j.state AS fork_job_state, f.base_revision_id AS fork_base, f.auto_update AS fork_auto_update,
                    -- the badge reads this in the same statement; an ordinary, preparing or detached deck asks nothing (CASE is lazy), a copy is one probe of the partial index fork_unit_decision_pending
                    CASE WHEN f.materialized_at IS NOT NULL AND f.detached_at IS NULL
-                        THEN EXISTS (SELECT 1 FROM app_learning.fork_unit_decision u WHERE u.deck_id = f.deck_id AND u.decision = 'PENDING') ELSE FALSE END AS fork_pending
+                        THEN EXISTS (SELECT 1 FROM app_learning.fork_unit_decision u WHERE u.deck_id = f.deck_id AND u.decision = 'PENDING') ELSE FALSE END AS fork_pending,
+                   -- the notice «Что нового»: the newest unseen AUTO entry of the copy, one probe of the partial index fork_update_log_unseen_auto (V65), asked only for a ready, attached copy
+                   CASE WHEN f.materialized_at IS NOT NULL AND f.detached_at IS NULL
+                        THEN (SELECT jsonb_build_object('deckRevisionId', l.deck_revision_id, 'appliedAt', to_char(l.applied_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                                                       'applied', l.applied_units, 'pending', l.pending_units)::text
+                                FROM app_learning.fork_update_log l WHERE l.deck_id = f.deck_id AND l.mode = 'AUTO' AND l.seen_at IS NULL
+                                ORDER BY l.applied_at DESC LIMIT 1) END AS fork_last_update
               FROM app_learning.deck d JOIN app_learning.deck_revision r
                 ON r.deck_id = d.deck_id AND r.revision_id = d.head_revision_id
               LEFT JOIN app_learning.deck_publication p ON p.deck_id = d.deck_id
@@ -39,7 +48,16 @@ class DeckRepository {
             row.getString("visibility"), row.getObject("fork_deck_id", UUID.class) == null ? null
             : ForkLink.of(row.getObject("upstream_deck_id", UUID.class), row.getString("upstream_code"), row.getBoolean("fork_preparing"),
             row.getString("fork_job_state"), row.getBoolean("fork_detached"), row.getObject("fork_base", UUID.class), row.getBoolean("fork_pending"),
-            row.getBoolean("fork_auto_update")));
+            row.getBoolean("fork_auto_update"), lastUpdate(row.getString("fork_last_update"))));
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+
+    private static ForkLink.LastUpdate lastUpdate(String json) {
+        if (json == null) return null;
+        JsonNode node = JSON.readTree(json);
+        return new ForkLink.LastUpdate(UUID.fromString(node.path("deckRevisionId").stringValue(null)), Instant.parse(node.path("appliedAt").stringValue(null)),
+                node.path("applied").intValue(0), node.path("pending").intValue(0));
+    }
+
     private final JdbcClient jdbc;
 
     DeckRepository(JdbcClient jdbc) { this.jdbc = jdbc; }

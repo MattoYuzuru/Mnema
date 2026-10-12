@@ -1051,4 +1051,107 @@ class LearningJobsIntegrationTest extends PostgresIntegrationTest {
         assertThat(plans.get(1)).contains("learning_job_lease").containsPattern("Index Cond: .*lease_until <");
         assertThat(plans.get(2)).contains("learning_job_due").containsPattern("Index Cond: .*run_after <=");
     }
+
+    // ------------------------------------------------------------------ pacing (Updates/6 part B, #445)
+
+    private record Paused(String state, int attempts, long progressCount, String progress, double secondsUntilDue, boolean leased) { }
+
+    private Paused paused(UUID job) {
+        return jdbc.sql("SELECT state,attempts,progress_count,progress::text AS progress,EXTRACT(EPOCH FROM (run_after - clock_timestamp()))::float8 AS due,lease_token IS NOT NULL AS leased "
+                        + "FROM app_learning.learning_job WHERE job_id=:id").param("id", job)
+                .query((result, ignored) -> new Paused(result.getString("state"), result.getInt("attempts"), result.getLong("progress_count"), result.getString("progress"),
+                        result.getDouble("due"), result.getBoolean("leased"))).single();
+    }
+
+    @org.junit.jupiter.api.Test
+    void aPausedSliceCommitsItsCursorGivesBackTheLeaseAndResumesFromTheCursorWhenItIsDue() {
+        String queue = queue("paced");
+        UUID account = UUID.randomUUID();
+        ScriptedHandler handler = new ScriptedHandler(queue, job -> {
+            int step = job.progress() == null ? 0 : job.progress().path("next").intValue(-1);
+            if (step == 0 && job.payload().path("steps").intValue(1) == 2) return Slice.proceedAfter(JSON.createObjectNode().put("next", 1), 7, Duration.ofSeconds(30));
+            return Slice.done(9);
+        });
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        JobExecutor executor = executor(meters, handler);
+        UUID job = jobs.enqueue(queue, "pace", account, payload(2));
+
+        assertThat(executor.runOne(queue)).isTrue();
+        Paused waiting = paused(job);
+        assertThat(waiting.state()).as("back in the queue, not failed and not running").isEqualTo("QUEUED");
+        assertThat(waiting.leased()).isFalse();
+        assertThat(waiting.attempts()).as("no attempt is spent").isZero();
+        assertThat(waiting.progressCount()).isEqualTo(7);
+        assertThat(waiting.progress()).contains("\"next\": 1");
+        assertThat(waiting.secondsUntilDue()).isBetween(25.0, 31.0);
+        assertThat(handler.calls.get()).as("one slice, then the executor stopped looping").isEqualTo(1);
+        assertThat(meters.get("mnema_learning_jobs_total").tag("outcome", "paced").counter().count()).isEqualTo(1.0);
+
+        // nothing is due: no claim, no run; while it waits the account's limit of one is not held
+        assertThat(executor.runOne(queue)).isFalse();
+        UUID other = jobs.enqueue(queue, "other", account, payload(1));
+        assertThat(executor.runOne(queue)).isTrue();
+        assertThat(state(other)).isEqualTo("SUCCEEDED");
+        assertThat(state(job)).isEqualTo("QUEUED");
+
+        makeDue(job);
+        assertThat(executor.runOne(queue)).isTrue();
+        Paused done = paused(job);
+        assertThat(done.state()).isEqualTo("SUCCEEDED");
+        assertThat(done.progressCount()).isEqualTo(9);
+        assertThat(handler.calls.get()).as("first slice, the other job, the resumed slice").isEqualTo(3);
+    }
+
+    @org.junit.jupiter.api.Test
+    void aFailureAfterAPauseSpendsOneAttemptAndKeepsTheCursorOfThePausedSlice() {
+        String queue = queue("pacedfail");
+        int[] calls = {0};
+        ScriptedHandler handler = new ScriptedHandler(queue, job -> {
+            calls[0]++;
+            if (calls[0] == 1) return Slice.proceedAfter(JSON.createObjectNode().put("next", 1), 1, Duration.ofSeconds(60));
+            throw new RetryableJobException("later");
+        });
+        JobExecutor executor = executor(new SimpleMeterRegistry(), handler);
+        UUID job = jobs.enqueue(queue, "k", null, payload(1));
+        assertThat(executor.runOne(queue)).isTrue();
+        assertThat(paused(job).attempts()).isZero();
+        makeDue(job);
+        assertThat(executor.runOne(queue)).isTrue();
+        Paused failed = paused(job);
+        assertThat(failed.state()).as("a retry, one attempt spent").isEqualTo("QUEUED");
+        assertThat(failed.attempts()).isEqualTo(1);
+        assertThat(failed.progress()).as("the cursor of the paused slice is kept").contains("\"next\": 1");
+    }
+
+    @org.junit.jupiter.api.Test
+    void aPausedJobCanBeCancelledAtOnceAndRetriedFromItsCursor() {
+        String queue = queue("pacedcancel");
+        List<Integer> seen = new CopyOnWriteArrayList<>();
+        ScriptedHandler handler = new ScriptedHandler(queue, job -> {
+            int step = job.progress() == null ? 0 : job.progress().path("next").intValue(-1);
+            seen.add(step);
+            if (step == 0) return Slice.proceedAfter(JSON.createObjectNode().put("next", 1), 4, Duration.ofSeconds(600));
+            return Slice.done(8);
+        });
+        JobExecutor executor = executor(new SimpleMeterRegistry(), handler);
+        UUID job = jobs.enqueue(queue, "k", null, payload(2));
+        assertThat(executor.runOne(queue)).isTrue();
+        assertThat(paused(job).state()).isEqualTo("QUEUED");
+
+        // a queued job is cancelled by one statement, whatever its delay; it is never claimed again, its cursor stays
+        assertThat(jobs.cancel(job)).contains(JobState.CANCELLED);
+        Paused cancelled = paused(job);
+        assertThat(cancelled.state()).isEqualTo("CANCELLED");
+        assertThat(cancelled.leased()).isFalse();
+        assertThat(cancelled.progress()).contains("\"next\": 1");
+        makeDue(job);
+        assertThat(executor.runOne(queue)).as("a cancelled job is not due whatever its run_after").isFalse();
+        assertThat(seen).containsExactly(0);
+
+        // a retry puts it back where it stopped, due now
+        assertThat(jobs.retry(job)).isTrue();
+        assertThat(executor.runOne(queue)).isTrue();
+        assertThat(seen).as("the paused slice is not run again").containsExactly(0, 1);
+        assertThat(state(job)).isEqualTo("SUCCEEDED");
+    }
 }

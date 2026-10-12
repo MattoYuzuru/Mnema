@@ -2,8 +2,10 @@ package app.mnema.learning.update.apply;
 
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
+import app.mnema.learning.platform.jobs.PermanentJobException;
 import app.mnema.learning.update.FinalWriter;
 import app.mnema.learning.update.FinalWrites;
+import app.mnema.learning.update.auto.AutoUpdateSettings;
 import app.mnema.learning.update.apply.ApplyRepository.Pins;
 import app.mnema.learning.update.apply.ApplyRows.Op;
 import app.mnema.learning.update.apply.ApplyRows.Row;
@@ -30,20 +32,23 @@ import java.util.UUID;
  *       {@link VersionConflictException}: in a request that is {@code 409 UPDATE_PLAN_STALE}, in the job a permanent failure, and nothing is written;</li>
  *   <li>the base of the copy moved to the published revision (the migration V61 lets it move forward only);</li>
  *   <li>the decisions: every PENDING row of the copy is dropped, the rows of the units taken are dropped, the rows of the declined and of the still pending units are written;</li>
- *   <li>the receipt that holds the answer of the command, under the id derived from the client's ({@link ApplyReceipt}), and the log of the apply ({@code fork_apply_log}).</li>
+ *   <li>the receipt that holds the answer of the command, under the id derived from the client's ({@link ApplyReceipt}), and the log of the apply ({@code fork_apply_log}); when
+ *       the command made a revision, also its entry of «Что нового» ({@code fork_update_log}, V65) with the mode, AUTO or MANUAL, and the objective heads it moved.</li>
  * </ol>
- * It handles the type {@value ApplyWrites#TYPE} and no other, so other kinds of command can have a writer of their own next to it.
+ * An AUTOMATIC command (mode {@code AUTO}) is refused first of all while {@code learning.updates.auto.enabled} is off ({@code PermanentJobException("auto_disabled")}, nothing written). It handles the type {@value ApplyWrites#TYPE} and no other, so other kinds of command can have a writer of their own next to it.
  */
 @Component
 class ApplyFinalWriter implements FinalWriter {
     private final ApplyRepository repository;
     private final UpdatePlanService plans;
     private final CommandReceiptService receipts;
+    private final AutoUpdateSettings auto;
 
-    ApplyFinalWriter(ApplyRepository repository, UpdatePlanService plans, CommandReceiptService receipts) {
+    ApplyFinalWriter(ApplyRepository repository, UpdatePlanService plans, CommandReceiptService receipts, AutoUpdateSettings auto) {
         this.repository = repository;
         this.plans = plans;
         this.receipts = receipts;
+        this.auto = auto;
     }
 
     @Override
@@ -52,6 +57,9 @@ class ApplyFinalWriter implements FinalWriter {
     @Override
     public void write(FinalWrites writes, Context context) {
         ApplyWrites apply = ApplyWrites.of(writes);
+        // the kill switch of the automatic mode (§14) also stops an automatic apply that was queued as the combined job before it went off: it ends FAILED with this code and writes
+        // nothing (no revision, no decision, no log). The owner's own command is not affected.
+        if (ApplyWrites.AUTO.equals(apply.mode()) && !auto.enabled()) throw new PermanentJobException("auto_disabled");
         UUID deck = context.deckId();
         Pins pins = repository.lock(deck).orElseThrow(VersionConflictException::new);
         UUID head = repository.lockHead(deck).orElseThrow(VersionConflictException::new);
@@ -70,6 +78,11 @@ class ApplyFinalWriter implements FinalWriter {
                 apply.alsoAccepted(), published);
         receipts.execute(ApplyReceipt.identity(context.actorId(), apply.command()), apply.request(), () -> answer);
         repository.logApply(deck);
+        // «Что нового»: an apply that made a revision of the copy is noted with it (the units come from the journals of that revision)
+        if (context.changed()) {
+            repository.logUpdate(deck, context.resultRevisionId(), published, apply.mode(), apply.applied(), apply.pending());
+            repository.logObjectives(deck, context.resultRevisionId(), apply.objectives());
+        }
     }
 
     private static List<Row> rows(ApplyWrites apply, Op... ops) {

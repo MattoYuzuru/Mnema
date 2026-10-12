@@ -23,7 +23,7 @@ class ApplyRepository {
     record Revision(UUID revisionId, String title, String description, UUID membersRootId, UUID exercisesRootId, int memberCount, int exerciseCount) { }
 
     /** The copy's reuse scope and the deck it follows. */
-    record Copy(UUID scopeId, UUID upstreamDeckId) { }
+    record Copy(UUID scopeId, UUID upstreamDeckId, boolean autoUpdate) { }
 
     /** The row of the copy's link to its source, locked. */
     record Pins(UUID upstreamDeckId, UUID baseRevisionId) { }
@@ -36,11 +36,11 @@ class ApplyRepository {
 
     Optional<Copy> copy(UUID owner, UUID deck) {
         return jdbc.sql("""
-                SELECT d.reuse_scope_id,f.upstream_deck_id
+                SELECT d.reuse_scope_id,f.upstream_deck_id,f.auto_update
                   FROM app_learning.deck d JOIN app_learning.deck_fork f ON f.deck_id=d.deck_id AND f.released_at IS NULL
                  WHERE d.owner_id=:owner AND d.deck_id=:deck AND d.deleted_at IS NULL
                 """).param("owner", owner).param("deck", deck)
-                .query((row, ignored) -> new Copy(row.getObject("reuse_scope_id", UUID.class), row.getObject("upstream_deck_id", UUID.class))).optional();
+                .query((row, ignored) -> new Copy(row.getObject("reuse_scope_id", UUID.class), row.getObject("upstream_deck_id", UUID.class), row.getBoolean("auto_update"))).optional();
     }
 
     Optional<Revision> revision(UUID deck, UUID revision) {
@@ -98,6 +98,38 @@ class ApplyRepository {
     void logApply(UUID deck) {
         jdbc.sql("INSERT INTO app_learning.fork_apply_log(deck_id,applied_at) VALUES (:deck,clock_timestamp()) ON CONFLICT (deck_id) DO UPDATE SET applied_at=EXCLUDED.applied_at")
                 .param("deck", deck).update();
+    }
+
+    /** Keeps this many entries of «Что нового» per copy (the older ones, and their objective rows, are deleted by the apply that overflows it). */
+    static final int LOG_KEEP = 50;
+
+    /**
+     * «Что нового»: notes that this apply created {@code revision} of the copy. One row per revision; the command id makes the revision unique, so a retry of the final transaction
+     * (nothing else can repeat it: it is part of the revision's own transaction) would be a defect, and the conflict clause only keeps the log itself harmless.
+     */
+    void logUpdate(UUID deck, UUID revision, UUID upstream, String mode, int applied, int pending) {
+        jdbc.sql("""
+                INSERT INTO app_learning.fork_update_log(deck_id,deck_revision_id,upstream_revision_id,mode,applied_units,pending_units,applied_at)
+                VALUES (:deck,:revision,:upstream,:mode,:applied,:pending,clock_timestamp()) ON CONFLICT (deck_id,deck_revision_id) DO NOTHING
+                """).param("deck", deck).param("revision", revision).param("upstream", upstream).param("mode", mode).param("applied", applied).param("pending", pending).update();
+        jdbc.sql("""
+                DELETE FROM app_learning.fork_update_log WHERE deck_id=:deck AND (applied_at,deck_revision_id) < (
+                    SELECT applied_at,deck_revision_id FROM app_learning.fork_update_log WHERE deck_id=:deck ORDER BY applied_at DESC,deck_revision_id DESC OFFSET :keep LIMIT 1)
+                """).param("deck", deck).param("keep", LOG_KEEP - 1).update();
+    }
+
+    /** The objective heads the apply moved, for the same entry. */
+    void logObjectives(UUID deck, UUID revision, List<ApplyWrites.ObjectiveAdoption> objectives) {
+        if (objectives.isEmpty()) return;
+        jdbc.sql("""
+                INSERT INTO app_learning.fork_update_log_objective(deck_id,deck_revision_id,objective_id,previous_revision_id,revision_id)
+                SELECT :deck,:revision,CAST(v.objective_id AS uuid),CASE WHEN v.previous='' THEN NULL ELSE CAST(v.previous AS uuid) END,CAST(v.adopted AS uuid)
+                  FROM unnest(CAST(:objectives AS text[]),CAST(:previous AS text[]),CAST(:adopted AS text[])) AS v(objective_id,previous,adopted)
+                ON CONFLICT (deck_id,deck_revision_id,objective_id) DO NOTHING
+                """).param("deck", deck).param("revision", revision)
+                .param("objectives", objectives.stream().map(o -> o.objectiveId().toString()).toArray(String[]::new))
+                .param("previous", objectives.stream().map(o -> o.previous() == null ? "" : o.previous().toString()).toArray(String[]::new))
+                .param("adopted", objectives.stream().map(o -> o.adopted().toString()).toArray(String[]::new)).update();
     }
 
     boolean moveBase(UUID deck, UUID expected, UUID base) {
