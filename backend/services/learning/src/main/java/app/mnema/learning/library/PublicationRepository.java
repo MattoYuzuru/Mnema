@@ -141,14 +141,6 @@ class PublicationRepository {
                 .query(ROW).optional();
     }
 
-    /** Appends one outbox row for the catalog; the id is a uuidv7 drawn by the database. */
-    void appendEvent(UUID deck, UUID revision, DeckVisibility visibility) {
-        jdbc.sql("""
-                INSERT INTO app_learning.deck_publication_event(deck_id, published_revision_id, visibility, occurred_at)
-                VALUES (:deck, :revision, :visibility, statement_timestamp())
-                """).param("deck", deck).param("revision", revision).param("visibility", visibility.name()).update();
-    }
-
     /** Distinct materials plus distinct exercises changed after the given sequence of the deck: two index range scans. */
     int changesAfter(UUID deck, long sequence) {
         return jdbc.sql("""

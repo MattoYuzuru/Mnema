@@ -1,5 +1,6 @@
 package app.mnema.learning.library;
 
+import app.mnema.learning.community.CatalogOutbox;
 import app.mnema.learning.library.PublicationRepository.Blocked;
 import app.mnema.learning.library.PublicationRepository.Head;
 import app.mnema.learning.library.PublicationRepository.Revision;
@@ -65,16 +66,18 @@ public class PublicationService {
     private final TransactionTemplate readOnly;
     private final SecureRandom random;
     private final AutoUpdateFanout fanout;
+    private final CatalogOutbox outbox;
 
     @Autowired
     PublicationService(PublicationRepository repository, PublishedMediaRepository publishedMedia, TopicDirectory topics, CommandReceiptService receipts,
-                       PlatformTransactionManager transactions, MeterRegistry meters, AutoUpdateFanout fanout) {
-        this(repository, publishedMedia, topics, receipts, transactions, meters, new SecureRandom(), fanout);
+                       PlatformTransactionManager transactions, MeterRegistry meters, AutoUpdateFanout fanout, CatalogOutbox outbox) {
+        this(repository, publishedMedia, topics, receipts, transactions, meters, new SecureRandom(), fanout, outbox);
     }
 
     PublicationService(PublicationRepository repository, PublishedMediaRepository publishedMedia, TopicDirectory topics, CommandReceiptService receipts,
-                       PlatformTransactionManager transactions, MeterRegistry meters, SecureRandom random, AutoUpdateFanout fanout) {
+                       PlatformTransactionManager transactions, MeterRegistry meters, SecureRandom random, AutoUpdateFanout fanout, CatalogOutbox outbox) {
         this.fanout = fanout;
+        this.outbox = outbox;
         this.repository = repository;
         this.meters = meters;
         this.publishedMedia = publishedMedia;
@@ -185,8 +188,9 @@ public class PublicationService {
             // (one job per source and revision, enqueued in this very transaction; nothing when the kill switch is off). Not the first publication, nobody has a copy yet.
             if (moves && current.map(Row::publishedRevisionId).isPresent() && command.visibility() != DeckVisibility.PRIVATE) fanout.published(deck, pointer);
             // One outbox row per effective write while the deck is public, so the catalog projector never misses a metadata edit; otherwise a level or revision change.
+            // The same call enqueues the projection job (Community/1), in this transaction: the catalogue is never built here, only asked to look at the deck again.
             boolean publicWrite = command.visibility() == DeckVisibility.PUBLIC;
-            if ((publicWrite || before != command.visibility() || moves) && pointer != null) repository.appendEvent(deck, pointer, command.visibility());
+            if ((publicWrite || before != command.visibility() || moves) && pointer != null) outbox.publicationChanged(deck, pointer, command.visibility());
         }
         ObjectNode acknowledgement = JsonNodeFactory.instance.objectNode();
         acknowledgement.put("commandId", command.commandId().toString()).put("changed", changed);
