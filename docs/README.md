@@ -158,8 +158,9 @@ Kubernetes-доставка (staging/production workflows, `k8s/`, recovery и p
   состояние production (функции включены релизом #481) и проверка каждой задачи; начиная с [прототипа линии хранения](./engineering/evidence/community-decks/epic-1/share-3-lineage-prototype.md).
 - **historical:** [Community decks, эпик 2: evidence задач](./engineering/evidence/community-decks/epic-2/README.md) — PR, коммиты, миграции V59–V65,
   релизы, ревью и браузерная проверка обновлений копий, критерии эпика #420.
-- **current:** [Community decks, эпик 3: evidence задач](./engineering/evidence/community-decks/epic-3/README.md) — проверка
-  `pg_trgm`/`unaccent` на production и задачи Сообщества и поиска по мере выполнения.
+- **current:** [Community decks, эпик 3: evidence задач](./engineering/evidence/community-decks/epic-3/README.md) — Community/0–8,
+  EXPLAIN каталога на 10⁴–10⁵, browser harness `--catalog`, состояние поставки (сделано локально, GitHub был недоступен) и
+  [handoff сессии 1](./engineering/evidence/community-decks/epic-3/handoff-session-1.md) со следующими шагами.
 - **historical:** [Community decks research and RFC](./reviews/community-decks-2026-10/README.md) — факты кода,
   варианты, исследования конкурентов/права/поиска, аудит индексов и ответы владельца 2026-10-10.
 - **historical:** [Owner console delivery record](./engineering/evidence/admin-console-2026-10/README.md) — первый снимок реализации эпика #398, его задачи, локальная проверка и границы.
