@@ -34,6 +34,18 @@ class LinkPreviewConfigurationTest(unittest.TestCase):
         self.assertEqual(maps(PRODUCTION), maps(STANDALONE))
         self.assertEqual(maps(PRODUCTION), maps(LOCAL))
 
+    def test_the_three_files_proxy_the_catalogue_sitemap_alike(self):
+        def block(path: Path) -> str:
+            text = path.read_text(encoding="utf-8")
+            start = text.index("  location = /sitemap-decks.xml {")
+            return text[start:text.index("\n  }\n", start)]
+        reference = block(PRODUCTION)
+        self.assertIn("proxy_pass http://$mnema_meta_upstream/api/public/sitemap.xml;", reference)
+        self.assertIn('if ($mnema_meta_upstream = "") { return 404; }', reference)
+        self.assertIn('proxy_set_header Authorization "";', reference)
+        self.assertEqual(reference, block(STANDALONE))
+        self.assertEqual(reference, block(LOCAL))
+
     def test_only_the_upstream_differs_between_the_files(self):
         self.assertIn("  set $mnema_meta_upstream 127.0.0.1:18082;", PRODUCTION.read_text(encoding="utf-8"))
         standalone = STANDALONE.read_text(encoding="utf-8")
