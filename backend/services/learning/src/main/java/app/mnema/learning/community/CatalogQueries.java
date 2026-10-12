@@ -27,6 +27,12 @@ class CatalogQueries {
     static final int BROWSE_COUNT_CAP = 1_000;
     /** The best decks of a search that are paged. */
     static final int SEARCH_CANDIDATES = 200;
+    /**
+     * The most candidates one way of matching contributes. A query that matches more than this in one arm (a word in a third of the titles) is not specific: the arm keeps the first
+     * {@value} rows the index returns (physical order, the order the bitmap heap scan reads) and the best 200 are chosen among those, so such a query costs a bounded scan, not a
+     * scoring of everything it matches. A query below the cap is exact.
+     */
+    static final int ARM_LIMIT = 2_000;
     static final int FRESH_DAYS = CatalogQuery.FRESH_DAYS;
     /** The constant text part (before the weight 0.6) of a deck that is in a topic the query names, whatever else matched: just below a title hit (about 0.4). */
     static final double TOPIC_TEXT = 0.3;
@@ -211,10 +217,10 @@ class CatalogQueries {
      * extended (OR) with the names and synonyms of the topics it names, the unaccented vector against the same, the normalized title word-similar to the normalized text
      * ({@code %>}, threshold {@code pg_trgm.word_similarity_threshold}), or the deck's topic being one the text names (a top-level topic through its children). The relevance, in millionths
      * so that it can be a plain integer key, is
-     * <pre>(0.6 * max(text rank, {@value #TOPIC_TEXT} if in a named topic) + 0.2 * word similarity + 0.2 * popularity percentile) * (0.85 if the language differs)</pre>
+     * <pre>(0.6 * max(text rank, {@value #TOPIC_TEXT} if in a named topic) + 0.2 * word similarity + 0.2 * popularity percentile) * (0.85 if the language of the text is known and differs)</pre>
      * where the text rank is {@code max(ts_rank_cd(search_ru), ts_rank_cd(search_simple))} with normalization 1|32 (length and {@code r/(r+1)}), the percentile is the deck's {@code pop_pct}
      * in generation {@code generation} (0 for a deck it does not know, or for generation 0), and the multiplier applies to a deck whose content language is set and is not
-     * {@code language}. The best {@value #SEARCH_CANDIDATES} by (relevance descending, public code) are paged by the keyset ({@code afterRelevance}, {@code afterCode}); {@code total} is how many there are.
+     * {@code language} (no deck is lowered when {@code language} is null: the detector was not sure). The best {@value #SEARCH_CANDIDATES} by (relevance descending, public code) are paged by the keyset ({@code afterRelevance}, {@code afterCode}); {@code total} is how many there are.
      *
      * <p>The candidates are the UNION of one index scan per way of matching (the Russian vector, the unaccented vector, the title trigrams, and the btree of a named topic), each arm with
      * its single predicate (the GIN arms say nothing else, so that the only index path is the GIN one; the btree arms of a topic carry {@code listed}, the predicate of the partial indexes); the union is joined back to {@code public_deck} for the score and the filters, and to the rank generation by key.
@@ -222,9 +228,9 @@ class CatalogQueries {
      * <p>The tsquery expressions are written inline with bound text parameters: {@code websearch_to_tsquery(regconfig, text)} is IMMUTABLE, so the planner folds them and estimates the
      * GIN indexes with the statistics of the vectors; a generic plan could not, which is why the transaction forces custom plans ({@link #prepareSearch}).
      */
-    Page searchPage(CatalogQuery query, Instant now, TopicDirectory.Named named, List<String> parentTopics, List<String> leafTopics, String language, long generation,
+    Page searchPage(CatalogQuery query, Instant now, TopicDirectory.Named named, List<String> parentTopics, List<String> leafTopics, String language, boolean trigram, long generation,
                     Long afterRelevance, String afterCode, int limit) {
-        Sql sql = searchSql(query, now, named, parentTopics, leafTopics, language, generation, afterRelevance, afterCode, limit);
+        Sql sql = searchSql(query, now, named, parentTopics, leafTopics, language, trigram, generation, afterRelevance, afterCode, limit);
         int[] total = {0};
         List<Hit> hits = jdbc.sql(sql.sql()).params(sql.params).query((row, ignored) -> {
             total[0] = row.getInt("total");
@@ -232,13 +238,13 @@ class CatalogQueries {
         }).list();
         if (hits.isEmpty() && afterRelevance != null) {
             // a page past the end (the list shrank meanwhile) has no row to carry the total: the first row of the same list does
-            return new Page(hits, searchPage(query, now, named, parentTopics, leafTopics, language, generation, null, null, 1).total());
+            return new Page(hits, searchPage(query, now, named, parentTopics, leafTopics, language, trigram, generation, null, null, 1).total());
         }
         return new Page(hits, hits.isEmpty() ? 0 : total[0]);
     }
 
     /** The statement of {@link #searchPage}. */
-    Sql searchSql(CatalogQuery query, Instant now, TopicDirectory.Named named, List<String> parentTopics, List<String> leafTopics, String language, long generation,
+    Sql searchSql(CatalogQuery query, Instant now, TopicDirectory.Named named, List<String> parentTopics, List<String> leafTopics, String language, boolean trigram, long generation,
                     Long afterRelevance, String afterCode, int limit) {
         List<String> texts = new ArrayList<>();
         texts.add(query.q());
@@ -263,17 +269,17 @@ class CatalogQueries {
         String topic = topicPredicate(sql, parentTopics, leafTopics);
         // The candidates are the UNION of one index scan per way to match (each arm has ONE indexable predicate and the partial predicate of the btree), joined back to the row for the
         // score and the filters. A single OR over the three predicates is planned as a scan of everything (the planner underestimates the cost of @@ and %>): see the class comment.
-        StringBuilder arms = new StringBuilder("SELECT deck_id FROM app_learning.public_deck WHERE search_ru @@ " + ru
-                + " UNION SELECT deck_id FROM app_learning.public_deck WHERE search_simple @@ " + simple
-                + " UNION SELECT deck_id FROM app_learning.public_deck WHERE title_norm OPERATOR(app_learning.%>) CAST(:qn AS text)");
-        if (!parentTopics.isEmpty()) arms.append(" UNION SELECT deck_id FROM app_learning.public_deck WHERE listed AND parent_topic_id IN (:parentTopics)");
-        if (!leafTopics.isEmpty()) arms.append(" UNION SELECT deck_id FROM app_learning.public_deck WHERE listed AND topic_id IN (:leafTopics)");
+        StringBuilder arms = new StringBuilder("(SELECT deck_id FROM app_learning.public_deck WHERE search_ru @@ " + ru + " LIMIT " + ARM_LIMIT + ")"
+                + " UNION (SELECT deck_id FROM app_learning.public_deck WHERE search_simple @@ " + simple + " LIMIT " + ARM_LIMIT + ")");
+        if (trigram) arms.append(" UNION (SELECT deck_id FROM app_learning.public_deck WHERE title_norm OPERATOR(app_learning.%>) CAST(:qn AS text) LIMIT " + ARM_LIMIT + ")");
+        if (!parentTopics.isEmpty()) arms.append(" UNION (SELECT deck_id FROM app_learning.public_deck WHERE listed AND parent_topic_id IN (:parentTopics) LIMIT " + ARM_LIMIT + ")");
+        if (!leafTopics.isEmpty()) arms.append(" UNION (SELECT deck_id FROM app_learning.public_deck WHERE listed AND topic_id IN (:leafTopics) LIMIT " + ARM_LIMIT + ")");
         sql.add("SELECT k.* FROM (SELECT c.*, count(*) OVER () AS total FROM (SELECT s.* FROM (SELECT " + D
                 + ", round((" + TEXT_WEIGHT + "::float8 * GREATEST(GREATEST(ts_rank_cd(d.search_ru, " + ru + ", 33), ts_rank_cd(d.search_simple, " + simple
                 + ", 33))::float8, CASE WHEN " + topic + " THEN " + TOPIC_TEXT + "::float8 ELSE 0::float8 END)"
                 + " + " + SIMILARITY_WEIGHT + "::float8 * app_learning.word_similarity(CAST(:qn AS text), d.title_norm)::float8"
                 + " + " + POPULARITY_WEIGHT + "::float8 * COALESCE(r.pop_pct, 0)::float8)"
-                + " * (CASE WHEN d.content_language IS NOT NULL AND d.content_language <> :lang THEN " + LANGUAGE_FACTOR + "::float8 ELSE 1::float8 END) * " + RELEVANCE_SCALE
+                + " * (CASE WHEN CAST(:lang AS text) IS NOT NULL AND d.content_language IS NOT NULL AND d.content_language <> CAST(:lang AS text) THEN " + LANGUAGE_FACTOR + "::float8 ELSE 1::float8 END) * " + RELEVANCE_SCALE
                 + ")::bigint AS position FROM (" + arms + ") h JOIN app_learning.public_deck d ON d.deck_id = h.deck_id"
                 + " LEFT JOIN app_learning.deck_rank r ON r.generation = :g AND r.deck_id = d.deck_id WHERE d.listed");
         filters(sql, query, now, false);

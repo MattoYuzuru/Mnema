@@ -80,9 +80,11 @@ public class AnomalyAdminService {
     @Transactional(timeout = 10)
     public void dismiss(UUID actor, String code, UUID commandId) {
         UuidPolicy.requireEntityId(actor, "actor");
+        // The shape is checked BEFORE the code reaches the receipt (it is hashed into the payload and stored): a path variable of any length or content is user input.
+        // A malformed code is the same opaque 404 as an unknown one, and writes no receipt.
+        if (code == null || !CODE.matcher(code).matches()) throw new ResourceNotFoundException();
         ObjectNode envelope = JsonNodeFactory.instance.objectNode().put("code", code);
         receipts.execute(new CommandIdentity(commandId, actor, "admin.community", "anomaly.dismiss"), envelope, () -> {
-            if (!CODE.matcher(code).matches()) throw new ResourceNotFoundException();
             AnomalyRepository.Flag flag = repository.lockByCode(code).orElseThrow(ResourceNotFoundException::new);
             if (repository.dismiss(flag.deckId(), clock.instant())) audit.append(actor, "COMMUNITY_ANOMALY_DISMISS", flag.deckId(), commandId);
             return JsonNodeFactory.instance.objectNode().put("commandId", commandId.toString());

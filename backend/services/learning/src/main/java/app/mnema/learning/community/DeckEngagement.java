@@ -28,9 +28,10 @@ public class DeckEngagement {
 
     /**
      * The first copy of {@code source} by {@code account}: {@code FORK} with the weight and the "new account" flag from the signals of the request. A second copy (a deleted and re-made one)
-     * is the same person and changes nothing. Nothing is written for the source's owner (the copy command refuses it with {@code FORK_OWN_DECK} before it gets here; this is the net).
+     * is the same person and changes nothing, except that a row written without signals (NULL trust and NULL "new": the Identity of that moment did not send the claims, or the row is
+     * from the backfill) is completed by a request that has them; the date and a known weight never move. Nothing is written for the source's owner (the copy command refuses it with {@code FORK_OWN_DECK} before it gets here; this is the net).
      *
-     * @return whether a row was written
+     * @return whether a row was written or completed
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean forked(UUID source, UUID account, AccountSignals signals) {
@@ -38,9 +39,10 @@ public class DeckEngagement {
                 INSERT INTO app_learning.deck_engagement(deck_id, account_id, kind, first_at, last_at, trust, new_account)
                 SELECT d.deck_id, :account, 'FORK', statement_timestamp(), statement_timestamp(), :trust, :fresh
                   FROM app_learning.deck d WHERE d.deck_id = :source AND d.owner_id <> :account
-                ON CONFLICT (deck_id, account_id, kind) DO NOTHING
-                """).param("source", source).param("account", account).param("trust", signals.trusted() ? 1.0f : UNTRUSTED_WEIGHT)
-                .param("fresh", signals.newAccount()).update() == 1;
+                ON CONFLICT (deck_id, account_id, kind) DO UPDATE SET trust = EXCLUDED.trust, new_account = EXCLUDED.new_account
+                    WHERE app_learning.deck_engagement.trust IS NULL AND EXCLUDED.trust IS NOT NULL
+                """).param("source", source).param("account", account).param("trust", signals.trusted() == null ? null : signals.trusted() ? 1.0f : UNTRUSTED_WEIGHT, java.sql.Types.REAL)
+                .param("fresh", signals.newAccount(), java.sql.Types.BOOLEAN).update() == 1;
     }
 
     /**

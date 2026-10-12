@@ -36,10 +36,19 @@ class RankRepository {
      * Writes the rank of every {@code public_deck} row for {@code generation} and returns the number of rows. Per deck: the non-owner accounts with an event (a copy, a study
      * session) are folded to one line each ({@code per_account}), then to the sums of the formula ({@code per_deck}); the score is computed once and the three window functions
      * order the LISTED decks only ({@code PARTITION BY listed}; the other partition's values are discarded by the {@code CASE}). A deck without engagement scores 0 and is ordered by
-     * {@code deck_id DESC} (a stable, arbitrary order). {@code trust} of a copy row that is missing (only a STUDY row exists) is the untrusted weight.
+     * {@code deck_id DESC} (a stable, arbitrary order). {@code trust} of a copy row that is missing (only a STUDY row exists) or unknown (NULL: Identity did not send the claim) is the untrusted weight. Refinements of RFC 11.2 against Sybil accounts: the quality term Q is weighted by trust like the volume (an army of untrusted accounts that copy and study moves it by a quarter of what the same number of trusted ones would), and the fork term decays from the copy while the activation term decays from the last study, each its own.
      */
     int fill(long generation, Instant now, RankSettings settings) {
         return statement("", generation, now, settings).update();
+    }
+
+    /**
+     * {@code 2^(-days since ts / half-life)} in double precision. The exponent is clamped: {@code power} raises "underflow" for a result below the smallest double (a timestamp of
+     * 1970 with a 14-day half-life is 2^-1428), and a result of 2^-1000 is zero for the formula anyway.
+     */
+    private static String decay(String timestamp, String halfLife) {
+        return "power(2.0::double precision, -LEAST(GREATEST(0, extract(epoch FROM (CAST(:now AS timestamptz) - " + timestamp + "))) / 86400.0 / CAST(:" + halfLife
+                + " AS double precision), 1000))";
     }
 
     /** The statement of {@link #fill} behind {@code prefix} (empty, or {@code EXPLAIN (ANALYZE, BUFFERS) } for the evidence of the plan), bound to its parameters. */
@@ -57,24 +66,22 @@ class RankRepository {
                 ), per_deck AS (
                     SELECT a.deck_id,
                            sum(a.trust
-                               * (CASE WHEN a.fork_at >= :since THEN CAST(:forkWeight AS double precision) ELSE 0 END
-                                  + CASE WHEN a.study_days >= :activationDays AND a.study_at >= :since THEN CAST(:activatedWeight AS double precision) ELSE 0 END)
-                               * power(2.0::double precision, -(GREATEST(0, extract(epoch FROM (CAST(:now AS timestamptz) - GREATEST(a.fork_at, a.study_at)))) / 86400.0)
-                                                              / CAST(:halfLife AS double precision))) AS s,
+                               * (CASE WHEN a.fork_at >= :since THEN CAST(:forkWeight AS double precision) * @FORK_DECAY@ ELSE 0 END
+                                  + CASE WHEN a.study_days >= :activationDays AND a.study_at >= :since THEN CAST(:activatedWeight AS double precision) * @STUDY_DECAY@ ELSE 0 END)) AS s,
                            (count(*) FILTER (WHERE a.fork_at IS NOT NULL))::integer AS forks,
                            (count(*) FILTER (WHERE a.study_days >= :activationDays))::integer AS activated,
-                           (count(*) FILTER (WHERE a.study_at >= :since))::integer AS learning_now
+                           (count(*) FILTER (WHERE a.study_at >= :since))::integer AS learning_now,
+                           COALESCE(sum(a.trust) FILTER (WHERE a.fork_at IS NOT NULL), 0) AS forks_weighted,
+                           COALESCE(sum(a.trust) FILTER (WHERE a.study_days >= :activationDays), 0) AS activated_weighted
                       FROM per_account a
                      GROUP BY a.deck_id
                 ), scored AS (
                     SELECT p.deck_id, p.topic_id, p.parent_topic_id, p.listed,
                            COALESCE(d.forks, 0) AS forks, COALESCE(d.activated, 0) AS activated, COALESCE(d.learning_now, 0) AS learning_now,
                            ln(1 + COALESCE(d.s, 0))
-                           * (0.5 + (COALESCE(d.activated, 0) + CAST(:priorWeight AS double precision) * CAST(:priorRate AS double precision))
-                                    / (COALESCE(d.forks, 0) + CAST(:priorWeight AS double precision)))
-                           * (CAST(:freshFloor AS double precision) + (1 - CAST(:freshFloor AS double precision))
-                              * power(2.0::double precision, -(GREATEST(0, extract(epoch FROM (CAST(:now AS timestamptz) - p.content_updated_at))) / 86400.0)
-                                                             / CAST(:freshHalfLife AS double precision))) AS score
+                           * (0.5 + (COALESCE(d.activated_weighted, 0) + CAST(:priorWeight AS double precision) * CAST(:priorRate AS double precision))
+                                    / (COALESCE(d.forks_weighted, 0) + CAST(:priorWeight AS double precision)))
+                           * (CAST(:freshFloor AS double precision) + (1 - CAST(:freshFloor AS double precision)) * @FRESH_DECAY@) AS score
                       FROM app_learning.public_deck p
                       LEFT JOIN per_deck d ON d.deck_id = p.deck_id
                 )
@@ -86,7 +93,9 @@ class RankRepository {
                        CASE WHEN s.listed THEN (percent_rank() OVER (PARTITION BY s.listed ORDER BY s.score))::real ELSE 0 END,
                        s.forks, s.learning_now, s.activated, s.topic_id, s.parent_topic_id, s.listed
                   FROM scored s
-                """)
+                """
+                .replace("@FORK_DECAY@", decay("a.fork_at", "halfLife")).replace("@STUDY_DECAY@", decay("a.study_at", "halfLife"))
+                .replace("@FRESH_DECAY@", decay("p.content_updated_at", "freshHalfLife")))
                 .param("generation", generation).param("now", at(now)).param("since", at(now.minus(Duration.ofDays(settings.windowDays))))
                 .param("untrusted", (double) DeckEngagement.UNTRUSTED_WEIGHT).param("forkWeight", settings.forkWeight).param("activatedWeight", settings.activatedWeight)
                 .param("activationDays", settings.activationDays).param("halfLife", settings.halfLifeDays)

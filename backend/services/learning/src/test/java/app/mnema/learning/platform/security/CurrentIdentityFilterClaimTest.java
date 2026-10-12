@@ -70,17 +70,19 @@ class CurrentIdentityFilterClaimTest {
             "{\"sub\":\"SUB\",\"mnema_trusted\":true,\"mnema_new_account\":false}|true|false",
             "{\"sub\":\"SUB\",\"mnema_trusted\":false,\"mnema_new_account\":true}|false|true",
             "{\"sub\":\"SUB\",\"mnema_trusted\":true,\"mnema_new_account\":true}|true|true",
-            "{\"sub\":\"SUB\"}|false|false",
+            "{\"sub\":\"SUB\"}|null|null",
             "{\"sub\":\"SUB\",\"mnema_trusted\":\"true\",\"mnema_new_account\":\"true\"}|false|false",
             "{\"sub\":\"SUB\",\"mnema_trusted\":1,\"mnema_new_account\":1}|false|false",
-            "{\"sub\":\"SUB\",\"mnema_trusted\":null,\"mnema_new_account\":null}|false|false",
+            "{\"sub\":\"SUB\",\"mnema_trusted\":null,\"mnema_new_account\":null}|null|null",
             "{\"sub\":\"SUB\",\"mnema_trusted\":[true],\"mnema_new_account\":{\"a\":true}}|false|false",
-            "{\"sub\":\"SUB\",\"mnema_trusted\":true}|true|false",
-            "{\"sub\":\"SUB\",\"mnema_new_account\":true}|false|true"
+            "{\"sub\":\"SUB\",\"mnema_trusted\":true}|true|null",
+            "{\"sub\":\"SUB\",\"mnema_new_account\":true}|null|true"
     })
-    void theAntiAbuseSignalsAreReadStrictlyAndAnAbsentOrMalformedClaimIsNeitherTrustedNorNew(String body, boolean trusted, boolean newAccount) throws Exception {
-        assertThat(IdentityClaims.signals(run(200, body))).isEqualTo(new IdentityClaims.AccountSignals(trusted, newAccount));
+    void theAntiAbuseSignalsAreReadStrictlyAnAbsentClaimIsUnknownAndAMalformedOneIsFalse(String body, String trusted, String newAccount) throws Exception {
+        assertThat(IdentityClaims.signals(run(200, body))).isEqualTo(new IdentityClaims.AccountSignals(flag(trusted), flag(newAccount)));
     }
+
+    private static Boolean flag(String text) { return text.equals("null") ? null : Boolean.valueOf(text); }
 
     @Test
     void theAntiAbuseClaimNamesAreTheOnesInTheSharedContractFileAndARequestWithoutAnIdentityCheckHasUnknownSignals() throws Exception {
@@ -91,7 +93,7 @@ class CurrentIdentityFilterClaimTest {
         assertThat(IdentityClaims.TRUSTED_CLAIM).isEqualTo(contract.path("trusted").path("claim").stringValue(null));
         assertThat(IdentityClaims.NEW_ACCOUNT_CLAIM).isEqualTo(contract.path("newAccount").path("claim").stringValue(null));
         assertThat(IdentityClaims.signals(new MockHttpServletRequest("GET", "/public/decks/x"))).isEqualTo(IdentityClaims.AccountSignals.UNKNOWN);
-        assertThat(IdentityClaims.AccountSignals.UNKNOWN).isEqualTo(new IdentityClaims.AccountSignals(false, false));
+        assertThat(IdentityClaims.AccountSignals.UNKNOWN).isEqualTo(new IdentityClaims.AccountSignals(null, null));
     }
 
     @Test

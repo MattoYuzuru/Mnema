@@ -4,9 +4,12 @@
 -- deck_engagement: ONE row per (SOURCE deck, account, kind). deck_id is deck_fork.upstream_deck_id, so a metric counts DIRECT copies only (a copy of a copy
 --   counts for its direct source, never for the root); account_id is the copier/learner and is never the source's owner (the writers refuse it). No FK: the row
 --   is a metric, not a part of a deck's life (a deleted copy keeps counting for the person; the deck purge of #409 deletes by deck_id and by account_id).
---   FORK    written by the copy command in its own transaction (ON CONFLICT DO NOTHING: the FIRST copy of an account counts, a deleted and re-made copy is the same person).
---           first_at = last_at = the copy; trust 1.0, or 0.25 when the copier was not mnema_trusted at the copy (Identity: verified e-mail and an account of 3 days);
---           new_account = the copier's account was younger than 48 h at the copy (the anomaly query). Claims that were absent or malformed count as NOT trusted and NOT new.
+--   FORK    written by the copy command in the copy transaction (the first copy of an account counts, a deleted and re-made copy is the same person: ON CONFLICT never moves the
+--           date or a known weight). first_at = last_at = the copy; trust 1.0, or 0.25 when the copier was not mnema_trusted at the copy (Identity: a confirmed address, that is
+--           a verified e-mail or any federated sign-in, and an account of 3 days); new_account = the copier's account was younger than 48 h at the copy (the anomaly query).
+--           A claim that Identity did not send at all (an Identity that predates it: the deploy order of the two services is not guaranteed) is stored as NULL, not as false:
+--           trust NULL weighs 0.25 in the rank and new_account NULL is never "new" for the anomaly query; a later copy request by the same account, made when the claims are
+--           there, fills the NULLs (and only the NULLs: ON CONFLICT ... DO UPDATE ... WHERE trust IS NULL). A malformed claim is false.
 --   STUDY   written by the completion of a SCHEDULED study session of a live copy (detached copies count: they are still a direct copy): first_at on insert,
 --           last_at = the latest completion, study_days = distinct local study dates (bumped only when the date moves forward, so a retry is idempotent),
 --           last_study_date = the latest of them.
@@ -51,7 +54,7 @@ CREATE TABLE app_learning.deck_engagement (
     new_account BOOLEAN,
     PRIMARY KEY (deck_id, account_id, kind),
     CONSTRAINT deck_engagement_shape CHECK (CASE kind
-        WHEN 'FORK' THEN trust IS NOT NULL AND new_account IS NOT NULL AND study_days = 0 AND last_study_date IS NULL
+        WHEN 'FORK' THEN study_days = 0 AND last_study_date IS NULL
         ELSE trust IS NULL AND new_account IS NULL AND study_days >= 1 AND last_study_date IS NOT NULL END)
 );
 
@@ -105,10 +108,10 @@ ALTER TABLE app_learning.admin_audit ADD CONSTRAINT admin_audit_action_check CHE
     ('EVENT_CREATE','EVENT_REPLACE','EVENT_DELETE','PROMO_CREATE','PROMO_ENABLE','PROMO_DISABLE','COMPLAINT_DECIDE','COMPLAINT_UNHIDE','COMMUNITY_ANOMALY_DISMISS'));
 
 -- BACKFILL BEGIN (FORK)
--- The copies that exist now. No identity claims are known for the past, so every one weighs 0.25 and none is "new": the rank starts a little low and the anomaly query
--- sees nothing old. One grouped pass over deck_fork (a handful of rows in production), never the source's own copies.
+-- The copies that exist now. No identity claims are known for the past: trust and new_account are NULL (unknown), so every one weighs 0.25 in the rank and none is "new"
+-- for the anomaly query, and a later copy request by the same account fills them in. One grouped pass over deck_fork (a handful of rows in production), never the source's own copies.
 INSERT INTO app_learning.deck_engagement(deck_id, account_id, kind, first_at, last_at, trust, new_account)
-SELECT f.upstream_deck_id, f.owner_id, 'FORK', min(f.forked_at), min(f.forked_at), 0.25, FALSE
+SELECT f.upstream_deck_id, f.owner_id, 'FORK', min(f.forked_at), min(f.forked_at), NULL, NULL
   FROM app_learning.deck_fork f
   JOIN app_learning.deck u ON u.deck_id = f.upstream_deck_id AND u.owner_id <> f.owner_id
  GROUP BY f.upstream_deck_id, f.owner_id

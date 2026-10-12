@@ -151,13 +151,13 @@ class CatalogScaleIntegrationTest extends IsolatedCatalogDatabase {
         TopicDirectory.Named named = topics.named(AliasNormalizer.normalize(text));
         List<String> parents = named.topics().stream().filter(topic -> !topics.childrenOf(topic).isEmpty()).toList();
         List<String> leaves = named.topics().stream().filter(topic -> topics.childrenOf(topic).isEmpty()).toList();
-        String language = LanguageDetector.detect(text).orElse("ru");
+        String language = LanguageDetector.detect(text).orElse(null);
         // the route runs the settings and the statement in one transaction: the settings are transaction-local
         Pattern three = Pattern.compile("public_deck_search_ru(?s:.*)public_deck_search_simple(?s:.*)public_deck_title_trgm");
         return new Case(name, () -> tx(() -> {
             queries.prepareSearch(0.5);
-            return queries.searchPage(q, NOW, named, parents, leaves, language, 1, afterRelevance, afterCode, 24);
-        }), queries.searchSql(q, NOW, named, parents, leaves, language, 1, afterRelevance, afterCode, 24), three, Pattern.compile("Seq Scan on (public_deck|deck_rank)"), budget);
+            return queries.searchPage(q, NOW, named, parents, leaves, language, CatalogService.trigramUseful(AliasNormalizer.normalize(text)), 1, afterRelevance, afterCode, 24);
+        }), queries.searchSql(q, NOW, named, parents, leaves, language, CatalogService.trigramUseful(AliasNormalizer.normalize(text)), 1, afterRelevance, afterCode, 24), three, Pattern.compile("Seq Scan on (public_deck|deck_rank)"), budget);
     }
 
     @Test

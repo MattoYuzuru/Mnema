@@ -3,6 +3,7 @@ package app.mnema.learning.community;
 import app.mnema.learning.library.DeckSlug;
 import app.mnema.learning.library.LanguageDetector;
 import app.mnema.learning.library.PublicReadAdmission;
+import app.mnema.learning.library.PublicReadBusyException;
 import app.mnema.learning.library.TopicDirectory;
 import app.mnema.learning.library.Viewer;
 import app.mnema.learning.platform.api.InvalidRequestException;
@@ -17,6 +18,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionTimedOutException;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.JsonNodeFactory;
@@ -33,6 +36,7 @@ import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 
 /**
@@ -69,6 +73,9 @@ public class CatalogService {
     private final MeterRegistry meters;
     private final Clock clock;
     private final TransactionTemplate transaction;
+    private final Semaphore searches;
+    private final Object facetsLock = new Object();
+    private final Object sitemapLock = new Object();
     private volatile FacetSnapshot facets;
     private volatile CachedSitemap sitemap;
 
@@ -91,7 +98,11 @@ public class CatalogService {
         this.clock = clock;
         this.transaction = new TransactionTemplate(transactions);
         this.transaction.setReadOnly(true);
+        // One snapshot for the whole request: the check that a cursor's generation is still kept and the page that is cut from it must agree (an expired generation is 412, never an
+        // empty page because the generation was pruned between the two statements).
+        this.transaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         this.transaction.setTimeout((int) Math.max(1, settings.queryTimeout.toSeconds()));
+        this.searches = new Semaphore(settings.maxConcurrentSearches);
     }
 
     /** Forgets the cached facets and sitemap (tests, and an operator who wants a fresh page now: a restart does it too). */
@@ -100,37 +111,75 @@ public class CatalogService {
         sitemap = null;
     }
 
-    private <T> T serve(String route, Viewer viewer, Supplier<T> work) {
+    /** The kill switch, then the admission (limit and bulkhead) of the public reads; {@code work} runs inside a place of the bulkhead. */
+    private <T> T admit(String route, Viewer viewer, Supplier<T> work) {
         if (!settings.enabled) {
             admission.count(route, "disabled");
             throw new ResourceNotFoundException();
         }
-        return admission.within(route, viewer, () -> {
-            Timer.Sample sample = Timer.start(meters);
-            try {
-                T result = transaction.execute(status -> work.get());
-                admission.count(route, "ok");
-                return result;
-            } finally {
-                sample.stop(meters.timer("mnema_catalog_request_seconds", "route", route));
+        return admission.within(route, viewer, work);
+    }
+
+    /**
+     * One read-only REPEATABLE READ transaction of {@code query-timeout}. A statement or a transaction that runs out of time is counted ({@code outcome=timeout}) and answered as
+     * {@code 503 PUBLIC_READ_BUSY} with {@code Retry-After}: the instance is too busy for this question right now, which is not an error of the service and leaves no stack trace.
+     */
+    private <T> T inTransaction(String route, Supplier<T> work) {
+        Timer.Sample sample = Timer.start(meters);
+        try {
+            T result = transaction.execute(status -> work.get());
+            admission.count(route, "ok");
+            return result;
+        } catch (RuntimeException failure) {
+            if (timedOut(failure)) {
+                admission.count(route, "timeout");
+                throw new PublicReadBusyException();
             }
-        });
+            throw failure;
+        } finally {
+            sample.stop(meters.timer("mnema_catalog_request_seconds", "route", route));
+        }
+    }
+
+    /** Whether the failure is the clock of the transaction, the statement timeout of the driver or PostgreSQL's "canceling statement" (SQLSTATE 57014). */
+    static boolean timedOut(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+            if (cause instanceof TransactionTimedOutException || cause instanceof org.springframework.dao.QueryTimeoutException) return true;
+            if (cause instanceof java.sql.SQLException sql && "57014".equals(sql.getSQLState())) return true;
+        }
+        return false;
+    }
+
+    private <T> T serve(String route, Viewer viewer, Supplier<T> work) {
+        return admit(route, viewer, () -> inTransaction(route, work));
     }
 
     // ---- facets ----
 
     ObjectNode facets(Viewer viewer) {
-        return serve("catalog_facets", viewer, () -> facetSnapshot().document().deepCopy());
+        // the cache is looked at BEFORE a transaction (a connection) is opened; the admission above it still applies
+        return admit("catalog_facets", viewer, () -> {
+            FacetSnapshot known = freshFacets();
+            if (known != null) {
+                admission.count("catalog_facets", "ok");
+                return known.document().deepCopy();
+            }
+            return inTransaction("catalog_facets", () -> facetSnapshot().document().deepCopy());
+        });
+    }
+
+    private FacetSnapshot freshFacets() {
+        FacetSnapshot known = facets;
+        return known != null && clock.instant().isBefore(known.loadedAt().plus(settings.facetsTtl)) ? known : null;
     }
 
     private FacetSnapshot facetSnapshot() {
-        FacetSnapshot known = facets;
-        Instant now = clock.instant();
-        if (known != null && now.isBefore(known.loadedAt().plus(settings.facetsTtl))) return known;
-        synchronized (this) {
-            known = facets;
-            if (known != null && now.isBefore(known.loadedAt().plus(settings.facetsTtl))) return known;
-            FacetSnapshot fresh = loadFacets(now);
+        FacetSnapshot known = freshFacets();
+        if (known != null) return known;
+        synchronized (facetsLock) {
+            known = freshFacets();
+            if (known != null) return known;
+            FacetSnapshot fresh = loadFacets(clock.instant());
             facets = fresh;
             return fresh;
         }
@@ -233,9 +282,20 @@ public class CatalogService {
     // ---- browse and search ----
 
     ObjectNode decks(Viewer viewer, HttpServletRequest request) {
-        return serve("catalog_decks", viewer, () -> {
+        return admit("catalog_decks", viewer, () -> {
             CatalogQuery query = CatalogQuery.parse(request, topics);
-            return query.search() ? search(query) : browse(query);
+            if (!query.search()) return inTransaction("catalog_decks", () -> browse(query));
+            // a text search is the expensive statement: at most max-concurrent-searches at once on this instance, taken BEFORE a connection is, so a burst of searches cannot hold
+            // every place of the public bulkhead and starve the cheap reads
+            if (!searches.tryAcquire()) {
+                admission.count("catalog_decks", "busy");
+                throw new PublicReadBusyException();
+            }
+            try {
+                return inTransaction("catalog_decks", () -> search(query));
+            } finally {
+                searches.release();
+            }
         });
     }
 
@@ -279,6 +339,9 @@ public class CatalogService {
     private ObjectNode search(CatalogQuery query) {
         Instant now = clock.instant();
         CatalogCursor cursor = CatalogCursor.decode(query.cursor(), "search", query.hash());
+        String normalized = query.normalizedQuery();
+        // A text without a single letter or digit (punctuation, operators, emoji) or that normalizes to nothing searches nothing: an empty page, no statement
+        if (normalized.isEmpty() || query.q().codePoints().noneMatch(Character::isLetterOrDigit)) return answer(List.of(), Map.of(), 0, false, null);
         OptionalLong generation;
         if (cursor != null) {
             if (cursor.position() == null || cursor.code() == null || !cursor.code().matches("[1-9A-HJ-NP-Za-km-z]{10}")) throw new InvalidRequestException();
@@ -291,9 +354,10 @@ public class CatalogService {
         List<String> parents = new ArrayList<>();
         List<String> leaves = new ArrayList<>();
         for (String topic : named.topics()) (!topics.childrenOf(topic).isEmpty() ? parents : leaves).add(topic);
-        String language = LanguageDetector.detect(query.q()).orElse("ru");
+        // null when the detector is not sure: then no deck is lowered for its language
+        String language = LanguageDetector.detect(query.q()).orElse(null);
         queries.prepareSearch(settings.similarityThreshold);
-        CatalogQueries.Page page = queries.searchPage(query, now, named, parents, leaves, language, generation.orElse(0), cursor == null ? null : cursor.position(),
+        CatalogQueries.Page page = queries.searchPage(query, now, named, parents, leaves, language, trigramUseful(normalized), generation.orElse(0), cursor == null ? null : cursor.position(),
                 cursor == null ? null : cursor.code(), query.limit());
         List<CatalogQueries.Hit> hits = page.hits();
         boolean more = hits.size() > query.limit();
@@ -304,6 +368,16 @@ public class CatalogService {
             next = new CatalogCursor("search", query.hash(), generation.isPresent() ? generation.getAsLong() : null, last.position(), null, last.row().publicCode(), null).encode();
         }
         return answer(shown, counts(generation, shown.stream().map(hit -> hit.row().deckId()).toList()), page.total(), page.total() >= CatalogQueries.SEARCH_CANDIDATES, next);
+    }
+
+    /**
+     * Whether the title trigram arm is worth running: a normalized text of three code points or more. Shorter ones have one or two trigrams (two letters of a script written with
+     * spaces match half the catalogue; in a script written without spaces the boundary trigrams of two characters occur in no title at all, so the arm would scan the index for nothing).
+     * Such a text is found by the text arms and by the topics it names. Consequence for v1: a two-character Chinese, Japanese or Korean query finds nothing; four characters (a word)
+     * reach the similarity threshold.
+     */
+    static boolean trigramUseful(String normalized) {
+        return normalized.codePointCount(0, normalized.length()) >= 3;
     }
 
     private ObjectNode answer(List<CatalogQueries.Hit> shown, Map<UUID, CatalogRanks.Counts> counts, int total, boolean capped, String next) {
@@ -399,18 +473,27 @@ public class CatalogService {
 
     /** The sitemap document (sitemaps.org 0.9), cached per instance for {@code sitemap-ttl}. */
     byte[] sitemap(Viewer viewer) {
-        return serve("catalog_sitemap", viewer, () -> {
-            CachedSitemap known = sitemap;
-            Instant now = clock.instant();
-            if (known != null && now.isBefore(known.loadedAt().plus(settings.sitemapTtl))) return known.body();
-            synchronized (this) {
-                known = sitemap;
-                if (known != null && now.isBefore(known.loadedAt().plus(settings.sitemapTtl))) return known.body();
-                byte[] body = renderSitemap();
-                sitemap = new CachedSitemap(now, body);
-                return body;
+        return admit("catalog_sitemap", viewer, () -> {
+            CachedSitemap known = freshSitemap();
+            if (known != null) {
+                admission.count("catalog_sitemap", "ok");
+                return known.body();
             }
+            return inTransaction("catalog_sitemap", () -> {
+                synchronized (sitemapLock) {
+                    CachedSitemap again = freshSitemap();
+                    if (again != null) return again.body();
+                    byte[] body = renderSitemap();
+                    sitemap = new CachedSitemap(clock.instant(), body);
+                    return body;
+                }
+            });
         });
+    }
+
+    private CachedSitemap freshSitemap() {
+        CachedSitemap known = sitemap;
+        return known != null && clock.instant().isBefore(known.loadedAt().plus(settings.sitemapTtl)) ? known : null;
     }
 
     private byte[] renderSitemap() {

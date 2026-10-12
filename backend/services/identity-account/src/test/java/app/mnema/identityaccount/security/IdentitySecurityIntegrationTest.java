@@ -395,6 +395,18 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         // Old but the e-mail is not verified (a provider that does not vouch for it): not trusted, not new.
         verify(id, false);
         assertClaims(bearer, id, false, false);
+        // A federated sign-in (Yandex never marks the e-mail verified) confirms the address by itself: old, unverified e-mail, one external identity => trusted; young => not yet
+        link(id, "yandex");
+        assertClaims(bearer, id, true, false);
+        age(id, Duration.ofHours(71));
+        assertClaims(bearer, id, false, false);
+        age(id, Duration.ofHours(73));
+        jdbc.sql("DELETE FROM app_identity.external_identity WHERE account_id=:id").param("id", id).update();
+        assertClaims(bearer, id, false, false);
+        // Another account's identity confirms nothing here
+        var linked = account();
+        link(linked.accountId(), "github");
+        assertClaims(bearer, id, false, false);
         // The claims are the signals of the token's own subject, whatever another account has.
         var other = account();
         String otherBearer = "Bearer " + userInfoToken(other, "serves-trust-claims-other-0123456789-abcdefghijklmnopqrstuvwxyz");
@@ -408,6 +420,11 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.sub").value(subject.toString()))
                 .andExpect(jsonPath("$.mnema_trusted").value(trusted))
                 .andExpect(jsonPath("$.mnema_new_account").value(newAccount));
+    }
+
+    private void link(UUID id, String provider) {
+        jdbc.sql("INSERT INTO app_identity.external_identity(account_id, provider, provider_subject) VALUES (:id, :provider, :subject)")
+                .param("id", id).param("provider", provider).param("subject", UUID.randomUUID().toString()).update();
     }
 
     private void verify(UUID id, boolean verified) {

@@ -116,16 +116,16 @@ class CatalogRankIntegrationTest extends IsolatedCatalogDatabase {
      * Clock 2026-10-12T12:00Z. Constants of RFC 11.2: window 30 days, half-life 14, activation at 3 study days, weights 1 and 2, Q prior (10 copies at 0.25), freshness 0.6 + 0.4 x 2^(-d/120).
      * <pre>
      * deck A (listed, updated now, fresh 1.0), owner o:
-     *   u1  FORK 14 d ago, trust 1.0;  STUDY 3 days, last 7 d ago   fork30 = 1, activated30 = 1: c = 1 x (1 + 2) x 2^(-7/14)        = 3 / sqrt 2         = 2.1213203436
+     *   u1  FORK 14 d ago, trust 1.0;  STUDY 3 days, last 7 d ago   fork30 = 1, activated30 = 1: c = 1 x (1 x 2^(-14/14) + 2 x 2^(-7/14))  = 0.5 + 1.4142135624 = 1.9142135624
      *   u2  FORK 28 d ago, trust 0.25                               fork30 = 1:                  c = 0.25 x 1 x 2^(-28/14)       = 0.25 x 0.25        = 0.0625
-     *   u3  FORK 40 d ago, trust 1.0;  STUDY 5 days, last 1 d ago   fork30 = 0, activated30 = 1: c = 1 x 2 x 2^(-1/14)             = 2 x 0.9516951      = 1.9033903060
+     *   u3  FORK 40 d ago, trust 1.0;  STUDY 5 days, last 1 d ago   fork30 = 0, activated30 = 1: c = 1 x 2 x 2^(-1/14)             = 2 x 0.9516951      = 1.9033903060 (the fork term is outside the window)
      *   u4  FORK 3 d ago,  trust 1.0;  STUDY 2 days, last 3 d ago   fork30 = 1, not activated:   c = 1 x 1 x 2^(-3/14)             = 0.8619728212
      *   o   (the owner) FORK now, trust 1.0                          never counted
-     *   S = 4.9491834708;  forks = 4, activated = 2 (u1, u3), learning now = 3 (u1, u3, u4)
-     *   Q = (2 + 10 x 0.25) / (4 + 10) = 4.5 / 14 = 0.3214285714;   score = ln(1 + S) x (0.5 + Q) x 1.0 = 1.4648157679
+     *   S = 4.7420766896;  forks = 4, activated = 2 (u1, u3), learning now = 3 (u1, u3, u4); forks weighted = 1 + 0.25 + 1 + 1 = 3.25, activated weighted = 1 + 1 = 2
+     *   Q = (2 + 10 x 0.25) / (3.25 + 10) = 4.5 / 13.25 = 0.3396226415;   score = ln(1 + S) x (0.5 + Q) x 1.0 = 1.4675100324
      * deck B (listed, updated 120 d ago, fresh 0.6 + 0.4 x 0.5 = 0.8):
      *   u1  FORK 1 d ago, trust 1.0: c = 2^(-1/14) = 0.9516951;   u5 FORK now, trust 0.25: c = 0.25
-     *   S = 1.2016951530; forks = 2, activated = 0, learning now = 0;  Q = 2.5 / 12 = 0.2083333333;   score = ln(1 + S) x (0.5 + Q) x 0.8 = 0.4472289664
+     *   S = 1.2016951530; forks = 2, activated = 0, learning now = 0; forks weighted 1.25;  Q = 2.5 / 11.25 = 0.2222222222;   score = ln(1 + S) x (0.5 + Q) x 0.8 = 0.4559981618
      * deck C (listed, updated 240 d ago, fresh 0.7): no engagement: S = 0, score = 0
      * deck U (PUBLIC, below the threshold, updated now): u1 FORK 2 d ago, trust 1.0: S = 2^(-2/14) = 0.9057236643; Q = 2.5 / 11; score = 0.4689904092; not ranked
      * </pre>
@@ -153,8 +153,8 @@ class CatalogRankIntegrationTest extends IsolatedCatalogDatabase {
         long generation = generate();
         assertThat(generation).isEqualTo(1);
         Rank ra = rank(generation, a), rb = rank(generation, b), rc = rank(generation, c), ru = rank(generation, u);
-        assertThat(ra.score()).isCloseTo(1.4648157679276934, within(1e-9));
-        assertThat(rb.score()).isCloseTo(0.44722896639660575, within(1e-9));
+        assertThat(ra.score()).isCloseTo(1.4675100324466621, within(1e-9));
+        assertThat(rb.score()).isCloseTo(0.45599816181614705, within(1e-9));
         assertThat(rc.score()).isZero();
         assertThat(ru.score()).isCloseTo(0.46899040923488505, within(1e-9));
         // raw audience counts: distinct non-owner accounts
@@ -183,6 +183,62 @@ class CatalogRankIntegrationTest extends IsolatedCatalogDatabase {
     }
 
     @Test
+    void theQualityTermIsWeightedByTrustSoManyUntrustedAccountsMoveItLessThanFewTrustedOnes() {
+        // 40 untrusted accounts (weight 0.25) copy and study deck S; 10 trusted ones do the same to deck T: the same weighted volume (10), and so the same Q
+        World s = publicDeck(10, true, NOW, "spanish", "languages");
+        World t = publicDeck(10, true, NOW, "spanish", "languages");
+        for (int index = 0; index < 40; index++) {
+            UUID account = UUID.randomUUID();
+            fork(s, account, ago(2), 0.25f);
+            study(s, account, ago(2), ago(1), 3);
+        }
+        for (int index = 0; index < 10; index++) {
+            UUID account = UUID.randomUUID();
+            fork(t, account, ago(2), 1.0f);
+            study(t, account, ago(2), ago(1), 3);
+        }
+        long generation = generate();
+        // Q = (10 + 2.5) / (10 + 10) = 0.625 for both; with the unweighted Q the 40 would give (40 + 2.5) / 50 = 0.85, a boost a Sybil swarm could buy
+        double q = (10 + 2.5) / (10 + 10);
+        double decay = Math.pow(2, -1 / 14.0);
+        assertThat(rank(generation, s).score()).isCloseTo(rank(generation, t).score(), within(1e-9));
+        assertThat(rank(generation, t).score()).isCloseTo(Math.log(1 + 10 * (Math.pow(2, -2 / 14.0) + 2 * decay)) * (0.5 + q), within(1e-9));
+        assertThat(rank(generation, s).activated()).isEqualTo(40);
+    }
+
+    @Test
+    void anUnknownTrustWeighsLikeAnUntrustedOneAndTheTwoTermsDecayFromTheirOwnDates() {
+        World a = publicDeck(10, true, NOW, "spanish", "languages");
+        World b = publicDeck(10, true, NOW, "spanish", "languages");
+        UUID unknown = UUID.randomUUID();
+        UUID untrusted = UUID.randomUUID();
+        jdbc.sql("INSERT INTO app_learning.deck_engagement(deck_id, account_id, kind, first_at, last_at, trust, new_account) VALUES (:d, :a, 'FORK', :at, :at, NULL, NULL)")
+                .param("d", a.deck()).param("a", unknown).param("at", java.sql.Timestamp.from(ago(3))).update();
+        fork(b, untrusted, ago(3), 0.25f);
+        long generation = generate();
+        assertThat(rank(generation, a).score()).isCloseTo(rank(generation, b).score(), within(1e-12));
+        assertThat(rank(generation, a).score()).isPositive();
+        // the fork was long ago and the learner studied yesterday: the fork term has decayed 29 days, the activation term one day (not both from the same, latest, date)
+        World c = publicDeck(10, true, NOW, "spanish", "languages");
+        UUID learner = UUID.randomUUID();
+        fork(c, learner, ago(29), 1.0f);
+        study(c, learner, ago(29), ago(1), 3);
+        long next = generate();
+        double s = Math.pow(2, -29 / 14.0) + 2 * Math.pow(2, -1 / 14.0);
+        assertThat(rank(next, c).score()).isCloseTo(Math.log(1 + s) * (0.5 + (1 + 2.5) / (1 + 10)), within(1e-9));
+    }
+
+    @Test
+    void aDateFarInThePastIsNoUnderflowOfTheDecay() {
+        // 2^(-days / 14) of a 1970 date is 2^-1428, below the smallest double: power() raises "underflow" unless the exponent is clamped
+        World old = publicDeck(10, true, java.time.Instant.parse("1970-01-02T00:00:00Z"), "spanish", "languages");
+        jdbc.sql("INSERT INTO app_learning.deck_engagement(deck_id, account_id, kind, first_at, last_at, trust, new_account) VALUES (:d, :a, 'FORK', :at, :at, 1.0, FALSE)")
+                .param("d", old.deck()).param("a", UUID.randomUUID()).param("at", java.sql.Timestamp.from(java.time.Instant.parse("1970-01-02T00:00:00Z"))).update();
+        long generation = generate();
+        assertThat(rank(generation, old).score()).isGreaterThanOrEqualTo(0).isLessThan(1e-3);
+    }
+
+    @Test
     void tiesAreBrokenByDeckIdAndAnAccountWithOnlyAStudyRowCountsAsUntrusted() {
         World older = publicDeck(10, true, NOW, "spanish", "languages");
         World newer = publicDeck(10, true, NOW, "spanish", "languages");
@@ -201,9 +257,9 @@ class CatalogRankIntegrationTest extends IsolatedCatalogDatabase {
         assertThat(row.added()).isZero();
         assertThat(row.activated()).isEqualTo(1);
         assertThat(row.learningNow()).isEqualTo(1);
-        // S = 0.25 x 2 x 2^(-2/14); Q = (1 + 2.5) / (0 + 10); fresh 1
+        // S = 0.25 x 2 x 2^(-2/14); Q = (0.25 + 2.5) / (0 + 10): the activated account counts with its weight; fresh 1
         double s = 0.25 * 2 * Math.pow(2, -2.0 / 14);
-        assertThat(row.score()).isCloseTo(Math.log(1 + s) * (0.5 + 3.5 / 10), within(1e-9));
+        assertThat(row.score()).isCloseTo(Math.log(1 + s) * (0.5 + 2.75 / 10), within(1e-9));
         assertThat(row.rank()).isEqualTo(1);
     }
 

@@ -140,7 +140,7 @@ public class PublicProfiles {
 
     /**
      * The three product signals of {@code /userinfo} (Learning reads no Identity table): {@code publishReady} (the claim {@code mnema_public_profile}),
-     * {@code trusted} (the e-mail is verified, whichever way the account signed up, AND the account is at least {@link #TRUSTED_AFTER} old) and
+     * {@code trusted} (the address is confirmed, AND the account is at least {@link #TRUSTED_AFTER} old; confirmed means the e-mail is verified OR the account has ANY federated identity (Google, Yandex, GitHub): signing in through a provider is the confirmation even where the provider does not vouch for the e-mail, as Yandex does not) and
      * {@code newAccount} (the account is younger than {@link #NEW_ACCOUNT_WITHIN}). {@code trusted} and {@code newAccount} are anti-abuse inputs of the
      * community ranking (a copy by an untrusted account weighs less; a burst of copies by new accounts raises a flag in the owner console); they are
      * never shown to anybody and carry no personal data. One primary-key statement; {@code now} is the caller's clock. An unknown account is all false.
@@ -153,7 +153,7 @@ public class PublicProfiles {
         return jdbcClient.sql("""
                         SELECT EXISTS(SELECT 1 FROM app_identity.public_profile_consent c WHERE c.account_id=a.account_id AND\s""" + CARD_GATE + """
                                ) AS ready,
-                               (a.email_verified AND a.created_at <= :trustedBefore) AS trusted,
+                               ((a.email_verified OR EXISTS(SELECT 1 FROM app_identity.external_identity x WHERE x.account_id=a.account_id)) AND a.created_at <= :trustedBefore) AS trusted,
                                (a.created_at > :newAfter) AS fresh
                         FROM app_identity.account a WHERE a.account_id=:id""")
                 .param("id", accountId).param("trustedBefore", at.minus(TRUSTED_AFTER)).param("newAfter", at.minus(NEW_ACCOUNT_WITHIN))

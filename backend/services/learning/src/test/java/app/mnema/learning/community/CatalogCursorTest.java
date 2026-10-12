@@ -55,11 +55,31 @@ class CatalogCursorTest {
     }
 
     @Test
+    void theCodeOfEveryKindIsABase58CodeAndTheTimeIsASaneOne() {
+        String[] kinds = {"new", "updated", "search", "author", "popular"};
+        String prefix = "{\"v\":1,\"k\":\"%s\",\"h\":\"" + HASH + "\"";
+        for (String kind : kinds) {
+            // garbage, a NUL, a quote, the wrong alphabet (0 O I l) and the wrong length: 400, never a 500
+            for (String code : new String[] {"", "short", "Kq7xT3mNpRR", "0OIl000000", "Kq7xT3mNp\\u0000", "Kq7xT3mNp\\\"", "Kq7xT3mNp;", "Kq7xT3mNp "}) {
+                String json = prefix.formatted(kind) + ",\"c\":\"" + code + "\"}";
+                assertThatThrownBy(() -> CatalogCursor.decode(raw(json), kind, HASH)).as(kind + " " + code).isInstanceOf(InvalidRequestException.class);
+            }
+            assertThat(CatalogCursor.decode(new CatalogCursor(kind, HASH, null, null, null, "Kq7xT3mNpR", null).encode(), kind, HASH).code()).isEqualTo("Kq7xT3mNpR");
+            // a time before the product, in the far future, beyond what a long holds, or negative
+            for (String time : new String[] {"0", "946684799999999", "99999999999999999", "9223372036854775807", "-1", String.valueOf(System.currentTimeMillis() * 1000 + 3L * 86_400_000_000L)}) {
+                String json = prefix.formatted(kind) + ",\"t\":" + time + ",\"c\":\"Kq7xT3mNpR\"}";
+                assertThatThrownBy(() -> CatalogCursor.decode(raw(json), kind, HASH)).as(kind + " " + time).isInstanceOf(InvalidRequestException.class);
+            }
+            long now = System.currentTimeMillis() * 1000;
+            assertThat(CatalogCursor.decode(raw(prefix.formatted(kind) + ",\"t\":" + now + ",\"c\":\"Kq7xT3mNpR\"}"), kind, HASH)).isNotNull();
+        }
+    }
+
+    @Test
     void thePositionsAChosenListNeedsAreChecked() {
         assertThatThrownBy(() -> new CatalogCursor("popular", HASH, null, 3L, null, null, null).requireRank()).isInstanceOf(InvalidRequestException.class);
         assertThatThrownBy(() -> new CatalogCursor("popular", HASH, 1L, 0L, null, null, null).requireRank()).isInstanceOf(InvalidRequestException.class);
         assertThat(new CatalogCursor("popular", HASH, 1L, 1L, null, null, null).requireRank()).isNotNull();
-        assertThatThrownBy(() -> new CatalogCursor("new", HASH, null, null, Instant.EPOCH, "bad", null).requireTime()).isInstanceOf(InvalidRequestException.class);
         assertThatThrownBy(() -> new CatalogCursor("new", HASH, null, null, null, "Kq7xT3mNpR", null).requireTime()).isInstanceOf(InvalidRequestException.class);
         assertThat(new CatalogCursor("new", HASH, null, null, Instant.EPOCH, "Kq7xT3mNpR", null).requireTime()).isNotNull();
     }

@@ -46,8 +46,9 @@ the answer is `{sub, mnema_public_profile, mnema_trusted, mnema_new_account}`; t
 default mapper returned is dropped.
 
 The two other claims are **internal anti-abuse signals** of the community ranking (Community/3, #450), not personal data and never shown to anybody:
-`mnema_trusted` is true when the account's e-mail is verified (`account.email_verified`, which local accounts earn by verification and federated
-accounts by the provider's own statement; a Yandex e-mail is never verified) AND the account was created at least 72 hours ago, and
+`mnema_trusted` is true when the address is confirmed AND the account was created at least 72 hours ago. Confirmed means `account.email_verified` (local accounts earn it by
+verification, federated accounts by the provider's own statement) OR the account has ANY row in `external_identity` (Google, Yandex, GitHub): signing in through a provider
+is the confirmation, which matters for Yandex, whose e-mail is never marked verified and whose learners would otherwise weigh 0.25 forever, and
 `mnema_new_account` is true while the account is younger than 48 hours. A copy of a community deck by an account that is not trusted weighs 0.25 in the
 rank, and a burst of copies by new accounts raises a flag in the owner console. All three booleans come from ONE primary-key statement
 (`PublicProfiles.userInfoSignals`, evaluated at the request's clock instant), so they are as current as the request and nothing is cached. An unknown

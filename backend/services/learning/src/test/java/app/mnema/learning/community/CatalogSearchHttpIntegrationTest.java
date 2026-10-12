@@ -175,6 +175,19 @@ class CatalogSearchHttpIntegrationTest extends CatalogHttpTest {
     }
 
     @Test
+    void aWordInThousandsOfTitlesStillAnswersFromABoundedNumberOfCandidates() {
+        List<CatalogSeed.Spec> specs = new ArrayList<>();
+        for (int index = 0; index < 2_300; index++) specs.add(CatalogSeed.deck("Слова " + index).description("Слова на каждый день"));
+        seed.insertAll(specs);
+        JsonNode page = ok(get(decks("q", "слова", "limit", "48")));
+        // 2 300 titles match, each way of matching contributes at most CatalogQueries.ARM_LIMIT of them, the best 200 are paged
+        assertThat(CatalogQueries.ARM_LIMIT).isEqualTo(2_000);
+        assertThat(page.path("total").intValue()).isEqualTo(200);
+        assertThat(page.path("totalCapped").booleanValue()).isTrue();
+        assertThat(page.path("decks")).hasSize(48);
+    }
+
+    @Test
     void aSearchCursorIsBoundToItsQueryAndToAKeptGeneration() {
         List<CatalogSeed.Spec> specs = new ArrayList<>();
         for (int index = 0; index < 12; index++) specs.add(CatalogSeed.deck("Глаголы " + index));
@@ -186,6 +199,9 @@ class CatalogSearchHttpIntegrationTest extends CatalogHttpTest {
         // another query, another filter, another list and garbage are 400
         problem(get(decks("q", "слова", "limit", "5", "cursor", cursor)), 400, "INVALID_REQUEST");
         problem(get(decks("q", "глаголы", "level", "A1", "limit", "5", "cursor", cursor)), 400, "INVALID_REQUEST");
+        // the text AS TYPED is part of the question, not only its normalization (a quote or a minus changes the search, the case does not change the words)
+        problem(get(decks("q", "Глаголы", "limit", "5", "cursor", cursor)), 400, "INVALID_REQUEST");
+        problem(get(decks("q", "глаголы -часть", "limit", "5", "cursor", cursor)), 400, "INVALID_REQUEST");
         problem(get(decks("limit", "5", "cursor", cursor)), 400, "INVALID_REQUEST");
         problem(get(decks("q", "глаголы", "cursor", "not-a-cursor!")), 400, "INVALID_REQUEST");
         problem(get(decks("q", "глаголы", "cursor", cursor.substring(0, cursor.length() - 3))), 400, "INVALID_REQUEST");
@@ -219,6 +235,41 @@ class CatalogSearchHttpIntegrationTest extends CatalogHttpTest {
         // an exclusion and an alternative are understood by the text search
         assertThat(titles(search("испанские or sql"))).contains("Испанские глаголы", "SQL для собеседований");
         assertThat(titles(search("\"испанские глаголы\""))).contains("Испанские глаголы");
+    }
+
+    @Test
+    void aTextWithoutLettersOrDigitsSearchesNothingAndAShortTextSkipsTheTrigramArm() {
+        fixtures();
+        seed.insert(CatalogSeed.deck("Abcde слова"));
+        for (String empty : List.of("!!!", "-", "\"\"", "🙂🙂", "  ()  ", "…", "+-*/")) {
+            JsonNode page = ok(get(decks("q", empty)));
+            assertThat(page.path("decks")).as(empty).isEmpty();
+            assertThat(page.path("total").intValue()).isZero();
+            assertThat(page.path("nextCursor").isNull()).isTrue();
+        }
+        // two letters of a script written with spaces would match half the titles by trigrams: only the text arms and the topics answer, and «ab» is no word of «Abcde»
+        assertThat(titles(search("ab"))).isEmpty();
+        assertThat(titles(search("abc"))).as("three code points: the trigram arm runs").contains("Abcde слова");
+        // two characters of a script written without spaces have no trigram in any title (the boundary trigrams need a space): nothing to find, nothing scanned; a word of four does
+        assertThat(titles(search("ひら"))).isEmpty();
+        assertThat(titles(search("ひらがな"))).containsExactly("日本語のひらがな");
+        assertThat(CatalogService.trigramUseful("ab")).isFalse();
+        assertThat(CatalogService.trigramUseful("abc")).isTrue();
+        assertThat(CatalogService.trigramUseful("ひら")).isFalse();
+        assertThat(CatalogService.trigramUseful("ひらが")).isTrue();
+        assertThat(CatalogService.trigramUseful("я")).isFalse();
+        assertThat(CatalogService.trigramUseful("")).isFalse();
+    }
+
+    @Test
+    void aTextThatTheDetectorIsNotSureAboutLowersNoDeckAndASureOneLowersAnotherLanguage() {
+        // same title, same popularity: only the language factor can tell them apart; the code is the tie-break
+        seed.insertAll(List.of(CatalogSeed.deck("Fox").content("en").code("1111111111"), CatalogSeed.deck("Fox").content("ru").code("2222222222"),
+                CatalogSeed.deck("Лис").content("en").code("3333333333"), CatalogSeed.deck("Лис").content("ru").code("4444444444")));
+        // «fox» is one word: unsure, so the English deck is not lowered and the tie-break (code) puts it first
+        assertThat(codes(search("fox"))).containsExactly("1111111111", "2222222222");
+        // «лис» is Cyrillic: sure it is Russian, so the English deck pays 15 % and comes second
+        assertThat(codes(search("лис"))).containsExactly("4444444444", "3333333333");
     }
 
     @Test

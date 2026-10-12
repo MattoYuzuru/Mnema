@@ -21,7 +21,8 @@ import java.util.regex.Pattern;
  * {@value #QUERY_MAX} code points, a limit outside 1..{@value #PAGE_MAX} or a sort next to a text is {@code 400 INVALID_REQUEST}. An EMPTY value of a parameter is the same as an absent one (a client
  * that builds the query string from a form need not drop its blank fields); the text is trimmed, a blank text is a browse.
  *
- * <p>{@link #hash()} binds a cursor to the question it was issued for: the kind of list and the normalized text and filters, never the page size or the cursor itself.
+ * <p>{@link #hash()} binds a cursor to the question it was issued for: the kind of list, the trimmed text AS TYPED together with its normalization (the operators and quotes of the
+ * search syntax are not normalized away, so {@code a -b} and {@code a b} are two questions) and the filters, never the page size or the cursor itself.
  *
  * @param q the trimmed text, empty for a browse
  * @param topic a topic id (leaf or top-level), or null
@@ -114,7 +115,7 @@ record CatalogQuery(String q, String topic, boolean topicIsParent, String learn,
 
     /** What a cursor of this query is bound to. */
     String hash() {
-        return digest(String.join("\n", kind(), normalizedQuery(), String.valueOf(topic), String.valueOf(learn), String.valueOf(level), String.valueOf(size),
+        return digest(String.join("\n", kind(), q, normalizedQuery(), String.valueOf(topic), String.valueOf(learn), String.valueOf(level), String.valueOf(size),
                 String.valueOf(mediaMask), String.valueOf(mechanicsMask), String.valueOf(fresh)));
     }
 

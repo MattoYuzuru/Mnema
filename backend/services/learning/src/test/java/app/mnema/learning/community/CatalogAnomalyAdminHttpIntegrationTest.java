@@ -153,9 +153,13 @@ class CatalogAnomalyAdminHttpIntegrationTest extends PostgresIntegrationTest {
     @Test
     void anUnknownOrMalformedCodeIsTheOpaque404AndWritesNothing() {
         long before = audits("COMMUNITY_ANOMALY_DISMISS");
-        for (String code : List.of("Aaaaaaaaaa", "short", "has%20space", "0OIl000000", "Kq7xT3mNpRR")) {
-            HttpResponse<String> response = admin("POST", BASE + "/" + code + ":dismiss", dismissBody(UUID.randomUUID().toString()));
-            assertThat(response.statusCode()).as(code).isEqualTo(404);
+        for (String code : List.of("Aaaaaaaaaa", "short", "has%20space", "0OIl000000", "Kq7xT3mNpRR", "A".repeat(5000))) {
+            String command = UUID.randomUUID().toString();
+            HttpResponse<String> response = admin("POST", BASE + "/" + code + ":dismiss", dismissBody(command));
+            assertThat(response.statusCode()).as(code.length() > 20 ? "long code" : code).isEqualTo(404);
+            // a code of the wrong shape never reaches the receipt (it would be hashed and stored with the command)
+            assertThat(jdbc.sql("SELECT count(*) FROM app_learning.command_receipt WHERE command_id = CAST(:c AS uuid)").param("c", command).query(Long.class).single())
+                    .as("no receipt for %s", code.length() > 20 ? "long code" : code).isZero();
         }
         assertThat(audits("COMMUNITY_ANOMALY_DISMISS")).isEqualTo(before);
     }

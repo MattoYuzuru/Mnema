@@ -46,15 +46,23 @@ These do not change a shape of [`catalog.json`](catalog.json); they fix what the
 - **Search.** The text part of a deck that is in a topic the query names is at least the constant 0.3 (a title hit is about 0.4); the pieces of the relevance are computed in double precision and the list is
   ordered by the relevance rounded to millionths, then by public code in byte order. `total` is the number of candidates among the best 200, `totalCapped` is `true` when that number is 200.
   The query is also extended with the names and synonyms of at most three topics it names (a phrase of up to four words, or one word, is looked up among the topic synonyms).
+  The language factor 0.85 applies only when the detector is SURE of the language of the query and it differs from the deck's content language; when it is not sure (a short or mixed text) no deck is lowered.
+  A text without a letter or a digit answers an empty page (`total` 0) without a search; a text of fewer than three code points is not matched against titles by trigrams (it is matched by the text arms and by the topics it names), so a
+  two-character Chinese, Japanese or Korean query finds nothing in v1. One way of matching contributes at most 2 000 candidates: a query that broad is not specific and the best 200 are chosen among those.
 - **Cursors.** Base64url of a small JSON object with a version, the kind of list, a hash of the normalized query and filters, the rank generation (popular, learning, search) and the position: the integer rank
   (popular, learning), the relevance in millionths and the public code of the last deck (search), a time and a public code (new, updated, the author list). A cursor never holds a score, a popularity percentile or a
   deck id. A cursor is bound to the list it was issued for: another sort, text or filter is 400, a forged or re-encoded one is 400, a generation that was pruned is 412 `VERSION_CONFLICT`. A search cursor issued
   while no generation existed carries none and keeps working.
 - **Author list.** `learningNowTotal` is `null` also when no generation exists yet. The viewer who is the author sees no invitation part (he has no grant for his own decks). The cursor knows which part it is in
   (public decks, then grants); the grant part lists the decks of that author that the viewer holds a grant for, newest publication first.
-- **Sitemap.** `application/xml; charset=UTF-8`, `Cache-Control: public, max-age=3600`, no `Vary`; the community page plus at most 49 999 decks (the newest entrants), 50 000 URLs in all; a larger catalogue is
+- **Sitemap.** `application/xml; charset=UTF-8`, `Cache-Control: public, max-age=3600`, no `Vary`; each instance builds it at most once an hour (the setting is capped at one hour), so a deck that moderation hides stays in a sitemap already built until the cache expires, and
+  for as long as a crawler keeps its copy; the deck page and the search stop showing it at once; the community page plus at most 49 999 decks (the newest entrants), 50 000 URLs in all; a larger catalogue is
   truncated with a warning in the log. The base is `MNEMA_PUBLIC_BASE_URL` (blank is `https://mnema.app`).
 - **Editorial shelf.** `rowVersion` starts at `"0"` and grows by one with every effective change; a `PUT` that leaves the list as it is changes nothing (no version, no audit row). The answer of a `PUT` and of
   a `GET` is the same state and carries the version as `ETag`. A code is accepted when it is a PUBLIC published deck that is not deleted, hidden or below the threshold included (the entry then shows
   `listed: false`). A code that is not one is 400 with the member `codes` (the offending codes, in the order sent); a code of another shape and a repeated code are plain 400. The audit row is
   `COMMUNITY_EDITORIAL_UPDATE`, its resource is the shelf (a constant id), its command the command id.
+- **Busy and slow.** A text search is the expensive read: an instance runs at most `max-concurrent-searches` (default 2) at once, and the next is `503 PUBLIC_READ_BUSY` with `Retry-After: 1` before it takes a connection; a read that exceeds the
+  query timeout (3 seconds) is the same 503. The client retries with a pause; the cheap reads (browse, facets, shelves) are not affected.
+- **Cursor validity.** The public code in a cursor must be a base58 code of ten characters in every kind of list and the time must lie between the year 2000 and a day from now; otherwise 400. The cursor is bound to the text as typed (the
+  operators and quotes of the search syntax count) and to its normalization, and a browse or search is read in one snapshot, so a cursor of a pruned generation is always 412 and never an empty page.

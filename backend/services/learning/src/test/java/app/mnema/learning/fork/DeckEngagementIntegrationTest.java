@@ -285,6 +285,74 @@ class DeckEngagementIntegrationTest extends PostgresIntegrationTest {
         }
     }
 
+    private Boolean[] unknownOrKnown(UUID source, UUID account) {
+        return jdbc.sql("SELECT trust, new_account FROM app_learning.deck_engagement WHERE deck_id = :d AND account_id = :a AND kind = 'FORK'").param("d", source).param("a", account)
+                .query((row, ignored) -> new Boolean[] {row.getObject("trust") == null ? null : row.getFloat("trust") == 1.0f, (Boolean) row.getObject("new_account")}).single();
+    }
+
+    @Test
+    void everyPathThatCompletesASessionRunsInATransactionAndTheSessionIssuerCountsToo() throws Exception {
+        // the two writers of status COMPLETE are StudySessionRepository.complete (the issuer, when the budget is spent or nothing is left) and AttemptRepository.completeSessionIfTerminal
+        // (the last answer); DeckEngagement.studied is MANDATORY, so a caller outside a transaction would fail loudly. The answers are covered by the other tests; here the issuer path
+        Source source = worlds.source("PUBLIC", 12, 4);
+        UUID learner = UUID.randomUUID();
+        UUID copy = worlds.forked(learner, source.code());
+        worlds.awaitReady(learner, copy);
+        StudyFixtures.Material inherited = source.materials().getFirst();
+        StudyFixtures.Material asCopy = new StudyFixtures.Material(learner, copy, inherited.member(), inherited.itemRevision(), inherited.node(), inherited.distractor(),
+                inherited.divider(), inherited.root());
+        List<Issued> issued = worlds.study.issue(asCopy, "SCHEDULED", null);
+        UUID session = issued.getFirst().session();
+        assertThat(rows(source.deck(), learner, "STUDY")).isEmpty();
+        // nothing is pending and the budget is spent: the next read of the presentations completes the session in the issuer
+        jdbc.sql("UPDATE app_learning.study_session SET budget = issued_count, max_new_objectives = issued_new_objectives, batch_start = issued_count, batch_size = 0 WHERE session_id = :s").param("s", session).update();
+        sessions.presentations(learner, copy, session);
+        assertThat(jdbc.sql("SELECT status FROM app_learning.study_session WHERE session_id = :s").param("s", session).query(String.class).single()).isEqualTo("COMPLETE");
+        assertThat(rows(source.deck(), learner, "STUDY")).hasSize(1);
+        assertThat(rows(source.deck(), learner, "STUDY").getFirst().studyDays()).isEqualTo(1);
+        // every public entry point that can end a session is a transaction of its own (the asynchronous grade resolves in a TransactionTemplate)
+        for (var method : List.of(AttemptService.class.getMethod("submit", UUID.class, UUID.class, UUID.class, app.mnema.learning.study.attempt.AttemptCommand.class),
+                StudySessionService.class.getMethod("presentations", UUID.class, UUID.class, UUID.class), StudySessionService.class.getMethod("read", UUID.class, UUID.class, UUID.class))) {
+            assertThat(method.isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class)).as(method.getName()).isTrue();
+        }
+        assertThat(app.mnema.learning.study.attempt.AssessmentService.class.getMethods()).filteredOn(m -> m.getName().equals("selfRate"))
+                .allSatisfy(m -> assertThat(m.isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class)).isTrue());
+    }
+
+    @Test
+    void aClaimThatIdentityDidNotSendIsStoredAsUnknownAndCompletedByALaterCopyOfTheSameAccountOnly() {
+        Source source = worlds.source("PUBLIC", 12, 2);
+        UUID account = UUID.randomUUID();
+        HttpIdentityFixture.withoutSignals(account);
+        UUID copy = worlds.forked(account, source.code());
+        worlds.awaitReady(account, copy);
+        assertThat(unknownOrKnown(source.deck(), account)).as("absent claims are NULL, not false").containsExactly(null, null);
+        Row unknown = rows(source.deck(), account, "FORK").getFirst();
+        // a second copy that again has no claims changes nothing
+        decks.delete(account, copy, Long.parseLong(decks.read(account, copy).path("rowVersion").stringValue(null)));
+        UUID second = worlds.forked(account, source.code());
+        assertThat(unknownOrKnown(source.deck(), account)).containsExactly(null, null);
+        // a later copy with claims fills BOTH NULLs, from that request, and leaves the date alone
+        worlds.awaitReady(account, second);
+        decks.delete(account, second, Long.parseLong(decks.read(account, second).path("rowVersion").stringValue(null)));
+        HttpIdentityFixture.signals(account, true, true);
+        UUID third = worlds.forked(account, source.code());
+        assertThat(unknownOrKnown(source.deck(), account)).containsExactly(true, true);
+        assertThat(rows(source.deck(), account, "FORK")).hasSize(1);
+        assertThat(rows(source.deck(), account, "FORK").getFirst().firstAt()).isEqualTo(unknown.firstAt());
+        // and once known it is never moved again: the first known weight is the person's
+        worlds.awaitReady(account, third);
+        decks.delete(account, third, Long.parseLong(decks.read(account, third).path("rowVersion").stringValue(null)));
+        HttpIdentityFixture.signals(account, false, false);
+        worlds.forked(account, source.code());
+        assertThat(unknownOrKnown(source.deck(), account)).containsExactly(true, true);
+        // an explicit false is known (0.25 and not new), unlike an absent claim
+        UUID known = UUID.randomUUID();
+        HttpIdentityFixture.signals(known, false, false);
+        worlds.forked(known, source.code());
+        assertThat(unknownOrKnown(source.deck(), known)).containsExactly(false, false);
+    }
+
     @Test
     void theMigrationsBackfillBuildsFromTheExistingCopiesAndSessionsWhatTheIncrementalWritersBuild() {
         Source source = worlds.source("PUBLIC", 12, 4);
@@ -308,8 +376,8 @@ class DeckEngagementIntegrationTest extends PostgresIntegrationTest {
 
         assertThat(all(source.deck())).as("one FORK and one STUDY row, however often the backfill runs").isEqualTo(2);
         Row rebuiltFork = rows(source.deck(), learner, "FORK").getFirst();
-        assertThat(rebuiltFork.trust()).as("no claims are known for the past").isEqualTo(0.25f);
-        assertThat(rebuiltFork.newAccount()).isFalse();
+        assertThat(jdbc.sql("SELECT trust IS NULL AND new_account IS NULL FROM app_learning.deck_engagement WHERE deck_id = :d AND account_id = :a AND kind = 'FORK'")
+                .param("d", source.deck()).param("a", learner).query(Boolean.class).single()).as("no claims are known for the past: NULL, which weighs 0.25 and is never new").isTrue();
         assertThat(rebuiltFork.firstAt()).isEqualTo(jdbc.sql("SELECT forked_at FROM app_learning.deck_fork WHERE deck_id = :d").param("d", copy).query(java.sql.Timestamp.class).single().toInstant());
         assertThat(rebuiltFork.firstAt()).isBetween(fork.firstAt().minusSeconds(5), fork.firstAt().plusSeconds(5));
         Row rebuiltStudy = rows(source.deck(), learner, "STUDY").getFirst();

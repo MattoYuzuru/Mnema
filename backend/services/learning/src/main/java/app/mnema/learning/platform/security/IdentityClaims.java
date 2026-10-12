@@ -21,11 +21,13 @@ public final class IdentityClaims {
 
     /**
      * The two anti-abuse signals of the account behind a request (internal: they weigh a copy in the community rank and feed the owner console's anomaly flag, and are
-     * shown to nobody). Absent or malformed claims are {@code trusted = false, newAccount = false}: a missing claim lowers the weight of a copy but never raises a flag.
+     * shown to nobody). Each is {@code null} when Identity did not send the claim at all (an Identity that predates it: the deploy order of the two services is not guaranteed;
+     * "unknown", stored as NULL and weighed like "not trusted", never "new"), {@code true} for a JSON true and {@code false} for anything else, a malformed value included:
+     * a missing claim lowers the weight of a copy but never raises a flag.
      */
-    public record AccountSignals(boolean trusted, boolean newAccount) {
+    public record AccountSignals(Boolean trusted, Boolean newAccount) {
         /** What is assumed when Identity said nothing. */
-        public static final AccountSignals UNKNOWN = new AccountSignals(false, false);
+        public static final AccountSignals UNKNOWN = new AccountSignals(null, null);
     }
 
     static void signals(HttpServletRequest request, AccountSignals signals) { request.setAttribute(SIGNALS_ATTRIBUTE, signals); }

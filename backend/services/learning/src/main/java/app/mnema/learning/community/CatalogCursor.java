@@ -35,6 +35,8 @@ record CatalogCursor(String kind, String hash, Long generation, Long position, I
     private static final int MAX_LENGTH = 300;
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Set<String> KINDS = Set.of("popular", "learning", "new", "updated", "search", "author");
+    private static final Instant EARLIEST = Instant.parse("2000-01-01T00:00:00Z");
+    private static final java.util.regex.Pattern CODE = java.util.regex.Pattern.compile("[1-9A-HJ-NP-Za-km-z]{10}");
     private static final Set<String> KEYS = Set.of("v", "k", "h", "g", "p", "t", "c", "x");
 
     String encode() {
@@ -65,7 +67,7 @@ record CatalogCursor(String kind, String hash, Long generation, Long position, I
             String found = node.path("k").stringValue(null);
             if (!KINDS.contains(found) || !found.equals(kind) || !hash.equals(node.path("h").stringValue(null))) throw new InvalidRequestException();
             CatalogCursor cursor = new CatalogCursor(found, hash, number(node, "g"), number(node, "p"),
-                    node.has("t") ? micros(number(node, "t")) : null, text(node, "c"), text(node, "x"));
+                    node.has("t") ? time(number(node, "t")) : null, code(node), text(node, "x"));
             if (!cursor.encode().equals(encoded)) throw new InvalidRequestException();
             return cursor;
         } catch (IllegalArgumentException | JacksonException | java.time.DateTimeException failure) {
@@ -87,8 +89,18 @@ record CatalogCursor(String kind, String hash, Long generation, Long position, I
         return value.stringValue(null);
     }
 
-    private static Instant micros(Long value) {
-        return Instant.EPOCH.plus(value, ChronoUnit.MICROS);
+    /** A time in microseconds: from the year 2000 (before the product existed) to a day from now; anything else is not a position the server ever wrote. */
+    private static Instant time(Long micros) {
+        Instant at = Instant.EPOCH.plus(micros, ChronoUnit.MICROS);
+        if (at.isBefore(EARLIEST) || at.isAfter(Instant.now().plus(1, ChronoUnit.DAYS))) throw new InvalidRequestException();
+        return at;
+    }
+
+    /** The public code of the last deck, in EVERY kind of cursor: ten characters of the base58 alphabet and nothing else (it is bound as a text parameter). */
+    private static String code(JsonNode node) {
+        String code = text(node, "c");
+        if (code != null && !CODE.matcher(code).matches()) throw new InvalidRequestException();
+        return code;
     }
 
     /** The first position of a list that is not the first page: required keys must be there. */
@@ -98,7 +110,7 @@ record CatalogCursor(String kind, String hash, Long generation, Long position, I
     }
 
     CatalogCursor requireTime() {
-        if (at == null || code == null || !code.matches("[1-9A-HJ-NP-Za-km-z]{10}")) throw new InvalidRequestException();
+        if (at == null || code == null) throw new InvalidRequestException();
         return this;
     }
 }
