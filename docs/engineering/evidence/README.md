@@ -21,6 +21,7 @@ of the former two-column exercise editor are likewise historical.
 
 ## Community decks
 
+- [Эпик 2: обновления копий](./community-decks/epic-2/README.md) — evidence задач эпика #420: PR, коммиты, миграции V59–V65, релизы, ревью, браузерная проверка и критерии эпика.
 - [Эпик 1: фундамент, доступ и копии](./community-decks/epic-1/README.md) — evidence задач эпика #419: PR, коммиты, миграции V49–V58, состояние production и проверка каждой задачи, включая прототип линии хранения (Share/3).
 
 ## Owner console
