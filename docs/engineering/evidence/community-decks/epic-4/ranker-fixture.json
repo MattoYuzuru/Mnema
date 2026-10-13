@@ -1,0 +1,459 @@
+{
+  "seed": 422456459,
+  "sessions": 3000,
+  "day": "2026-10-13",
+  "decks": [
+    {
+      "code": "synthetic-00",
+      "topic": "spanish",
+      "author": "author-0",
+      "language": "es",
+      "score": 1.0,
+      "new": true
+    },
+    {
+      "code": "synthetic-01",
+      "topic": "sql-data",
+      "author": "author-1",
+      "language": null,
+      "score": 1.1,
+      "new": false
+    },
+    {
+      "code": "synthetic-02",
+      "topic": "anatomy",
+      "author": "author-2",
+      "language": null,
+      "score": 1.2,
+      "new": false
+    },
+    {
+      "code": "synthetic-03",
+      "topic": "english",
+      "author": "author-3",
+      "language": null,
+      "score": 1.3,
+      "new": false
+    },
+    {
+      "code": "synthetic-04",
+      "topic": "history",
+      "author": "author-4",
+      "language": null,
+      "score": 1.4,
+      "new": true
+    },
+    {
+      "code": "synthetic-05",
+      "topic": "physics",
+      "author": "author-5",
+      "language": null,
+      "score": 1.0,
+      "new": false
+    },
+    {
+      "code": "synthetic-06",
+      "topic": "geography",
+      "author": "author-6",
+      "language": null,
+      "score": 1.1,
+      "new": false
+    },
+    {
+      "code": "synthetic-07",
+      "topic": "chemistry",
+      "author": "author-0",
+      "language": null,
+      "score": 1.2,
+      "new": false
+    },
+    {
+      "code": "synthetic-08",
+      "topic": "spanish",
+      "author": "author-1",
+      "language": "es",
+      "score": 1.3,
+      "new": true
+    },
+    {
+      "code": "synthetic-09",
+      "topic": "sql-data",
+      "author": "author-2",
+      "language": null,
+      "score": 1.4,
+      "new": false
+    },
+    {
+      "code": "synthetic-10",
+      "topic": "anatomy",
+      "author": "author-3",
+      "language": null,
+      "score": 1.0,
+      "new": false
+    },
+    {
+      "code": "synthetic-11",
+      "topic": "english",
+      "author": "author-4",
+      "language": null,
+      "score": 1.1,
+      "new": false
+    },
+    {
+      "code": "synthetic-12",
+      "topic": "history",
+      "author": "author-5",
+      "language": null,
+      "score": 1.2,
+      "new": true
+    },
+    {
+      "code": "synthetic-13",
+      "topic": "physics",
+      "author": "author-6",
+      "language": null,
+      "score": 1.3,
+      "new": false
+    },
+    {
+      "code": "synthetic-14",
+      "topic": "geography",
+      "author": "author-0",
+      "language": null,
+      "score": 1.4,
+      "new": false
+    },
+    {
+      "code": "synthetic-15",
+      "topic": "chemistry",
+      "author": "author-1",
+      "language": null,
+      "score": 1.0,
+      "new": false
+    },
+    {
+      "code": "synthetic-16",
+      "topic": "spanish",
+      "author": "author-2",
+      "language": "es",
+      "score": 1.1,
+      "new": true
+    },
+    {
+      "code": "synthetic-17",
+      "topic": "sql-data",
+      "author": "author-3",
+      "language": null,
+      "score": 1.2,
+      "new": false
+    },
+    {
+      "code": "synthetic-18",
+      "topic": "anatomy",
+      "author": "author-4",
+      "language": null,
+      "score": 1.3,
+      "new": false
+    },
+    {
+      "code": "synthetic-19",
+      "topic": "english",
+      "author": "author-5",
+      "language": null,
+      "score": 1.4,
+      "new": false
+    },
+    {
+      "code": "synthetic-20",
+      "topic": "history",
+      "author": "author-6",
+      "language": null,
+      "score": 1.0,
+      "new": true
+    },
+    {
+      "code": "synthetic-21",
+      "topic": "physics",
+      "author": "author-0",
+      "language": null,
+      "score": 1.1,
+      "new": false
+    },
+    {
+      "code": "synthetic-22",
+      "topic": "geography",
+      "author": "author-1",
+      "language": null,
+      "score": 1.2,
+      "new": false
+    },
+    {
+      "code": "synthetic-23",
+      "topic": "chemistry",
+      "author": "author-2",
+      "language": null,
+      "score": 1.3,
+      "new": false
+    },
+    {
+      "code": "synthetic-24",
+      "topic": "spanish",
+      "author": "author-3",
+      "language": "es",
+      "score": 1.4,
+      "new": true
+    },
+    {
+      "code": "synthetic-25",
+      "topic": "sql-data",
+      "author": "author-4",
+      "language": null,
+      "score": 1.0,
+      "new": false
+    },
+    {
+      "code": "synthetic-26",
+      "topic": "anatomy",
+      "author": "author-5",
+      "language": null,
+      "score": 1.1,
+      "new": false
+    },
+    {
+      "code": "synthetic-27",
+      "topic": "english",
+      "author": "author-6",
+      "language": null,
+      "score": 1.2,
+      "new": false
+    },
+    {
+      "code": "synthetic-28",
+      "topic": "history",
+      "author": "author-0",
+      "language": null,
+      "score": 1.3,
+      "new": true
+    },
+    {
+      "code": "synthetic-29",
+      "topic": "physics",
+      "author": "author-1",
+      "language": null,
+      "score": 1.4,
+      "new": false
+    },
+    {
+      "code": "synthetic-30",
+      "topic": "geography",
+      "author": "author-2",
+      "language": null,
+      "score": 1.0,
+      "new": false
+    },
+    {
+      "code": "synthetic-31",
+      "topic": "chemistry",
+      "author": "author-3",
+      "language": null,
+      "score": 1.1,
+      "new": false
+    },
+    {
+      "code": "synthetic-32",
+      "topic": "spanish",
+      "author": "author-4",
+      "language": "es",
+      "score": 1.2,
+      "new": true
+    },
+    {
+      "code": "synthetic-33",
+      "topic": "sql-data",
+      "author": "author-5",
+      "language": null,
+      "score": 1.3,
+      "new": false
+    },
+    {
+      "code": "synthetic-34",
+      "topic": "anatomy",
+      "author": "author-6",
+      "language": null,
+      "score": 1.4,
+      "new": false
+    },
+    {
+      "code": "synthetic-35",
+      "topic": "english",
+      "author": "author-0",
+      "language": null,
+      "score": 1.0,
+      "new": false
+    },
+    {
+      "code": "synthetic-36",
+      "topic": "history",
+      "author": "author-1",
+      "language": null,
+      "score": 1.1,
+      "new": true
+    },
+    {
+      "code": "synthetic-37",
+      "topic": "physics",
+      "author": "author-2",
+      "language": null,
+      "score": 1.2,
+      "new": false
+    },
+    {
+      "code": "synthetic-38",
+      "topic": "geography",
+      "author": "author-3",
+      "language": null,
+      "score": 1.3,
+      "new": false
+    },
+    {
+      "code": "synthetic-39",
+      "topic": "chemistry",
+      "author": "author-4",
+      "language": null,
+      "score": 1.4,
+      "new": false
+    },
+    {
+      "code": "synthetic-40",
+      "topic": "spanish",
+      "author": "author-5",
+      "language": "es",
+      "score": 1.0,
+      "new": true
+    },
+    {
+      "code": "synthetic-41",
+      "topic": "sql-data",
+      "author": "author-6",
+      "language": null,
+      "score": 1.1,
+      "new": false
+    },
+    {
+      "code": "synthetic-42",
+      "topic": "anatomy",
+      "author": "author-0",
+      "language": null,
+      "score": 1.2,
+      "new": false
+    },
+    {
+      "code": "synthetic-43",
+      "topic": "english",
+      "author": "author-1",
+      "language": null,
+      "score": 1.3,
+      "new": false
+    },
+    {
+      "code": "synthetic-44",
+      "topic": "history",
+      "author": "author-2",
+      "language": null,
+      "score": 1.4,
+      "new": true
+    },
+    {
+      "code": "synthetic-45",
+      "topic": "physics",
+      "author": "author-3",
+      "language": null,
+      "score": 1.0,
+      "new": false
+    },
+    {
+      "code": "synthetic-46",
+      "topic": "geography",
+      "author": "author-4",
+      "language": null,
+      "score": 1.1,
+      "new": false
+    },
+    {
+      "code": "synthetic-47",
+      "topic": "chemistry",
+      "author": "author-5",
+      "language": null,
+      "score": 1.2,
+      "new": false
+    },
+    {
+      "code": "synthetic-48",
+      "topic": "spanish",
+      "author": "author-6",
+      "language": "es",
+      "score": 1.3,
+      "new": true
+    },
+    {
+      "code": "synthetic-49",
+      "topic": "sql-data",
+      "author": "author-0",
+      "language": null,
+      "score": 1.4,
+      "new": false
+    },
+    {
+      "code": "synthetic-50",
+      "topic": "anatomy",
+      "author": "author-1",
+      "language": null,
+      "score": 1.0,
+      "new": false
+    },
+    {
+      "code": "synthetic-51",
+      "topic": "english",
+      "author": "author-2",
+      "language": null,
+      "score": 1.1,
+      "new": false
+    },
+    {
+      "code": "synthetic-52",
+      "topic": "history",
+      "author": "author-3",
+      "language": null,
+      "score": 1.2,
+      "new": true
+    },
+    {
+      "code": "synthetic-53",
+      "topic": "physics",
+      "author": "author-4",
+      "language": null,
+      "score": 1.3,
+      "new": false
+    },
+    {
+      "code": "synthetic-54",
+      "topic": "geography",
+      "author": "author-5",
+      "language": null,
+      "score": 1.4,
+      "new": false
+    },
+    {
+      "code": "synthetic-55",
+      "topic": "chemistry",
+      "author": "author-6",
+      "language": null,
+      "score": 1.0,
+      "new": false
+    }
+  ],
+  "responses": {
+    "matchingTopicOpen": 0.55,
+    "otherTopicOpen": 0.12
+  }
+}

@@ -494,6 +494,27 @@ module.main()
         self.assertEqual(["DELETE FROM app_identity.rate_limit"], statements)
         self.assertIn("account.write", token.call_args.kwargs["scope"])
 
+    def test_recs_isolated_flags_and_exclusivity(self):
+        self.assertEqual({"LEARNING_COMMUNITY_EVENTS_ENABLED": "true", "LEARNING_COMMUNITY_FOR_YOU_ENABLED": "true"}, HARNESS.recs_switches())
+        self.assertFalse(HARNESS.catalogue_fixture_enabled(SimpleNamespace()))
+        self.assertTrue(HARNESS.catalogue_fixture_enabled(SimpleNamespace(recs=True)))
+        for extra in (["--catalog"], ["--community"], ["--updates"], ["--authoring"], ["--admin"]):
+            with self.subTest(extra=extra), patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--recs", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+
+    def test_recs_gets_launch_and_fixture_only_in_its_disposable_run(self):
+        fixture, server = self.proxy()
+        fixture.args.recs = True
+        status, _, body = self.request(server, "GET", "/app-config.js")
+        self.assertEqual(200, status)
+        self.assertIn('"communityLaunched": true', body.decode())
+        with patch.object(fixture, "catalog_rank", return_value={"generations": 2, "scheduledJobsDone": 1}):
+            self.assertEqual(200, self.request(server, "POST", "/__fixture/catalog-rank", "{}")[0])
+        fixture.args.recs = False
+        self.assertEqual(404, self.request(server, "POST", "/__fixture/catalog-rank", "{}")[0])
+
     def test_catalog_rank_job_is_enqueued_through_the_real_queue_with_a_key_of_its_own(self):
         fixture = self.fixture()
         statements = []

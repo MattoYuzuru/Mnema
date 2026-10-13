@@ -1,0 +1,74 @@
+{
+  "exposures": [
+    {
+      "day": "2026-10-13",
+      "rankVersion": "catalog-v1",
+      "surface": "catalog",
+      "count": 36000
+    },
+    {
+      "day": "2026-10-13",
+      "rankVersion": "recs-v1",
+      "surface": "for-you",
+      "count": 36000
+    }
+  ],
+  "events": [
+    {
+      "day": "2026-10-13",
+      "rankVersion": "catalog-v1",
+      "surface": "catalog",
+      "count": 4705,
+      "kind": "DETAIL_VIEW"
+    },
+    {
+      "day": "2026-10-13",
+      "rankVersion": "catalog-v1",
+      "surface": "copy",
+      "count": 1646,
+      "kind": "FORK"
+    },
+    {
+      "day": "2026-10-13",
+      "rankVersion": "catalog-v1",
+      "surface": "decks",
+      "count": 212,
+      "kind": "DROP"
+    },
+    {
+      "day": "2026-10-13",
+      "rankVersion": "catalog-v1",
+      "surface": "study",
+      "count": 976,
+      "kind": "STUDY_START"
+    },
+    {
+      "day": "2026-10-13",
+      "rankVersion": "recs-v1",
+      "surface": "copy",
+      "count": 2211,
+      "kind": "FORK"
+    },
+    {
+      "day": "2026-10-13",
+      "rankVersion": "recs-v1",
+      "surface": "decks",
+      "count": 296,
+      "kind": "DROP"
+    },
+    {
+      "day": "2026-10-13",
+      "rankVersion": "recs-v1",
+      "surface": "for-you",
+      "count": 6414,
+      "kind": "DETAIL_VIEW"
+    },
+    {
+      "day": "2026-10-13",
+      "rankVersion": "recs-v1",
+      "surface": "study",
+      "count": 1299,
+      "kind": "STUDY_START"
+    }
+  ]
+}

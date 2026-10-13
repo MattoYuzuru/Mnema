@@ -74,6 +74,8 @@ x-learning-environment: &learning-environment
   LEARNING_COMMUNITY_FORKS_ENABLED: ${LEARNING_COMMUNITY_FORKS_ENABLED:-false}
   LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED: ${LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED:-false}
   LEARNING_COMMUNITY_CATALOG_ENABLED: ${LEARNING_COMMUNITY_CATALOG_ENABLED:-false}
+  LEARNING_COMMUNITY_EVENTS_ENABLED: ${LEARNING_COMMUNITY_EVENTS_ENABLED:-false}
+  LEARNING_COMMUNITY_FOR_YOU_ENABLED: ${LEARNING_COMMUNITY_FOR_YOU_ENABLED:-false}
   # Billing (#389) against the owner's T-Bank DEMO terminal; names only, off by default (docs/deploy/selfhost-local.md). The bank cannot reach a
   # local NotificationURL, so a local order is confirmed by the return page's GetState refresh and the reconciler.
   MNEMA_BILLING_CHECKOUT: ${MNEMA_BILLING_CHECKOUT:-OFF}

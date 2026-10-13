@@ -83,3 +83,9 @@ These do not change a shape of [`catalog.json`](catalog.json); they fix what the
 The parent writes events only for authenticated accounts, without search text; client events describe opens/search clicks, while copy, study start and drop are server transitions. Daily aggregate exposures carry no account. Interest reset clears the previous signals and records a new boundary; anonymous exposures remain. Weights and exact ranking values stay server-side.
 
 Executable requests and replies are the `profile`, `select`, `reset`, `event`, `exposure`, `recommendations` and `emptyRecommendations` entries; `invariants` define validation, privacy, retention, jobs, load boundaries and the ranking rules. The single-card recommendation example exercises the parser; a real shelf is omitted below four cards.
+
+### Storage and reset boundaries (Recs/1–2)
+
+Telemetry receipt deduplication lasts seven days (`community.events` scope only). Its cleanup is separate from the thirteen-calendar-month raw-event retention. Aggregate exposure commands contain at most 48 actually visible cards; batching does not sample. Interest command receipts persist only an acknowledgement; a replay returns the current profile, preserving idempotency without retaining a profile erased by reset. `If-Match` is the quoted ETag, for example `"0"`; `rowVersion` in the body is the raw decimal string `"0"`.
+
+The broad goal contributes a parent topic rather than inventing a language: `LANGUAGE` → `languages`, `INTERVIEW` → `professional`, `EXAMS` → `exams`/`school`, `WORK` → `professional`, `SELF` → no topic. A missing directory root is ignored. Inferred topics may be parents; explicit chips are leaves.

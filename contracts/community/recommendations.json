@@ -45,7 +45,9 @@
       "study": 3,
       "openings": 1,
       "goal": 0.5
-    }
+    },
+    "telemetryReceiptRetentionDays": 7,
+    "snapshotMaxQuestionsPerAccount": 32
   },
   "routes": {
     "profile": "GET /api/community/interests",
@@ -240,6 +242,11 @@
     "Recommendations union <=20 per top3 interest topics +20 new +20 global, dedupe <=100, exclude own authored decks and live existing copies including detached copies, use current listed rows only. Score exactly score*(1+0.8*interest)*(language match?1:0.3); no confident language preference => no penalty.",
     "First10 strictly <=2 same author or leaf topic, never relax to fill. Last2 of12 exploratory (new or outside top3), reserve before exploit selection, fewer when catalogue cannot provide12. Hide if <4 eligible decks in interest topics, no interest or fewer4 output. Explanation refers to strongest contributing topic, not an arbitrary catalogue topic.",
     "Recommendation cursor contains only opaque query/account/profile/generation binding and integer list offset, never score/rank/interest weight. Expired generation/profile =>412. Stable ties by public code; only known audience values through AudienceCounts.",
-    "Sort for-you is offered/default only to authenticated readers when server permits; shelves remain default page with For you first; explicit for-you filters/search use recommendations endpoint. No text persisted in telemetry; best-effort telemetry never blocks navigation."
+    "Sort for-you is offered/default only to authenticated readers when server permits; shelves remain default page with For you first; explicit for-you filters/search use recommendations endpoint. No text persisted in telemetry; best-effort telemetry never blocks navigation.",
+    "Telemetry command receipts are scoped to community.events, retained seven days and pruned in bounded job slices using a partial time index. Raw events remain thirteen calendar months; exposure aggregates remain anonymous. No other command receipts are pruned. All visible impressions are batched at most48, without sampling.",
+    "Interest command receipts store acknowledgement only, not a historical profile. Commands and replays return the current profile under the account lock, so reset does not retain old interest names or weights in receipt results.",
+    "Goal votes use directory parent topics (LANGUAGE languages, INTERVIEW professional, EXAMS exams/school, WORK professional, SELF none); inference may contain parents, explicit chips remain selectable leaves. Leaf scoring uses the stronger of leaf/parent interest, and explanation names the contributing parent when the goal is broad.",
+    "Only new successful SCHEDULED/PRACTICE starts (ACTIVE/PREPARING) of catalogue copies emit STUDY_START; REPLAY and EMPTY do not. This interest signal does not change scheduler evidence or the global engagement counting of completed SCHEDULED sessions.",
+    "At most32 frozen questions per account; oldest snapshot eviction yields412 like expiry, and the client restarts the list. Cursor validity is24h; daily bounded cleanup may keep expired physical cache rows until the next maintenance pass."
   ]
 }
