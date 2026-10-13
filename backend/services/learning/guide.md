@@ -2624,11 +2624,16 @@ confident preference every factor is 1. A broad LANGUAGE goal establishes no spe
 For equal canonical scores, including a cold start of all zero scores, ties use interest descending, language factor
 descending, first-listing newest first, then public code. The formula itself has no artificial score floor.
 
-The first ten have strictly at most two of any author or leaf topic. The rule never relaxes to fill a shelf. Two
+The first ten have strictly at most two of any author or leaf topic. The rule never relaxes to fill a shelf. A bounded
+bipartite author/topic matching (capacity two, one edge per deck) checks feasibility using at most ten augmenting paths.
+The diverse prefix is the lexicographically strongest canonical-order subset of maximum cardinality (up to ten), so
+crossed author/topic choices cannot strand available places. Among at most 4950 exploration pairs of the 100 candidates,
+the first canonical-order pair that leaves a feasible ten-card prefix is reserved. Two
 exploratory candidates (new within 30 days or outside the strongest three interests) are reserved for positions 11/12
 when a full twelve-card shelf can be formed; scarcity returns a shorter diverse shelf. No interest, fewer than four
-eligible matching candidates or fewer than four resulting cards hides it. The explanation is the strongest topic that
-actually contributes to a displayed source, including a parent when appropriate. Cards reuse `CatalogCards` and
+eligible matching candidates or fewer than four resulting cards hides it. The explanation is the strongest current topic that
+actually contributes to an allowed source, including a parent when appropriate. Visibility/copy changes recompute this
+explanation against the remaining allowed cards; the formerly strongest hidden topic cannot erase another valid explanation. Cards reuse `CatalogCards` and
 `AudienceCounts`, so neither scores, weights, source ids nor exact audience numbers below ten appear.
 
 A `recommendation_snapshot` freezes up to twelve ordered public codes plus at most 100 candidate codes for the

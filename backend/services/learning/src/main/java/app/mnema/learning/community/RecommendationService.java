@@ -167,8 +167,8 @@ class RecommendationService {
         answer.put("total", total).put("totalCapped", false);
         if (more) answer.put("nextCursor", new RecommendationCursor(snapshot.id(), offset).encode());
         else answer.putNull("nextCursor");
-        String explanation = snapshot.explanation();
-        if (total == 0 || explanation == null || live.stream().noneMatch(d -> (explanation.equals(d.topicId()) || explanation.equals(d.parentTopicId())))) answer.putNull("explanationTopic");
+        String explanation = total == 0 ? null : RecommendationRanker.explanation(live.stream().filter(deck -> allowed.contains(deck.publicCode())).toList(), currentInterests);
+        if (explanation == null) answer.putNull("explanationTopic");
         else answer.set("explanationTopic", cards.topic(explanation));
         meters.counter("mnema_community_recommendations_total", "rank_version", VERSION, "outcome", total == 0 ? "empty" : "ok").increment();
         return answer;

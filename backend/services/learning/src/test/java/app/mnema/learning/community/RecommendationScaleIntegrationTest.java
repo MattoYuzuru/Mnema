@@ -125,6 +125,29 @@ class RecommendationScaleIntegrationTest extends PostgresIntegrationTest {
         candidateTimes.sort(Double::compare);
         evidence.add("candidate_p95_ms=" + candidateTimes.get(14));
         assertThat(candidateTimes.get(14)).isLessThan(200.0);
+        Map<String, Double> model = leaves.stream().collect(java.util.stream.Collectors.toMap(topic -> topic, topic -> 1.0));
+        var rankedCandidates = recommendations.candidates(candidates);
+        List<Double> rankTimes = new ArrayList<>();
+        for (int index = 0; index < 15; index++) {
+            long rankStart = System.nanoTime();
+            assertThat(RecommendationRanker.rank(rankedCandidates, model, java.util.Set.of(), now).decks()).hasSize(12);
+            rankTimes.add((System.nanoTime() - rankStart) / 1_000_000.0);
+        }
+        rankTimes.sort(Double::compare);
+        evidence.add("ranker_p95_ms=" + rankTimes.get(14));
+        assertThat(rankTimes.get(14)).isLessThan(200.0);
+        List<RecommendationRanker.Candidate> constrained = new ArrayList<>();
+        for (int index = 0; index < 100; index++) {
+            String topic = index < 8 ? "critical-" + index / 2 : "abundant";
+            PublicDeckRow row = new PublicDeckRow(UUID.randomUUID(), "bounded" + index, UUID.randomUUID(), UUID.randomUUID(), "Synthetic", "Synthetic", topic, null, null, null,
+                    null, List.of(), 20, 1, 0, 0, true, now, now, "synthetic", null, now);
+            constrained.add(new RecommendationRanker.Candidate(row, 100 - index));
+        }
+        long constrainedStart = System.nanoTime();
+        assertThat(RecommendationRanker.rank(constrained, Map.of("critical-0", 1.0, "abundant", 0.8), java.util.Set.of(), now).decks()).hasSize(12);
+        double constrainedMs = (System.nanoTime() - constrainedStart) / 1_000_000.0;
+        evidence.add("ranker_constrained_100_ms=" + constrainedMs);
+        assertThat(constrainedMs).isLessThan(200.0);
         List<String> eventPlan = jdbc.sql("EXPLAIN (ANALYZE,BUFFERS,COSTS OFF) SELECT topic_id,deck_id FROM app_learning.catalog_event WHERE account_id=:a AND occurred_at>=statement_timestamp()-interval '13 months'")
                 .param("a", h).query(String.class).list();
         evidence.add("account_event_plan");

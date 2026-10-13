@@ -258,4 +258,23 @@ class RecommendationHttpIntegrationTest extends CatalogHttpTest {
         assertThat(jdbc.sql("SELECT result::text FROM app_learning.command_receipt WHERE actor_id=:a AND command_scope='community.interests'").param("a", account).query(String.class).list())
                 .allSatisfy(result -> assertThat(result).isEqualTo("{}"));
     }
+    @Test void hidingAllPrimaryInterestCardsExplainsTheRemainingContributingInterest() {
+        List<CatalogSeed.Deck> decks = new ArrayList<>();
+        for (String topic : List.of("spanish", "english", "programming", "math", "biology", "anatomy", "business", "law")) {
+            for (int index = 0; index < (topic.equals("spanish") || topic.equals("english") ? 4 : 2); index++) {
+                decks.add(seed.insert(CatalogSeed.deck(topic + index).topic(topic)));
+            }
+        }
+        seed.rankInOrder(904, Instant.now(), decks);
+        choose("spanish", "english");
+        // Model weights intentionally distinguish the main interest; selection weight equality is tested separately.
+        jdbc.sql("UPDATE app_learning.user_topic_interest SET weight=0.7 WHERE account_id=:a AND topic_id='english'").param("a", account).update();
+        JsonNode first = ok(get("/community/recommendations", account));
+        assertThat(first.path("explanationTopic").path("id").stringValue()).isEqualTo("spanish");
+        jdbc.sql("DELETE FROM app_learning.public_deck WHERE topic_id='spanish'").update();
+        JsonNode after = ok(get("/community/recommendations", account));
+        assertThat(after.path("total").intValue()).isGreaterThanOrEqualTo(4);
+        assertThat(after.path("explanationTopic").path("id").stringValue()).isEqualTo("english");
+    }
+
 }
