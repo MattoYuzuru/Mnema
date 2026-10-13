@@ -1,13 +1,13 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import contract from '../../../../../contracts/community/recommendations.json';
 import { AuthService } from '../../auth.service';
 import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 import { InterestSettingsComponent } from './interest-settings.component';
 import { RecommendationsApiService } from './recommendations-api.service';
-import { parseInterestProfile } from './recommendations.models';
+import { InterestProfile, parseInterestProfile } from './recommendations.models';
 describe('InterestSettingsComponent', () => {
     let api: { profile: ReturnType<typeof vi.fn>; change: ReturnType<typeof vi.fn> };
     beforeEach(() => {
@@ -27,6 +27,30 @@ describe('InterestSettingsComponent', () => {
         press('Сбросить интересы'); fixture.detectChanges(); press('Да, сбросить интересы'); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
         expect(api.change.mock.calls[0][2]).toBe(true); expect(root.querySelector('[role=status]')).toBe(live); expect(live?.textContent).toContain('Интересы сброшены');
         expect(root.textContent).toContain('Выбраны вами: пока нет'); expect(document.activeElement).toBe(root.querySelector('h2'));
+    });
+    it('focuses the picker on edit and restores both the draft and edit focus on cancel', async () => {
+        const fixture = TestBed.createComponent(InterestSettingsComponent); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        const button = [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Изменить интересы')!;
+        button.focus(); button.click(); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
+        expect(document.activeElement).toBe(root.querySelector('app-interest-picker input'));
+        const anatomy = root.querySelector<HTMLInputElement>('input[data-interest-topic="anatomy"]')!;
+        anatomy.checked = true; anatomy.dispatchEvent(new Event('change')); fixture.detectChanges();
+        [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Отмена')!.click(); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
+        const edit = [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Изменить интересы')!;
+        expect(document.activeElement).toBe(edit); expect(api.change).not.toHaveBeenCalled();
+        edit.click(); fixture.detectChanges(); await fixture.whenStable();
+        expect(root.querySelector<HTMLInputElement>('input[data-interest-topic="anatomy"]')?.checked).toBe(false);
+    });
+    it('disables edit cancellation while saving and after an unknown command outcome', async () => {
+        const fixture = TestBed.createComponent(InterestSettingsComponent); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Изменить интересы')!.click(); fixture.detectChanges(); await fixture.whenStable();
+        const pending = new Subject<InterestProfile>(); api.change.mockReturnValue(pending);
+        [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Сохранить интересы')!.click(); fixture.detectChanges();
+        expect([...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Отмена')?.disabled).toBe(true);
+        pending.error(new HttpErrorResponse({ status: 0 })); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
+        expect([...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Отмена')?.disabled).toBe(true);
     });
     it('edits interests through the shared picker and hides every setting for a disabled server', async () => {
         const fixture = TestBed.createComponent(InterestSettingsComponent); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();

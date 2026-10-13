@@ -4,7 +4,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Subscription, catchError, throwError } from 'rxjs';
+import { Subscription, catchError, tap, throwError } from 'rxjs';
 
 import { learnerOrigin } from '../../app.config';
 import { AuthService } from '../../auth.service';
@@ -85,6 +85,8 @@ export class CommunityPageComponent {
     private readonly telemetry = inject(CatalogTelemetry);
     protected readonly recommendationShelf = signal<RecommendationPage | null>(null);
     protected readonly recommendationCards = computed(() => (this.recommendationShelf()?.decks ?? []).map(card => this.display(card)));
+    protected readonly gridRecommendation = signal<RecommendationPage | null>(null);
+    protected readonly gridExplanation = computed(() => this.interests.forYou() && this.pager.phase() === 'ready' ? this.gridRecommendation()?.explanationTopic?.name ?? null : null);
     protected readonly explanation = computed(() => this.recommendationShelf()?.explanationTopic?.name ?? null);
     private recommendationRequest: Subscription | null = null;
     private readonly authors = inject(AuthorCardsService);
@@ -126,7 +128,7 @@ export class CommunityPageComponent {
     protected readonly staleNote = signal('');
 
     protected readonly pager = new CommunityPager(cursor => this.query.filters.sort === 'for-you' && this.interests.forYou()
-        ? this.recommendations.recommendations(this.query, cursor).pipe(catchError((error: unknown) => {
+        ? this.recommendations.recommendations(this.query, cursor).pipe(tap(page => this.gridRecommendation.set(page)), catchError((error: unknown) => {
             if (error instanceof HttpErrorResponse && error.status === 404) this.interests.disableForYou();
             return throwError(() => error);
         })) : this.api.decks(this.query, cursor), this.destroyRef);
@@ -224,6 +226,10 @@ export class CommunityPageComponent {
                 this.addressChanged = true;
             });
         });
+        effect(() => {
+            const codes = this.displayed().map(card => card.code);
+            untracked(() => this.telemetry.retainCards(codes));
+        });
         // Authors of the cards that are on the page, in chunks; a hidden author is a card without a name, and never holds a card back.
         effect(() => {
             const owners = this.displayed().map(card => card.ownerId);
@@ -242,7 +248,7 @@ export class CommunityPageComponent {
             this.staleNote.set(name !== null && name !== filters.learn
                 ? `Фильтр «${name}» больше недоступен, показываем без него.`
                 : 'Один из фильтров больше недоступен, показываем без него.');
-            untracked(() => void this.router.navigate([], { relativeTo: this.route, queryParams: addressParams(q, { ...filters, topic, learn }), replaceUrl: true }));
+            untracked(() => void this.router.navigate([], { relativeTo: this.route, queryParams: addressParams(q, { ...filters, topic, learn }, this.address().sortGiven), replaceUrl: true }));
         });
     }
 
@@ -261,7 +267,7 @@ export class CommunityPageComponent {
         // «По близости» belongs to a text and only to it: a sorting the reader picked stays, otherwise a text starts with the closeness and no text without it.
         const sort = text.trim() === '' ? (draft.sort === RELEVANCE_SORT.value ? DEFAULT_SORT : draft.sort)
             : this.address().sortGiven ? draft.sort : RELEVANCE_SORT.value;
-        void this.router.navigate([], { relativeTo: this.route, queryParams: addressParams(text, { ...draft, sort }) });
+        void this.router.navigate([], { relativeTo: this.route, queryParams: addressParams(text, { ...draft, sort }, this.address().sortGiven) });
     }
 
     protected filtersChanged(next: CatalogFilters): void {
@@ -304,7 +310,7 @@ export class CommunityPageComponent {
     private applyFilters(): void {
         this.sortTimer = null;
         this.staleNote.set('');
-        void this.router.navigate([], { relativeTo: this.route, queryParams: { ...addressParams(this.address().q, this.draft()), ...(this.interests.forYou() && this.draft().sort === 'popular' ? { sort: 'popular' } : {}) }, replaceUrl: true });
+        void this.router.navigate([], { relativeTo: this.route, queryParams: addressParams(this.address().q, this.draft(), this.interests.forYou() || (this.address().sortGiven && this.address().filters.sort === 'popular')), replaceUrl: true });
     }
 
     private clearSortTimer(): void {
@@ -327,6 +333,7 @@ export class CommunityPageComponent {
         this.shelvesSubscription?.unsubscribe();
         this.recommendationRequest?.unsubscribe();
         this.recommendationShelf.set(null);
+        this.gridRecommendation.set(null);
         this.pager.cancel();
         this.browsing.set(false);
         this.shelvesFailure.set(null);

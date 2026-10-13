@@ -8,7 +8,7 @@ let nextPicker = 0;
     selector: 'app-interest-picker',
     template: `
       <fieldset [disabled]="busy()" [attr.aria-describedby]="hintId">
-        <legend>Что хотите изучать?</legend>
+        <legend tabindex="-1">Что хотите изучать?</legend>
         <p class="hint" [id]="hintId">Выберите до 20 тем. Так Мнема предложит подходящие колоды. Можно пропустить и изменить выбор в профиле.</p>
         <div class="topics">
           @for (topic of initialTopics(); track topic.id) {

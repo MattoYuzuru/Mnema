@@ -21,7 +21,7 @@
     <p class="status" role="status">{{ status() === 'loading' ? 'Загружаем колоды…' : '' }}</p>
     <p class="status stale" role="status">{{ staleNote() }}</p>
 
-    @if (showShelves() && status() === 'ready') { <app-interest-settings [onboarding]="true" /> }
+    <app-interest-settings [onboarding]="true" />
 
     @switch (status()) {
       @case ('rate-limited') {
@@ -62,6 +62,7 @@
             }
           }
         } @else {
+          @if (gridExplanation(); as topic) { <p class="hint" data-testid="recommendation-explanation">Потому что вы учите: {{ topic }}</p> }
           <app-deck-grid [decks]="rowCards()" [results]="results()" [headingLevel]="2" [deckLink]="deckLink" [menuFor]="menuFor"
             [continuation]="pager.cursor()" [loading]="pager.loadingMore()" [error]="moreError()" [enabled]="pager.phase() === 'ready'"
             [context]="pager.context()" [observe]="observing()" (visible)="cardVisible($event)" (opened)="cardOpened($event)" (loadNext)="pager.next()" (action)="actionChosen($event)" />

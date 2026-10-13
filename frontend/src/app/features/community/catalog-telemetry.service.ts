@@ -19,6 +19,7 @@ export class CatalogTelemetry {
     private readonly exposureRequests = new Set<Subscription>();
     private readonly requests = new Set<Subscription>();
     private readonly seen = new Set<string>();
+    private navigationEpoch = 0;
     private readonly buffers = new Map<string, { readonly surface: CardAttribution['surface']; readonly rankVersion: CardAttribution['rankVersion']; readonly items: { readonly code: string; readonly position: number | null }[] }>();
     private flushTimer: ReturnType<typeof setTimeout> | null = null;
     private attribution: CardAttribution | null = null;
@@ -39,6 +40,7 @@ export class CatalogTelemetry {
         this.router.events.pipe(takeUntilDestroyed(this.destroy)).subscribe(event => {
             if (!(event instanceof NavigationStart)) return;
             this.flush();
+            this.navigationEpoch++;
             this.seen.clear();
             const code = /^\/d\/([1-9A-HJ-NP-Za-km-z]{10})(?:[/?#]|$)/u.exec(event.url)?.[1] ?? null;
             if (this.attribution?.code !== code) this.attribution = null;
@@ -65,8 +67,15 @@ export class CatalogTelemetry {
         if (!this.valid(context) || !this.accepting()) return;
         const key = `exposure:${context.surface}:${context.rankVersion}:${context.code}`;
         if (!this.once(key)) return;
-        const keyOfBuffer = `${context.surface}:${context.rankVersion}`;
+        const baseKey = `${this.navigationEpoch}:${context.surface}:${context.rankVersion}`;
+        let occurrence = 0;
+        let keyOfBuffer = `${baseKey}:${occurrence}`;
         let buffer = this.buffers.get(keyOfBuffer);
+        // A removed card may legitimately appear again after dedupe eviction; it still cannot repeat inside a wire batch.
+        while (buffer?.items.some(item => item.code === context.code)) {
+            keyOfBuffer = `${baseKey}:${++occurrence}`;
+            buffer = this.buffers.get(keyOfBuffer);
+        }
         if (buffer === undefined) { buffer = { surface: context.surface, rankVersion: context.rankVersion, items: [] }; this.buffers.set(keyOfBuffer, buffer); }
         buffer.items.push({ code: context.code, position: context.position });
         if ([...this.buffers.values()].reduce((count, row) => count + row.items.length, 0) >= 1000) this.accepting.set(false);
@@ -88,6 +97,11 @@ export class CatalogTelemetry {
             if (!draining && this.exposureRequests.size >= 4) break;
         }
         if ([...this.buffers.values()].reduce((count, row) => count + row.items.length, 0) < 1000) this.accepting.set(true);
+    }
+    /** Retain exposure dedupe only for cards still rendered by the current screen; queued batches have their own epoch. */
+    retainCards(codes: readonly string[]): void {
+        const displayed = new Set(codes);
+        for (const key of this.seen) if (key.startsWith('exposure:') && !displayed.has(key.slice(key.lastIndexOf(':') + 1))) this.seen.delete(key);
     }
     opened(context: CardAttribution, search: boolean): void {
         if (!this.valid(context)) return;

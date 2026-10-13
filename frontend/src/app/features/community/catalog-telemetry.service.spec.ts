@@ -71,6 +71,26 @@ describe('CatalogTelemetry privacy and navigation lifetime', () => {
         expect(api.exposures.mock.calls.every(call => call[2].length <= 48)).toBe(true);
         expect(api.exposures.mock.calls.flatMap(call => call[2]).filter(item => item.position === null)).toHaveLength(192);
     });
+    it('keeps repeated navigation impressions in separate batches while four earlier requests are blocked', () => {
+        const inflight = new Subject<void>(); api.exposures.mockReturnValue(inflight);
+        const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+        for (let index = 0; index < 192; index++) telemetry.visible({ ...CONTEXT, code: `Kq7xT3mN${alphabet[Math.floor(index / 58)]}${alphabet[index % 58]}` });
+        expect(api.exposures).toHaveBeenCalledTimes(4);
+        telemetry.visible(CONTEXT);
+        navigation.next(new NavigationStart(1, '/community?sort=for-you'));
+        telemetry.visible({ ...CONTEXT, position: 2 });
+        api.exposures.mockReturnValue(of(undefined)); inflight.complete();
+        const batches = api.exposures.mock.calls.slice(4).map(call => call[2]);
+        expect(batches).toEqual([[{ code: CONTEXT.code, position: 1 }], [{ code: CONTEXT.code, position: 2 }]]);
+        expect(api.exposures.mock.calls.every(call => new Set(call[2].map((item: { code: string }) => item.code)).size === call[2].length)).toBe(true);
+    });
+    it('evicts dedupe for removed cards while retaining current cards and accepted queued impressions', () => {
+        const other = { ...CONTEXT, code: 'Hs9Bd2kLfM' };
+        telemetry.visible(CONTEXT); telemetry.visible(other); telemetry.retainCards([CONTEXT.code]);
+        telemetry.visible(CONTEXT); telemetry.visible(other); vi.advanceTimersByTime(EXPOSURE_FLUSH_MS);
+        expect(api.exposures.mock.calls.flatMap(call => call[2]).filter(item => item.code === CONTEXT.code)).toHaveLength(1);
+        expect(api.exposures.mock.calls.flatMap(call => call[2]).filter(item => item.code === other.code)).toHaveLength(2);
+    });
     it('records nothing for guests, disabled flags, malformed codes or illegal positions and never blocks on telemetry failure', () => {
         for (const position of [0, 1001, 1.5]) telemetry.visible({ ...CONTEXT, position });
         telemetry.visible({ ...CONTEXT, code: 'private-id' });

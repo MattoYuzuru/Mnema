@@ -15,9 +15,10 @@ import { InterestStore } from './interest-store.service';
             @if (onboarding() || editing()) {
               <app-interest-picker [topics]="profile.availableTopics" [selected]="selected()" [busy]="store.busy() || store.retrying()" [skippable]="onboarding()"
                 (changed)="selected.set($event)" (save)="save($event)" />
+              @if (!onboarding()) { <button type="button" class="button quiet" [disabled]="store.busy() || store.retrying()" (click)="cancelEdit()">Отмена</button> }
             } @else {
               <app-interest-summary [selected]="profile.selectedTopics" [inferred]="profile.inferredTopics" [busy]="store.busy() || store.retrying()"
-                (edit)="editing.set(true)" (resetRequested)="reset()" />
+                (edit)="edit()" (resetRequested)="reset()" />
             }
           </section>
         }
@@ -36,7 +37,7 @@ export class InterestSettingsComponent {
     private readonly auth = inject(AuthService);
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
-    protected readonly selected = linkedSignal<readonly string[]>(() => this.store.profile()?.selectedTopics.map(topic => topic.id) ?? []);
+        protected readonly selected = linkedSignal<readonly string[]>(() => this.store.profile()?.selectedTopics.map(topic => topic.id) ?? []);
     protected readonly editing = signal(false);
     private readonly retryFocus = signal(false);
     constructor() {
@@ -48,6 +49,19 @@ export class InterestSettingsComponent {
             const notice = this.store.notice();
             if (!this.store.busy() && (notice !== '' || this.retryFocus())) untracked(() => { this.retryFocus.set(false); this.editing.set(false); this.focus(); });
         });
+    }
+    protected edit(): void {
+        if (this.store.busy() || this.store.retrying()) return;
+        this.editing.set(true);
+        afterNextRender(() => {
+            (this.host.nativeElement.querySelector<HTMLElement>('app-interest-picker input:not(:disabled)') ?? this.host.nativeElement.querySelector<HTMLElement>('app-interest-picker legend'))?.focus();
+        }, { injector: this.injector });
+    }
+    protected cancelEdit(): void {
+        if (this.store.busy() || this.store.retrying()) return;
+        this.selected.set(this.store.profile()?.selectedTopics.map(topic => topic.id) ?? []);
+        this.editing.set(false);
+        afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('app-interest-summary button')?.focus(), { injector: this.injector });
     }
     protected save(ids: readonly string[]): void { this.store.save(ids); }
     protected reset(): void { this.store.save([], true); }

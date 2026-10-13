@@ -167,6 +167,41 @@ describe('CommunityPageComponent', () => {
             status.set('anonymous'); user.set(null); await settle(); await go('/community?sort=for-you');
             expect(router().url).toBe('/community?sort=popular'); expect(personal.profile).toHaveBeenCalledTimes(1);
         });
+        it('shows explanation for all personalized grid contexts and clears it on a public/account context', async () => {
+            await open('/community?sort=for-you');
+            expect(one('[data-testid="recommendation-explanation"]')?.textContent).toContain('Потому что вы учите: Испанский');
+            await go('/community?sort=for-you&topic=spanish&q=испанский');
+            expect(one('[data-testid="recommendation-explanation"]')?.textContent).toContain('Испанский');
+            await go('/community?sort=popular'); expect(one('[data-testid="recommendation-explanation"]')).toBeNull();
+            await go('/community?sort=for-you');
+            personal.profile.mockReturnValue(of({ ...parseInterestProfile(recommendationContract.profile), forYouEnabled: false }));
+            user.set({ accountId: OTHER }); await settle(); expect(one('[data-testid="recommendation-explanation"]')).toBeNull();
+        });
+        it.each(['Сохранить интересы', 'Пока пропустить'])('keeps onboarding live status mounted through %s and a delayed shelf reload', async label => {
+            await open();
+            const live = one('app-interest-settings [role=status]'); const component = one('app-interest-settings');
+            const reload = new Subject<CommunityShelves>(); api.shelves.mockReturnValueOnce(reload);
+            const button = all<HTMLButtonElement>('app-interest-settings button').find(button => button.textContent?.trim() === label)!;
+            button.focus(); button.click(); await settle();
+            expect(reload.observed).toBe(true); expect(one('app-interest-settings')).toBe(component); expect(one('app-interest-settings [role=status]')).toBe(live);
+            expect(live?.textContent).toBe('Интересы сохранены.'); expect(one('app-interest-picker')).toBeNull(); expect(document.activeElement).toBe(one('h1'));
+            reload.next(SHELVES); await settle(); expect(one('app-interest-settings [role=status]')).toBe(live);
+        });
+        it('offers optional onboarding on a first search/filter entry and sparse catalogue fallback', async () => {
+            await open('/community?q=испанский'); expect(one('app-interest-picker')).not.toBeNull();
+            await go('/community?sort=for-you&topic=spanish'); expect(one('app-interest-picker')).not.toBeNull();
+            api.shelves.mockReturnValue(of({ listedCount: 3, shelves: [] })); await go('/community');
+            expect(one('app-deck-grid')).not.toBeNull(); expect(one('app-interest-picker')).not.toBeNull();
+        });
+        it('preserves explicit popular while clearing search and dropping stale filters', async () => {
+            await open('/community?sort=popular&q=испанский'); type(''); await settle();
+            expect(router().url).toBe('/community?sort=popular'); expect(lastQuery().filters['sort']).toBe('popular');
+            await go('/community?sort=popular&topic=gone');
+            expect(router().url).toBe('/community?sort=popular'); expect(lastQuery().filters['sort']).toBe('popular');
+            expect(one<HTMLInputElement>('input[type=radio][value=popular]')?.checked).toBe(true);
+            await go('/community?topic=spanish'); const before = personal.recommendations.mock.calls.length;
+            await go('/community?topic=spanish&sort=popular'); expect(personal.recommendations.mock.calls.length).toBe(before); expect(lastQuery().filters['sort']).toBe('popular');
+        });
         it('handles a switch disabled after the profile read without a private retry loop', async () => {
             personal.recommendations.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
             await open('/community?sort=for-you'); expect(router().url).toBe('/community?sort=popular'); expect(personal.recommendations).toHaveBeenCalledTimes(1);
