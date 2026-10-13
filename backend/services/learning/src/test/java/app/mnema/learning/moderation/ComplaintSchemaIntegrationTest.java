@@ -75,7 +75,7 @@ class ComplaintSchemaIntegrationTest extends PostgresIntegrationTest {
         expectRejected("UPDATE app_learning.content_complaint SET reporter_id = gen_random_uuid() WHERE complaint_id = '" + id + "'", "Invalid complaint transition");
         // retention: not deletable (not even by an owner of the table) before retain_until, never truncated
         expectRejected("DELETE FROM app_learning.content_complaint WHERE complaint_id = '" + id + "'", "kept until its retention ends");
-        assertThatThrownBy(() -> jdbc.sql("TRUNCATE app_learning.content_complaint").update()).isNotNull();
+        assertThatThrownBy(() -> jdbc.sql("TRUNCATE app_learning.catalog_event, app_learning.deck_exposure_day, app_learning.recommendation_snapshot, app_learning.user_topic_interest, app_learning.community_interest_profile, app_learning.content_complaint").update()).isNotNull();
         // once its retention has ended (here: a complaint filed four years ago) the row can be purged; this is the whole of the retention rule in the schema
         UUID old = jdbc.sql("INSERT INTO app_learning.content_complaint(target_kind, deck_id, public_code, reason, reporter_id, status, created_at, due_at, retain_until) "
                 + "VALUES ('DECK', gen_random_uuid(), '" + CODE + "', 'SPAM', gen_random_uuid(), 'OPEN', now() - interval '4 years', now() - interval '4 years' + interval '30 days', "
@@ -144,7 +144,7 @@ class ComplaintSchemaIntegrationTest extends PostgresIntegrationTest {
         expectRejected("INSERT INTO app_learning.content_takedown_asset(reuse_scope_id, asset_id, takedown_id) VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid())", "foreign key");
         expectRejected("UPDATE app_learning.content_takedown_asset SET asset_id = gen_random_uuid() WHERE takedown_id = '" + takedown + "'", "immutable");
         expectRejected("DELETE FROM app_learning.content_takedown_asset WHERE takedown_id = '" + takedown + "'", "immutable");
-        expectRejected("TRUNCATE app_learning.content_takedown_asset", "immutable");
+        expectRejected("TRUNCATE app_learning.catalog_event, app_learning.deck_exposure_day, app_learning.recommendation_snapshot, app_learning.user_topic_interest, app_learning.community_interest_profile, app_learning.content_takedown_asset", "immutable");
         assertThat(jdbc.sql("SELECT " + ContentTakedowns.blockedAsset(":scope", ":asset")).param("scope", scope).param("asset", asset).query(Boolean.class).single()).isTrue();
         assertThat(jdbc.sql("SELECT " + ContentTakedowns.blockedAsset(":scope", ":asset")).param("scope", UUID.randomUUID()).param("asset", asset).query(Boolean.class).single()).isFalse();
         assertThat(jdbc.sql("SELECT " + ContentTakedowns.blockedAssetAnywhere(":asset")).param("asset", asset).query(Boolean.class).single()).isTrue();
@@ -181,7 +181,7 @@ class ComplaintSchemaIntegrationTest extends PostgresIntegrationTest {
         expectRejected("UPDATE app_learning.content_takedown SET unit_key = gen_random_uuid() WHERE complaint_id = '" + complaint + "'", "immutable");
         expectRejected("DELETE FROM app_learning.content_takedown WHERE complaint_id = '" + complaint + "'", "immutable");
         // (the foreign key of content_takedown_asset already refuses the truncate; the trigger refuses it too when nothing references the table)
-        assertThatThrownBy(() -> jdbc.sql("TRUNCATE app_learning.content_takedown").update()).isNotNull();
+        assertThatThrownBy(() -> jdbc.sql("TRUNCATE app_learning.catalog_event, app_learning.deck_exposure_day, app_learning.recommendation_snapshot, app_learning.user_topic_interest, app_learning.community_interest_profile, app_learning.content_takedown").update()).isNotNull();
         // a complaint with a standing takedown is never deleted, whatever its retention
         expectRejected("DELETE FROM app_learning.content_complaint WHERE complaint_id = '" + complaint + "'", "");
     }
@@ -197,7 +197,7 @@ class ComplaintSchemaIntegrationTest extends PostgresIntegrationTest {
         expectRejected(insert.formatted("HIDDEN", 1, "now() + interval '3 years'"), "content_takedown_journal_units");
         expectRejected("UPDATE app_learning.content_takedown_journal SET action = 'HIDDEN' WHERE complaint_id = '" + complaint + "'", "append-only");
         expectRejected("DELETE FROM app_learning.content_takedown_journal WHERE complaint_id = '" + complaint + "'", "append-only");
-        expectRejected("TRUNCATE app_learning.content_takedown_journal", "append-only");
+        expectRejected("TRUNCATE app_learning.catalog_event, app_learning.deck_exposure_day, app_learning.recommendation_snapshot, app_learning.user_topic_interest, app_learning.community_interest_profile, app_learning.content_takedown_journal", "append-only");
         // a row whose retention has passed may be removed by the purge job that is open work (#409); it can never be rewritten
         UUID expired = UUID.randomUUID();
         jdbc.sql(insert.formatted("REJECTED", 0, "now() - interval '1 day'").replace(complaint.toString(), expired.toString())).update();

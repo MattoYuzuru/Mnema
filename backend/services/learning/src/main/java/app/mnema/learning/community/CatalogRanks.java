@@ -44,6 +44,12 @@ class CatalogRanks {
                 .param("generation", generation).query(Boolean.class).single();
     }
 
+    /** Private recommendation transaction fences pruning while it reads its frozen generation. */
+    boolean lockKept(long generation) {
+        return jdbc.sql("SELECT generation FROM app_learning.rank_generation WHERE generation=:g AND completed_at IS NOT NULL FOR SHARE")
+                .param("g",generation).query(Long.class).optional().isPresent();
+    }
+
     /** The raw counts of the given decks in {@code generation}; a deck without a row is absent from the map (read it as {@link Counts#NONE}). */
     @Transactional(readOnly = true)
     Map<UUID, Counts> counts(long generation, Collection<UUID> decks) {

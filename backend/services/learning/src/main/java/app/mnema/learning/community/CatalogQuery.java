@@ -60,7 +60,14 @@ record CatalogQuery(String q, String topic, boolean topicIsParent, String learn,
     String normalizedQuery() { return AliasNormalizer.normalize(q); }
 
     static CatalogQuery parse(HttpServletRequest request, TopicDirectory topics) {
-        Map<String, String[]> raw = request.getParameterMap();
+        return parse(request.getParameterMap(), topics, false);
+    }
+
+    static CatalogQuery recommendations(HttpServletRequest request, TopicDirectory topics) {
+        return parse(request.getParameterMap(), topics, true);
+    }
+
+    private static CatalogQuery parse(Map<String, String[]> raw, TopicDirectory topics, boolean recommendations) {
         for (Map.Entry<String, String[]> entry : raw.entrySet()) {
             if (!PARAMETERS.contains(entry.getKey()) || entry.getValue().length != 1) throw new InvalidRequestException();
         }
@@ -68,7 +75,7 @@ record CatalogQuery(String q, String topic, boolean topicIsParent, String learn,
         q = q == null ? "" : q.strip();
         if (q.codePointCount(0, q.length()) > QUERY_MAX || q.chars().anyMatch(Character::isISOControl)) throw new InvalidRequestException();
         String sort = value(raw, "sort");
-        if (sort != null && !SORTS.contains(sort)) throw new InvalidRequestException();
+        if (sort != null && !(recommendations ? sort.equals("for-you") : SORTS.contains(sort))) throw new InvalidRequestException();
         String topic = value(raw, "topic");
         boolean parent = false;
         if (topic != null) {
@@ -95,7 +102,7 @@ record CatalogQuery(String q, String topic, boolean topicIsParent, String learn,
             if (page > PAGE_MAX) throw new InvalidRequestException();
         }
         String cursor = value(raw, "cursor");
-        return new CatalogQuery(q, topic, parent, learn, level, size, media, mechanics, "true".equals(fresh), q.isEmpty() && sort == null ? DEFAULT_SORT : sort, page, cursor);
+        return new CatalogQuery(q, topic, parent, learn, level, size, media, mechanics, "true".equals(fresh), recommendations ? "for-you" : q.isEmpty() && sort == null ? DEFAULT_SORT : sort, page, cursor);
     }
 
     /** The value of a single-valued parameter; an empty one is absent. */

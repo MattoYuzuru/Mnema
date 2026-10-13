@@ -1,6 +1,8 @@
 package app.mnema.learning.fork;
 
 import app.mnema.learning.community.DeckEngagement;
+import app.mnema.learning.community.CatalogEvents;
+import app.mnema.learning.community.InterestService;
 import app.mnema.learning.library.AccessLevel;
 import app.mnema.learning.library.DeckAccess;
 import app.mnema.learning.library.DeckInviteOnlyException;
@@ -57,9 +59,11 @@ public class ForkService {
     private final LearningJobs jobs;
     private final MeterRegistry meters;
     private final DeckEngagement engagement;
+    private final CatalogEvents events;
+    private final InterestService interests;
 
     ForkService(ForkRepository repository, ForkSettings settings, DeckAccess access, CommandReceiptService receipts, ImmutableStorage storage,
-                LearningJobs jobs, MeterRegistry meters, DeckEngagement engagement) {
+                LearningJobs jobs, MeterRegistry meters, DeckEngagement engagement, CatalogEvents events, InterestService interests) {
         this.repository = repository;
         this.settings = settings;
         this.access = access;
@@ -68,6 +72,8 @@ public class ForkService {
         this.jobs = jobs;
         this.meters = meters;
         this.engagement = engagement;
+        this.events = events;
+        this.interests = interests;
     }
 
     /** The acknowledgement of a copy command; {@code replayed} is an exact retry of an earlier command. */
@@ -133,6 +139,7 @@ public class ForkService {
             meters.counter("mnema_deck_forks_total", "outcome", "busy").increment();
             throw new ForkQueueBusyException();
         }
+        interests.lockSignal(actor);
         ForkRepository.Published published = repository.published(source.deckId(), frozen);
         UUID deck = UUID.randomUUID();
         UUID genesis = UUID.randomUUID();
@@ -149,6 +156,7 @@ public class ForkService {
         repository.insertFork(deck, source.scopeId(), actor, source.deckId(), command.sourceCode(), frozen, job);
         // Community/3: the metric of the direct source, in this very transaction (the first copy of an account counts; the owner never does).
         engagement.forked(source.deckId(), actor, signals);
+        events.forked(actor, source.deckId());
         meters.counter("mnema_deck_forks_total", "outcome", "created").increment();
         return acknowledgement(command, deck, true, false);
     }

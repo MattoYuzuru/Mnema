@@ -40,7 +40,7 @@ class CatalogRankScaleIntegrationTest extends IsolatedCatalogDatabase {
 
     @AfterEach
     void clean() {
-        jdbc.sql("TRUNCATE app_learning.deck_engagement, app_learning.deck_rank, app_learning.rank_generation, app_learning.catalog_anomaly").update();
+        jdbc.sql("TRUNCATE app_learning.catalog_event, app_learning.deck_exposure_day, app_learning.recommendation_snapshot, app_learning.user_topic_interest, app_learning.community_interest_profile, app_learning.deck_engagement, app_learning.deck_rank, app_learning.rank_generation, app_learning.catalog_anomaly").update();
         jdbc.sql("DELETE FROM app_learning.public_deck").update();
     }
 
