@@ -1,0 +1,245 @@
+{
+  "contract": "community-recommendations-v1",
+  "constants": {
+    "basePath": "/api/community",
+    "eventsSwitch": "learning.community.events.enabled",
+    "forYouSwitch": "learning.community.for-you.enabled",
+    "defaultEnabled": false,
+    "retainedCalendarMonths": 13,
+    "interestMaxTopics": 20,
+    "candidateMax": 100,
+    "topTopics": 3,
+    "topicCandidates": 20,
+    "newCandidates": 20,
+    "globalCandidates": 20,
+    "shelfMin": 4,
+    "shelfMax": 12,
+    "rankVersion": "recs-v1",
+    "catalogRankVersion": "catalog-v1",
+    "maxPerAuthorOrTopicInFirst10": 2,
+    "explorationPlaces": 2,
+    "eventKinds": [
+      "DETAIL_VIEW",
+      "FORK",
+      "STUDY_START",
+      "DROP",
+      "SEARCH_CLICK"
+    ],
+    "clientEventKinds": [
+      "DETAIL_VIEW",
+      "SEARCH_CLICK"
+    ],
+    "surfaces": [
+      "catalog",
+      "search",
+      "for-you",
+      "author",
+      "detail",
+      "copy",
+      "study",
+      "decks"
+    ],
+    "interestWeights": {
+      "chips": 8,
+      "copies": 4,
+      "study": 3,
+      "openings": 1,
+      "goal": 0.5
+    }
+  },
+  "routes": {
+    "profile": "GET /api/community/interests",
+    "select": "PUT /api/community/interests with If-Match and commandId",
+    "reset": "POST /api/community/interests:reset with If-Match and commandId",
+    "events": "POST /api/community/events",
+    "exposures": "POST /api/community/exposures",
+    "recommendations": "GET /api/community/recommendations with the catalogue filters, q, limit and cursor (sort omitted or for-you)"
+  },
+  "profile": {
+    "rowVersion": "0",
+    "onboardingComplete": false,
+    "selectedTopics": [],
+    "inferredTopics": [],
+    "availableTopics": [
+      {
+        "id": "spanish",
+        "name": "Испанский",
+        "parentId": "languages"
+      },
+      {
+        "id": "english",
+        "name": "Английский",
+        "parentId": "languages"
+      },
+      {
+        "id": "anatomy",
+        "name": "Анатомия",
+        "parentId": "medicine"
+      }
+    ],
+    "forYouEnabled": true,
+    "eventsEnabled": true
+  },
+  "select": {
+    "request": {
+      "commandId": "a4210000-0000-4000-8000-000000000001",
+      "topicIds": [
+        "spanish",
+        "english"
+      ]
+    },
+    "response": {
+      "rowVersion": "1",
+      "onboardingComplete": true,
+      "selectedTopics": [
+        {
+          "id": "spanish",
+          "name": "Испанский",
+          "parentId": "languages"
+        },
+        {
+          "id": "english",
+          "name": "Английский",
+          "parentId": "languages"
+        }
+      ],
+      "inferredTopics": [],
+      "availableTopics": [
+        {
+          "id": "spanish",
+          "name": "Испанский",
+          "parentId": "languages"
+        },
+        {
+          "id": "english",
+          "name": "Английский",
+          "parentId": "languages"
+        },
+        {
+          "id": "anatomy",
+          "name": "Анатомия",
+          "parentId": "medicine"
+        }
+      ],
+      "forYouEnabled": true,
+      "eventsEnabled": true
+    }
+  },
+  "reset": {
+    "request": {
+      "commandId": "a4210000-0000-4000-8000-000000000002"
+    },
+    "response": {
+      "rowVersion": "2",
+      "onboardingComplete": true,
+      "selectedTopics": [],
+      "inferredTopics": [],
+      "availableTopics": [
+        {
+          "id": "spanish",
+          "name": "Испанский",
+          "parentId": "languages"
+        },
+        {
+          "id": "english",
+          "name": "Английский",
+          "parentId": "languages"
+        },
+        {
+          "id": "anatomy",
+          "name": "Анатомия",
+          "parentId": "medicine"
+        }
+      ],
+      "forYouEnabled": true,
+      "eventsEnabled": true
+    }
+  },
+  "event": {
+    "commandId": "a4210000-0000-4000-8000-000000000003",
+    "kind": "DETAIL_VIEW",
+    "code": "Kq7xT3mNpR",
+    "surface": "for-you",
+    "position": 1,
+    "rankVersion": "recs-v1"
+  },
+  "exposure": {
+    "commandId": "a4210000-0000-4000-8000-000000000004",
+    "surface": "for-you",
+    "rankVersion": "recs-v1",
+    "items": [
+      {
+        "code": "Kq7xT3mNpR",
+        "position": 1
+      }
+    ]
+  },
+  "recommendations": {
+    "rankVersion": "recs-v1",
+    "explanationTopic": {
+      "id": "spanish",
+      "name": "Испанский",
+      "parentId": "languages"
+    },
+    "decks": [
+      {
+        "code": "Kq7xT3mNpR",
+        "slug": "ispanskiy-yazyk-bazovye-glagoly",
+        "title": "Испанский язык: базовые глаголы",
+        "description": "Сорок глаголов на каждый день: настоящее время, примеры и упражнения на слух.",
+        "topic": {
+          "id": "spanish",
+          "name": "Испанский",
+          "parentId": "languages"
+        },
+        "contentLanguage": "ru",
+        "targetLanguage": "es",
+        "level": "A1",
+        "tags": [
+          "глаголы",
+          "настоящее время"
+        ],
+        "itemCount": 40,
+        "exerciseCount": 120,
+        "media": [
+          "image",
+          "audio"
+        ],
+        "mechanics": [
+          "listening",
+          "choice",
+          "written"
+        ],
+        "addedCount": 1200,
+        "learningNowCount": 34,
+        "updatedAt": "2026-10-11T09:30:00Z",
+        "ownerId": "0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35"
+      }
+    ],
+    "total": 1,
+    "totalCapped": false,
+    "nextCursor": null
+  },
+  "emptyRecommendations": {
+    "rankVersion": "recs-v1",
+    "explanationTopic": null,
+    "decks": [],
+    "total": 0,
+    "totalCapped": false,
+    "nextCursor": null
+  },
+  "invariants": [
+    "Private authenticated routes; guest is 401; invalid token is 401; responses no-store/Vary Authorization. Profile available only when events or for-you enabled; recommendation route additionally requires catalog and for-you enabled. Disabled routes 404 before body/query parsing.",
+    "Client cannot send account, deck/revision ids, query text, arbitrary rank version, or server lifecycle kinds. Exact fields; commands UUIDv4/v7; positions null or 1..1000; event kind/surface/version allowlists; exposures <=48 distinct listed public codes, one aggregate impression per item.",
+    "Raw events use PostgreSQL 18 uuidv7() and monthly UTC partitioning, primary key (occurred_at,event_id), account/time index. No deck/revision FK delaying immutable GC. No query text column or query logging. Guests are not recorded.",
+    "Current month plus previous 12 retained; create next two in advance; remove older whole partitions with DROP (no raw row DELETE retention). Maintenance remains enabled when recording disabled, so existing personal events expire. Bound lock_timeout/statement_timeout transactionally and retry through platform.jobs.",
+    "Exposure aggregate is keyed by day, deck, surface, rank_version (no account, no raw event). Position is event-only. Replays use command_receipt. Global anonymous counters remain on profile reset.",
+    "Profile row/account lock serializes reset, selection, incremental signals and nightly rebuild. Reset removes explicit and inferred interests and old recommendation events, advances signals_since; pre-reset copies, sessions, goal and queued old computations cannot return. New signals after reset contribute.",
+    "Interest max20; chips > copies > study > views > goal. Profile includes topic names and selected/inferred split, no weight. Goal enum only through local topic mapping, without private deck texts. First profile starts at policy activation/no prior raw events; existing copies and optional goal may contribute until a reset establishes a strict new boundary.",
+    "Nightly job pages active profiles by account key (30-day activity), bounded slices, queries account/time indexes with bounded event window. Copy increments interest in same transaction. All lifecycle events server-side and only for successful new effective transitions; no events on replay, guest, own/private source or disabled recording.",
+    "Recommendations union <=20 per top3 interest topics +20 new +20 global, dedupe <=100, exclude own authored decks and live existing copies including detached copies, use current listed rows only. Score exactly score*(1+0.8*interest)*(language match?1:0.3); no confident language preference => no penalty.",
+    "First10 strictly <=2 same author or leaf topic, never relax to fill. Last2 of12 exploratory (new or outside top3), reserve before exploit selection, fewer when catalogue cannot provide12. Hide if <4 eligible decks in interest topics, no interest or fewer4 output. Explanation refers to strongest contributing topic, not an arbitrary catalogue topic.",
+    "Recommendation cursor contains only opaque query/account/profile/generation binding and integer list offset, never score/rank/interest weight. Expired generation/profile =>412. Stable ties by public code; only known audience values through AudienceCounts.",
+    "Sort for-you is offered/default only to authenticated readers when server permits; shelves remain default page with For you first; explicit for-you filters/search use recommendations endpoint. No text persisted in telemetry; best-effort telemetry never blocks navigation."
+  ]
+}
