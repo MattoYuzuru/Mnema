@@ -185,7 +185,7 @@ describe('CommunityPageComponent', () => {
             button.focus(); button.click(); await settle();
             expect(reload.observed).toBe(true); expect(one('app-interest-settings')).toBe(component); expect(one('app-interest-settings [role=status]')).toBe(live);
             expect(live?.textContent).toBe('Интересы сохранены.'); expect(one('app-interest-picker')).toBeNull(); expect(document.activeElement).toBe(one('h1'));
-            reload.next(SHELVES); await settle(); expect(one('app-interest-settings [role=status]')).toBe(live);
+            reload.next(SHELVES); await settle(); expect(one('app-interest-settings [role=status]')).toBe(live); expect(personal.profile).toHaveBeenCalledTimes(1);
         });
         it('offers optional onboarding on a first search/filter entry and sparse catalogue fallback', async () => {
             await open('/community?q=испанский'); expect(one('app-interest-picker')).not.toBeNull();

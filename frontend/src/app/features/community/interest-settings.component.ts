@@ -37,13 +37,15 @@ export class InterestSettingsComponent {
     private readonly auth = inject(AuthService);
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
-        protected readonly selected = linkedSignal<readonly string[]>(() => this.store.profile()?.selectedTopics.map(topic => topic.id) ?? []);
+    protected readonly selected = linkedSignal<readonly string[]>(() => this.store.profile()?.selectedTopics.map(topic => topic.id) ?? []);
     protected readonly editing = signal(false);
     private readonly retryFocus = signal(false);
     constructor() {
+        const cachedProfile = this.store.profile();
+        const cachedAccount = this.store.account();
         void this.auth.restore().then(() => {
             this.store.ensure();
-            if (!this.onboarding() && this.store.profile() !== null && !this.store.busy() && !this.store.retrying()) this.store.reload();
+            if (!this.onboarding()) this.store.refreshKnownProfile(cachedProfile, cachedAccount);
         });
         effect(() => {
             const notice = this.store.notice();

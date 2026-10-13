@@ -1,4 +1,6 @@
-import { HttpErrorResponse } from '@angular/common/http';
+import { provideHttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { InterestStore } from './interest-store.service';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
@@ -15,6 +17,36 @@ describe('InterestSettingsComponent', () => {
             change: vi.fn().mockReturnValue(of(parseInterestProfile(contract.reset.response))) };
         TestBed.configureTestingModule({ providers: [{ provide: AuthService, useValue: { status: signal('authenticated'), user: signal({ accountId: 'a' }), restore: vi.fn().mockResolvedValue(undefined) } },
             { provide: COMMUNITY_LAUNCH, useValue: true }, { provide: RecommendationsApiService, useValue: api }] });
+    });
+    it('loads an initial account profile once instead of immediately reading it again', async () => {
+        const fixture = TestBed.createComponent(InterestSettingsComponent); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
+        expect(api.profile).toHaveBeenCalledTimes(1);
+    });
+    it('refreshes a cached version/inferred topics on profile mount and resets using the fresh If-Match', async () => {
+        TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), { provide: RecommendationsApiService, useClass: RecommendationsApiService }] });
+        const http = TestBed.inject(HttpTestingController); const store = TestBed.inject(InterestStore);
+        store.ensure(); http.expectOne('/api/community/interests').flush({ ...contract.select.response, inferredTopics: [contract.profile.availableTopics[2]] }); TestBed.tick();
+        expect(store.profile()?.rowVersion).toBe('1');
+        const fixture = TestBed.createComponent(InterestSettingsComponent); fixture.detectChanges(); await Promise.resolve(); fixture.detectChanges();
+        const fresh = http.expectOne('/api/community/interests');
+        fresh.flush({ ...contract.select.response, rowVersion: '9', inferredTopics: [contract.profile.availableTopics[1]] });
+        await fixture.whenStable(); fixture.detectChanges(); const root = fixture.nativeElement as HTMLElement;
+        expect(store.profile()?.rowVersion).toBe('9'); expect(root.textContent).toContain('По вашим действиям: Английский'); expect(root.textContent).not.toContain('По вашим действиям: Анатомия');
+        const press = (label: string) => [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === label)!.click();
+        press('Сбросить интересы'); fixture.detectChanges(); press('Да, сбросить интересы');
+        const resetting = http.expectOne('/api/community/interests:reset'); expect(resetting.request.headers.get('If-Match')).toBe('"9"');
+        resetting.flush({ ...contract.reset.response, rowVersion: '10' }); await fixture.whenStable(); fixture.detectChanges();
+        expect(store.notice()).toContain('Интересы сброшены'); http.verify();
+    });
+    it('does not replace an unknown cached command with a profile read when the view mounts', async () => {
+        const store = TestBed.inject(InterestStore); store.ensure(); TestBed.tick();
+        api.change.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 })));
+        store.save(['spanish']); const attempt = api.change.mock.calls[0];
+        const fixture = TestBed.createComponent(InterestSettingsComponent); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
+        expect(api.profile).toHaveBeenCalledTimes(1);
+        const root = fixture.nativeElement as HTMLElement;
+        [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Повторить')!.click(); fixture.detectChanges(); await fixture.whenStable();
+        expect(api.change.mock.calls[1]).toEqual(attempt); expect(api.profile).toHaveBeenCalledTimes(1);
     });
     it('shows chosen/inferred topics, confirms reset inline and announces completion in a pre-existing region', async () => {
         const fixture = TestBed.createComponent(InterestSettingsComponent); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();

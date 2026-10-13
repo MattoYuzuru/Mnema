@@ -46,9 +46,30 @@ describe('InterestStore account and command boundary', () => {
     });
     it('reloads on 412 and stops showing the settings when the server is disabled', () => {
         api.change.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412 })));
-        store.save(['spanish']); expect(api.profile).toHaveBeenCalledTimes(2); expect(store.notice()).toContain('другом окне');
+        store.save(['spanish']); expect(api.profile).toHaveBeenCalledTimes(2); expect(store.notice()).toContain('Интересы обновились');
         api.profile.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
         store.reload(); expect(store.profile()).toBeNull(); expect(store.error()).toBe(''); expect(store.forYou()).toBe(false);
+    });
+    it('refreshes a known cached snapshot and uses its new version for the next reset', () => {
+        const snapshot = store.profile(); api.profile.mockReturnValue(of({ ...PROFILE, rowVersion: '8', inferredTopics: [PROFILE.availableTopics[2]] }));
+        store.refreshKnownProfile(snapshot, store.account()); expect(api.profile).toHaveBeenCalledTimes(2);
+        expect(store.profile()?.inferredTopics).toEqual([PROFILE.availableTopics[2]]);
+        store.save([], true); expect(api.change.mock.calls[0][1]).toBe('8');
+    });
+    it('does not refresh an initial/null snapshot, a newer completed read, another account or a busy command', () => {
+        store.refreshKnownProfile(null, store.account()); expect(api.profile).toHaveBeenCalledTimes(1);
+        const snapshot = store.profile(); const reading = new Subject<InterestProfile>(); api.profile.mockReturnValue(reading); store.reload();
+        store.refreshKnownProfile(snapshot, store.account()); expect(reading.observed).toBe(true); expect(api.profile).toHaveBeenCalledTimes(2);
+        reading.next({ ...PROFILE, rowVersion: '2' }); store.refreshKnownProfile(snapshot, store.account()); expect(api.profile).toHaveBeenCalledTimes(2);
+        store.refreshKnownProfile(store.profile(), 'account-b'); expect(api.profile).toHaveBeenCalledTimes(2);
+        const command = new Subject<InterestProfile>(); api.change.mockReturnValue(command); store.save(['spanish']);
+        store.refreshKnownProfile(store.profile(), store.account()); expect(command.observed).toBe(true); expect(api.profile).toHaveBeenCalledTimes(2);
+    });
+    it.each([true, false])('explains that a conflicted reset/selection (reset=%s) was not completed', reset => {
+        api.change.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412 })));
+        store.save(reset ? [] : ['spanish'], reset);
+        expect(store.notice()).toContain('Интересы обновились. Показываем актуальный профиль.');
+        expect(store.notice()).toContain(reset ? 'Сброс ещё не выполнен' : 'Ваш выбор ещё не сохранён');
     });
     it('cancels old reads/commands and ignores old-account results', () => {
         const oldRead = new Subject<InterestProfile>(); api.profile.mockReturnValue(oldRead); store.reload();

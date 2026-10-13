@@ -45,6 +45,10 @@ export class InterestStore {
     }
     /** Called after Auth.restore, without waiting for an effect's next render. */
     ensure(): void { this.switchAccount(this.account()); }
+    /** Refresh a profile known before the view mounted; an initial/in-flight read or unresolved command wins. */
+    refreshKnownProfile(snapshot: InterestProfile | null, account: string | null): void {
+        if (snapshot !== null && account === this.account() && snapshot === this.profile() && !this.busy() && this.pending === null) this.reload();
+    }
     disableEvents(): void { this.state.update(profile => profile === null ? null : { ...profile, eventsEnabled: false }); }
     disableForYou(): void { this.state.update(profile => profile === null ? null : { ...profile, forYouEnabled: false }); }
     reload(): void {
@@ -83,7 +87,9 @@ export class InterestStore {
                 if (sequence !== this.sequence || account !== this.account()) return;
                 this.busy.set(false);
                 if (error instanceof HttpErrorResponse && error.status === 412) {
-                    this.pending = null; this.notice.set('Интересы изменились в другом окне. Показываем актуальный профиль.'); this.reload();
+                    this.pending = null; this.notice.set(pending.reset
+                        ? 'Интересы обновились. Показываем актуальный профиль. Сброс ещё не выполнен. Повторите его.'
+                        : 'Интересы обновились. Показываем актуальный профиль. Ваш выбор ещё не сохранён. Выберите темы снова.'); this.reload();
                 } else if (error instanceof HttpErrorResponse && error.status === 404) { this.pending = null; this.state.set(null); this.notice.set(''); }
                 else { this.error.set('Не удалось подтвердить сохранение. Повторите тот же запрос.'); }
             }

@@ -29,8 +29,8 @@ export const CATALOG_MECHANICS = [
 ] as const;
 
 /**
- * The sortings that are drawn. «Для вас» arrives with the recommendations (epic 4): it joins this list, and with it the type, the
- * address parameter and the default for a signed-in reader. Until then it is neither drawn nor accepted from the address.
+ * Public wire sortings. The private «Для вас» value belongs to CatalogSort and is offered separately by
+ * CatalogFiltersComponent when the authenticated recommendation capability is enabled; its endpoint is private.
  */
 export const CATALOG_SORTS = [
     { value: 'popular', label: 'Популярные' }, { value: 'learning', label: 'Учат сейчас' },
