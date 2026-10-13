@@ -48,7 +48,7 @@ export type CatalogSize = typeof CATALOG_SIZES[number]['value'];
 export type CatalogMedia = typeof CATALOG_MEDIA[number]['value'];
 export type CatalogMechanic = typeof CATALOG_MECHANICS[number]['value'];
 export type CatalogWireSort = typeof CATALOG_SORTS[number]['value'];
-export type CatalogSort = CatalogWireSort | typeof RELEVANCE_SORT.value;
+export type CatalogSort = CatalogWireSort | typeof RELEVANCE_SORT.value | 'for-you';
 
 /** The sorting of the browse list: no `sort` in the address, no `sort` unless it is chosen. */
 export const DEFAULT_SORT: CatalogWireSort = 'popular';
@@ -160,7 +160,7 @@ export function fromQueryParams(source: QueryParamsSource): CatalogFilters {
         media: canonical(CATALOG_MEDIA, all(source, 'media')),
         mechanics: canonical(CATALOG_MECHANICS, all(source, 'mechanics')),
         fresh: first('fresh') === 'true',
-        sort: CATALOG_SORTS.find(item => item.value === sort)?.value ?? (searching ? RELEVANCE_SORT.value : DEFAULT_SORT)
+        sort: sort === 'for-you' ? 'for-you' : CATALOG_SORTS.find(item => item.value === sort)?.value ?? (searching ? RELEVANCE_SORT.value : DEFAULT_SORT)
     };
 }
 

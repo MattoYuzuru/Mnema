@@ -10,6 +10,7 @@ import { AuthService } from './auth.service';
 import { appConfig } from './app.config';
 import { validProfileBioEdit } from './profile-bio';
 import { DuringStudyMode, NotificationPreferences } from './core/notifications/notification-preferences';
+import { InterestSettingsComponent } from './features/community/interest-settings.component';
 import { ProfilePlanComponent } from './features/plans/profile-plan.component';
 import { PublicProfileSettingsComponent } from './features/public-profile/public-profile-settings.component';
 import { SpeechConsentSettingsComponent } from './features/speech/speech-consent-settings.component';
@@ -22,7 +23,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
 
 @Component({
     selector: 'app-profile-page',
-    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent,
+    imports: [InterestSettingsComponent, ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent,
         PublicProfileSettingsComponent],
     template: `
       <section class="profile-page" aria-labelledby="profile-title">
@@ -87,6 +88,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
               <h2 id="public-profile-heading">Публичный профиль</h2>
               <app-public-profile-settings [profile]="account" [avatarUrl]="avatarUrl()" />
             </section>
+            <app-interest-settings />
             <section id="ai-budget" class="sheet" aria-labelledby="ai-budget-heading">
               <h2 id="ai-budget-heading" tabindex="-1">ИИ-бюджет</h2>
               <app-usage-budget />

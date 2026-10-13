@@ -94,9 +94,14 @@ describe('catalog filters', () => {
             expect(filters.size).toBe('course');
         });
 
+        it('round-trips the private for-you choice; the page separately gates access', () => {
+            const filters = fromQueryParams({ sort: 'for-you' });
+            expect(filters.sort).toBe('for-you'); expect(toQueryParams(filters)).toEqual({ sort: 'for-you' });
+        });
+
         it('drops everything unknown instead of passing it on', () => {
             const filters = fromQueryParams({
-                topic: '<script>', learn: 'Spanish', level: 'D9', size: 'huge', media: ['audio', 'smell'], mechanics: ['telepathy'], fresh: '1', sort: 'for-you'
+                topic: '<script>', learn: 'Spanish', level: 'D9', size: 'huge', media: ['audio', 'smell'], mechanics: ['telepathy'], fresh: '1', sort: 'unknown-sort'
             });
             expect(filters).toEqual({ ...NO_FILTERS, media: ['audio'] });
             expect(fromQueryParams({ topic: 'a'.repeat(65) }).topic).toBeNull();

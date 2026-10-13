@@ -3,7 +3,8 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, a
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Subscription, catchError, throwError } from 'rxjs';
 
 import { learnerOrigin } from '../../app.config';
 import { AuthService } from '../../auth.service';
@@ -24,6 +25,11 @@ import { PublicDeckFailure, publicFailureOf } from '../public-deck/public-deck.m
 import { SHELL_TITLE } from '../public-deck/public-page-meta';
 import { waitText } from '../public-deck/public-deck.text';
 import { CommunityApiService, CommunityQuery } from './community-api.service';
+import { InterestSettingsComponent } from './interest-settings.component';
+import { InterestStore } from './interest-store.service';
+import { RecommendationsApiService, CardAttribution } from './recommendations-api.service';
+import { RecommendationPage } from './recommendations.models';
+import { CatalogTelemetry } from './catalog-telemetry.service';
 import { CommunityPager } from './community-pager';
 import { CommunityCard, CommunityFacets, CommunityShelves } from './community.models';
 import {
@@ -63,7 +69,7 @@ interface ShelfView {
  */
 @Component({
     selector: 'app-community-page',
-    imports: [RouterLink, BookSearchComponent, CatalogFiltersComponent, CommunityEmptyComponent, ComplaintDialogComponent, DeckGridComponent, DeckShelfComponent],
+    imports: [InterestSettingsComponent, RouterLink, BookSearchComponent, CatalogFiltersComponent, CommunityEmptyComponent, ComplaintDialogComponent, DeckGridComponent, DeckShelfComponent],
     templateUrl: './community-page.component.html',
     styleUrl: './community-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -73,6 +79,14 @@ export class CommunityPageComponent {
     private readonly router = inject(Router);
     private readonly api = inject(CommunityApiService);
     private readonly auth = inject(AuthService);
+    protected readonly interests = inject(InterestStore);
+    protected readonly observing = computed(() => this.interests.events() && this.telemetry.accepting());
+    private readonly recommendations = inject(RecommendationsApiService);
+    private readonly telemetry = inject(CatalogTelemetry);
+    protected readonly recommendationShelf = signal<RecommendationPage | null>(null);
+    protected readonly recommendationCards = computed(() => (this.recommendationShelf()?.decks ?? []).map(card => this.display(card)));
+    protected readonly explanation = computed(() => this.recommendationShelf()?.explanationTopic?.name ?? null);
+    private recommendationRequest: Subscription | null = null;
     private readonly authors = inject(AuthorCardsService);
     private readonly titles = inject(Title);
     private readonly document = inject(DOCUMENT);
@@ -92,7 +106,8 @@ export class CommunityPageComponent {
     private readonly q = computed(() => this.address().q);
     protected readonly searching = computed(() => this.q() !== '');
     /** The filters as the control shows them; the address follows (the sorting after a short wait). */
-    protected readonly draft = linkedSignal<CatalogFilters>(() => this.address().filters);
+    protected readonly draft = linkedSignal<CatalogFilters>(() => !this.address().sortGiven && !this.searching() && this.interests.forYou()
+        ? { ...this.address().filters, sort: 'for-you' } : this.address().filters);
     /** The text in the book: the address's text, and typed-but-unsubmitted words survive a change of the filters. */
     protected readonly bookText = linkedSignal(() => this.q());
 
@@ -110,7 +125,11 @@ export class CommunityPageComponent {
     /** Said once, politely, when a filter of a stale link is dropped from the address; the next search or filter change clears it. */
     protected readonly staleNote = signal('');
 
-    protected readonly pager = new CommunityPager(cursor => this.api.decks(this.query, cursor), this.destroyRef);
+    protected readonly pager = new CommunityPager(cursor => this.query.filters.sort === 'for-you' && this.interests.forYou()
+        ? this.recommendations.recommendations(this.query, cursor).pipe(catchError((error: unknown) => {
+            if (error instanceof HttpErrorResponse && error.status === 404) this.interests.disableForYou();
+            return throwError(() => error);
+        })) : this.api.decks(this.query, cursor), this.destroyRef);
     protected readonly complaint = signal<{ readonly code: string; readonly title: string } | null>(null);
 
     /** Shelves are the page; with no shelf to draw the page browses. */
@@ -161,7 +180,7 @@ export class CommunityPageComponent {
     protected readonly moreError = computed(() => this.pager.moreFailed() ? 'Не удалось загрузить следующие колоды. Проверьте соединение и повторите.' : null);
 
     /** The cards that are on the page now: those of the shelves that are drawn, or the rows of the result list. */
-    private readonly displayed = computed<readonly CommunityCard[]>(() => this.showShelves() ? this.visibleShelves().flatMap(({ cards }) => cards) : this.pager.rows());
+    private readonly displayed = computed<readonly CommunityCard[]>(() => this.showShelves() ? [...(this.recommendationShelf()?.decks ?? []), ...this.visibleShelves().flatMap(({ cards }) => cards)] : this.pager.rows());
     /** Every card on the page, by code: the address of a deck, and whose it is. */
     private readonly cardsByCode = computed(() => new Map<string, CommunityCard>(this.displayed().map(card => [card.code, card])));
     private readonly me = computed(() => this.auth.user()?.accountId.toLowerCase() ?? null);
@@ -189,10 +208,12 @@ export class CommunityPageComponent {
             this.titles.setTitle(SHELL_TITLE);
             this.shelvesSubscription?.unsubscribe();
             this.facetsSubscription?.unsubscribe();
+            this.recommendationRequest?.unsubscribe();
             this.clearSortTimer();
         });
         effect(() => {
             this.key();
+            this.interests.account(); this.interests.ready(); this.interests.forYou(); this.interests.profile();
             untracked(() => {
                 // The address moved by itself (back, forward, a link): a sorting that was still waiting belongs to the address that is gone.
                 this.clearSortTimer();
@@ -283,7 +304,7 @@ export class CommunityPageComponent {
     private applyFilters(): void {
         this.sortTimer = null;
         this.staleNote.set('');
-        void this.router.navigate([], { relativeTo: this.route, queryParams: addressParams(this.address().q, this.draft()), replaceUrl: true });
+        void this.router.navigate([], { relativeTo: this.route, queryParams: { ...addressParams(this.address().q, this.draft()), ...(this.interests.forYou() && this.draft().sort === 'popular' ? { sort: 'popular' } : {}) }, replaceUrl: true });
     }
 
     private clearSortTimer(): void {
@@ -292,10 +313,20 @@ export class CommunityPageComponent {
     }
 
     /** Reads what the address asks for; a read that is still on its way is abandoned. */
+    protected cardVisible(deck: PublicDeckCard, shelf = 'catalog'): void { this.telemetry.visible(this.attribution(deck, shelf)); }
+    protected cardOpened(deck: PublicDeckCard, shelf = 'catalog'): void { this.telemetry.opened(this.attribution(deck, shelf), this.searching()); }
+    private attribution(deck: PublicDeckCard, shelf: string): CardAttribution {
+        const personalized = shelf === 'for-you' || (!this.showShelves() && this.query.filters.sort === 'for-you');
+        const cards = this.showShelves() ? personalized ? this.recommendationCards() : this.shelfViews().find(row => row.key === shelf)?.decks ?? [] : this.rowCards();
+        return { code: deck.id, surface: personalized ? 'for-you' : this.searching() ? 'search' : 'catalog',
+            position: cards.findIndex(card => card.id === deck.id) >= 1000 ? null : Math.max(1, cards.findIndex(card => card.id === deck.id) + 1), rankVersion: personalized ? 'recs-v1' : 'catalog-v1' };
+    }
     private async load(): Promise<void> {
         const sequence = ++this.sequence;
         const address = this.address();
         this.shelvesSubscription?.unsubscribe();
+        this.recommendationRequest?.unsubscribe();
+        this.recommendationShelf.set(null);
         this.pager.cancel();
         this.browsing.set(false);
         this.shelvesFailure.set(null);
@@ -303,13 +334,32 @@ export class CommunityPageComponent {
         this.booting.set(true);
         // A signed-in viewer's bearer must be on the first request, so the limits are keyed by the account.
         await this.auth.restore();
+        this.interests.ensure();
         if (sequence !== this.sequence || this.destroyRef.destroyed) return;
+        if (address.filters.sort === 'for-you' && this.interests.account() !== null && !this.interests.ready()) return;
+        if (address.filters.sort === 'for-you' && !this.interests.forYou()) {
+            this.staleNote.set('Подбор «Для вас» сейчас недоступен. Показываем популярные колоды.');
+            this.booting.set(false);
+            void this.router.navigate([], { relativeTo: this.route, queryParams: { ...addressParams(address.q, { ...address.filters, sort: 'popular' }), sort: 'popular' }, replaceUrl: true });
+            return;
+        }
         this.booting.set(false);
         if (this.facets() === null) this.loadFacets();
         if (isShelvesView(address)) {
             this.loadShelves(sequence);
+            if (this.interests.forYou()) {
+                this.recommendationRequest = this.recommendations.recommendations({ q: '', filters: { ...this.draft(), sort: 'for-you' } }, null, 12).subscribe({
+                    next: page => { if (sequence === this.sequence && this.interests.forYou() && page.decks.length >= 4) this.recommendationShelf.set(page); },
+                    error: (error: unknown) => {
+                        if (sequence !== this.sequence) return;
+                        this.recommendationShelf.set(null);
+                        if (error instanceof HttpErrorResponse && error.status === 404) this.interests.disableForYou();
+                    }
+                });
+            }
         } else {
-            this.query = { q: address.q, filters: address.filters };
+            this.query = { q: address.q, filters: !address.sortGiven && address.q === '' && this.interests.forYou()
+                ? { ...address.filters, sort: 'for-you' } : address.filters };
             this.pager.start();
         }
     }

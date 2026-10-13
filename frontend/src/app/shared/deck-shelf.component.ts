@@ -35,7 +35,7 @@ export interface ShelfAction { readonly id: string; readonly deck: PublicDeckCar
         </header>
         <ul class="row" role="list">
           @for (deck of decks(); track deck.id) {
-            <li><app-public-deck-card [deck]="deck" [headingLevel]="3" [link]="deckLink()(deck)" [menuItems]="menuFor()?.(deck) ?? menuItems()" (action)="action.emit({ id: $event, deck })" /></li>
+            <li><app-public-deck-card [observe]="observe()" (visible)="visible.emit($event)" (opened)="opened.emit($event)" [deck]="deck" [headingLevel]="3" [link]="deckLink()(deck)" [menuItems]="menuFor()?.(deck) ?? menuItems()" (action)="action.emit({ id: $event, deck })" /></li>
           }
         </ul>
       </section>
@@ -51,6 +51,9 @@ export class DeckShelfComponent {
     /** The query of «Все» (the shelf's own browse query), when the link leads to a page that keeps its state in the address. */
     readonly moreQueryParams = input<Params | null>(null);
     readonly decks = input.required<readonly PublicDeckCard[]>();
+    readonly observe = input(false);
+    readonly visible = output<PublicDeckCard>();
+    readonly opened = output<PublicDeckCard>();
     /** The route of a deck's page; without one the titles are plain text. */
     readonly deckLink = input<(deck: PublicDeckCard) => string | readonly string[] | null>(() => null);
     readonly menuItems = input<readonly ActionMenuItem[]>([SHARE_MENU_ITEM]);

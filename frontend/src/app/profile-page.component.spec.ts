@@ -51,6 +51,7 @@ describe('ProfilePageComponent', () => {
                 { provide: PlansApiService, useValue: { load: () => NEVER } },
                 { provide: SpeechInputApiService, useValue: { withdrawConsent: () => of(undefined) } },
                 { provide: AuthService, useValue: {
+                        restore: vi.fn().mockResolvedValue(undefined),
                         setPassword: vi.fn().mockName("AuthService.setPassword")
                     } }
             ] });

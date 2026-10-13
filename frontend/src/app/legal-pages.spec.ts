@@ -61,10 +61,11 @@ describe('Personal data policy page', () => {
         }
     });
 
-    it('states truthfully that AI functions are not provided, that consent is not a precondition and that no analytics runs', () => {
+    it('states truthfully that AI functions are not provided, that consent is not a precondition and that no tracking cookies are used', () => {
         const body = text(render(PrivacyPageComponent));
         expect(body).toContain('не предоставляются');
-        expect(body).toContain('не применяет аналитику');
+        expect(body).toContain('Рекламных и отслеживающих cookie нет');
+        expect(body).toContain('Действия в Сообществе учитываются на сервере');
         expect(body).toContain('Самостоятельное удаление аккаунта в интерфейсе пока не включено');
         expect(body).toContain('10 рабочих дней');
         expect(body).not.toMatch(/DeepSeek|OpenRouter|Gemini|GigaChat/);
@@ -113,7 +114,7 @@ describe('Personal data policy page', () => {
             'Ни ваши ответы, ни прогресс, ни имена учеников автору не показываются.', 'Жалобы.', 'мы храним вашу жалобу, аккаунт и решение по ней до 3 лет']) expect(paragraph).toContain(phrase);
         // The approved catalogue and recommendations wording ships locally with epic 4.
         expect(paragraph).toContain('общие цифры');
-        expect(paragraph).toContain('Сообщество и рекомендации')
+        expect(paragraph).toContain('Сообщество и рекомендации');
         expect(paragraph).toContain('до 13 месяцев');
         expect(paragraph).toContain('Интересы можно посмотреть и сбросить в профиле');
         expect(paragraph).toContain('Содержимое ваших личных колод для рекомендаций не используется');
@@ -138,12 +139,12 @@ describe('Personal data policy page', () => {
         const dataTable = tables.find(table => text(table.querySelector('caption')).startsWith('Категории'))!;
         expect([...dataTable.querySelectorAll('thead th')].map(header => text(header))).toEqual(['Категория', 'Состав', 'Источник']);
         expect([...dataTable.querySelectorAll('tbody th')].map(header => text(header))).toEqual(['Данные аккаунта', 'Вход через стороннего провайдера', 'Профиль', 'Учебные данные',
-            'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Жалобы', 'Обращения в поддержку']);
+            'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Действия в Сообществе', 'Интересы', 'Жалобы', 'Обращения в поддержку']);
         const purposes = tables.find(table => text(table.querySelector('caption')).startsWith('Цели'))!;
-        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(10);
-        for (const row of purposes.querySelectorAll('tbody tr')) expect(row.querySelectorAll('td'), text(row)).toHaveLength(4);
+        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(11);
+        for (const row of purposes.querySelectorAll('tbody tr')) expect(row.querySelectorAll('td'), text(row)).toHaveLength(3);
         const purposeText = text(purposes);
-        for (const purpose of ['Регистрация, вход, ведение аккаунта и профиля', 'Работа сервиса', 'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки и рекомендация тарифа',
+        for (const purpose of ['Регистрация, вход, ведение аккаунта и профиля', 'Работа сервиса', 'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки, рекомендация тарифа и подбор колод', 'Подбор подходящих колод и проверка рекомендаций',
             'Безопасность', 'Служебные письма', 'Поддержка и обратная связь', 'Рассмотрение жалоб на колоды и профили', 'Резервное копирование и восстановление', 'Выполнение требований закона']) expect(purposeText).toContain(purpose);
         // legal bases per purpose, and the periods of the table
         for (const basis of ['п. 5 ч. 1 ст. 6', 'п. 7 ч. 1 ст. 6', 'п. 2 ч. 1 ст. 6']) expect(purposeText).toContain(basis);

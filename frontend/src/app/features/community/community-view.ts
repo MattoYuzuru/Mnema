@@ -20,7 +20,7 @@ export function addressOf(params: ParamMap): CommunityAddress {
     return {
         q: normalizeQuery(params.get('q')),
         filters: fromQueryParams(params),
-        sortGiven: CATALOG_SORTS.some(entry => entry.value === sort)
+        sortGiven: sort === 'for-you' || CATALOG_SORTS.some(entry => entry.value === sort)
     };
 }
 

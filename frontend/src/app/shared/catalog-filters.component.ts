@@ -100,10 +100,14 @@ export class CatalogFiltersComponent {
     readonly languages = input<readonly LanguageOption[]>([]);
     /** A text search is on: «По близости к запросу» is the first sorting. */
     readonly searching = input(false);
+    readonly forYou = input(false);
     /** The new value; the sorting alone changing is also a new value. */
     readonly changed = output<CatalogFilters>();
 
-    protected readonly sortOptions = computed(() => this.searching() ? SEARCH_SORT_OPTIONS : SORT_OPTIONS);
+    protected readonly sortOptions = computed(() => {
+        const base = this.searching() ? SEARCH_SORT_OPTIONS : SORT_OPTIONS;
+        return this.forYou() ? [{ value: 'for-you' as const, label: 'Для вас' }, ...base] : base;
+    });
     protected readonly sizeOptions = SIZE_OPTIONS;
     protected readonly media = CATALOG_MEDIA;
     protected readonly mechanics = CATALOG_MECHANICS;

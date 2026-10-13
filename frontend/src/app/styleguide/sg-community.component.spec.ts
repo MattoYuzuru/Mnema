@@ -33,7 +33,7 @@ describe('SgCommunityComponent', () => {
     it('is the section «Сообщество» with a «когда использовать» note for every specimen', () => {
         expect(root.querySelector('section#community h2')?.textContent).toBe('Сообщество');
         const items = root.querySelectorAll('.sg-specimen');
-        expect(items.length).toBe(9);
+        expect(items.length).toBe(10);
         items.forEach(item => expect(item.querySelector('.sg-when')?.textContent).toContain('Когда использовать'));
     });
 

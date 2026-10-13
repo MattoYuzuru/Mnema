@@ -13,13 +13,15 @@
     <app-book-search class="book" mode="open" [(value)]="bookText" (searched)="search($event)" />
 
     @if (filtersShown()) {
-      <app-catalog-filters class="filters" [value]="draft()" [topics]="topics()" [languages]="languages()" [searching]="searching()"
+      <app-catalog-filters class="filters" [value]="draft()" [topics]="topics()" [languages]="languages()" [searching]="searching()" [forYou]="interests.forYou()"
         (changed)="filtersChanged($event)" />
     }
 
     <!-- The region is in the DOM, empty, before its first text: a region that appears with its text is not announced reliably. -->
     <p class="status" role="status">{{ status() === 'loading' ? 'Загружаем колоды…' : '' }}</p>
     <p class="status stale" role="status">{{ staleNote() }}</p>
+
+    @if (showShelves() && status() === 'ready') { <app-interest-settings [onboarding]="true" /> }
 
     @switch (status()) {
       @case ('rate-limited') {
@@ -47,9 +49,14 @@
               <app-community-empty [signedIn]="signedIn()" />
             } @else {
               <div class="shelves">
+                @if (recommendationCards().length >= 4 && interests.forYou()) {
+                  <app-deck-shelf title="Для вас" [subtitle]="explanation() ? 'Потому что вы учите: ' + explanation() : null" [decks]="recommendationCards()"
+                    [moreLink]="moreLink" [moreQueryParams]="{sort:'for-you'}" [deckLink]="deckLink" [menuFor]="menuFor"
+                    [observe]="observing()" (visible)="cardVisible($event, 'for-you')" (opened)="cardOpened($event, 'for-you')" (action)="actionChosen($event)" />
+                }
                 @for (shelf of shelfViews(); track shelf.key) {
                   <app-deck-shelf [title]="shelf.title" [decks]="shelf.decks" [moreLink]="shelf.more === null ? null : moreLink" [moreQueryParams]="shelf.more"
-                    [deckLink]="deckLink" [menuFor]="menuFor" (action)="actionChosen($event)" />
+                    [deckLink]="deckLink" [menuFor]="menuFor" [observe]="observing()" (visible)="cardVisible($event, shelf.key)" (opened)="cardOpened($event, shelf.key)" (action)="actionChosen($event)" />
                 }
               </div>
             }
@@ -57,7 +64,7 @@
         } @else {
           <app-deck-grid [decks]="rowCards()" [results]="results()" [headingLevel]="2" [deckLink]="deckLink" [menuFor]="menuFor"
             [continuation]="pager.cursor()" [loading]="pager.loadingMore()" [error]="moreError()" [enabled]="pager.phase() === 'ready'"
-            [context]="pager.context()" (loadNext)="pager.next()" (action)="actionChosen($event)" />
+            [context]="pager.context()" [observe]="observing()" (visible)="cardVisible($event)" (opened)="cardOpened($event)" (loadNext)="pager.next()" (action)="actionChosen($event)" />
         }
       }
     }
