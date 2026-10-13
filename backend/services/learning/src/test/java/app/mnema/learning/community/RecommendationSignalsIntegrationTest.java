@@ -184,4 +184,17 @@ class RecommendationSignalsIntegrationTest extends IsolatedCatalogDatabase {
         assertThat(after.path("inferredTopics")).isEmpty();
         assertThat(Long.parseLong(after.path("rowVersion").stringValue())).isEqualTo(version + 1);
     }
+    @Test void effectiveGoalAnswersBumpOnceEvenWhenNormalizedGoalInterestIsUnchanged() {
+        UUID account = UUID.randomUUID();
+        goals.answer(account, LearningGoal.LANGUAGE);
+        long before = Long.parseLong(interests.profile(account).path("rowVersion").stringValue());
+        var normalized = repository.interests(account);
+        assertThat(normalized).containsExactlyEntriesOf(java.util.Map.of("languages", 1.0));
+        goals.answer(account, LearningGoal.LANGUAGE);
+        assertThat(repository.interests(account)).isEqualTo(normalized);
+        assertThat(Long.parseLong(interests.profile(account).path("rowVersion").stringValue())).isEqualTo(before + 1);
+        new TransactionTemplate(transactions).executeWithoutResult(status -> interests.rebuild(account));
+        assertThat(Long.parseLong(interests.profile(account).path("rowVersion").stringValue())).isEqualTo(before + 1);
+    }
+
 }

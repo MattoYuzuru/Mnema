@@ -72,11 +72,16 @@ class InterestRepository {
                 .param("a", account).update();
     }
 
+    /** Caller holds the account row lock; invalidates frozen recommendation questions once per effective signal. */
+    void bump(UUID account) {
+        jdbc.sql("UPDATE app_learning.community_interest_profile SET row_version=row_version+1 WHERE account_id=:a").param("a", account).update();
+    }
+
     void replace(UUID account, Map<String, Double> values, boolean bump) {
         jdbc.sql("DELETE FROM app_learning.user_topic_interest WHERE account_id=:a").param("a", account).update();
         values.forEach((topic, weight) -> jdbc.sql("INSERT INTO app_learning.user_topic_interest(account_id,topic_id,weight) VALUES (:a,:t,:w)")
                 .param("a", account).param("t", topic).param("w", weight.floatValue()).update());
-        if (bump) jdbc.sql("UPDATE app_learning.community_interest_profile SET row_version=row_version+1 WHERE account_id=:a").param("a", account).update();
+        if (bump) bump(account);
     }
 
     /** Live direct copies including detached ones; metadata is only from the current public source, never private copy text. */

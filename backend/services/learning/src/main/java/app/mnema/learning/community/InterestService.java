@@ -88,11 +88,13 @@ public class InterestService {
         if (settings.eventsEnabled || settings.forYouEnabled) repository.lock(account);
     }
 
+    /** Effective copy/drop/goal transitions change eligibility even when normalization leaves the weights identical. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void changed(UUID account) {
         if (!settings.eventsEnabled && !settings.forYouEnabled) return;
         InterestRepository.Profile profile = repository.lock(account);
-        rebuildLocked(profile);
+        rebuildLocked(profile, false);
+        repository.bump(account);
         repository.active(account);
     }
 

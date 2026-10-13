@@ -27,10 +27,21 @@ class RecommendationHttpIntegrationTest extends CatalogHttpTest {
 
     @Autowired private InterestService interests;
     @Autowired private InterestRebuild rebuild;
+    @Autowired private InterestRepository interestRepository;
+    @Autowired private app.mnema.learning.catalog.deck.DeckService deckService;
+    @Autowired private app.mnema.learning.catalog.item.ItemService itemService;
+    @Autowired private app.mnema.learning.catalog.exercise.ExerciseService exerciseService;
+    @Autowired private app.mnema.learning.study.session.StudySessionService sessionService;
+    @Autowired private app.mnema.learning.media.MediaCatalog mediaCatalog;
+    @Autowired private app.mnema.learning.storage.ImmutableStorage storage;
+    @Autowired private app.mnema.learning.library.PublicationService publication;
+    @Autowired private app.mnema.learning.library.DeckModeration moderation;
+    @Autowired private CatalogProjector projector;
     private UUID account;
     @DynamicPropertySource static void recommendations(DynamicPropertyRegistry properties) {
         properties.add("learning.community.events.enabled", () -> true);
         properties.add("learning.community.for-you.enabled", () -> true);
+        properties.add("learning.community.forks.enabled", () -> true);
     }
 
     @BeforeEach void clearRecommendations() {
@@ -275,6 +286,70 @@ class RecommendationHttpIntegrationTest extends CatalogHttpTest {
         JsonNode after = ok(get("/community/recommendations", account));
         assertThat(after.path("total").intValue()).isGreaterThanOrEqualTo(4);
         assertThat(after.path("explanationTopic").path("id").stringValue()).isEqualTo("english");
+    }
+
+    @Test void effectiveCopyAndDropRefreshShelfWhenNormalizedInterestStaysTheSame() {
+        List<CatalogSeed.Deck> decks = new ArrayList<>(catalogue());
+        CatalogWorlds worlds = new CatalogWorlds(deckService, itemService, exerciseService, sessionService, mediaCatalog, storage, jdbc, transactions, publication, moderation);
+        var source = worlds.deck("Highest ranked Spanish source", "Public source", 10);
+        worlds.exercise(source.materials().getFirst(), app.mnema.learning.catalog.exercise.ExerciseType.FREE_RESPONSE);
+        worlds.publish(source);
+        worlds.project(projector, source.deck());
+        String sourceCode = jdbc.sql("SELECT public_code FROM app_learning.public_deck WHERE deck_id=:d").param("d", source.deck()).query(String.class).single();
+        decks.add(0, new CatalogSeed.Deck(source.deck(), sourceCode, source.owner(), true));
+        decks.add(seed.insert(CatalogSeed.deck("Spanish third").topic("spanish").target("es")));
+        decks.add(seed.insert(CatalogSeed.deck("Spanish fourth").topic("spanish").target("es")));
+        seed.rankInOrder(905, Instant.now(), decks);
+        choose("spanish");
+        Map<String, Double> normalized = interestRepository.interests(account);
+        assertThat(normalized).containsExactlyEntriesOf(Map.of("spanish", 1.0));
+        long before = Long.parseLong(profile().path("rowVersion").stringValue());
+        JsonNode firstPage = ok(get("/community/recommendations?limit=3", account));
+        String oldCursor = firstPage.path("nextCursor").stringValue();
+        JsonNode whole = ok(get("/community/recommendations", account));
+        assertThat(whole.path("decks")).hasSize(12);
+        assertThat(codes(whole)).contains(sourceCode);
+        var copyCommand = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString()).put("sourceCode", sourceCode);
+        var copied = send("POST", "/decks/forks", copyCommand, null);
+        assertThat(copied.statusCode()).as(copied.body()).isEqualTo(201);
+        String copyId = json(copied).path("deckId").stringValue();
+        assertThat(interestRepository.interests(account)).isEqualTo(normalized);
+        assertThat(Long.parseLong(profile().path("rowVersion").stringValue())).isEqualTo(before + 1);
+        JsonNode fresh = ok(get("/community/recommendations", account));
+        assertThat(fresh.path("decks")).hasSize(12);
+        assertThat(codes(fresh)).doesNotContain(sourceCode);
+        assertExplorationTail(fresh);
+        problem(get("/community/recommendations?limit=3&cursor=" + oldCursor, account), 412, "VERSION_CONFLICT");
+        assertThat(send("POST", "/decks/forks", copyCommand, null).headers().firstValue("Idempotency-Replayed")).contains("true");
+        var existingCommand = copyCommand.deepCopy().put("commandId", UUID.randomUUID().toString());
+        assertThat(send("POST", "/decks/forks", existingCommand, null).statusCode()).isEqualTo(200);
+        assertThat(Long.parseLong(profile().path("rowVersion").stringValue())).isEqualTo(before + 1);
+        String copyCursor = ok(get("/community/recommendations?limit=3", account)).path("nextCursor").stringValue();
+        var copyHead = get("/decks/" + copyId, account);
+        assertThat(copyHead.statusCode()).isEqualTo(200);
+        String copyVersion = json(copyHead).path("rowVersion").stringValue();
+        assertThat(send("DELETE", "/decks/" + copyId, null, copyVersion).statusCode()).isEqualTo(204);
+        assertThat(interestRepository.interests(account)).isEqualTo(normalized);
+        assertThat(Long.parseLong(profile().path("rowVersion").stringValue())).isEqualTo(before + 2);
+        JsonNode restored = ok(get("/community/recommendations", account));
+        assertThat(restored.path("decks")).hasSize(12);
+        assertThat(codes(restored)).contains(sourceCode);
+        assertExplorationTail(restored);
+        problem(get("/community/recommendations?limit=3&cursor=" + copyCursor, account), 412, "VERSION_CONFLICT");
+        assertThat(send("DELETE", "/decks/" + copyId, null, copyVersion).statusCode()).isEqualTo(404);
+        assertThat(Long.parseLong(profile().path("rowVersion").stringValue())).isEqualTo(before + 2);
+        new TransactionTemplate(transactions).executeWithoutResult(status -> interests.rebuild(account));
+        assertThat(Long.parseLong(profile().path("rowVersion").stringValue())).isEqualTo(before + 2);
+    }
+
+    private void assertExplorationTail(JsonNode shelf) {
+        List<String> top = List.of("spanish");
+        for (int position = 10; position < 12; position++) {
+            JsonNode card = shelf.path("decks").get(position);
+            boolean newSource = jdbc.sql("SELECT first_listed_at>=statement_timestamp()-interval '30 days' FROM app_learning.public_deck WHERE public_code=:c")
+                    .param("c", card.path("code").stringValue()).query(Boolean.class).single();
+            assertThat(newSource || !top.contains(card.path("topic").path("id").stringValue())).isTrue();
+        }
     }
 
 }
