@@ -5,7 +5,7 @@ artifact:
   title: "Mnema work item and pull request standard"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-10-13"
   owners: ["project-owner"]
 ---
 
@@ -185,6 +185,23 @@ PR отвечает на пять вопросов:
 Не вставляйте полный лог зелёной сборки. Достаточно команды, результата и существенных warnings. Для UI приложите desktop/mobile evidence и keyboard/a11y результат. Для schema/deployment/security изменений нужен независимый review владельца.
 
 ## Статусы
+
+### Локальный backlog при недоступном GitHub
+
+Храните parent/child/spike bodies в документации с `artifact.status: proposed`,
+стабильными local IDs и manifest локальных dependencies. Не придумывайте GitHub numbers,
+не ставьте Ready/Done за подготовленный файл. Actual implementation/status/evidence
+фиксируются отдельно от исследовательского предложения.
+
+При явном поручении перенести backlog: прочитать live repository/Project/status fields,
+найти существующие issues по ID/outcome, создать или обновить bodies без дубликатов,
+связать parents/dependencies, сохранить mapping ID→URL/number и проверить read-back.
+Unknown creation outcome сначала разрешается read/deduplication, не повторным create.
+Доступ к GitHub сам по себе не является разрешением публиковать, реализовывать или выкатывать.
+Пример: [learning core package](./learning-core/README.md),
+[import workflow](./learning-core/github-import.md).
+
+### Значения статусов
 
 - `Backlog`: outcome полезен, но решения или очередь ещё не готовы.
 - `Ready`: выполнен Definition of Ready, задача помещается в 1–3 дня.

@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-10-11"
+  updated_at: "2026-10-13"
   owners: ["project-owner"]
 ---
 
@@ -31,6 +31,8 @@ artifact:
 | Запустить, проверить, открыть Style Guide | [Agent runbook](./engineering/agent-runbook.md) |
 | Найти модуль, версию, owning tests или полный gate | [Repository guide](./engineering/repository-guide.md) |
 | Изменить Study | [Study contract](../contracts/study/README.md); продукт — [exercise catalog](./product/exercise-catalog-v2.md) |
+| Улучшить core обучения / открыть локальный learning backlog | [Исследование, два эпика и entrypoint](./engineering/learning-core/README.md) (`proposed`, не действующий контракт) |
+| Разобраться с локальными branches/worktrees и восстановлением | [Audit на 13.10.2026](./reviews/local-workspace-2026-10-13.md); сверить actual refs перед действиями |
 | Изменить authoring/content | [Learning guide](../backend/services/learning/guide.md) и [native content contract](../contracts/content/native-v1/README.md) |
 | Изменить media | Раздел [Media](#media-epic-76) ниже |
 | Колоды сообщества: доступ, публикация, копии, жалобы | [Product contract](./product/community-decks.md) (раздел «Статус реализации»), затем [architecture](./architecture/community-decks.md) и разделы эпика в [Learning guide](../backend/services/learning/guide.md); состояние задач — evidence [эпика 1](./engineering/evidence/community-decks/epic-1/README.md) [эпика 2](./engineering/evidence/community-decks/epic-2/README.md) [эпика 3](./engineering/evidence/community-decks/epic-3/README.md) и [эпика 4](./engineering/evidence/community-decks/epic-4/README.md) |
@@ -115,6 +117,8 @@ artifact:
 |---|---|---|
 | current | [Repository guide](./engineering/repository-guide.md) | Карта кода, версии, change routes и gate. |
 | current | [Work item standard](./engineering/work-item-standard.md) | Issue/PR/Project status contract. |
+| proposed | [Learning core improvement backlog](./engineering/learning-core/README.md) | Научная критика, current-source map, два ограниченных эпика, 12 task bodies, migration, автономные prompts и idempotent GitHub import. |
+| historical | [Local workspace audit 2026-10-13](./reviews/local-workspace-2026-10-13.md) | Main/RFC/эпики 3–4, worktree inventory, безопасный порядок восстановления и подтверждённые doc mismatches; не deletion list. |
 | current | [Capability inventory](./engineering/capability-inventory.yaml) | Машиночитаемый список команд и harnesses; при расхождении приоритетнее runbook и `--help`. |
 | current | [Evidence index](./engineering/evidence/README.md) | Короткий вход в большие evidence-наборы. |
 | accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения и реализованные delivery slices. |

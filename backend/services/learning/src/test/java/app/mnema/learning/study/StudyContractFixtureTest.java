@@ -306,7 +306,7 @@ class StudyContractFixtureTest {
         assertThat(sessions.path("activePractice").path("mode").stringValue(null)).isEqualTo("PRACTICE");
         JsonNode progress = fixture("progress.json");
         assertThat(progress.path("response").path("items").get(0).path("state").stringValue(null))
-                .isEqualTo("ON_TRACK");
+                .isEqualTo("LEARNING");
         assertThat(progress.path("response").path("items").get(1).path("state").stringValue(null))
                 .isEqualTo("NOT_STARTED");
         assertThat(progress.path("response").has("percentage")).isFalse();

@@ -259,7 +259,7 @@ sweeper (`SpeechInputSweeper` runs in every role).
 | Generation sessions | 30 days after last activity, then one day readable, then purged | `generation_session` and children |
 | Speech clips cache | 180 days (`learning.ai.tts.cache-ttl`) | `speech_cache` |
 | Licensed image search cache | 24 hours | `image_search_cache` |
-| Answer text of a semantic check | until the presentation expires; the stored grade keeps short quotes | `study_assessment` |
+| Temporary answer text of a semantic check | cleared at terminal completion or expiry; separate scheduled raw response lasts 30 days; scheduled feedback may retain short quotes until account deletion | `study_assessment`, `study_raw_response`, attempt receipt; [Study contract](../../contracts/study/README.md#ai-assessment-of-free-explanations-ai-semantic-292) |
 
 ## 7. Failure modes of the operations layer itself
 

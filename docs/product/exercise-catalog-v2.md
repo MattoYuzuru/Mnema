@@ -5,7 +5,7 @@ artifact:
   title: "Mnema exercise and learning-evidence contracts"
   status: accepted
   created_at: "2026-08-15"
-  updated_at: "2026-10-01"
+  updated_at: "2026-10-13"
   owners: ["project-owner"]
 ---
 
@@ -34,11 +34,12 @@ Browse / replay / extra practice ───────────X no canonical
 progress. Scheduler update разрешён только для objective, по которому есть
 наблюдаемый assessed response.
 
-P0/P1 работают с deterministic evaluator или явной self/human rubric. #266 добавил
-только выключенные server-owned capabilities «смысловая проверка ИИ» и «speech-to-text»
-и типизированную rubric-точку расширения: без провайдера они недоступны, публикация
-зависимых заданий отклоняется. Будущий #77 может добавить versioned evaluator, но не
-прямую запись в `StudyState`.
+Deterministic evaluator и явная self rubric остаются базовыми путями. #266 добавил
+server-owned capabilities; #77 реализовал `ai-semantic` для `FREE_RESPONSE` и speech input.
+Смысловая проверка оценивает критерии rubric, а версионированная серверная политика
+сводит их в результат и evidence; модель не пишет `StudyState`. Доступность определяется
+runtime-конфигурацией и здоровьем провайдера, а не наличием механики в каталоге.
+Правила, fallback и dispute — в [Study contract](../../contracts/study/README.md#ai-assessment-of-free-explanations-ai-semantic-292).
 
 ## Механики упражнений (#266, #268)
 
@@ -48,7 +49,7 @@ P0/P1 работают с deterministic evaluator или явной self/human r
 | Механика | Действие ученика | Проверка | Кластеры каталога |
 |---|---|---|---|
 | `SELF_CHECK` | вспомнить, явно раскрыть эталон, честно оценить себя | self-report | E-01, E-09 (self) |
-| `FREE_RESPONSE` | один текстовый ответ на любое условие (в т.ч. аудио → запись) | точные альтернативы с явной нормализацией; «мягкое» совпадение — не понимание смысла | E-02, E-10 |
+| `FREE_RESPONSE` | один текстовый ответ на любое условие (в т.ч. аудио → запись) | точные альтернативы с явной нормализацией либо доступный `ai-semantic` по rubric; «мягкое» совпадение строк — не понимание смысла | E-02, E-09, E-10 |
 | `CLOZE` | заполнить один или несколько пропусков | отдельный ключ и feedback на каждый `blankId` | E-03 |
 | `CHOICE` | выбрать один или несколько вариантов | точный набор server-issued `optionId` | E-04 |
 | `MATCH` | соединить пары один-к-одному | ID-биекция независимо от медиатипа | E-06 (pairs) |
@@ -73,7 +74,7 @@ Relative class описывает достоверность конкретно�
 | Class | Значение | Примеры |
 |---|---|---|
 | `HIGH` | самостоятельное воспроизведение objective надёжно проверено | correct unhinted typed production, deterministic domain answer |
-| `MEDIUM` | полезный сигнал с cues, partial result или context dependence | cloze, matching per assessed pair, correct after a hint |
+| `MEDIUM` | полезный сигнал с cues или context dependence | correct cloze после подсказки, ORDER, ai-semantic S2/S3 |
 | `LOW` | правильный ответ мог возникнуть из recognition/guess/self-report | single choice, uncalibrated self-grade |
 | `NONE` | assessment не произошло | Browse, context/distractor exposure, cancel, timeout, evaluator failure |
 
@@ -137,7 +138,8 @@ evidence и transition audit сохраняются до удаления акк
 1. normalization, aliases, sets/order/unit/tolerance и явные deterministic rules;
 2. специализированный deterministic evaluator;
 3. self/human rubric, только когда автоматическая проверка недостоверна;
-4. AI evaluator — deferred #77 после отдельного owner/privacy/evidence gate.
+4. реализованный AI evaluator по versioned rubric, с uncertainty fallback и отдельной
+   проверкой качества; наличие кода не подтверждает человеческую калибровку или включение в production.
 
 Опечатка не становится общим правильным ответом автоматически. Personal alias
 хранит источник; author отдельно публикует shared alias в новой revision.
@@ -154,10 +156,10 @@ evidence и transition audit сохраняются до удаления акк
 | E-03 | Cloze/code/formula completion | 1 item / 1..N blanks | cued production | deterministic per blank | `MEDIUM–HIGH` | P0 single; P1 multi |
 | E-04 | Single/multiple choice; later T/F+correction, odd-one-out | focal item + deck options | recognition/discrimination | deterministic | correct choice `LOW`; correction `MEDIUM` | P0 single/multiple; P1 rest |
 | E-05 | Multi-value/list recall | 1 item / 1..N elements | полный set/order | deterministic partial | `HIGH` full; `MEDIUM` partial | P1 |
-| E-06 | Matching/categorization | 2..N items from one deck revision | relation/discrimination | deterministic per assessed binding | `MEDIUM` | P1 |
+| E-06 | Matching/categorization | one composite objective; slots may show context materials | relation/discrimination | deterministic, per-part feedback | current `LOW` | P1 |
 | E-07 | Ordering/timeline/sentence/code assembly | one segmented item or 2..N items | structure/order/procedure | deterministic partial order | `MEDIUM` for order objective | P1 |
 | E-08 | Contrast, contextual decision, error spotting + correction | focal + 1..N contrast items | apply or distinguish concepts | structured deterministic/self | `MEDIUM`, context-bound | P1 structured |
-| E-09 | Explain/why/compare/free recall/worked next step | 1 item or explicit small set | conceptual reconstruction | self or human; AI deferred | `LOW` self, stronger only with valid rubric | P1 experiment/P2 |
+| E-09 | Explain/why/compare/free recall/worked next step | one assessed objective | conceptual reconstruction | self or available ai-semantic rubric | self/S1 `LOW`, S2/S3 `MEDIUM`; never AI `HIGH` | implemented boundary; complex cases experimental |
 | E-10 | Listening dictation/audio → typed | 1 / 1, audio capability | auditory retrieval | deterministic transcript/aliases | `MEDIUM–HIGH` | P1 language cohort |
 | E-11 | Pronunciation/oral production/shadowing | 1 / 1 | spoken form/prosody | self/human; scorer deferred | `LOW` self | P2 |
 | E-12 | Labeling/hotspot/image occlusion/sketch | 1 item, several regions/objectives | spatial/visual relation | deterministic regions or self/human | `MEDIUM` | P2 unless cohort gate |
@@ -182,8 +184,8 @@ Recognition не бесполезно, но correct choice не означает
    упражнения со своими ID, а не bindings.
 3. Только `ASSESSED` binding связывается с `MemoryObjective` и scheduler evidence.
 4. Aggregate UI score не копируется всем участвующим items.
-5. Matching/categorization возвращает per-objective result. Если валидное
-   разложение невозможно, mechanic остаётся feedback-only и не влияет на schedule.
+5. Matching/categorization возвращает один result по subject objective и feedback
+   по частям. Несколько independently assessed objectives в одном attempt не реализованы.
 6. Forward/reverse objectives не получают двойной credit от одного directional
    exercise.
 7. Incorrect pair не превращает два независимых objectives в две ошибки без двух
@@ -194,10 +196,10 @@ Recognition не бесполезно, но correct choice не означает
 10. Candidate pool использует явно включённые пользователем совместимые bindings внутри deck;
     случайная близость по rank сама по себе не делает distractor хорошим.
 
-Пример владельца с четырьмя idioms поддерживается двумя способами: один focal
-objective + три pinned options или четыре independently assessed pair results в
-одном attempt group. Во втором случае каждый result обновляется отдельно; один
-общий `4/4` не раздаёт mastery автоматически.
+Пример с четырьмя idioms сейчас представим как один focal objective с pinned
+context/options либо как отдельные упражнения для отдельно проверяемых целей.
+Четыре independently assessed pair results в одном attempt group — возможное
+будущее расширение, не текущая возможность. Общий `4/4` не раздаёт mastery всем items.
 
 ## Authoring: материал не равен ячейке упражнения
 
@@ -298,7 +300,9 @@ dictation (как аудио-условие `FREE_RESPONSE`). Остальное
 - cross-item objectives, если per-item decomposition доказанно недостаточно;
 - delayed human assessment workflow.
 
-AI grading не является P2 promise этого epic; он остаётся deferred #77.
+`ai-semantic` уже реализован в #77 для rubric-based FREE_RESPONSE; это не обещание
+валидной проверки любых эссе, устной речи или профессиональных кейсов. Human workflow
+и специализированные evaluators остаются отдельными расширениями.
 
 ## Accessibility requirements
 
@@ -356,13 +360,13 @@ Product hypotheses для проверки на cohorts:
 - **AC-STUDY-07:** ответ после edit сохраняет state; явный restart сохраняет history и перезапускает только выбранные материалы.
 - **AC-STUDY-08:** full-deck practice не загружает всю колоду, не делает unbounded random scan и не включает quick notes/never-introduced по умолчанию.
 - **AC-AUTHOR-01:** смешанная колода исключает не включённую грамматику из vocabulary matching; custom labels/media меняют представление, не исходный материал.
-- **AC-EVAL-01:** deterministic evaluator имеет приоритет; AI отсутствует.
+- **AC-EVAL-01:** deterministic и ai-semantic выбираются явной evaluator policy; AI не заменяет детерминированную проверку и не пишет расписание напрямую.
 - **AC-EVAL-02:** result различает correct, partial, incorrect, unsure, not-assessed and unavailable.
 - **AC-EVAL-03:** feedback раскрывает reference и применённые checking rules.
 - **AC-EVAL-04:** recognition не превращается автоматически в strongest evidence.
 - **AC-EVAL-05:** hints снижают positive evidence по явной policy.
 - **AC-MULTI-01:** item/exercise/deck revisions фиксируются до submit.
-- **AC-MULTI-02:** multi-item response возвращает per-objective outcomes; context/options не получают update.
+- **AC-MULTI-02:** composite response возвращает один subject-objective outcome и per-part feedback; context/options не получают update.
 - **AC-MULTI-03:** directional relation обновляет только объявленный objective.
 - **AC-MULTI-04:** невозможность decomposition отклоняет scheduler-affecting publication.
 - **AC-A11Y-01:** все P0 mechanics проходят keyboard/screen-reader/touch flow.
