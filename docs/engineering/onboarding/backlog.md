@@ -10,7 +10,7 @@ artifact:
 
 # Локальный бэклог онбординга
 
-Формат — [work item standard](../work-item-standard.md#локальный-backlog-при-недоступном-github), как
+Формат — [work item standard](../work-item-standard.md#пакеты-задач-в-документации), как
 у [learning core](../learning-core/backlog.md). Local IDs стабильны, GitHub numbers отсутствуют,
 все пункты `Backlog`. Порядок и mapping — [manifest](manifest.json).
 
