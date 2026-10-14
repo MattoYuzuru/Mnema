@@ -41,13 +41,22 @@ final class CurrentIdentityFilter extends OncePerRequestFilter {
                     errors.unavailable(request, response);
                     return;
                 }
-                // The claim is read leniently: anything but a JSON true is "not ready".
+                // The claims are read leniently: anything but a JSON true is "not ready" / "not trusted" / "not new"; an ABSENT (or null) anti-abuse signal is unknown (null).
                 IdentityClaims.publicProfile(request, claims.path(IdentityClaims.PUBLIC_PROFILE_CLAIM).booleanValue(false));
+                IdentityClaims.signals(request, new IdentityClaims.AccountSignals(signal(claims, IdentityClaims.TRUSTED_CLAIM),
+                        signal(claims, IdentityClaims.NEW_ACCOUNT_CLAIM)));
             } catch (IOException | IllegalArgumentException exception) {
                 errors.unavailable(request, response);
                 return;
             }
         }
         chain.doFilter(request, response);
+    }
+
+    /** A JSON true is true, a missing or null claim is unknown (null), every other value (false, a string, a number, an array) is false. */
+    private static Boolean signal(tools.jackson.databind.JsonNode claims, String name) {
+        var value = claims.get(name);
+        if (value == null || value.isNull()) return null;
+        return value.booleanValue(false);
     }
 }

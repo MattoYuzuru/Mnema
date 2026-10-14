@@ -1,0 +1,143 @@
+<section class="sg-section" id="community" aria-labelledby="community-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="community-title">Сообщество</h2>
+  <p class="sg-lede">Элементы страницы «Сообщество», поиска и страницы автора. Образцы работают на выдуманных данных и без сервера; сами страницы подключают их к API позже.
+    Страница сама решает, что показать: полка меньше чем из 4 колод не рисуется, число результатов передаётся только после поиска. Все списки идут через общую автоподгрузку, без кнопок страниц.</p>
+
+  <app-sg-specimen title="Книга поиска: раскрытая" selector="<app-book-search mode=&quot;open&quot;>"
+    when="Страница «Сообщество»: книга лежит раскрытой, поле видно сразу. Разметка: одна область search с именем «Поиск колод», внутри обычная форма, видимая подпись «Найти колоду», поле type=search (name=q, до 100 знаков) и кнопка «Найти» со знаком книги с лупой. Enter или кнопка запускают поиск; пустой запрос разрешён и значит «показать всё». Раскрытие (до 600 мс, раскрывается от корешка) проигрывается один раз за загрузку страницы, не при каждой перерисовке, и не проигрывается при уменьшенном движении. Подсказка поверх пустого поля декоративная и скринридеру не читается."
+    [tokens]="['--mn-sheet', '--mn-rule', '--mn-ink', '--mn-field-border', '--mn-touch-min']"
+    usage='<app-book-search mode="open" [(value)]="query" (searched)="search($event)" />'>
+    <div class="sg-stack">
+      @for (key of bookKeys(); track key) {
+        <app-book-search mode="open" [(value)]="bookText" (searched)="searched.set($event)" />
+      }
+      <p class="hint" role="status">@if (searched() !== null) { Поиск запущен с текстом: «{{ searched() }}». } @else { Нажмите Enter или кнопку «Найти». }</p>
+      <div class="sg-actions"><button type="button" class="button small" (click)="replayBook()">Показать раскрытие ещё раз</button></div>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Книга поиска: закрытая (вход в шапке)" selector="<app-book-search mode=&quot;closed&quot;>"
+    when="Шапка: кнопка со знаком книги с лупой и именем «Открыть поиск колод» (чтобы не повторять имя области поиска), aria-expanded и aria-controls. Нажатие раскрывает ту же форму рядом и переносит фокус в поле. Esc складывает книгу и возвращает фокус на кнопку (текст не стирается); пустое поле складывается и тогда, когда фокус уходит из поиска. Подключение к шапке делается на странице; здесь образец в полосе-имитации."
+    [tokens]="['--mn-ink', '--mn-focus', '--mn-touch-min']"
+    usage='<app-book-search mode="closed" [(expanded)]="open" (searched)="goToCommunity($event)" />'>
+    <div class="sg-header-strip">
+      <strong>Mnema</strong>
+      <app-book-search mode="closed" [(value)]="headerText" (searched)="headerSearched.set($event)" />
+    </div>
+    <p class="hint" role="status">@if (headerSearched() !== null) { Поиск запущен с текстом: «{{ headerSearched() }}». }</p>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Подсказка-typewriter" selector="<app-typewriter-hint>"
+    when="Слой поверх пустого поля поиска: печатает идею («испанский с нуля») по буквам, держит, стирает и берёт следующую из пула в 50 идей. aria-hidden, pointer-events: none, в поле ничего не пишет, placeholder не используется, Tab ничего не дописывает: у поля остаётся настоящее имя из подписи. Останавливается и скрывается, когда в поле фокус или текст, и когда вкладка скрыта. Не зацикливается (WCAG 2.2.2): один проход по трём идеям, и последняя остаётся напечатанной. При уменьшенном движении (вход still показывает то же самое) остаётся одна статичная подсказка без таймеров."
+    [tokens]="['--mn-muted', '--mn-field-border']"
+    usage='<div class="box"><input id="q" type="search" /><app-typewriter-hint [suppressed]="focused() || value() !== &apos;&apos;" /></div>'>
+    <div class="sg-stack">
+      <div>
+        <h4 class="sg-group">Печатает</h4>
+        <label class="eyebrow" for="sg-typewriter-live">Пустое поле</label>
+        <div class="sg-field-box">
+          <input id="sg-typewriter-live" type="search" autocomplete="off" [value]="typewriterText()" (input)="typewriterText.set($any($event.target).value)"
+            (focus)="typewriterFocused.set(true)" (blur)="typewriterFocused.set(false)" />
+          <app-typewriter-hint [suppressed]="typewriterFocused() || typewriterText() !== ''" />
+        </div>
+      </div>
+      <div>
+        <h4 class="sg-group">Уменьшенное движение: одна статичная подсказка</h4>
+        <label class="eyebrow" for="sg-typewriter-still">Пустое поле</label>
+        <div class="sg-field-box">
+          <input id="sg-typewriter-still" type="search" autocomplete="off" />
+          <app-typewriter-hint [still]="true" seed="sg-still" />
+        </div>
+      </div>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Фильтры и сортировка" selector="<app-catalog-filters>"
+    when="Над выдачей. Значение целиком приходит снаружи (value), новое уходит наружу (changed): страница хранит его в адресе (toQueryParams, fromQueryParams) и перезагружает выдачу. Тема (с группами по родителю), «Что учим» и «Уровень» это app-mnema-select, «Размер» и сортировка это сегменты, «Внутри», «Упражнения» и «Живая» это флажки. На узком экране всё за кнопкой «Фильтры» (с числом включённых, aria-expanded), на широком в ряд. Каждый включённый фильтр ещё и чип-кнопка, который называет и категорию («Уровень: B1», «Внутри: аудио», «Живая»), с именем «Убрать фильтр «Уровень: B1»», вместе с «Сбросить всё», которая сортировку не трогает. После удаления чипа фокус переходит на следующий чип, а когда чипов нет, на кнопку «Фильтры»; если читатель успел перейти на другой элемент, фокус не отбирается. «Для вас» появится вместе с рекомендациями и пока не рисуется. Вход sortDisabled нужен там, где сортировка не действует (выдачу по тексту сервер упорядочивает по близости к запросу): сегменты недоступны, строка под ними говорит почему."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-field-border', '--mn-touch-min']"
+    usage='<app-catalog-filters [value]="filters()" [topics]="topics" [languages]="languages" [searching]="searching()" (changed)="filters.set($event)" />'>
+    <div class="sg-stack">
+      <h4 class="sg-group">Ничего не выбрано</h4>
+      <app-catalog-filters [value]="emptyFilters()" [topics]="topics" [languages]="languages" (changed)="emptyFilters.set($event)" />
+      <p class="hint sg-address">Адрес: <code>{{ emptyAddress() }}</code></p>
+      <h4 class="sg-group">Выбрано несколько</h4>
+      <app-catalog-filters [value]="activeFilters()" [topics]="topics" [languages]="languages" (changed)="activeFilters.set($event)" />
+      <p class="hint sg-address">Адрес: <code>{{ activeAddress() }}</code></p>
+      <h4 class="sg-group">Поиск по тексту: первой идёт «По близости к запросу»</h4>
+      <app-catalog-filters [value]="searchFilters()" [topics]="topics" [languages]="languages" [searching]="true" (changed)="searchFilters.set($event)" />
+      <p class="hint sg-address">Адрес: <code>{{ searchAddress() }}</code></p>
+      <h4 class="sg-group">Узкий экран (телефон)</h4>
+      <div class="sg-narrow">
+        <app-catalog-filters [value]="activeFilters()" [topics]="topics" [languages]="languages" (changed)="activeFilters.set($event)" />
+      </div>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Карточка с пометкой" selector="<app-public-deck-card [note]=&quot;…&quot;>"
+    when="Пометка рядом с темой и языком: состояние колоды для этого читателя. Пример: в профиле автора колода «по приглашению» несёт «Доступна вам» приглашённому зрителю. Пометка это обычный штамп, а не цвет; без неё карточка прежняя. Вход authorShown (по умолчанию включён) убирает чип автора там, где все колоды списка одного автора (страница профиля): чип повторял бы одно и то же на каждой карточке. Третья карточка ниже без чипа."
+    [tokens]="['--mn-ink', '--mn-on-ink', '--mn-font-mono']"
+    usage='<app-public-deck-card [deck]="deck" note="Доступна вам" [authorShown]="false" />'>
+    <div class="sg-cards">
+      <app-public-deck-card [deck]="invitationCard" [note]="invitationNote" />
+      <app-public-deck-card [deck]="plainCard" />
+      <app-public-deck-card class="sg-no-author" [deck]="plainCard" [authorShown]="false" />
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Полка" selector="<app-deck-shelf>"
+    when="Раздел страницы «Сообщество» (section без имени: область на каждую полку была бы шумом, ориентир h2): h2 с названием, строка под ним, ссылка «Все» (её имя «Все колоды: …») и список карточек с заголовками h3. На широком контейнере карточки лежат сеткой, на узком идут рядом с прокруткой в сторону и прилипанием к карточке; следующая карточка выглядывает из-за края, а затуханий поверх текста нет. Список не берёт фокус: остановки это ссылки и кнопки карточек, и сфокусированная карточка сама прокручивается в видимое. Правило страницы: полка меньше чем из 4 колод не рисуется (чтобы не было одинокой карточки), на полку попадает не больше одного ряда, остальное за «Все». «Все» ведёт на страницу, чьё состояние лежит в адресе: запрос ссылки задаёт вход moreQueryParams. Где пункты меню «⋯» разные у разных колод (нет «Пожаловаться» на свою), их выдаёт функция menuFor."
+    [tokens]="['--mn-ink', '--mn-muted', '--mn-sheet', '--mn-rule', '--mn-font-display']"
+    usage='<app-deck-shelf title="Учат сейчас" subtitle="За последние 30 дней" [moreLink]="[&apos;/community&apos;]" [moreQueryParams]="{ sort: &apos;learning&apos; }" [decks]="decks" [deckLink]="linkOf" [menuFor]="menuFor" (action)="onAction($event)" />'>
+    <div class="sg-stack">
+      <h4 class="sg-group">Широкий контейнер</h4>
+      <app-deck-shelf title="Учат сейчас" subtitle="Колоды, которые открывали на этой неделе" [moreLink]="['/styleguide']" [moreQueryParams]="{ sort: 'learning' }" [decks]="shelfDecks" [deckLink]="link" [menuFor]="menuFor" (action)="shelfAction($event)" />
+      <p class="hint" role="status">{{ lastAction() }}</p>
+      <h4 class="sg-group">Узкий контейнер (телефон): ряд с прокруткой</h4>
+      <div class="sg-shelf-narrow">
+        <app-deck-shelf title="Новое" [moreLink]="['/styleguide']" [decks]="shelfDecks" [deckLink]="link" (action)="shelfAction($event)" />
+      </div>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Выдача плитками" selector="<app-deck-grid>"
+    when="Результат поиска и список колод автора. Карточки лежат сеткой, продолжение идёт через общую app-auto-load: кнопок страниц и «Показать ещё» нет. Новая карточка появляется чернильным открытием mn-ink-in (до 600 мс) с лёгким каскадом: 40 мс на карточку, не больше восьми карточек в порции; то, что уже на экране, не трогается, при уменьшенном движении нет ни открытия, ни каскада. Число результатов звучит вежливо один раз на поиск (область role=status всегда в разметке, текст попадает в неё после первого рендера) («Нашли 37 колод», «Нашли больше 200 колод», «Ничего не нашли. Попробуйте другое слово или уберите фильтры.») и видно строкой над сеткой; догруженные страницы молчат. Страница передаёт results после первой порции поиска и null, пока она грузится или читатель просто листает. Пункты меню «⋯» у разных колод могут различаться (нет «Пожаловаться» на свою): их выдаёт функция menuFor, иначе у всех карточек menuItems. Так же noteFor выдаёт пометку отдельной карточки («Доступна вам» у колоды по приглашению в профиле автора), а authorShown=false убирает чип автора со всех карточек списка одного автора. Страница профиля передаёт results=null: число колод там не объявляется."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-sheet']"
+    usage='<app-deck-grid [decks]="decks()" [results]="results()" [continuation]="cursor()" [loading]="loading()" [error]="error()" [deckLink]="linkOf" [menuFor]="menuFor" [noteFor]="noteFor" [authorShown]="false" (loadNext)="loadNextPage()" />'>
+    <div class="sg-actions">
+      <button type="button" class="button small" (click)="search('found')">Новый поиск: нашли 37</button>
+      <button type="button" class="button small" (click)="search('capped')">Нашли больше 200</button>
+      <button type="button" class="button small" (click)="search('none')">Ничего не нашли</button>
+      <button type="button" class="button quiet small" (click)="failNextPage.set(true)">Сымитировать сбой следующей порции</button>
+    </div>
+    <div #gridPanel class="sg-auto-load-scroll">
+      <app-deck-grid [decks]="gridDecks()" [results]="gridResults()" [continuation]="gridCursor()" [loading]="gridLoading()" [error]="gridError()"
+        [root]="gridPanel" [context]="searchNumber()" [deckLink]="link" [menuFor]="menuFor" (loadNext)="loadGridPage()" (action)="shelfAction($event)" />
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Пустое Сообщество" selector="<app-community-empty>"
+    when="В каталоге ещё нет ни одной колоды (стартовых колод нет): честное «Пока здесь пусто», предложение сделать свою колоду публичной и раскрывающееся «Как поделиться колодой» с тремя короткими шагами (нативный details). Вошедшему читателю ведёт ссылка «Мои колоды», гостю «Войти». Это обычное .empty-state: линия сверху и снизу, не карточка."
+    [tokens]="['--mn-ink', '--mn-rule']"
+    usage='<app-community-empty [signedIn]="signedIn()" />'>
+    <div class="sg-stack">
+      <h4 class="sg-group">Вошедший читатель</h4>
+      <app-community-empty [signedIn]="true" />
+      <h4 class="sg-group">Гость</h4>
+      <app-community-empty [signedIn]="false" />
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Шапка автора" selector="<app-author-header>"
+    when="Верх страницы /u/{логин}: фото 64 px (без фото или при сбое загрузки кружок с буквой, как у чипа автора), h1 с именем (на странице автора; в стайлгайде уровень ниже входом headingLevel), а без имени с @логином, строка @логин, если h1 это имя, описание простым текстом (переносы строк сохраняются, HTML и ссылки не разбираются), «Учат сейчас: N» только от 10 и с округлением, меню «⋯» с «Поделиться» (адрес профиля) и «Пожаловаться» (страница открывает окно жалобы). На своей странице вместо жалобы заметка «Так ваш профиль видят другие» и ссылка «Настроить профиль»."
+    [tokens]="['--mn-ink', '--mn-muted', '--mn-soft', '--mn-field-border', '--mn-font-display']"
+    usage='<app-author-header [author]="author" profileUrl="https://mnema.app/u/anna.k" [learningNow]="1234" [isSelf]="false" (complain)="openComplaint()" />  <!-- headingLevel: 1 on the page (default), 4 in the styleguide -->'>
+    <div class="sg-stack">
+      <h4 class="sg-group">Чужой профиль</h4>
+      <app-author-header [author]="author" profileUrl="https://mnema.app/u/anna.k" [learningNow]="1234" [headingLevel]="4" (complain)="complaint.set('Образец: здесь откроется окно жалобы на профиль.')" />
+      <p class="hint" role="status">{{ complaint() }}</p>
+      <h4 class="sg-group">Свой профиль, без имени, фото и описания</h4>
+      <app-author-header [author]="authorBare" profileUrl="https://mnema.app/u/dev.olga" [learningNow]="7" [isSelf]="true" [headingLevel]="4" />
+    </div>
+  </app-sg-specimen>
+</section>

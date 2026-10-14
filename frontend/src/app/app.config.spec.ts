@@ -40,4 +40,11 @@ describe('exact public host Identity configuration', () => {
         expect(config.clientId).toBe('mnema-web');
         expect(config.features.showEmailVerificationWarning).toBe(true);
     });
+
+    it('lets only a loopback host open the community launch flag at runtime', () => {
+        expect(resolveAppConfig('127.0.0.1', 'https://127.0.0.1:3443', { communityLaunched: true }).communityLaunched).toBe(true);
+        expect(resolveAppConfig('localhost', 'https://localhost:3443', { communityLaunched: false }).communityLaunched).toBeUndefined();
+        expect(resolveAppConfig('mnema.app', 'https://mnema.app', { communityLaunched: true }).communityLaunched).toBeUndefined();
+        expect(resolveAppConfig('evil.mnema.app', 'https://evil.mnema.app', { communityLaunched: true }).communityLaunched).toBeUndefined();
+    });
 });

@@ -72,7 +72,7 @@ class ForkDisabledHttpIntegrationTest extends PostgresIntegrationTest {
         // authentication still comes first
         assertThat(HttpIdentityFixture.send(port, "POST", "/decks/forks", null, "{}", java.util.Map.of()).statusCode()).isEqualTo(401);
         // the service itself refuses too (no caller can bypass the switch)
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> forks.create(reader, new ForkCommand(UUID.randomUUID(), source.code())))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> forks.create(reader, new ForkCommand(UUID.randomUUID(), source.code()), app.mnema.learning.platform.security.IdentityClaims.AccountSignals.UNKNOWN))
                 .isInstanceOf(app.mnema.learning.platform.api.ResourceNotFoundException.class);
         // the summary of the public deck says nothing of copies for a viewer who has none
         assertThat(json(worlds.get("/public/decks/" + source.code(), reader)).path("myCopy").isNull()).isTrue();

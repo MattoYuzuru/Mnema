@@ -1,0 +1,13 @@
+:host { display: grid; gap: .75rem; min-inline-size: 0; }
+/* The region stays rendered while it is empty (a live region that is created with its text is not announced reliably); empty, it takes no room. */
+.status:empty { block-size: 0; margin-block-end: -.75rem; overflow: hidden; }
+.count { margin: 0; color: var(--mn-ink); font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 1rem; margin: 0; padding: 0; list-style: none; min-inline-size: 0; }
+.cell { display: grid; min-inline-size: 0; }
+
+/* A card that is new to the grid: the ink reveal of the material writer, delayed by its place in the batch. `backwards` hides it
+   until its turn and leaves no clip behind afterwards. A card that is already there is a persistent element and does not play again. */
+.cell { animation: mn-ink-in .5s cubic-bezier(.22, .61, .36, 1) var(--mn-cascade-delay, 0ms) backwards; }
+@media (prefers-reduced-motion: reduce) {
+    .cell { animation: none; }
+}

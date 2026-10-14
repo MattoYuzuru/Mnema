@@ -280,6 +280,14 @@ PUBLIC deck inserted into `index.html`, a `301` for a missing or wrong slug, and
 unknown codes; any failure serves the plain page. Canonical addresses use `MNEMA_PUBLIC_BASE_URL` (`https://localhost:3443` here). See
 [link previews](../operations/link-previews.md); check with `curl -k -A 'TelegramBot' https://localhost:3443/d/<code>/<slug>`.
 
+### Community decks and the catalogue (epics 1–3)
+
+Copies, public media and the catalogue are off by default as in production before each launch. For a local try-out start the stack with
+`LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED=true LEARNING_COMMUNITY_FORKS_ENABLED=true LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED=true
+LEARNING_COMMUNITY_CATALOG_ENABLED=true MNEMA_LOCAL_COMMUNITY_LAUNCHED=true` (passed through `compose.local-full-stack.yml`). The last one opens the
+«Сообщество» entry in the header before its production launch: the development frontend container writes `communityLaunched` into `app-config.js`
+and the app honours it on a loopback host only. `/sitemap-decks.xml` is proxied to Learning by the local nginx like in production.
+
 ### Promo codes, A/B and the promo popup (#302)
 
 Promo codes need no extra configuration locally. An administrator creates a code with `POST /api/admin/promo-codes` (the caller's token and an

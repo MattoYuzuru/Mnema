@@ -351,6 +351,8 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      */
     static String loggablePath(HttpServletRequest request) {
         String uri = request.getRequestURI();
+        // Never a query string: the search text of the catalogue ({@code ?q=}) is user content. The servlet request URI has none; this keeps it so for any caller.
+        if (uri != null && uri.indexOf('?') >= 0) uri = uri.substring(0, uri.indexOf('?'));
         if (uri == null || !(uri.contains("/public/decks/") || uri.contains("/public/meta/decks/"))) return uri;
         Object template = request.getAttribute(org.springframework.web.servlet.HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         if (template instanceof String pattern && !pattern.isBlank()) return request.getContextPath() + pattern;

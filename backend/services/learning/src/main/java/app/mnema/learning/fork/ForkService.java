@@ -1,5 +1,6 @@
 package app.mnema.learning.fork;
 
+import app.mnema.learning.community.DeckEngagement;
 import app.mnema.learning.library.AccessLevel;
 import app.mnema.learning.library.DeckAccess;
 import app.mnema.learning.library.DeckInviteOnlyException;
@@ -16,6 +17,7 @@ import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
 import app.mnema.learning.platform.jobs.LearningJobs;
+import app.mnema.learning.platform.security.IdentityClaims.AccountSignals;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.PinOwner;
 import app.mnema.learning.storage.StorageTypes.StageBatch;
@@ -54,9 +56,10 @@ public class ForkService {
     private final ImmutableStorage storage;
     private final LearningJobs jobs;
     private final MeterRegistry meters;
+    private final DeckEngagement engagement;
 
     ForkService(ForkRepository repository, ForkSettings settings, DeckAccess access, CommandReceiptService receipts, ImmutableStorage storage,
-                LearningJobs jobs, MeterRegistry meters) {
+                LearningJobs jobs, MeterRegistry meters, DeckEngagement engagement) {
         this.repository = repository;
         this.settings = settings;
         this.access = access;
@@ -64,6 +67,7 @@ public class ForkService {
         this.storage = storage;
         this.jobs = jobs;
         this.meters = meters;
+        this.engagement = engagement;
     }
 
     /** The acknowledgement of a copy command; {@code replayed} is an exact retry of an earlier command. */
@@ -82,19 +86,23 @@ public class ForkService {
         if (!settings.creation()) throw new ResourceNotFoundException();
     }
 
+    /**
+     * @param signals the anti-abuse signals of the caller's account from the Identity answer that authorized the request ({@code IdentityClaims.signals}); they weigh the copy in the community
+     *                rank and flag a burst of copies by new accounts, and are stored with the first copy of the account only
+     */
     @Transactional(timeout = 10)
-    public WriteResult create(UUID actor, ForkCommand command) {
+    public WriteResult create(UUID actor, ForkCommand command, AccountSignals signals) {
         requireEnabled();
         UuidPolicy.requireEntityId(actor, "actor");
         boolean[] applied = {false};
         JsonNode acknowledgement = receipts.execute(new CommandIdentity(command.commandId(), actor, "deck.forks", "fork.create"), command.envelope(), () -> {
             applied[0] = true;
-            return copy(actor, command);
+            return copy(actor, command, signals);
         });
         return new WriteResult(acknowledgement, !applied[0]);
     }
 
-    private ObjectNode copy(UUID actor, ForkCommand command) {
+    private ObjectNode copy(UUID actor, ForkCommand command, AccountSignals signals) {
         Viewer viewer = Viewer.account(actor, null);
         Resolution first = decide(viewer, command.sourceCode());
         repository.lockActor(actor);
@@ -139,6 +147,8 @@ public class ForkService {
         roots.forEach(root -> storage.release(source.scopeId(), root.stagingPinId()));
         UUID job = jobs.enqueue(QUEUE, deck.toString(), actor, payload(deck));
         repository.insertFork(deck, source.scopeId(), actor, source.deckId(), command.sourceCode(), frozen, job);
+        // Community/3: the metric of the direct source, in this very transaction (the first copy of an account counts; the owner never does).
+        engagement.forked(source.deckId(), actor, signals);
         meters.counter("mnema_deck_forks_total", "outcome", "created").increment();
         return acknowledgement(command, deck, true, false);
     }

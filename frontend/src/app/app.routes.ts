@@ -3,6 +3,7 @@ import { isAdminHost } from './app.config';
 import type { AdminPromosPageComponent } from './features/admin/admin-promos-page.component';
 import type { AdminUsersPageComponent } from './features/admin/admin-users-page.component';
 import type { AdminSupportPageComponent } from './features/admin/admin-support-page.component';
+import type { AdminCommunityPageComponent } from './features/admin/admin-community-page.component';
 import type { AdminComplaintDetailPageComponent } from './features/admin/admin-complaint-detail-page.component';
 import { HomePageComponent } from './home-page.component';
 import { LoginPageComponent } from './login-page.component';
@@ -22,6 +23,7 @@ const lazyCanLeaveEventEditor: CanDeactivateFn<ManageEventsPageComponent> = (...
 const lazyCanLeaveAdminPromos: CanDeactivateFn<AdminPromosPageComponent> = component => import('./features/admin/admin-promos-page.component').then(module => module.canLeaveAdminPromos(component));
 const lazyCanLeaveAdminUsers: CanDeactivateFn<AdminUsersPageComponent> = component => import('./features/admin/admin-users-page.component').then(module => module.canLeaveAdminUsers(component));
 const lazyCanLeaveAdminComplaint: CanDeactivateFn<AdminComplaintDetailPageComponent> = component => import('./features/admin/admin-complaint-detail-page.component').then(module => module.canLeaveAdminComplaint(component));
+const lazyCanLeaveAdminCommunity: CanDeactivateFn<AdminCommunityPageComponent> = component => import('./features/admin/admin-community-page.component').then(module => module.canLeaveAdminCommunity(component));
 const lazyCanLeaveAdminSupport: CanDeactivateFn<AdminSupportPageComponent> = component => import('./features/admin/admin-support-page.component').then(module => module.canLeaveAdminSupport(component));
 
 const lazyCanLeaveItemEditor: CanDeactivateFn<ItemEditorPageComponent> = (...args) =>
@@ -67,6 +69,7 @@ export function ownerRoutes(adminHost: boolean): Routes {
                 { path: 'complaints', loadComponent: () => import('./features/admin/admin-complaints-page.component').then(module => module.AdminComplaintsPageComponent) },
                 { path: 'complaints/journal', loadComponent: () => import('./features/admin/admin-complaint-journal-page.component').then(module => module.AdminComplaintJournalPageComponent) },
                 { path: 'complaints/:complaintId', canDeactivate: [lazyCanLeaveAdminComplaint], loadComponent: () => import('./features/admin/admin-complaint-detail-page.component').then(module => module.AdminComplaintDetailPageComponent) },
+                { path: 'community', canDeactivate: [lazyCanLeaveAdminCommunity], loadComponent: () => import('./features/admin/admin-community-page.component').then(module => module.AdminCommunityPageComponent) },
                 { path: 'audit', loadComponent: () => import('./features/admin/admin-audit-page.component').then(module => module.AdminAuditPageComponent) }
             ] }
     ] : [{ path: 'manage/events', canActivate: [authGuard], canDeactivate: [lazyCanLeaveEventEditor], data: { standalone: true },
@@ -194,6 +197,21 @@ export const appRoutes: Routes = [
         // (see publicDeckMatcher), so replacing a wrong slug with the canonical one does not rebuild the page.
         matcher: publicDeckMatcher,
         loadComponent: () => import('./features/public-deck/public-deck-page.component').then(module => module.PublicDeckPageComponent)
+    },
+    {
+        // Public, guests included, no authGuard: the community catalogue. The address is the state (`q` and the filters). The server switch
+        // `learning.community.catalog.enabled` answers 404 until the owner opens it, and the page says so calmly.
+        // Deliberately reachable while `COMMUNITY_LAUNCHED` is false: the flag only hides the entry points (masthead, own-decks link), so the browser
+        // harness can test this route before the launch. Do not guard it behind the flag.
+        path: 'community',
+        loadComponent: () => import('./features/community/community-page.component').then(module => module.CommunityPageComponent)
+    },
+    {
+        // Public, guests included, no authGuard: the page of an author. The card comes from Identity (a login without a public profile is «Профиль не найден»), the decks from
+        // the community catalogue. Deliberately reachable while `COMMUNITY_LAUNCHED` is false, like `/community`: the flag only hides the entry points («Как меня видят другие» in the
+        // own profile, the author chip), so the browser harness can test the page before the launch. Do not guard it behind the flag.
+        path: 'u/:username',
+        loadComponent: () => import('./features/community/author-page.component').then(module => module.AuthorPageComponent)
     },
     // Public: the footer and the «Что это?» toggletips of the AI actions link here, signed in or not.
     {

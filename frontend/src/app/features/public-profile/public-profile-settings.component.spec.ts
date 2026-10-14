@@ -6,6 +6,7 @@ import fixture from '../../../../../contracts/identity/public-profile.json';
 import { AccountProfile, AccountProfileApi } from '../../account-profile.api';
 import { ToastService } from '../../core/notifications/toast.service';
 import { PUBLIC_PROFILE_TEXT_VERSION, PublicProfileConsent } from '../../public-profile';
+import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { PublicProfileSettingsComponent } from './public-profile-settings.component';
 
@@ -77,6 +78,50 @@ describe('PublicProfileSettingsComponent', () => {
         expect(root.querySelector('.preview h3')?.textContent).toBe('Как меня видят другие');
         expect(root.querySelector('.preview-hidden')?.textContent).toBe('Профиль скрыт');
         expect(root.querySelector('app-author-chip .chip')).toBeNull();
+    });
+
+    describe('«Открыть публичную страницу профиля» as a link to the page', () => {
+        const link = () => root.querySelector<HTMLAnchorElement>('.preview a');
+
+        it('is offered with the consent on and a login once the Community is open, to /u/<логин>', async () => {
+            TestBed.overrideProvider(COMMUNITY_LAUNCH, { useValue: true });
+            api.loadPublicProfile.mockReturnValue(of(on));
+            await open();
+            expect(link()?.textContent?.trim()).toBe('Открыть публичную страницу профиля');
+            expect(link()?.getAttribute('href')).toBe('/u/reader');
+        });
+
+        it('is not offered while the Community is closed (the flag is off), whatever the consent says', async () => {
+            TestBed.overrideProvider(COMMUNITY_LAUNCH, { useValue: false });
+            api.loadPublicProfile.mockReturnValue(of(on));
+            await open();
+            expect(link()).toBeNull();
+            expect(root.querySelector('.preview h3')?.textContent).toBe('Как меня видят другие');
+        });
+
+        it('is not offered with the consent off or without a login, even when the Community is open', async () => {
+            TestBed.overrideProvider(COMMUNITY_LAUNCH, { useValue: true });
+            await open();
+            expect(link()).toBeNull();
+            expect(root.querySelector('.preview-hidden')).not.toBeNull();
+            TestBed.resetTestingModule();
+            TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: AccountProfileApi, useValue: api }, { provide: ToastService, useValue: toasts },
+                { provide: COMMUNITY_LAUNCH, useValue: true }] });
+            api.loadPublicProfile.mockReturnValue(of(on));
+            await open({ ...profile, profileUsername: null });
+            expect(link()).toBeNull();
+        });
+
+        it('appears and goes with the switch', async () => {
+            TestBed.overrideProvider(COMMUNITY_LAUNCH, { useValue: true });
+            await open();
+            api.savePublicProfile.mockReturnValueOnce(of(on));
+            await click(toggle());
+            expect(link()?.getAttribute('href')).toBe('/u/reader');
+            api.savePublicProfile.mockReturnValueOnce(of(off));
+            await click(toggle());
+            expect(link()).toBeNull();
+        });
     });
 
     it('keeps every control a native, reachable input in reading order', async () => {

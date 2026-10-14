@@ -178,6 +178,11 @@ if [ -n "$SUPPORT_USERNAME" ]; then
 fi
 append_string_override "supportTelegramUsername" "$SUPPORT_USERNAME"
 append_bool_override "showEmailVerificationWarning" "${MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING:-}"
+# The community catalogue before its launch (epic 3): only a development container (the local full stack) may open it, and the app itself
+# honours the value on a loopback host only (app.config.ts). Production opens it by the launch flag in the code, never through this file.
+if [ "$APP_ENV" = development ] && [ "${MNEMA_COMMUNITY_LAUNCHED:-}" = true ]; then
+  printf '%s\n' 'window.MNEMA_APP_CONFIG.communityLaunched = true;' >> "$OUT"
+fi
 
 write_security_headers
 write_og_meta

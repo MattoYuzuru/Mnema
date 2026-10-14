@@ -1,0 +1,70 @@
+<section class="page" aria-labelledby="community-title">
+  <header class="heading">
+    <h1 id="community-title" tabindex="-1">Сообщество</h1>
+  </header>
+
+  @if (status() === 'closed') {
+    <div class="notice closed">
+      <p>Раздел «Сообщество» скоро откроется.</p>
+      @if (signedIn()) { <a class="button" routerLink="/decks">Мои колоды</a> } @else { <a class="button" routerLink="/">На главную</a> }
+      <button type="button" class="button quiet" (click)="retry()">Проверить ещё раз</button>
+    </div>
+  } @else {
+    <app-book-search class="book" mode="open" [(value)]="bookText" (searched)="search($event)" />
+
+    @if (filtersShown()) {
+      <app-catalog-filters class="filters" [value]="draft()" [topics]="topics()" [languages]="languages()" [searching]="searching()"
+        (changed)="filtersChanged($event)" />
+    }
+
+    <!-- The region is in the DOM, empty, before its first text: a region that appears with its text is not announced reliably. -->
+    <p class="status" role="status">{{ status() === 'loading' ? 'Загружаем колоды…' : '' }}</p>
+    <p class="status stale" role="status">{{ staleNote() }}</p>
+
+    @switch (status()) {
+      @case ('rate-limited') {
+        <div class="notice error" role="alert">
+          <p>{{ waiting() }}</p>
+          <button type="button" class="button secondary" (click)="retry()">Повторить</button>
+        </div>
+      }
+      @case ('busy') {
+        <div class="notice error" role="alert">
+          <p>Сейчас много читателей. Повторите через секунду.</p>
+          <button type="button" class="button secondary" (click)="retry()">Повторить</button>
+        </div>
+      }
+      @case ('error') {
+        <div class="notice error" role="alert">
+          <p>Не удалось загрузить колоды. Проверьте соединение и повторите.</p>
+          <button type="button" class="button secondary" (click)="retry()">Повторить</button>
+        </div>
+      }
+      @default {
+        @if (showShelves()) {
+          @if (status() === 'ready') {
+            @if (catalogueEmpty()) {
+              <app-community-empty [signedIn]="signedIn()" />
+            } @else {
+              <div class="shelves">
+                @for (shelf of shelfViews(); track shelf.key) {
+                  <app-deck-shelf [title]="shelf.title" [decks]="shelf.decks" [moreLink]="shelf.more === null ? null : moreLink" [moreQueryParams]="shelf.more"
+                    [deckLink]="deckLink" [menuFor]="menuFor" (action)="actionChosen($event)" />
+                }
+              </div>
+            }
+          }
+        } @else {
+          <app-deck-grid [decks]="rowCards()" [results]="results()" [headingLevel]="2" [deckLink]="deckLink" [menuFor]="menuFor"
+            [continuation]="pager.cursor()" [loading]="pager.loadingMore()" [error]="moreError()" [enabled]="pager.phase() === 'ready'"
+            [context]="pager.context()" (loadNext)="pager.next()" (action)="actionChosen($event)" />
+        }
+      }
+    }
+  }
+
+  @if (complaint(); as target) {
+    <app-complaint-dialog target="deck" [subject]="target.code" [subjectName]="target.title"
+      (filed)="complaint.set(null)" (gone)="complaintGone()" (dismissed)="complaint.set(null)" />
+  }
+</section>

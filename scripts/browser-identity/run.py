@@ -64,6 +64,22 @@ def community_switches(frontend_origin):
             "LEARNING_COMMUNITY_FORKS_ENABLED": "true", "MNEMA_PUBLIC_BASE_URL": frontend_origin}
 
 
+# A distinct, never-served https origin: Identity registers the admin client only while an admin origin is configured, and the catalogue scenario's
+# console owner token is minted for its callback address without ever opening it.
+CATALOG_ADMIN_ORIGIN = "https://admin.localhost"
+
+
+def catalog_switches():
+    """`--catalog` only (Community/8, #455): the catalogue's own kill switch on top of the community ones, and the knobs that keep a disposable run short.
+
+    `learning.community.catalog.enabled` ships `false`. The facets (and the topic shelves that read them) are cached up to five minutes per instance; one
+    second is the minimum the setting accepts, so a poll for the projection sees it. The rank schedule enqueues the hourly generation at the first tick,
+    30 s after the start by default; the harness shortens the first tick (3 s) and the interval (5 s). Everything else, the guest limit of 120 reads a
+    minute included, stays as shipped: the guest-limit stage hammers the real limit."""
+    return {"LEARNING_COMMUNITY_CATALOG_ENABLED": "true", "LEARNING_COMMUNITY_CATALOG_FACETS_TTL": "PT1S",
+            "LEARNING_COMMUNITY_RANK_INITIAL_DELAY": "PT3S", "LEARNING_COMMUNITY_RANK_SCHEDULE_INTERVAL": "PT5S"}
+
+
 def chrome_arguments(chrome, profile, spki, mechanics, microphone=False):
     """Headless Chrome flags. Chrome is always muted: audio is verified through media element state, not sound.
     Only the mechanics baseline and the voice input scenario (`--generation`, #298) add Chrome's SYNTHETIC media-stream devices.
@@ -135,6 +151,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.switch_learning(urlsplit(self.path).path)
             if not self.server.identity and urlsplit(self.path).path.startswith("/__fixture/promo-"):
                 return self.promo_fixture(urlsplit(self.path).path)
+            if not self.server.identity and urlsplit(self.path).path.startswith("/__fixture/catalog-"):
+                return self.catalog_fixture(urlsplit(self.path).path)
             if self.server.identity or urlsplit(self.path).path.startswith("/api/"):
                 return self.forward()
             if self.command not in ("GET", "HEAD"):
@@ -144,6 +162,9 @@ class Handler(BaseHTTPRequestHandler):
                 config = {"authServerUrl": fixture.identity_origin, "identityRedirectUri": fixture.frontend_origin + "/auth/callback",
                           "learningApiBaseUrl": "/api",
                           "features": {"aiEnabled": False}}
+                if getattr(fixture.args, "catalog", False):
+                    # The frontend launch flag of the Community is a code constant; a loopback host may open it at runtime (README, «Community catalogue»).
+                    config["communityLaunched"] = True
                 return self.reply(200, ("window.MNEMA_APP_CONFIG=" + json.dumps(config) + ";").encode(), "text/javascript")
             asset = static_path(fixture.args.dist, self.path)
             if not asset.is_file() or asset.stat().st_size > 16 * MAX_BODY:
@@ -188,6 +209,43 @@ class Handler(BaseHTTPRequestHandler):
         else:
             return self.reply(404)
         self.reply(204)
+
+    def catalog_fixture(self, path):
+        """`--catalog` only (Community/8): the few things a browser scenario cannot do through the product, all on the disposable composition.
+
+        `catalog-accounts` registers synthetic accounts through the real Identity (register, login, PKCE; the address counters of the disposable database are cleared first,
+        the register limit is ten per address) and returns their bearers, so the scenario can make nine more learners copy a deck without nine browser sign-ins; `catalog-rank` enqueues one more rank generation through the real queue (the schedule
+        enqueues one a UTC hour, and the first one is built while the catalogue is still empty) and reports how many generations exist and how many
+        scheduled jobs the schedule itself has enqueued; `catalog-admin-token` mints a token of the admin client for the console owner, the way the
+        console signs in (the admin client is registered only because this run configures an admin origin)."""
+        fixture = self.server.fixture
+        if self.command != "POST" or not getattr(fixture.args, "catalog", False):
+            return self.reply(404)
+        lengths = self.headers.get_all("Content-Length", [])
+        length = int(lengths[0]) if lengths and lengths[0].isdigit() else 0
+        if length > 4096:
+            return self.reply(413)
+        body = json.loads(self.rfile.read(length) or b"{}")
+        if path == "/__fixture/catalog-accounts":
+            names = body.get("names")
+            if not isinstance(names, list) or not 1 <= len(names) <= 16 or not all(isinstance(name, str) and name.replace("_", "").isalnum() and len(name) <= 40 for name in names):
+                return self.reply(400)
+            answer = []
+            # Identity allows ten registrations from one address in 15 minutes and every request of this run comes from the loopback address (the base flow and the
+            # console owner already spent three): the counters of the disposable database are cleared, so the scenario may create the people it needs.
+            fixture.sql("DELETE FROM app_identity.rate_limit")
+            for name in names:
+                client, account_id = fixture.account(name)
+                # account.write: the scenario sets the public-profile consent of some of these accounts through Identity with the same token.
+                token = fixture.token(client, scope="openid learning.read learning.write account.read account.write")["access_token"]
+                answer.append({"name": name, "accountId": account_id, "token": token})
+        elif path == "/__fixture/catalog-rank":
+            answer = fixture.catalog_rank(body.get("enqueue") is True)
+        elif path == "/__fixture/catalog-admin-token":
+            answer = {"token": fixture.catalog_admin_token()}
+        else:
+            return self.reply(404)
+        self.reply(200, json.dumps(answer).encode(), "application/json")
 
     do_POST = do_GET
     do_PUT = do_GET
@@ -290,6 +348,40 @@ class Fixture(BASE.Fixture):
             self.promo_port = BASE.free_port()
             self.boot("learning", self.promo_port, "learning_fixture", promo=True)
 
+    def catalog_rank(self, enqueue):
+        """`--catalog`: optionally enqueue one more rank generation through the real queue, then report the completed generations and the jobs the schedule
+        itself enqueued (their dedupe key is the UTC hour). The extra job has a key of its own, so the hourly dedupe cannot swallow it."""
+        if enqueue:
+            self.catalog_rank_jobs = getattr(self, "catalog_rank_jobs", 0) + 1
+            self.sql("INSERT INTO app_learning.learning_job(queue,dedupe_key,payload,state,max_attempts,run_after) VALUES "
+                     f"('catalog.rank','rank:harness-{self.catalog_rank_jobs}','{{\"hour\":\"harness\"}}'::jsonb,'QUEUED',3,clock_timestamp())")
+        generations = int(self.sql("SELECT count(*) FROM app_learning.rank_generation WHERE completed_at IS NOT NULL"))
+        scheduled = int(self.sql("SELECT count(*) FROM app_learning.learning_job WHERE queue='catalog.rank' AND dedupe_key ~ '^rank:[0-9]{4}-' AND state='SUCCEEDED'"))
+        return {"generations": generations, "scheduledJobsDone": scheduled}
+
+    def catalog_admin_token(self):
+        """`--catalog`: a bearer of the admin client (`mnema-admin-web`) for the console owner, by the same authorization-code + PKCE exchange the console
+        performs. The callback address is never opened: the redirect is read from its `Location` header."""
+        client = BASE.Client(self.identity_port)
+        self.login(client, "events_fixture")
+        verifier = base64.urlsafe_b64encode(os.urandom(48)).decode().rstrip("=")
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+        state = uuid.uuid4().hex
+        redirect = CATALOG_ADMIN_ORIGIN + "/auth/callback"
+        from urllib.parse import urlencode, parse_qs
+        query = urlencode({"response_type": "code", "client_id": "mnema-admin-web", "redirect_uri": redirect, "scope": "openid learning.read learning.write",
+                           "state": state, "code_challenge": challenge, "code_challenge_method": "S256"})
+        status, headers, _ = client.request("GET", "/oauth2/authorize?" + query)
+        BASE.require(status == 302, f"admin authorization status {status}")
+        location = {key.lower(): value for key, value in headers.items()}["location"]
+        BASE.require(location.startswith(redirect + "?"), "admin authorization redirect mismatch")
+        code = parse_qs(urlsplit(location).query).get("code", [None])[0]
+        BASE.require(code is not None, "admin authorization code missing")
+        status, _, tokens = BASE.Client(self.identity_port).request("POST", "/oauth2/token", {
+            "grant_type": "authorization_code", "client_id": "mnema-admin-web", "redirect_uri": redirect, "code": code, "code_verifier": verifier}, form=True)
+        BASE.require(status == 200 and tokens.get("access_token"), f"admin token exchange status {status}")
+        return tokens["access_token"]
+
     def stub_instance(self):
         """`--generation` and `--assessment` share one second Learning: Stub provider, both AI features on."""
         return bool(getattr(self.args, "generation", False) or getattr(self.args, "assessment", False))
@@ -383,6 +475,8 @@ class Fixture(BASE.Fixture):
         arguments = ["java", "-Xms64m", "-Xmx384m", "-jar", str(jar), "--server.address=127.0.0.1"]
         if getattr(self.args, "admin", False) and hasattr(self, "events_owner_id"):
             environment["MNEMA_ADMIN_OWNER_ACCOUNT_ID"] = self.events_owner_id
+        if module == "identity-account" and getattr(self.args, "catalog", False):
+            environment["MNEMA_IDENTITY_ADMIN_ORIGIN"] = CATALOG_ADMIN_ORIGIN
         if module == "identity-account" and self.args.media:
             environment.update({"MNEMA_AVATAR_ENDPOINT": self.media_origin,
                                 "MNEMA_AVATAR_REGION": "us-east-1",
@@ -414,6 +508,9 @@ class Fixture(BASE.Fixture):
                                     "MNEMA_ADMIN_SUPPORT_SECRET": self.admin_bridge_secret,
                                     "MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP": "true",
                                     "MNEMA_PROMO_HASH_SECRET": uuid.uuid4().hex + uuid.uuid4().hex})
+            if getattr(self.args, "catalog", False):
+                # The console owner of this run is the events fixture account: the editorial shelf and the complaint decisions need the owner AND an admin token.
+                environment["MNEMA_ADMIN_OWNER_ACCOUNT_ID"] = self.events_owner_id
             if self.args.media:
                 environment.update({"LEARNING_MEDIA_UPLOAD_ENDPOINT": self.media_origin,
                                     "LEARNING_MEDIA_UPLOAD_ALLOW_LOOPBACK_HTTP": "true",
@@ -460,6 +557,8 @@ class Fixture(BASE.Fixture):
                 environment["MNEMA_RUNTIME_ROLES"] = "api"
             if getattr(self.args, "community", False) and not generation and not promo:
                 environment.update(community_switches(self.frontend_origin))
+                if getattr(self.args, "catalog", False):
+                    environment.update(catalog_switches())
             if generation and self.args.assessment:
                 # Stub-only fault fixture: let one capped call reach the unchanged 20 s delivery deadline. The real route's 8 s
                 # attempt cap/defaults stay unchanged; this override cannot reach the ordinary or promo instance or any live provider.
@@ -529,7 +628,7 @@ class Fixture(BASE.Fixture):
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
-                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "onlyPromo": self.args.only_promo, "community": getattr(self.args, "community", False), "communityScenario": getattr(self.args, "community_scenario", False), "updates": getattr(self.args, "updates", False), "cdpTimeoutMs": cdp_timeout_ms(),
+                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "onlyPromo": self.args.only_promo, "catalog": getattr(self.args, "catalog", False), "learningOrigin": f"http://127.0.0.1:{self.learning_port}", "community": getattr(self.args, "community", False), "communityScenario": getattr(self.args, "community_scenario", False), "updates": getattr(self.args, "updates", False), "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -544,7 +643,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs", "admin.mjs", "community.mjs", "updates.mjs", "admin_support_fixture.py")}}
+                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs", "admin.mjs", "community.mjs", "updates.mjs", "catalog.mjs", "admin_support_fixture.py")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -639,6 +738,14 @@ class Fixture(BASE.Fixture):
             return self.browser_cleanup_result
 
 
+def check_catalog_arguments(parser, args):
+    """`--catalog` has a catalogue of its own to start from (an empty one), so it shares no run with the scenarios that publish decks."""
+    if args.catalog and (args.community or args.updates or args.generation or args.assessment or args.only_promo or args.admin or args.authoring
+                         or args.media or args.mechanics):
+        parser.error("--catalog is exclusive: it cannot be combined with --community, --updates, --authoring, --media, --mechanics, --generation, "
+                     "--assessment, --only-promo or --admin")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dist", type=Path, required=True)
@@ -701,6 +808,13 @@ def main():
                              "the plan, accepts the safe part, decides a conflict and a deletion, studies on, and detaches; desktop and mobile viewports; "
                              "can be combined with --community (both scenarios run, on the same two accounts); not with --generation, --assessment, "
                              "--only-promo or --admin")
+    parser.add_argument("--catalog", action="store_true",
+                        help="the community catalogue end to end (Community/8, #455): the same disposable composition as --community plus "
+                             "learning.community.catalog.enabled, the frontend launch flag opened for this loopback run, a console owner with an admin-client "
+                             "token and a short rank schedule; an empty catalogue, a seeded one (nine listed decks, one below the threshold, a LINK and an INVITE "
+                             "deck), shelves, search, filters, infinite scroll, honest counts, the author's page, the masthead entry, the guest limit, the owner "
+                             "console's editorial shelf and hiding, reduced motion and an accessibility smoke on desktop and mobile viewports; exclusive: it "
+                             "cannot be combined with --community, --updates, --generation, --assessment, --only-promo or --admin")
     parser.add_argument("--admin", action="store_true", help="owner console against real services and a disposable real bot bridge")
     parser.add_argument("--admin-bot-source", type=Path, help="bot checkout containing mnema_bot.admin_server (required with --admin)")
     parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
@@ -737,10 +851,11 @@ def main():
         parser.error("--only-speech requires --generation and --media")
     if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_plans, args.only_promo, args.only_images, args.only_speech, args.only_voice, args.only_research) if aid) > 1:
         parser.error("--only-ask, --only-edits, --only-plan, --only-plans, --only-promo, --only-images, --only-speech, --only-voice and --only-research are separate development aids: choose one")
+    check_catalog_arguments(parser, args)
     # `--updates` runs on the same composition as `--community` (the ordinary Learning with the community kill switches on): from here on `community`
     # means that composition, `community_scenario` the scenario of the `--community` flag.
     args.community_scenario = args.community
-    args.community = args.community or args.updates
+    args.community = args.community or args.updates or args.catalog
     if args.community and (args.generation or args.assessment or args.only_promo or args.admin):
         parser.error("--community and --updates run on the ordinary Learning instance: they cannot be combined with --generation, --assessment, --only-promo or --admin")
     if args.admin:
@@ -753,6 +868,8 @@ def main():
             args.timeout = max(args.timeout, 840)
         if args.only_promo or args.admin or args.community:
             args.timeout = max(args.timeout, 600)
+        if args.catalog:
+            args.timeout = max(args.timeout, 900)
         if args.community_scenario and args.updates:
             args.timeout = 900
     if not 30 <= args.timeout <= 900:

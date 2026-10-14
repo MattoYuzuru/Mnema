@@ -59,6 +59,7 @@
 .sg-stack { display: grid; gap: .9rem; }
 .sg-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 1rem; }
 .sg-field { max-inline-size: 28rem; }
+.sg-order-list { margin: 0 0 .9rem; padding: 0; list-style: none; }
 .sg-field input:not([type='checkbox'], [type='radio']), .sg-field textarea { inline-size: 100%; }
 .sg-inline { display: flex; align-items: center; gap: .25rem; margin: 0; }
 .sg-stage .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }

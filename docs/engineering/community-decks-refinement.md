@@ -5,7 +5,7 @@ artifact:
   title: "Колоды сообщества: эпики, задачи, зависимости и правила исполнения"
   status: accepted
   created_at: "2026-10-10"
-  updated_at: "2026-10-11"
+  updated_at: "2026-10-12"
   owners: ["project-owner"]
 ---
 
@@ -30,7 +30,14 @@ artifact:
 [#460](https://github.com/MattoYuzuru/Mnema/issues/460) смержены и выкачены, миграции V59–V65
 (без V62); автоприём выключен до решения владельца. Updates/5 и Updates/6 вышли одним PR, потому что
 контракт копии меняется на обеих сторонах одновременно. Подробности:
-[evidence эпика 2](./evidence/community-decks/epic-2/README.md). Эпик 3 идёт.
+[evidence эпика 2](./evidence/community-decks/epic-2/README.md).
+
+Эпик 3 ([#421](https://github.com/MattoYuzuru/Mnema/issues/421)): Community/0–8 сделаны в локальной ветке
+`local/epic3`, потому что аккаунт GitHub владельца был заблокирован 2026-10-12. Push, PR, merge и выкатка ждут
+восстановления доступа; Community/0 открыт как [#500](https://github.com/MattoYuzuru/Mnema/pull/500), элементы styleguide
+как [#501](https://github.com/MattoYuzuru/Mnema/pull/501). Миграции `V66`–`V69`. Подробности и то, что не проверено:
+[evidence эпика 3](./evidence/community-decks/epic-3/README.md). Попутная
+[#462](https://github.com/MattoYuzuru/Mnema/issues/462) ждёт двух недель после запуска GC (не раньше 2026-10-24).
 
 В production функции эпика 1 включены релизом #481 вместе с текстами политики 1.4 и
 соглашения (выключатели — [runtime policy index](./runtime-policy-index.md)).

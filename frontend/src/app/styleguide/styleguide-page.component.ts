@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, ViewEncapsulation, afterNextRender, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
+import { SgCommunityComponent } from './sg-community.component';
 import { SgControlsComponent } from './sg-controls.component';
 import { SgFoundationsComponent } from './sg-foundations.component';
 import { SgScreenComponent } from './sg-screen.component';
@@ -15,7 +16,7 @@ import { SECTION_GROUPS } from './styleguide.data';
 @Component({
     selector: 'app-styleguide-page',
     encapsulation: ViewEncapsulation.None,
-    imports: [RouterLink, SgFoundationsComponent, SgControlsComponent, SgSurfacesComponent, SgUpdateComponent, SgScreenComponent],
+    imports: [RouterLink, SgFoundationsComponent, SgControlsComponent, SgSurfacesComponent, SgUpdateComponent, SgCommunityComponent, SgScreenComponent],
     templateUrl: './styleguide-page.component.html',
     styleUrl: './styleguide.css',
     changeDetection: ChangeDetectionStrategy.OnPush

@@ -1,5 +1,6 @@
 package app.mnema.learning.study.attempt;
 
+import app.mnema.learning.community.DeckEngagement;
 import app.mnema.learning.moderation.ContentTakedowns;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -19,7 +20,12 @@ class AttemptRepository {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private final JdbcClient jdbc;
 
-    AttemptRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
+    private final DeckEngagement engagement;
+
+    AttemptRepository(JdbcClient jdbc, DeckEngagement engagement) {
+        this.jdbc = jdbc;
+        this.engagement = engagement;
+    }
 
     record Presentation(UUID accountId, UUID sessionId, UUID presentationId, UUID deckId, String mode,
                         String sessionStatus, String nonce, UUID exerciseId, UUID exerciseRevisionId,
@@ -258,7 +264,7 @@ class AttemptRepository {
     }
 
     void completeSessionIfTerminal(UUID actor, UUID deck, UUID session, Instant now) {
-        jdbc.sql("""
+        int completed = jdbc.sql("""
                 UPDATE app_learning.study_session s
                    SET status='COMPLETE',completed_at=:now,batch_start=issued_count,batch_size=0,
                        row_version=row_version+1
@@ -277,6 +283,8 @@ class AttemptRepository {
                    )
                 """).param("actor", actor).param("deck", deck).param("session", session)
                 .param("now", Timestamp.from(now)).update();
+        // Community/3: the completion of a scheduled session of a copy is an engagement of its source, in this transaction (a non-copy deck costs two primary-key probes).
+        if (completed == 1) engagement.studied(actor, session);
     }
 
     Instant now() { return jdbc.sql("SELECT statement_timestamp()")

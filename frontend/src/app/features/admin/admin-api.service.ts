@@ -4,6 +4,9 @@ import { Observable, catchError, map, throwError, timeout } from 'rxjs';
 import { AuthService } from '../../auth.service';
 import { appConfig } from '../../app.config';
 import {
+    AnomalyPage, EditorialCommand, EditorialState, parseAnomalyPage, parseEditorial
+} from './admin-community.models';
+import {
     ComplaintDetail, ComplaintPage, ComplaintStatus, DecideRequest, JournalPage, UnitKind, UnitsPage, parseComplaintDetail,
     parseComplaintPage, parseJournalPage, parseUnitsPage
 } from './admin-complaints.models';
@@ -155,6 +158,23 @@ export class AdminApiService {
             limit: '50',
             cursor
         }, parseJournalPage);
+    }
+    /** The shelf «Выбор Мнемы»: the ordered list and its row version (Community/7). */
+    editorial(): Observable<EditorialState> {
+        return this.get(`${this.learning}/community/editorial`, {}, parseEditorial);
+    }
+    /** Replaces the whole list. `If-Match` is the row version the list was read at; the same `commandId` makes a repeat harmless. */
+    saveEditorial(command: EditorialCommand, rowVersion: string): Observable<void> {
+        return this.protect(this.http.put<unknown>(`${this.learning}/community/editorial`, command, {
+            headers: { 'If-Match': `"${rowVersion}"` }
+        }).pipe(timeout(15000), map(() => undefined)));
+    }
+    /** Anomaly flags: open ones first, then dismissed ones, newest first; the server pages by 50 (Community/3). */
+    anomalies(cursor: string | null): Observable<AnomalyPage> {
+        return this.get(`${this.learning}/community/anomalies`, { cursor }, parseAnomalyPage);
+    }
+    dismissAnomaly(code: string, commandId: string): Observable<void> {
+        return this.protect(this.http.post<unknown>(`${this.learning}/community/anomalies/${encodeURIComponent(code)}:dismiss`, { commandId }).pipe(timeout(15000), map(() => undefined)));
     }
     /** A response from an ended authorization generation must never repopulate a private screen. */
     private protect<T>(request: Observable<T>): Observable<T> {

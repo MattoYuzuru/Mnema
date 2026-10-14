@@ -2,6 +2,7 @@ package app.mnema.learning.fork;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
+import app.mnema.learning.platform.security.IdentityClaims;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -35,7 +36,7 @@ public class ForkController {
     @PostMapping(value = "/forks", consumes = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<JsonNode> create(@AuthenticationPrincipal Jwt identity, InputStream body, HttpServletRequest request) {
         service.requireEnabled();
-        ForkService.WriteResult result = service.create(entityId(identity.getSubject()), ForkCommand.read(body));
+        ForkService.WriteResult result = service.create(entityId(identity.getSubject()), ForkCommand.read(body), IdentityClaims.signals(request));
         var response = ResponseEntity.status(result.existing() ? HttpStatus.OK : HttpStatus.CREATED).headers(privateHeaders());
         if (result.replayed()) response.header("Idempotency-Replayed", "true");
         if (!result.existing()) {

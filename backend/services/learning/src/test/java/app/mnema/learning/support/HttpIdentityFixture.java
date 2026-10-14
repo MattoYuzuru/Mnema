@@ -38,6 +38,10 @@ public final class HttpIdentityFixture {
     private static final HttpClient CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
     private static final java.util.Set<String> REVOKED = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final java.util.Set<String> PUBLIC_PROFILE = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.Set<String> TRUSTED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.Set<String> NEW_ACCOUNT = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** accounts whose /userinfo leaves the two anti-abuse claims out, like an Identity that predates them */
+    private static final java.util.Set<String> NO_SIGNALS = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final AtomicInteger USER_INFO_CALLS = new AtomicInteger();
     /** Public author cards by account id and by lower-case login, as Identity's {@code /api/accounts/profiles/...} answers them. */
     private static final Map<String, String> CARDS_BY_ID = new java.util.concurrent.ConcurrentHashMap<>();
@@ -72,7 +76,8 @@ public final class HttpIdentityFixture {
                     subject = "invalid";
                 }
                 int status = REVOKED.contains(subject) ? 401 : 200;
-                byte[] body = ("{\"sub\":\"" + subject + "\",\"mnema_public_profile\":" + PUBLIC_PROFILE.contains(subject) + "}")
+                byte[] body = ("{\"sub\":\"" + subject + "\",\"mnema_public_profile\":" + PUBLIC_PROFILE.contains(subject)
+                        + (NO_SIGNALS.contains(subject) ? "" : ",\"mnema_trusted\":" + TRUSTED.contains(subject) + ",\"mnema_new_account\":" + NEW_ACCOUNT.contains(subject)) + "}")
                         .getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(status, body.length);
@@ -143,6 +148,18 @@ public final class HttpIdentityFixture {
         if (ready) PUBLIC_PROFILE.add(account.toString());
         else PUBLIC_PROFILE.remove(account.toString());
     }
+
+    /** Identity's answers for the anti-abuse claims {@code mnema_trusted} and {@code mnema_new_account} of the account; both false by default. */
+    public static void signals(UUID account, boolean trusted, boolean newAccount) {
+        NO_SIGNALS.remove(account.toString());
+        if (trusted) TRUSTED.add(account.toString());
+        else TRUSTED.remove(account.toString());
+        if (newAccount) NEW_ACCOUNT.add(account.toString());
+        else NEW_ACCOUNT.remove(account.toString());
+    }
+
+    /** From now on Identity leaves the two anti-abuse claims out of the account's /userinfo (an old Identity); {@link #signals} brings them back. */
+    public static void withoutSignals(UUID account) { NO_SIGNALS.add(account.toString()); }
 
     /** Identity publishes this public card (display name and bio may be null: the owner did not agree to show them). */
     public static void authorCard(UUID account, String username, String displayName, String bio) {

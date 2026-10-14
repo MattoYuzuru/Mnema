@@ -70,7 +70,7 @@
     gap: clamp(.75rem, 2.5vw, 2.25rem);
 }
 
-.primary-nav { justify-content: center; }
+.primary-nav { justify-content: center; flex-wrap: wrap; gap: 0 clamp(.75rem, 2.5vw, 2.25rem); min-inline-size: 0; }
 
 .primary-nav a {
     position: relative;
@@ -105,7 +105,11 @@
 
 .primary-nav a.active { font-weight: 700; }
 
-.session { justify-content: flex-end; min-inline-size: 0; }
+.session { justify-content: flex-end; flex-wrap: wrap; min-inline-size: 0; }
+
+/* The closed book of the catalogue search: a button until it is opened, then its form wraps under the button and takes the room it needs. */
+.masthead-search { flex: 0 0 auto; }
+.masthead-search.is-open { flex: 1 1 16rem; }
 
 .identity,
 .session-note {
@@ -130,11 +134,12 @@ main:focus-visible {
 @media (max-width: 62.5rem) {
     .masthead { grid-template-columns: auto 1fr auto; gap: 1rem; }
     .brand { font-size: 2.1rem; }
-    .primary-nav { gap: 1rem; }
+    .primary-nav { column-gap: 1rem; }
     .identity { display: none; }
 }
 
-@media (max-width: 43.75rem) {
+/* Below 56rem the nav takes the whole second row: four links, the book, the bell and «Выйти» do not fit one row from here down to 20rem. */
+@media (max-width: 56rem) {
     .masthead {
         display: flex;
         flex-wrap: wrap;

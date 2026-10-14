@@ -25,3 +25,10 @@ All paths are below `/api/accounts`.
   cached for at most 60 seconds.
 - `publishReady` is true when consent is on and the account has a login: deck publication needs it.
 - Batch and username lookups are rate limited (429 `try_later`).
+
+## `/userinfo` product claims
+
+Besides `sub`, Identity's `/userinfo` carries three booleans, computed on every request by one statement: `mnema_public_profile`
+(`publishReady`, above), and the two internal anti-abuse signals `mnema_trusted` (a confirmed address, that is a verified e-mail or any federated sign-in, and an account at least 72 hours
+old) and `mnema_new_account` (younger than 48 hours) of the community ranking. They are listed in
+[`user-info-claims.json`](user-info-claims.json); they are never shown to anybody.

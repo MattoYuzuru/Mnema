@@ -312,7 +312,7 @@ export async function runUpdates(ctx) {
       await navigate('/decks/new', owner.tab);
       await fill('#create-title', pass.title, owner.tab);
       await fill('#create-description', pass.description, owner.tab);
-      await owner.tab.evaluate("document.querySelector('form button[type=submit]').click()");
+      await owner.tab.evaluate("[...document.querySelectorAll('form button[type=submit]')].find(button => !button.closest('search')).click()");
       await until(async () => DECK_PATH.test((await owner.location()).split('?')[0]) && await exists('#deck-detail-title', owner.tab), 'deck creation did not reach its hub');
       world.deckPath = (await owner.location()).split('?')[0];
       world.deckId = world.deckPath.split('/').at(-1);

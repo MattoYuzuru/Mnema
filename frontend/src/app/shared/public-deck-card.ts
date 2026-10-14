@@ -24,11 +24,11 @@ export interface AudienceCount {
 /**
  * «Добавили» and «Учат сейчас» of a card. Below {@link MIN_SHOWN_COUNT} nothing is shown (`null`); above it the number
  * is rounded down to two significant digits, so a card never claims more than is true and never shows an exact audience:
- * 10 → «10», 99 → «99», 1234 → «1,2 тыс.», 12 345 → «12 тыс.», 123 456 → «120 тыс.», 2 500 000 → «2,5 млн».
+ * 10 → «10», 99 → «99», 1234 → «1,2 тыс.», 12 345 → «12 тыс.», 123 456 → «120 тыс.», 2 500 000 → «2,5 млн». `null` is the catalogue's own «below 10» and shows nothing.
  * The scale word is separated by a non-breaking space; the spoken form declines it («1,2 тысячи», «12 тысяч», «1 тысяча»).
  */
-export function audienceCount(count: number): AudienceCount | null {
-    if (!Number.isFinite(count) || count < MIN_SHOWN_COUNT) return null;
+export function audienceCount(count: number | null): AudienceCount | null {
+    if (count === null || !Number.isFinite(count) || count < MIN_SHOWN_COUNT) return null;
     const whole = Math.floor(count);
     const step = 10 ** Math.max(0, String(whole).length - 2);
     const rounded = Math.floor(whole / step) * step;
@@ -73,15 +73,16 @@ export interface PublicDeckCard {
     readonly id: string;
     readonly title: string;
     readonly description: string;
-    /** The topic and the language, as they are named for the learner («Языки», «Испанский»). */
+    /** The topic and the language, as they are named for the learner («Языки», «Испанский»). An empty one draws no stamp. */
     readonly topic: string;
     readonly language: string;
     readonly author: PublicDeckAuthor;
     readonly materialCount: number;
     readonly exerciseCount: number;
     readonly media: readonly DeckMedia[];
-    readonly addedCount: number;
-    readonly learningNowCount: number;
+    /** `null` (the catalogue sends nothing below 10) and any number below 10 draw nothing. */
+    readonly addedCount: number | null;
+    readonly learningNowCount: number | null;
     readonly updatedAt: string;
     /** The public address `/d/{код}/{slug}`, absolute, for «Поделиться». */
     readonly shareUrl: string;

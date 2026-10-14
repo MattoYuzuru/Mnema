@@ -49,6 +49,9 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
         const entityId = '[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}';
         const publicRead = new RegExp(`^${pattern}/public/decks/[1-9A-HJ-NP-Za-km-z]{10}(?:/items(?:/${entityId})?|/exercises|/media/${entityId}|/complaints|/access-requests(?::withdraw)?)?$`, 'u')
             .test(url.pathname)
+            // The community catalogue (epic 3): facets, shelves, browse and search, and the decks of an author. The bearer is optional there too: a guest sends none, and a
+            // signed-in viewer sends it so the limits are keyed by the account and the author's page can add the invitation-only decks the viewer was granted.
+            || new RegExp(`^${pattern}/public/community/(?:facets|shelves|decks|authors/${entityId}/decks)$`, 'u').test(url.pathname)
             // Asking for and withdrawing access to an invitation deck (Share/13) is signed-in only, like filing a complaint.
             // Filing a complaint about a profile (Share/15): signed-in only, the login is the Identity profile username.
             || new RegExp(`^${pattern}/public/profiles/[A-Za-z0-9_.-]{3,50}/complaints$`, 'u').test(url.pathname);

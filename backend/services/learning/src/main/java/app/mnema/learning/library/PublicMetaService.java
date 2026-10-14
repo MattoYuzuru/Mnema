@@ -113,7 +113,7 @@ public class PublicMetaService {
      * The public origin of the site (scheme and host, no path): HTTPS, or HTTP on a loopback host for local development. Blank is the production origin.
      * Anything else fails at startup, because every canonical address and image of every preview is built on it.
      */
-    static String origin(String configured) {
+    public static String origin(String configured) {
         if (configured == null || configured.isBlank()) return DEFAULT_ORIGIN;
         URI uri;
         try {

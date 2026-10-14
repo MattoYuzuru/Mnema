@@ -17,6 +17,10 @@ describe('audienceCount', () => {
         expect(audienceCount(count)).toEqual({ short, spoken });
     });
 
+    it('shows nothing for the catalogue\'s own «below 10» (null)', () => {
+        expect(audienceCount(null)).toBeNull();
+    });
+
     it('never shows more than the real number', () => {
         for (const count of [10, 57, 101, 999, 1001, 15_999, 987_654]) {
             const [value, unit] = audienceCount(count)!.short.replace(',', '.').split('\u00a0');
