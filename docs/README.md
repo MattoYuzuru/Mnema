@@ -32,6 +32,7 @@ artifact:
 | Найти модуль, версию, owning tests или полный gate | [Repository guide](./engineering/repository-guide.md) |
 | Изменить Study | [Study contract](../contracts/study/README.md); продукт — [exercise catalog](./product/exercise-catalog-v2.md) |
 | Улучшить core обучения / открыть локальный learning backlog | [Исследование, два эпика и entrypoint](./engineering/learning-core/README.md) (`proposed`, не действующий контракт) |
+| Спроектировать или реализовать онбординг | [Исследование, RFC, архитектура и четыре эпика](./engineering/onboarding/README.md) (`accepted` 2026-10-14, не реализовано; [промпты сессий](./engineering/onboarding/prompts.md), [ход работ](./engineering/onboarding/progress.md)) |
 | Разобраться с локальными branches/worktrees и восстановлением | [Audit на 13.10.2026](./reviews/local-workspace-2026-10-13.md); сверить actual refs перед действиями |
 | Изменить authoring/content | [Learning guide](../backend/services/learning/guide.md) и [native content contract](../contracts/content/native-v1/README.md) |
 | Изменить media | Раздел [Media](#media-epic-76) ниже |
@@ -118,6 +119,7 @@ artifact:
 | current | [Repository guide](./engineering/repository-guide.md) | Карта кода, версии, change routes и gate. |
 | current | [Work item standard](./engineering/work-item-standard.md) | Issue/PR/Project status contract. |
 | proposed | [Learning core improvement backlog](./engineering/learning-core/README.md) | Научная критика, current-source map, два ограниченных эпика, 12 task bodies, migration, автономные prompts и idempotent GitHub import. |
+| accepted | [Onboarding package](./engineering/onboarding/README.md) | Словарь и evidence онбордингов, карта существующего кода, RFC (historical), принятые решения владельца 2026-10-14, архитектура, пять ADR, эпики OB-E1…E4 с задачами, manifest, ход работ и промпты сессий с протоколом handoff. |
 | historical | [Local workspace audit 2026-10-13](./reviews/local-workspace-2026-10-13.md) | Main/RFC/эпики 3–4, worktree inventory, безопасный порядок восстановления и подтверждённые doc mismatches; не deletion list. |
 | current | [Capability inventory](./engineering/capability-inventory.yaml) | Машиночитаемый список команд и harnesses; при расхождении приоритетнее runbook и `--help`. |
 | current | [Evidence index](./engineering/evidence/README.md) | Короткий вход в большие evidence-наборы. |
