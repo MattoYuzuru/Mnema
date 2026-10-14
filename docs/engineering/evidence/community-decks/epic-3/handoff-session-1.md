@@ -13,7 +13,7 @@ artifact:
 
 Handoff сессии 1 эпика [#421](https://github.com/MattoYuzuru/Mnema/issues/421), опубликован в нём комментарием.
 
-**База.** main `ae556ece` (#496). Весь эпик влит одним PR [#E3PR](https://github.com/MattoYuzuru/Mnema/pull/E3PR) (заменил #500 и #501) и выкачен выключенным.
+**База.** main `ae556ece` (#496). Весь эпик влит одним PR [#502](https://github.com/MattoYuzuru/Mnema/pull/502) (заменил #500 и #501) и выкачен выключенным.
 Полный gate и harness `--catalog`, `--community`, `--updates` зелёные на `74ac7dfd`; после него только переключатели локального стека и документы.
 
 **Сделано.** Community/0–8, миграции `V66`–`V69`. Подробности, ревью и проверки — [evidence эпика 3](README.md).
@@ -34,13 +34,13 @@ Handoff сессии 1 эпика [#421](https://github.com/MattoYuzuru/Mnema/is
 
 **Не проверено.** Скринридеры, Safari, Firefox, touch; UI флагов накруток и полка «Учат сейчас» в браузере; production.
 
-**Поставка (2026-10-14).** [#E3PR](https://github.com/MattoYuzuru/Mnema/pull/E3PR): Identity и Learning одним релизом, на хост установлены
+**Поставка (2026-10-15).** [#502](https://github.com/MattoYuzuru/Mnema/pull/502) вместе с эпиком 4 ([#541](https://github.com/MattoYuzuru/Mnema/pull/541)) одним релизом Identity и Learning; на хост установлены
 `deploy/production/nginx.conf` (`/sitemap-decks.xml`) и `init-database.sh`; каталог выключен.
 
 **Оставшиеся шаги.**
 1. Включение (отдельный PR после проверки на production): `LEARNING_COMMUNITY_CATALOG_ENABLED: "true"` в
    `deploy/production/compose.yaml` (установить на хост до одобрения); `COMMUNITY_LAUNCHED = true` во frontend; `COMMUNITY_ROUTE` в
    `features/public-deck/public-deck.text.ts`; строка `Sitemap: https://mnema.app/sitemap-decks.xml` в `frontend/src/robots.txt`; тексты политики
-   и соглашения уже входят в версию 1.6 эпика 4 (см. [handoff эпика 4](../epic-4/handoff-session-1.md)). Затем smoke на mnema.app: `/community`,
+   и соглашения входят в версию 1.6, подготовленную эпиком 4 (см. [handoff эпика 4](../epic-4/handoff-session-1.md), шаг 1). Затем smoke на mnema.app: `/community`,
    поиск, профиль, `/sitemap-decks.xml`.
 2. Попутная #462 — не раньше 2026-10-24 (две недели после запуска GC).

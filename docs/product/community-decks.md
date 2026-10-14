@@ -561,7 +561,7 @@ artifact:
 
 ## Уточнено реализацией (эпик 4)
 
-Эпик влит [#E4PR](https://github.com/MattoYuzuru/Mnema/pull/E4PR) поверх эпика 3 и выкачен выключенным.
+Эпик влит [#541](https://github.com/MattoYuzuru/Mnema/pull/541) поверх эпика 3 и выкачен выключенным.
 [Evidence и состояние проверок](../engineering/evidence/community-decks/epic-4/README.md),
 [исполняемый контракт](../../contracts/community/README.md).
 

@@ -117,16 +117,16 @@ build, `verify-no-styleguide`; `verify_docs.py`; `scripts/tests` (417), тест
 | a11y и mobile | ревью доступности; `--catalog` этапы `a11y`, `motion`, `masthead` (390/768/900/1280 px) |
 | Ноль и сценарий H | разделы «Load» guide Learning для Community/0–3 и 2; замеры ранга и каталога выше |
 | Styleguide первым; существующие компоненты | `/styleguide` раздел «Сообщество»; `app-auto-load`, `app-mnema-select`, `app-segmented-choice`, `.check-row` |
-| Sub-issues в Project #4, Done после merged/applied | [#E3PR](https://github.com/MattoYuzuru/Mnema/pull/E3PR) влит и выкачен выключенным; задачи #447–#455 закрыты; включение каталога — отдельный шаг |
+| Sub-issues в Project #4, Done после merged/applied | [#502](https://github.com/MattoYuzuru/Mnema/pull/502) влит и выкачен выключенным; задачи #447–#455 закрыты; включение каталога — отдельный шаг |
 
 **Не проверено.** Настоящие скринридеры, Safari, Firefox, touch и телефон; реальное совпадение фильтра «Внутри: аудио» в браузере; полка «Учат сейчас» и дни занятий в браузере (есть
 в интеграционных тестах); UI флагов накруток в браузере; 412 по истёкшему поколению и 503 в браузере (есть в интеграционных тестах); превью ссылок через nginx в браузере; production.
 
 ## Состояние поставки
 
-- Влит одним PR [#E3PR](https://github.com/MattoYuzuru/Mnema/pull/E3PR) (2026-10-14); он заменил [#500](https://github.com/MattoYuzuru/Mnema/pull/500) и
+- Влит одним PR [#502](https://github.com/MattoYuzuru/Mnema/pull/502) (2026-10-14); он заменил [#500](https://github.com/MattoYuzuru/Mnema/pull/500) и
   [#501](https://github.com/MattoYuzuru/Mnema/pull/501), коммиты которых вошли без изменений.
-- Production: `unaccent` установлен в `app_learning` 2026-10-12; релиз с `V66`–`V69` выкачен выключенным
-  (`learning.community.catalog.enabled=false`, `COMMUNITY_LAUNCHED=false`). Включение — отдельный PR по
-  [handoff](handoff-session-1.md), шаг 4.
+- Production: `unaccent` установлен в `app_learning` 2026-10-12; `V66`–`V69` выкачены 2026-10-15 одним релизом
+  с эпиком 4 ([#541](https://github.com/MattoYuzuru/Mnema/pull/541)), каталог выключен (`learning.community.catalog.enabled=false`,
+  `COMMUNITY_LAUNCHED=false`). Включение — отдельный PR по [handoff](handoff-session-1.md), «Оставшиеся шаги».
 

@@ -12,7 +12,7 @@ artifact:
 # Эпик 4: рекомендации и витрины
 
 Эпик [#422](https://github.com/MattoYuzuru/Mnema/issues/422), задачи Recs/1–4 (#456–#459).
-Влит [#E4PR](https://github.com/MattoYuzuru/Mnema/pull/E4PR) поверх эпика 3 (база `f033d533`) и выкачен выключенным.
+Влит [#541](https://github.com/MattoYuzuru/Mnema/pull/541) поверх эпика 3 (база `f033d533`) и выкачен выключенным.
 
 Канон: [продукт](../../../../product/community-decks.md),
 [архитектура](../../../../architecture/community-decks.md),
@@ -95,7 +95,7 @@ production-эксперимент; он не входит в этот локал
 | Не более двух авторов/темы в первых десяти; два исследовательских места; исключение авторских и живых копий | Backend ranker, real PostgreSQL/API integration; [браузерный результат](browser/recs.json) проверяет 12 карточек до и после настоящей копии |
 | Главная тема объясняет полку и сетку; sparse персональная полка скрыта при непустом обычном каталоге | `recs_onboarding_and_shelf`, `recs_sorting_motion_reflow_a11y`, `recs_sparse`; component tests |
 | Видимый и сбрасываемый профиль; старые сигналы не возвращаются | DB reset/goal/copy race tests, `recs_profile_reset`; cached profile refresh/version1→9/reset If-Match9 component regression |
-| Приватность и сроки | Strict input/ACL/idempotency/partitions tests; guest401, no query/content schema, authenticated telemetry, rankVersion attribution в browser; публичная политика1.6 |
+| Приватность и сроки | Strict input/ACL/idempotency/partitions tests; guest401, no query/content schema, authenticated telemetry, rankVersion attribution в browser; политика 1.6 подготовлена, публикуется при включении каталога |
 | Ноль/H, ограниченные запросы и задачи | [Исходные планы и размеры](scale-local-2026-10-13.txt), таблица архитектуры §12; bounds и выключатели в Learning guide |
 | Сравнение версий и пороги | Воспроизводимая синтетика выше; семь тестов Python, read-only anonymous SQL export; причинная польза ещё не доказана |
 | Поведение эпиков1–3 сохранено | [Каталог](browser/catalog.json), [публикация и обновления](browser/community-updates.json); финальные прогоны повторяются на итоговом HEAD |

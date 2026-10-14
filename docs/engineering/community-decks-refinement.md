@@ -31,13 +31,13 @@ artifact:
 контракт копии меняется на обеих сторонах одновременно. Подробности:
 [evidence эпика 2](./evidence/community-decks/epic-2/README.md).
 
-Эпик 3 ([#421](https://github.com/MattoYuzuru/Mnema/issues/421)): Community/0–8 влиты одним PR [#E3PR](https://github.com/MattoYuzuru/Mnema/pull/E3PR)
+Эпик 3 ([#421](https://github.com/MattoYuzuru/Mnema/issues/421)): Community/0–8 влиты одним PR [#502](https://github.com/MattoYuzuru/Mnema/pull/502)
 (он заменил [#500](https://github.com/MattoYuzuru/Mnema/pull/500) и [#501](https://github.com/MattoYuzuru/Mnema/pull/501))
 и выкачены выключенными. Миграции `V66`–`V69`. Подробности и то, что не проверено:
 [evidence эпика 3](./evidence/community-decks/epic-3/README.md). Попутная
 [#462](https://github.com/MattoYuzuru/Mnema/issues/462) ждёт двух недель после запуска GC (не раньше 2026-10-24).
 
-Эпик 4 ([#422](https://github.com/MattoYuzuru/Mnema/issues/422)): Recs/1–4 влиты PR [#E4PR](https://github.com/MattoYuzuru/Mnema/pull/E4PR) поверх
+Эпик 4 ([#422](https://github.com/MattoYuzuru/Mnema/issues/422)): Recs/1–4 влиты PR [#541](https://github.com/MattoYuzuru/Mnema/pull/541) поверх
 эпика 3. Новые зависимости не добавлялись, функции выкачены выключенными. Состояние реализации, проверок и сравнение ранкеров:
 [evidence эпика 4](./evidence/community-decks/epic-4/README.md).
 

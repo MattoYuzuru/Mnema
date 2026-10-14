@@ -13,7 +13,7 @@ artifact:
 
 Handoff сессии 1 эпика [#422](https://github.com/MattoYuzuru/Mnema/issues/422), опубликован в нём комментарием.
 
-**База.** Эпик 3 (`f033d533`, [его handoff](../epic-3/handoff-session-1.md)). Эпик 4 влит PR [#E4PR](https://github.com/MattoYuzuru/Mnema/pull/E4PR) и выкачен выключенным.
+**База.** Эпик 3 (`f033d533`, [его handoff](../epic-3/handoff-session-1.md)). Эпик 4 влит PR [#541](https://github.com/MattoYuzuru/Mnema/pull/541) и выкачен выключенным.
 
 **Сделано.** Recs/1–4 (#456–#459), Learning `V70__catalog_events.sql` и
 `V71__topic_interests.sql`; новые зависимости не добавлялись.
@@ -64,12 +64,14 @@ Learning account purge #409 остаётся отдельным эпиком (п
 Сохраняются ограничения эпиков 1–3: удалённый автор до purge, поздно готовое медиа, кэши каталога;
 польза рекомендаций на настоящей аудитории ещё не доказана.
 
-**Поставка (2026-10-14).** [#E4PR](https://github.com/MattoYuzuru/Mnema/pull/E4PR) выкачен вместе с эпиком 3; запись событий, «Для вас» и каталог выключены.
+**Поставка (2026-10-15).** [#541](https://github.com/MattoYuzuru/Mnema/pull/541) выкачен одним релизом с эпиком 3; запись событий, «Для вас» и каталог выключены.
 
 **Оставшиеся шаги.**
 1. Каталог и тексты: `LEARNING_COMMUNITY_CATALOG_ENABLED=true`, frontend `COMMUNITY_LAUNCHED=true`, `COMMUNITY_ROUTE`
-   в public-deck.text и sitemap строка robots. Правки 1.5 (общие цифры автора/каталог в соглашении) уже входят в **1.6**;
-   дату `LEGAL_EFFECTIVE_DATE` **13 октября 2026** заменить датой релиза вместе с legal-pages.spec. Затем проверить
+   в public-deck.text и sitemap строка robots. Тексты **1.6** (включают правки 1.5) вернуть из коммита «define recommendations
+   contract and privacy policy 1.6» в истории [#541](https://github.com/MattoYuzuru/Mnema/pull/541): `privacy-page.component.html`,
+   `terms-page.component.html`, `shared/legal-operator.ts`, `legal-pages.spec.ts`; в production сейчас 1.4. Дату
+   `LEGAL_EFFECTIVE_DATE` поставить датой релиза. Затем проверить
    страницу политики, каталог/поиск/автора/sitemap.
 2. После того как 1.6 доступна: `LEARNING_COMMUNITY_EVENTS_ENABLED=true`, проверить storage/maintenance/профиль/сброс,
    затем `LEARNING_COMMUNITY_FOR_YOU_ENABLED=true` и полку/разнообразие/свои копии/объяснения. Environment-строки
