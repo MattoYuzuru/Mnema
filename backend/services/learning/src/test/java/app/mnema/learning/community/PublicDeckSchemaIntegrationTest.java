@@ -258,8 +258,9 @@ class PublicDeckSchemaIntegrationTest extends PostgresIntegrationTest {
         assertThat(lagging).as("the gauge reads the partial index of the lagging rows only").contains("public_deck_lag").doesNotContain("Seq Scan");
 
         String kinds = plan(ProjectionRepository.KINDS_SQL, spec -> spec.param("pairs", "[]").param("scope", UUID.randomUUID()));
-        assertThat(kinds).contains("Nested Loop").containsPattern("Index Scan using exercise_revision_\\w+ on exercise_revision").containsPattern("exercise_id = m\\.k").contains("exercise_media_ref_pkey").doesNotContain("Seq Scan on exercise_revision")
-                .doesNotContain("Seq Scan on exercise_media_ref");
+        // the probe of each pair is a key lookup; whether the planner reads it as a plain or a bitmap index scan depends on the table statistics of the run
+        assertThat(kinds).as(kinds).contains("Nested Loop").containsPattern("(Index Scan using|Index Only Scan using|Bitmap Index Scan on) exercise_revision_\\w+")
+                .containsPattern("exercise_id = m\\.k").contains("exercise_media_ref_pkey").doesNotContain("Seq Scan on exercise_revision").doesNotContain("Seq Scan on exercise_media_ref");
 
         String rebuild = plan(ProjectionRepository.REBUILD_PAGE_SQL, spec -> spec.param("after", new UUID(0, 0)).param("limit", 2));
         assertThat(rebuild).contains("deck_publication_pkey").contains("public_deck_pkey").doesNotContain("Seq Scan").doesNotContain("Hash");
