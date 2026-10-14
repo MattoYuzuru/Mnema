@@ -39,12 +39,12 @@ artifact:
 | Медиа чужих и гостей (§8, CD-6) | Реализовано | Share/9; `V55` |
 | Приглашения, запросы, гранты (§6) | Реализовано | Share/13; `V56` |
 | Копия O(1) и материализация (§5, CD-2) | Реализовано | Share/10; `V57` |
-| Ссылки и превью без SSR (§9, CD-10) | Реализовано; `/u/{username}` и `/sitemap-decks.xml` — эпик 3 (локально) | Share/11, 14, Community/6, 7 |
+| Ссылки и превью без SSR (§9, CD-10) | Реализовано; `/u/{username}` и `/sitemap-decks.xml` — эпик 3 | Share/11, 14, Community/6, 7 |
 | Жалобы, скрытие, юридическое снятие (§11) | Реализовано; очистка через 3 года не написана ([#409](https://github.com/MattoYuzuru/Mnema/issues/409)) | Share/15; `V58` |
 | Обновления копий (§7, CD-5) | Реализовано; автоприём выключен выключателем | эпик 2: Updates/1–6; `V60`, `V61`, `V63`–`V65` |
-| Каталог, поиск, ранг (§10, CD-7, CD-8) | Реализовано локально в эпике 3, не смержено и не выкачено (GitHub недоступен); выключено выключателем `learning.community.catalog.enabled` | Community/0–3; `V66`–`V69` |
-| Интересы, события, «Для вас» (§10, CD-8) | Реализовано локально, не смержено и не выкачено; по умолчанию выключено, проверки в evidence | эпик 4: Recs/1–4; V70–V71 |
-| Кабинет: флаги аномалий и «Выбор Мнемы» (§11) | Реализовано локально в эпике 3 | Community/3, 7; `V68`, `V69` |
+| Каталог, поиск, ранг (§10, CD-7, CD-8) | Реализовано в эпике 3 ([#E3PR](https://github.com/MattoYuzuru/Mnema/pull/E3PR)), выкачено выключенным: `learning.community.catalog.enabled` | Community/0–3; `V66`–`V69` |
+| Интересы, события, «Для вас» (§10, CD-8) | Реализовано в эпике 4 ([#E4PR](https://github.com/MattoYuzuru/Mnema/pull/E4PR)), выкачено выключенным; проверки в evidence | эпик 4: Recs/1–4; V70–V71 |
+| Кабинет: флаги аномалий и «Выбор Мнемы» (§11) | Реализовано в эпике 3 | Community/3, 7; `V68`, `V69` |
 
 В production реализованное эпиком 1 включено (выключатели §14 `public-routes`, публичные
 медиа, создание копий и жалобы равны `true` с релиза #481). «Для вас» и запись событий выключены по умолчанию отдельными выключателями; автоприём обновлений
@@ -139,7 +139,7 @@ SQL и тесты — в [guide Learning](../../backend/services/learning/guide.
 
 ### Уточнено реализацией (эпик 3)
 
-Решения CD-7 и CD-8 не менялись. Реализация (локальная ветка эпика 3; GitHub был недоступен, см.
+Решения CD-7 и CD-8 не менялись. Реализация ([#E3PR](https://github.com/MattoYuzuru/Mnema/pull/E3PR), см.
 [evidence эпика 3](../engineering/evidence/community-decks/epic-3/README.md)) уточнила схему и поведение. Подробности, SQL,
 планы и тесты — в [guide Learning](../../backend/services/learning/guide.md), разделы Community/0–7; контракт —
 [`contracts/community`](../../contracts/community/README.md).
@@ -172,8 +172,8 @@ SQL и тесты — в [guide Learning](../../backend/services/learning/guide.
 
 ### Уточнено реализацией (эпик 4)
 
-Реализация в `local/epic4` строится поверх невлитого эпика 3. [Evidence](../engineering/evidence/community-decks/epic-4/README.md)
-разделяет синтетические замеры, локальные проверки и не выполненную поставку. Контракт:
+Реализация — [#E4PR](https://github.com/MattoYuzuru/Mnema/pull/E4PR) поверх эпика 3. [Evidence](../engineering/evidence/community-decks/epic-4/README.md)
+разделяет синтетические замеры и локальные проверки. Контракт:
 [`contracts/community`](../../contracts/community/README.md); детали и очереди — в guide Learning и
 [runtime policy index](../engineering/runtime-policy-index.md).
 

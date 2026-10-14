@@ -65,9 +65,9 @@ rollback boundary и bounded H fixture. Вопросы следующего spik
 
 LC-E1 не доказывает learning lift. LC-E2 не доказывает transfer. LC-301 не подтверждён
 одним LLM judge, LC-302 не подтверждён одной симуляцией. Done инженерной задачи означает
-applied/merged поведение и proportional verification; локально готовая ветка имеет
-`local implementation complete, delivery pending`, не внешнее Done.
+applied/merged поведение и proportional verification; готовая, но не влитая ветка — это
+`In review`, не Done.
 
-Публикация после явного поручения: [github import](github-import.md).
+Номера Issues — в [manifest](manifest.json).
 Два эпика независимы от community ranking, но требуют latest lineage/retention contracts;
 не смешивать их с Community #421/#422 и не подменять ими существующие эпики.

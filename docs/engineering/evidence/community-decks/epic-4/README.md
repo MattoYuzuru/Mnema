@@ -12,9 +12,7 @@ artifact:
 # Эпик 4: рекомендации и витрины
 
 Эпик [#422](https://github.com/MattoYuzuru/Mnema/issues/422), задачи Recs/1–4 (#456–#459).
-Рабочая ветка `local/epic4`, worktree `/Users/yuzuru/Projects/Mnema-cd4`, база `f033d533` из
-`local/epic3`. GitHub отвечает `account suspended` (403, 2026-10-13); push, PR, hosted CI,
-изменения доски, merge и production не выполняются. Основной checkout владельца не изменяется.
+Влит [#E4PR](https://github.com/MattoYuzuru/Mnema/pull/E4PR) поверх эпика 3 (база `f033d533`) и выкачен выключенным.
 
 Канон: [продукт](../../../../product/community-decks.md),
 [архитектура](../../../../architecture/community-decks.md),
@@ -107,7 +105,7 @@ production-эксперимент; он не входит в этот локал
 База `f033d533`. `f1118581` контракт/политика; `e4cabd08` frontend; `e459290b` исправления UI;
 `623f47cc` backend; `4465582b` ranker/explanation; `59235665` инвалидация выдачи по effective
 copy/drop/goal; `88a19065` актуальный профиль перед сбросом. Последующий Recs/4 commit содержит
-скрипт, browser harness, этот отчёт и документы. Полный диапазон: `f033d533..local/epic4`.
+скрипт, browser harness, этот отчёт и документы. Полный диапазон: `f033d533..f4f5e636`.
 Миграции эпика4: `V70__catalog_events.sql`, `V71__topic_interests.sql`; предыдущие V66–V69
 нужны вместе с эпиком3. Новых зависимостей нет.
 

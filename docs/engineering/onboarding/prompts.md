@@ -20,25 +20,20 @@ artifact:
 ## Блок 1. Общая преамбула
 
 ```text
-Ты ведущий агент проекта Mnema. Задача — часть эпика «Онбординг» из локального бэклога. Работай
+Ты ведущий агент проекта Mnema. Задача — часть эпика «Онбординг» (Issues и Mnema Kanban, номера в manifest.json). Работай
 автономно до результата и проверок; спрашивай только при новом продуктовом/архитектурном выборе,
 отсутствии доступа или расширении scope.
 
 1. Инструкции. Прочитай AGENTS.md, backend/AGENTS.md, frontend/AGENTS.md, docs/README.md,
-   docs/engineering/work-item-standard.md, docs/reviews/local-workspace-2026-10-13.md, затем пакет
+   docs/engineering/work-item-standard.md, затем пакет
    docs/engineering/onboarding/: README.md, questions.md (решения владельца 2026-10-14 — не переспрашивать),
    proposal.md, architecture.md, adr/, backlog.md, progress.md и тела своих эпика и задач. Для сборки и
    тестов на этой машине — /Users/yuzuru/AGENTS.md, workstation navigator и skill workstation-dev.
 
-2. Где пакет и база. Пакет создан 2026-10-14 в /Users/yuzuru/Projects/Mnema (ветка codex/learning-core-backlog,
-   рядом с learning-core); тот checkout старее кода. Код онбординга строится поверх интегрированных
-   эпиков Сообщества 3–4: если GitHub доступен — свежий main (проверь, что эпики 3–4 в нём); если нет —
-   последняя связная локальная интеграция (на 2026-10-14 local/epic4 f4f5e636 в /Users/yuzuru/Projects/Mnema-cd4,
-   сверь actual refs и ancestry). Не работай в чужих worktree, не удаляй/не сбрасывай worktrees, volumes,
-   untracked assets. Если в progress.md уже записана ветка реализации — продолжай в ней. Иначе создай
-   изолированную ветку feat/onboarding от проверенной базы в новом worktree и первым коммитом перенеси
-   docs/engineering/onboarding/** из пакета (файлы целиком, без старых docs README) и вручную добавь
-   строки навигатора в docs/README.md и AGENTS.md ветки.
+2. База. Пакет и эпики Сообщества 3–4 уже в main. Сделай fetch и начни от свежего origin/main
+   в отдельном worktree; ветка feat/<issue>-<slug> на задачу или эпик. Не работай в чужих worktree,
+   не удаляй/не сбрасывай чужие worktrees, volumes и untracked assets. Если в progress.md уже записана
+   ветка реализации — продолжай в ней.
 
 3. Проверка предыдущей работы (обязательна до своей задачи). По progress.md и последнему handoff
    (docs/engineering/evidence/onboarding/**/handoff-session-*.md) для каждой задачи со статусом
@@ -54,9 +49,10 @@ artifact:
    Runtime owner один; retained mnema-local-v2 не используй как тестовый fixture; тесты — disposable
    PostgreSQL на этой машине, JDK 25, Node 24; общие lock в ~/.local/state/agent-dev.
 
-5. Границы. Реализация, локальная проверка и локальные коммиты входят в поручение. Без отдельного явного
-   поручения: не push, не PR, не изменения доски, не merge, не production и не approval окружения, не
-   выкатка шаблона/колод. Production-флаги онбординга включаются только после OB-002.
+5. Границы. Поставка — по root AGENTS.md («Task-scoped autonomy and merge boundary»): поручение
+   довести задачу до конца разрешает ветку, коммиты, push, PR, CI и статусы задач на доске; merge — если
+   поручение его называет; production и approval окружения — только по явному поручению. Шаблон и колоды
+   не выкатываются без утверждения владельца. Production-флаги онбординга включаются только после OB-002.
 
 6. Завершение (обязательно, даже если не всё успел). Независимое review диффа (ревьюер не автор кода),
    исправь findings. Полный gate на точном commit:

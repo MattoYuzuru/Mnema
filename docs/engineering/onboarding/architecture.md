@@ -6,7 +6,7 @@ artifact:
   status: accepted
   created_at: "2026-10-14"
   owners: ["project-owner"]
-  base_revision: "local/epic4 f4f5e636 (read-only)"
+  base_revision: "f4f5e636 (community epics 3–4, now in main)"
 ---
 
 # Архитектура онбординга
@@ -71,7 +71,7 @@ flowchart LR
 ## 3. Модель данных (Learning, additive)
 
 ```sql
--- Номер миграции определяется после интеграции local/epic3-4 в main (сейчас последняя V71).
+-- Номер миграции — по inventory свежего main (после эпиков 3–4 последняя V71).
 CREATE TABLE onboarding_journey (
   account_id      uuid PRIMARY KEY,
   tour_version    smallint    NOT NULL,

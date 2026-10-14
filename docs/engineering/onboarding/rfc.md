@@ -6,7 +6,7 @@ artifact:
   status: historical
   updated_at: "2026-10-14"
   created_at: "2026-10-14"
-  base_revision: "local/epic4 f4f5e636 (read-only); docs root 8f2b5522"
+  base_revision: "f4f5e636 (community epics 3–4); docs 8f2b5522"
   owners: ["project-owner"]
   decision_scope: [first-entry, survey, tour-engine, sample-deck, milestones, rhythm, reward, measurement]
   evidence_accessed: "2026-10-14"

@@ -3,13 +3,104 @@
   "packageId": "mnema-onboarding-2026-10-14",
   "status": "Backlog",
   "artifactStatus": "accepted",
-  "sourcePins": {
-    "root": "8f2b552269c62f859ce82b2101392d5c0b8eb531",
-    "localEpic4": "f4f5e6369df667bf4c692ea58dbea4ccbe2c309c",
-    "localEpic3": "f033d533dce453f86f5eba4dae0ee7a9ea808ebe",
-    "cachedMain": "ae556ece4e4d3e9b54df6fb7b01b61639d64895c"
+  "githubMapping": {
+    "OB-001": {
+      "issue": 517,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/517"
+    },
+    "OB-002": {
+      "issue": 518,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/518"
+    },
+    "OB-003": {
+      "issue": 519,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/519"
+    },
+    "OB-E1": {
+      "issue": 520,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/520"
+    },
+    "OB-101": {
+      "issue": 521,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/521"
+    },
+    "OB-102": {
+      "issue": 522,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/522"
+    },
+    "OB-103": {
+      "issue": 523,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/523"
+    },
+    "OB-104": {
+      "issue": 524,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/524"
+    },
+    "OB-105": {
+      "issue": 525,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/525"
+    },
+    "OB-E2": {
+      "issue": 526,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/526"
+    },
+    "OB-201": {
+      "issue": 527,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/527"
+    },
+    "OB-202": {
+      "issue": 528,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/528"
+    },
+    "OB-203": {
+      "issue": 529,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/529"
+    },
+    "OB-204": {
+      "issue": 530,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/530"
+    },
+    "OB-E3": {
+      "issue": 531,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/531"
+    },
+    "OB-301": {
+      "issue": 532,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/532"
+    },
+    "OB-302": {
+      "issue": 533,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/533"
+    },
+    "OB-303": {
+      "issue": 534,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/534"
+    },
+    "OB-304": {
+      "issue": 535,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/535"
+    },
+    "OB-305": {
+      "issue": 536,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/536"
+    },
+    "OB-E4": {
+      "issue": 537,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/537"
+    },
+    "OB-401": {
+      "issue": 538,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/538"
+    },
+    "OB-402": {
+      "issue": 539,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/539"
+    },
+    "OB-403": {
+      "issue": 540,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/540"
+    }
   },
-  "githubMapping": {},
   "items": [
     {
       "localId": "OB-001",
@@ -285,5 +376,6 @@
     "date": "2026-10-14",
     "source": "questions.md"
   },
-  "progressLedger": "progress.md"
+  "progressLedger": "progress.md",
+  "githubPublishedAt": "2026-10-15"
 }

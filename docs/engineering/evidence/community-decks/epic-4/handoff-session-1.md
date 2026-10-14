@@ -3,24 +3,19 @@ artifact:
   id: community-decks-epic-4-handoff-1
   type: handoff
   title: "Handoff: эпик 4, сессия 1"
-  status: current
+  status: historical
   created_at: "2026-10-13"
-  updated_at: "2026-10-13"
+  updated_at: "2026-10-14"
   owners: ["project-owner"]
 ---
 
 # Handoff: эпик 4, сессия 1
 
-Текст будущего комментария «Handoff: эпик 4, сессия 1» в [#422](https://github.com/MattoYuzuru/Mnema/issues/422).
-GitHub отвечает `account suspended` (403). Push, PR, CI, доска, merge, закрытие issues и production
-в этом прогоне не выполнялись. Основной checkout владельца `/Users/yuzuru/Projects/Mnema` не изменялся.
+Handoff сессии 1 эпика [#422](https://github.com/MattoYuzuru/Mnema/issues/422), опубликован в нём комментарием.
 
-**База.** `local/epic4`, worktree `/Users/yuzuru/Projects/Mnema-cd4`, поверх `local/epic3` `f033d533`
-(включает `d30c51a5` и весь эпик 3). Последняя известная база main эпика 3 — `ae556ece` (#496);
-это локальное знание, не проверка свежести GitHub. База и отложенная поставка эпика 3:
-[его handoff](../epic-3/handoff-session-1.md).
+**База.** Эпик 3 (`f033d533`, [его handoff](../epic-3/handoff-session-1.md)). Эпик 4 влит PR [#E4PR](https://github.com/MattoYuzuru/Mnema/pull/E4PR) и выкачен выключенным.
 
-**Сделано локально.** Recs/1–4 (#456–#459), Learning `V70__catalog_events.sql` и
+**Сделано.** Recs/1–4 (#456–#459), Learning `V70__catalog_events.sql` и
 `V71__topic_interests.sql`; новые зависимости не добавлялись.
 
 - Recs/1: UUIDv7/месячные события, анонимные дневные показы, lifecycle-атрибуция версии,
@@ -37,7 +32,7 @@ GitHub отвечает `account suspended` (403). Push, PR, CI, доска, mer
 **Коммиты до интеграционного evidence.** `f1118581` контракт/политика; `e4cabd08` frontend;
 `e459290b` пять UI-правок ревью; `623f47cc` backend; `4465582b` две backend-правки ревью;
 `59235665` инвалидация по effective signals; `88a19065` актуальный профиль перед reset.
-Полный линейный диапазон эпика 4: `f033d533..local/epic4` (`git log` включает последующий Recs/4/evidence).
+Полный линейный диапазон эпика 4: `f033d533..f4f5e636` (`git log` включает последующий Recs/4/evidence).
 Все коммиты используют локальную Git identity владельца без дополнительных attribution trailers.
 
 **Уточнено внутри канона.** Принятые формула, 13 месяцев, выключенный запуск и отсутствие ML сохранены.
@@ -69,47 +64,15 @@ Learning account purge #409 остаётся отдельным эпиком (п
 Сохраняются ограничения эпиков 1–3: удалённый автор до purge, поздно готовое медиа, кэши каталога;
 польза рекомендаций на настоящей аудитории ещё не доказана.
 
-**Точный следующий шаг после восстановления GitHub.** Владелец должен подтвердить отправку эпика 3
-первым и отдельно разрешить production, если поручит выкатку агенту. Этот локальный мандат сам по себе
-не даёт будущего разрешения на публикацию или prod approval.
+**Поставка (2026-10-14).** [#E4PR](https://github.com/MattoYuzuru/Mnema/pull/E4PR) выкачен вместе с эпиком 3; запись событий, «Для вас» и каталог выключены.
 
-1. Восстановить доступ, fetch актуального main, проверить правила/миграции и чужие изменения.
-   Поставить эпик 3 до 4. Для эпика 3 сохранить порядок его handoff: #500/Community0 → #448 → #450 →
-   #449/#453/#454 backend → #501 styleguide → #451/#452 page → #453 profile → #454 console → #455
-   integration. Либо отдельный согласованный PR всего эпика 3. Каждый PR — обновлённая ветка,
-   полный gate, backend-quality/frontend-quality, resolved review threads и protected squash;
-   без force-push, обхода ruleset и прямого push main.
-2. После squash эпика 3 создать новую delivery-ветку эпика 4 от свежего main и перенести **только**
-   диапазон `f033d533..local/epic4` (смысловые коммиты Recs/1–4) либо подготовить последовательные PR:
-   контракт/политика + события → интересы/styleguide → рекомендации → проверка/evidence.
-   Не публиковать старую stacked-ветку с повторным diff эпика 3. Проверить полный delta и номера
-   V66–V71: собственные невлитые миграции при конфликте перенумеровать вместе с тест-инвентарём.
-   После каждого изменения и перед push — релевантный полный gate на точном коммите; перед merge
-   полный repository gate, свежий main и зелёные защищённые checks.
-3. Identity и Learning эпика 3 выкатить одним релизом (claims доверия); затем Learning эпика 4.
-   До одобрения `prod` установить актуальные `deploy/production/nginx.conf`, `compose.yaml` и
-   `init-database.sh` на хост. Nginx должен проксировать `/sitemap-decks.xml`; PostgreSQL18 nativeuuidv7,
-   pg_trgm/unaccent и V66+ обязательны. Не изменять влитые миграции. Поставка через Main CI по
-   [production delivery](../../../../operations/production-delivery.md), manual VPS job — только status/verify/rollback.
-4. Каталог и рекомендации включать отдельными проверенными шагами. Для каталога:
-   `LEARNING_COMMUNITY_CATALOG_ENABLED=true`, frontend `COMMUNITY_LAUNCHED=true`, `COMMUNITY_ROUTE`
-   в public-deck.text и sitemap строка robots. Правки 1.5 (общие цифры автора/каталог в соглашении)
-   уже входят в подготовленную **1.6**, поэтому две ступени текстов можно поставить одним релизом
-   без возврата версии. Дату `LEGAL_EFFECTIVE_DATE` **13 октября 2026** заменить датой релиза вместе
-   с legal-pages.spec. Затем проверить страницу политики, каталог/поиск/автора/sitemap.
-5. После того как 1.6 реально доступна, отдельно включить `LEARNING_COMMUNITY_EVENTS_ENABLED=true`,
-   проверить storage/maintenance/профиль/сброс, затем `LEARNING_COMMUNITY_FOR_YOU_ENABLED=true` и
-   полку/разнообразие/свои копии/объяснения. Запись и полка по умолчанию false; эти environment
-   строки добавить в production compose и установить на хост **до** соответствующего prod approval.
-   Повторить export/evaluation на сопоставимых анонимных production-логах, не утверждая causal lift.
-6. Опубликовать handoff/evidence в #421/#422 и задачах. Перевести завершённые #447–#459 в Done и
-   закрыть эпики #421/#422 только после merged/applied behavior и проверки поставки. #462 не делать
-   раньше **2026-10-24**, только в отдельно разрешённом GitHub/production scope. Не считать #409 закрытым.
-
-**Локальный стенд владельца.** Финальный runtime запускается из `local/epic4` после проверок, сохраняя
-`MNEMA_LOCAL_PROJECT_NAME=mnema-local-v2`, `MNEMA_LOCAL_STATE_DIR=/Users/yuzuru/.local/share/mnema/local-full-stack`,
-`MNEMA_LOCAL_OAUTH_ENV_FILE=/Users/yuzuru/Projects/Mnema/.env`. `MNEMA_NPD_RECEIPTS=OFF` обязателен.
-Для локальной пробы включены public-routes, forks, public-media, catalog, events, for-you и
-`MNEMA_LOCAL_COMMUNITY_LAUNCHED=true`; production defaults не включались. Тома не удаляются.
-После start — launcher smoke и providers endpoint (google/yandex/github). Результат финального запуска
-и source-bound receipt фиксируются в итоговом отчёте владельцу.
+**Оставшиеся шаги.**
+1. Каталог и тексты: `LEARNING_COMMUNITY_CATALOG_ENABLED=true`, frontend `COMMUNITY_LAUNCHED=true`, `COMMUNITY_ROUTE`
+   в public-deck.text и sitemap строка robots. Правки 1.5 (общие цифры автора/каталог в соглашении) уже входят в **1.6**;
+   дату `LEGAL_EFFECTIVE_DATE` **13 октября 2026** заменить датой релиза вместе с legal-pages.spec. Затем проверить
+   страницу политики, каталог/поиск/автора/sitemap.
+2. После того как 1.6 доступна: `LEARNING_COMMUNITY_EVENTS_ENABLED=true`, проверить storage/maintenance/профиль/сброс,
+   затем `LEARNING_COMMUNITY_FOR_YOU_ENABLED=true` и полку/разнообразие/свои копии/объяснения. Environment-строки
+   добавить в production compose и установить на хост **до** соответствующего prod approval. Повторить
+   export/evaluation на анонимных production-логах, не утверждая causal lift.
+3. Закрыть эпики #421/#422 после включения и проверки на production. #409 не закрыт.

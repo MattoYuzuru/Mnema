@@ -2,7 +2,7 @@
 artifact:
   id: onboarding-package
   type: navigator
-  title: "Onboarding: research, RFC, architecture and local backlog"
+  title: "Onboarding: research, RFC, architecture and backlog"
   status: accepted
   created_at: "2026-10-14"
   updated_at: "2026-10-14"
@@ -11,10 +11,10 @@ artifact:
 
 # Онбординг Mnema
 
-Локальный пакет по поручению владельца 2026-10-14: исследование онбордингов, RFC, архитектура,
-ADR, четыре эпика с задачами, промпты и решения владельца. GitHub недоступен, ничего не опубликовано
-и не реализовано. Решения приняты владельцем 2026-10-14 (`accepted`), задачи — в `Backlog`; соседний
-пакет того же локального бэклога — [learning core](../learning-core/README.md).
+Пакет по поручению владельца 2026-10-14: исследование онбордингов, RFC, архитектура,
+ADR, четыре эпика с задачами, промпты и решения владельца. Решения приняты владельцем 2026-10-14
+(`accepted`), ничего ещё не реализовано. Задачи опубликованы как Issues в Mnema Kanban (Backlog);
+номера — в [manifest](manifest.json). Соседний пакет — [learning core](../learning-core/README.md).
 
 ## Начать здесь
 
@@ -26,7 +26,7 @@ ADR, четыре эпика с задачами, промпты и решени
    [учебная колода](adr/adr-onb-003-sample-deck.md), [ритм](adr/adr-onb-004-rhythm.md),
    [награда](adr/adr-onb-005-path-reward.md).
 6. [Решения владельца](questions.md), [бэклог и оценки](backlog.md), [manifest](manifest.json),
-   [ход работ](progress.md), [промпты сессий и протокол handoff](prompts.md), [перенос на доску](github-import.md).
+   [ход работ](progress.md), [промпты сессий и протокол handoff](prompts.md).
 
 ## Эпики
 
@@ -44,11 +44,7 @@ ADR, четыре эпика с задачами, промпты и решени
 - Решения владельца 2026-10-14 ([questions](questions.md)) приняты; [RFC](rfc.md) — historical.
   Действующие контракты Study/community/usage/notifications и стайлгайд меняются вместе с реализацией
   соответствующего эпика, до этого они описывают текущее поведение.
-- Поручение «выполни сессию Sx» по [prompts](prompts.md) разрешает реализацию и локальные коммиты в
+- Поручение «выполни сессию Sx» по [prompts](prompts.md) разрешает реализацию и коммиты в
   её scope; delivery и production — только по root `AGENTS.md` и отдельному поручению.
-- Source pins: root `8f2b5522`, `local/epic4` `f4f5e636`; на старте реализации перепроверить.
-
-## Сохранность
-
-Пакет лежит в основном checkout рядом с learning core. До публикации сохранить его отдельным
-локальным commit/diff только этих файлов; не добавлять чужие untracked assets прототипа.
+- Карта кода составлена по коду эпиков Сообщества 3–4 до их слияния; на старте реализации
+  перепроверить пути и последнюю миграцию в свежем main.

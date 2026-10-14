@@ -24,8 +24,7 @@ competing copy.
 |---|---|---|
 | Exercise mechanics, wire shapes, evaluators, session modes, errors, fixtures | [`contracts/study/README.md`](../../contracts/study/README.md) and the JSON fixtures beside it (executed by backend and frontend tests) | `docs/system-overview.md` counts of mechanics, v1 review/scheduler code |
 | Why exercises and evidence work this way (objective vs exercise vs attempt, evidence classes, retention) | [Exercise catalog](../product/exercise-catalog-v2.md) | Epic refinements as backlog |
-| Proposed improvement of learning core, scientific critique, local task bodies | [Learning core backlog](./learning-core/README.md) (`proposed`; actual behavior still comes from Study) | Chat hypotheses as accepted requirements |
-| Which local checkout includes community epic3/4 and what is preserved | [Local workspace snapshot](../reviews/local-workspace-2026-10-13.md), then live Git refs/status | A directory name or cached main as live remote truth |
+| Proposed improvement of learning core, scientific critique, task bodies | [Learning core backlog](./learning-core/README.md) (`proposed`; actual behavior still comes from Study) | Chat hypotheses as accepted requirements |
 | Authoring, Capture («На потом»), drafts, Study modes, restart | [Authoring and Study workflows](../product/authoring-and-study-workflows.md) | UX refinement notes superseded by the contract |
 | Owner decisions and open questions | [Owner decisions](../decisions/owner-decisions-2026-08.md) | Reviews, research, launch hypotheses (`proposed`) |
 | Product direction, economics, legal | [`docs/product/`](../README.md#product): only `accepted` rows are requirements; `proposed` are hypotheses | |

@@ -5,7 +5,7 @@ artifact:
   title: "Mnema work item and pull request standard"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-10-13"
+  updated_at: "2026-10-14"
   owners: ["project-owner"]
 ---
 
@@ -186,20 +186,17 @@ PR отвечает на пять вопросов:
 
 ## Статусы
 
-### Локальный backlog при недоступном GitHub
+### Пакеты задач в документации
 
-Храните parent/child/spike bodies в документации с `artifact.status: proposed`,
-стабильными local IDs и manifest локальных dependencies. Не придумывайте GitHub numbers,
-не ставьте Ready/Done за подготовленный файл. Actual implementation/status/evidence
-фиксируются отдельно от исследовательского предложения.
+Большой пакет эпиков можно подготовить в документации: parent/child/spike bodies с
+`artifact.status: proposed`, стабильными local IDs и manifest dependencies. Не придумывайте
+GitHub numbers и не ставьте Ready/Done за подготовленный файл.
 
-При явном поручении перенести backlog: прочитать live repository/Project/status fields,
-найти существующие issues по ID/outcome, создать или обновить bodies без дубликатов,
-связать parents/dependencies, сохранить mapping ID→URL/number и проверить read-back.
-Unknown creation outcome сначала разрешается read/deduplication, не повторным create.
-Доступ к GitHub сам по себе не является разрешением публиковать, реализовывать или выкатывать.
-Пример: [learning core package](./learning-core/README.md),
-[import workflow](./learning-core/github-import.md).
+Публикация пакета: прочитать live repository/Project/status fields, найти существующие issues
+по ID/outcome, создать или обновить bodies без дубликатов, связать parents/dependencies,
+сохранить mapping ID→number в manifest и проверить read-back. Unknown creation outcome
+сначала разрешается read/deduplication, не повторным create. После публикации источник
+статуса — Issue и Project, а не manifest. Пример: [learning core package](./learning-core/README.md).
 
 ### Значения статусов
 

@@ -23,13 +23,9 @@ epics/observations.md и tasks/lc-101.md…lc-104.md. Принимаю реко�
 proposal.md для этого эпика; новый scheduler/classifier/production rollout сюда не входят.
 Работай автономно до результата и необходимых checks, максимум с двумя саб-агентами одновременно.
 
-Начни с AGENTS.md, backend/AGENTS.md, docs/README.md, work-item-standard.md и
-docs/reviews/local-workspace-2026-10-13.md. Не удаляй локальные worktrees/assets и не сбрасывай их.
-Корневой checkout на момент плана b45cc99a был старой docs-веткой; local/epic4 f4f5e636 включал
-local/epic3 f033d533 и cached origin/main ae556ece. Эти pins исторические: проверь actual refs.
-Если GitHub недоступен, используй latest coherent local integration с lineage и V59, создай
-изолированную рабочую ветку от проверенной базы. Если доступ есть, read свежий main и pending
-эпики; не теряй их изменения, не публикуй повторные diff после squash. Не меняй main напрямую.
+Начни с AGENTS.md, backend/AGENTS.md, docs/README.md и work-item-standard.md.
+Не удаляй и не сбрасывай чужие worktrees/assets. Сделай fetch и создай изолированную ветку
+от свежего origin/main в отдельном worktree. Не меняй main напрямую.
 
 Сохрани компактную exact history terminal attempts/условий до snapshot purge, отличай observation
 от canonical evidence. PRACTICE/REPLAY не получают due/streak/StudyState credit. Backfill bounded,
@@ -44,12 +40,12 @@ Runtime owner один; retained mnema-local-v2 не перезапускай к
 Перед делегированием передай resolved instruction/skill paths, checkout/HEAD, tool versions,
 Docker endpoint, lock resource, report scope и ownership, не секреты.
 
-Реализация и локальная проверка/commit входят в поручение. Пока отдельного поручения о delivery
-нет, не push/создавай PR/меняй доску/merge/prod approval. GitHub outage не мешает локальному outcome.
+Реализация, проверка и commit входят в поручение; push, PR, статусы доски и merge — по root
+AGENTS.md в рамках названного поручения, production и prod approval — только по явному поручению.
 Проведи независимый review, исправь findings, выполни full gate exact source и миграционную
 репетицию, сохрани source-bound receipts. Не называй написанный код доказательством memory gain.
 Заверши self-contained handoff: HEAD/base/diff, AC, gate results, migration/rollback, непроверенное,
-local complete или delivery pending, следующий конкретный шаг. Если новая сессия нужна,
+статус Issue, следующий конкретный шаг. Если новая сессия нужна,
 продолжение должно быть возможно без истории этого чата.
 ```
 
@@ -63,8 +59,8 @@ docs/engineering/learning-core/README.md, epics/representative-practice.md и ta
 Сначала проверь latest source и доказательство LC-E1: compact observation capture/backfill/TTL
 готовы, migration и локальные gates подтверждены. Если LC-E1 лишь написан в документах,
 сначала выполни его необходимую зависимость, не выдумывай завершение. Прочитай AGENTS/scoped,
-work-item-standard, local-workspace audit, current-model, proposal/research/migration.
-Не удаляй worktrees/локальные результаты, не теряй community эпики 3/4.
+work-item-standard, current-model, proposal/research/migration.
+Не удаляй чужие worktrees и локальные результаты.
 
 Сделай bounded versioned rotation eligible вариантов одной explicit цели: объективный cursor
 по inventory, no starving prefix, exact resume/retry и REPLAY source order. Сохрани budgets,
@@ -83,20 +79,6 @@ Progress denominator — distinct enabled objectives. Добавление па�
 Один runtime owner, workstation-dev и shared heavy lock на текущем Mac. Не трогай retained volumes.
 Обязательны real-DB regression, critical components, actual browser desktop/mobile/keyboard и full gate;
 не называй jsdom реальным screen-reader тестом. Independent review исправляется до final gate.
-В этом поручении разрешены local implementation/checks/commit; remote delivery и production отдельно.
+Реализация, проверка и commit входят в поручение; push/PR/доска/merge — по root AGENTS.md, production отдельно.
 Заверши handoff с actual source pins, AC/evidence/limitations/rollback и next issue.
 ```
-
-## Публикация локального бэклога
-
-```text
-Доступ к GitHub восстановлен. Опубликуй локальный backlog улучшения core из
-docs/engineering/learning-core/manifest.json по github-import.md и work-item-standard.md.
-Сначала проверь repository/project/status fields и существующие задачи, не создавай дубликаты.
-Создай/свяжи два parent epics и child issues, сохрани mapping local ID → URL/number и dependencies.
-Оставь Backlog всё, что не прошло Definition of Ready; исследования не выдавай за реализацию.
-Не начинай implementation, merge или production в рамках публикации бэклога.
-```
-
-«Доступ вернулся» без просьбы публиковать означает возможность read, не standing permission
-на любые внешние mutations. Иной явно названный delivery mandate применяется по root AGENTS.

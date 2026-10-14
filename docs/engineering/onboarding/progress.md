@@ -2,7 +2,7 @@
 artifact:
   id: onboarding-progress-ledger
   type: status-ledger
-  title: "Onboarding: local progress ledger and handoff index"
+  title: "Onboarding: progress ledger and handoff index"
   status: current
   created_at: "2026-10-14"
   updated_at: "2026-10-14"
@@ -11,8 +11,8 @@ artifact:
 
 # Ход работ по онбордингу
 
-Единственное место, где сессии отмечают фактический локальный статус задач. `manifest.json` хранит
-статус доски (`Backlog`) и GitHub mapping; этот файл — что реально сделано и где доказательства.
+Единственное место, где сессии отмечают фактический локальный статус задач. Статус задачи на доске — в её Issue
+(Mnema Kanban, номера в `manifest.json`); этот файл — что реально сделано и где доказательства.
 Каждая сессия **в начале** сверяет таблицу с кодом и handoff предыдущей сессии, **в конце** обновляет
 её одним коммитом вместе с handoff. Значения: `not started`, `in progress`, `blocked: <причина>`,
 `local complete, delivery pending`, `merged`, `deployed` (два последних — только по факту на GitHub/prod).
@@ -21,9 +21,9 @@ artifact:
 
 | Поле | Значение |
 |---|---|
-| Пакет документов | `docs/engineering/onboarding/` (создан в root checkout, ветка `codex/learning-core-backlog`, 2026-10-14) |
+| Пакет документов | `docs/engineering/onboarding/` (в main) |
 | Ветка реализации | ещё не создана |
-| База ветки | ещё не выбрана (ожидается main с эпиками Сообщества 3–4 или `local/epic4`) |
+| База ветки | свежий `main` (эпики Сообщества 3–4 в нём) |
 | Последний handoff | — |
 
 ## Статус задач
