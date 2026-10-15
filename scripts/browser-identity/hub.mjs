@@ -131,6 +131,7 @@ export async function runHub(ctx) {
       mechanics: [...root.querySelectorAll('.mechanic-labels strong')].map(e => Number(e.textContent)),
       states: [...root.querySelectorAll('.legend strong')].map(e => Number(e.textContent)),
       days: [...root.querySelectorAll('.day-labels strong')].map(e => Number(e.textContent)),
+      captures: Number(root.querySelector('.captures-widget .donut-number strong')?.textContent),
       coverage: root.querySelector('.coverage-widget figcaption')?.textContent.replace(/\\s+/g, ' ').trim(),
       tables: root.querySelectorAll('table, details').length, actions: root.querySelectorAll('.action, a').length };`);
   const figures = () => page(`return [...document.querySelectorAll('app-deck-insights figure')].map(figure => {
@@ -160,6 +161,7 @@ export async function runHub(ctx) {
     need(JSON.stringify(shown.states) === JSON.stringify(Object.keys(STATE_LABELS).map(key => insights.states[key])), label + ': states differ');
     need(JSON.stringify(shown.days) === JSON.stringify(insights.dueByDay.map(day => day.materials)), label + ': due days differ');
     need(shown.coverage.includes(`С упражнениями ${insights.coverage.withExercises} из ${insights.coverage.total} `), label + ': coverage differs');
+    need(shown.captures === insights.captures.open, label + ': captures differ');
     return insights;
   }
 
@@ -262,6 +264,8 @@ export async function runHub(ctx) {
     await realClick('app-reading-frame a[rel="next"]');
     await waitFor(async () => (await sanitizedLocation(tab)).endsWith(readingKey)
       && await bodyIncludes('Материал 2', tab), 'next link did not reload the reused material route');
+    await waitFor(() => page(`return document.activeElement === document.querySelector('app-browse-page h1');`),
+      'material route reuse did not focus its new heading');
     for (const width of [1440, 1200, 1050, 390]) {
       await metrics({ width, height: 900, deviceScaleFactor: 1, mobile: width === 390 });
       await renderSettled();
@@ -302,7 +306,11 @@ export async function runHub(ctx) {
     need(await page(`const group = document.querySelector('app-deck-insights .widgets');
       const mechanics = group.querySelector('.mechanics-widget').getBoundingClientRect();
       const coverage = group.querySelector('.coverage-widget').getBoundingClientRect();
+      const bottom = ['.states-widget', '.due-widget', '.captures-widget'].map(selector => group.querySelector(selector).getBoundingClientRect());
       return Math.abs(mechanics.top - coverage.top) <= 1 && mechanics.width > coverage.width * 1.8
+        && bottom.every(rect => Math.abs(rect.top - bottom[0].top) <= 1 && rect.top > Math.max(mechanics.bottom, coverage.bottom))
+        && Math.abs(bottom[0].left - mechanics.left) <= 1 && bottom[0].right < bottom[1].left && bottom[1].right < bottom[2].left
+        && Math.abs(bottom[2].right - coverage.right) <= 1
         && [...group.querySelectorAll('.widget')].every(e => parseFloat(getComputedStyle(e).borderTopWidth) === 0);`),
       'statistics must share one surface with a double-width mechanics chart');
     const insights = await assertFiguresMatchApi('initial statistics');
