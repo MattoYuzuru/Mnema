@@ -160,6 +160,8 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         // materials
         rows.add(Row.of("GET /decks/{deckId}/items", w -> get("/decks/" + w.deck().id() + "/items")));
         rows.add(Row.of("GET /decks/{deckId}/items/{memberKey}", w -> get("/decks/" + w.deck().id() + "/items/" + w.deck().material().member())));
+        rows.add(Row.of("GET /decks/{deckId}/items/{memberKey}/navigation",
+                w -> get("/decks/" + w.deck().id() + "/items/" + w.deck().material().member() + "/navigation")));
         rows.add(Row.of("POST /decks/{deckId}/items", w -> {
             ObjectNode body = command().put("expectedDeckRevisionId", w.deckRevision().toString());
             body.set("document", w.document().deepCopy());
