@@ -26,6 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 
 /**
@@ -62,19 +63,26 @@ public final class SemanticGrader implements SemanticAssessmentProvider, AutoClo
     private final PromptAssembler prompts;
     private final UserKeys userKeys;
     private final boolean stub;
+    private final LongSupplier nanoTime;
     private final ExecutorService runs = Executors.newVirtualThreadPerTaskExecutor();
 
     /** @param stub true when the text port is the Stub: a missing user-key secret is then fine (a fixed non-secret key is used) */
     public SemanticGrader(TextGeneration text, PromptAssembler prompts, UserKeys userKeys, boolean stub) {
+        this(text, prompts, userKeys, stub, System::nanoTime);
+    }
+
+    // Keep deadline tests independent of prompt warm-up and virtual-thread scheduling.
+    SemanticGrader(TextGeneration text, PromptAssembler prompts, UserKeys userKeys, boolean stub, LongSupplier nanoTime) {
         this.text = text;
         this.prompts = prompts;
         this.userKeys = userKeys;
         this.stub = stub;
+        this.nanoTime = nanoTime;
     }
 
     @Override
     public GradeOutcome grade(GradeRequest request) {
-        long started = System.nanoTime();
+        long started = nanoTime.getAsLong();
         TextRequest base;
         try {
             base = baseRequest(request);
@@ -97,11 +105,11 @@ public final class SemanticGrader implements SemanticAssessmentProvider, AutoClo
         }
         if (failure != null) {
             LOG.info("semantic_grade attempt_id={} runs={} outcome=UNAVAILABLE reason={} latency_ms={}", request.attemptId(),
-                    request.runs(), failure, Duration.ofNanos(System.nanoTime() - started).toMillis());
+                    request.runs(), failure, Duration.ofNanos(nanoTime.getAsLong() - started).toMillis());
             return new GradeOutcome.Unavailable(failure);
         }
         LOG.info("semantic_grade attempt_id={} runs={} outcome=GRADED latency_ms={}", request.attemptId(), request.runs(),
-                Duration.ofNanos(System.nanoTime() - started).toMillis());
+                Duration.ofNanos(nanoTime.getAsLong() - started).toMillis());
         return new GradeOutcome.Graded(graded);
     }
 
@@ -124,8 +132,8 @@ public final class SemanticGrader implements SemanticAssessmentProvider, AutoClo
         return new Pass(null, "INVALID_OUTPUT");
     }
 
-    private static Duration remaining(GradeRequest request, long started) {
-        Duration left = request.deadline().minus(Duration.ofNanos(System.nanoTime() - started));
+    private Duration remaining(GradeRequest request, long started) {
+        Duration left = request.deadline().minus(Duration.ofNanos(nanoTime.getAsLong() - started));
         return left.isNegative() ? Duration.ZERO : left;
     }
 

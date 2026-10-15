@@ -5,6 +5,7 @@ import app.mnema.learning.library.LanguageDetector;
 import app.mnema.learning.library.TopicDirectory;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -53,6 +54,7 @@ class CatalogScaleIntegrationTest extends IsolatedCatalogDatabase {
     @Autowired private CatalogRanks ranks;
     @Autowired private TopicDirectory topics;
 
+    @BeforeEach
     @AfterEach
     void clean() {
         reset(jdbc);

@@ -127,6 +127,14 @@ coverage remains in `ItemServiceIntegrationTest`; real edits, forks and update c
 production operations. Historical operation timings in the Learning guide are not fixture
 construction timings and are not rewritten as new measurements.
 
+Catalogue scale measurements reset their feature tables before as well as after
+each scenario; class order and a previous scheduler's rank generation cannot change the dataset.
+Semantic-grading deadline tests advance an injected monotonic nanosecond source through the
+provider call, asserting both that no repair starts after expiry and that an already expired
+budget starts no call. Production still uses `System.nanoTime`, the elapsed-time source specified
+by [Java 25](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/System.html#nanoTime()).
+No deadline or query-performance threshold is relaxed.
+
 References deciding the mechanism: [Gradle test processes](https://docs.gradle.org/current/userguide/java_testing.html#sec:test_execution),
 [Spring parallel-test constraints](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/parallel-test-execution.html),
 [JUnit discovery](https://docs.junit.org/current/api/org.junit.platform.launcher/org/junit/platform/launcher/core/LauncherFactory.html),
