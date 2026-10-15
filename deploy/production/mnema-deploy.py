@@ -92,7 +92,7 @@ CONFIG_FILES = {
 # Application configuration CI may set from GitHub Environment `prod` secrets
 # (PROD_<NAME> -> <NAME>). Mirrored in app-config.keys for CI and docs; a test keeps both
 # equal. Adding a name is a reviewed PR plus an administrator-installed dispatcher.
-# Media keys (Yandex static access keys) are here; future AI keys belong here too, never as a pattern or wildcard.
+# Provider keys stay explicit and reach Learning only; they never change Compose structure.
 APP_ENV_NAMES = (
     'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY',
     'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
@@ -107,6 +107,14 @@ APP_ENV_NAMES = (
     'MNEMA_BILLING_CHECKOUT', 'MNEMA_BILLING_TESTER_ACCOUNT_IDS',
     'MNEMA_TBANK_TERMINAL_KEY', 'MNEMA_TBANK_PASSWORD_BASE64',
     'MNEMA_NPD_RECEIPTS', 'MNEMA_NPD_INN', 'MNEMA_NPD_PASSWORD_BASE64',
+    'MNEMA_AI_DEEPSEEK_API_KEY',
+    'MNEMA_AI_OPENROUTER_API_KEY',
+    'MNEMA_AI_GOOGLE_API_KEY',
+    'MNEMA_AI_PIXABAY_API_KEY',
+    'MNEMA_AI_OPENVERSE_CLIENT_ID',
+    'MNEMA_AI_OPENVERSE_CLIENT_SECRET',
+    'MNEMA_AI_YANDEX_SEARCH_API_KEY',
+    'MNEMA_AI_YANDEX_FOLDER_ID',
 )
 TURNSTILE_MODES = ('blocked', 'required')
 BILLING_CHECKOUT_MODES = ('OFF', 'TESTERS', 'ON')
