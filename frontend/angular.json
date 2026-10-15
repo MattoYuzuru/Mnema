@@ -58,6 +58,7 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "runner": "vitest",
+        "isolate": true,
             "buildTarget": "::development",
             "tsConfig": "tsconfig.spec.json",
             "runnerConfig": "vitest.config.mts",
