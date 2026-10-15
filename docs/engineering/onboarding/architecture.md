@@ -83,6 +83,8 @@ CREATE TABLE onboarding_journey (
   offered_at      timestamptz NOT NULL,
   finished_at     timestamptz NULL,
   replay_count    smallint    NOT NULL DEFAULT 0,
+  weeks_met       smallint    NOT NULL DEFAULT 0,  -- §7, OB-401
+  last_met_week   date        NULL,                -- понедельник последней засчитанной недели
   row_version     bigint      NOT NULL DEFAULT 0,
   updated_at      timestamptz NOT NULL
 );
