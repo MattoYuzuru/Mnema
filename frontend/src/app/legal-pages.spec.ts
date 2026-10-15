@@ -23,8 +23,8 @@ describe('Personal data policy page', () => {
         const root = render(PrivacyPageComponent);
         expect(text(root.querySelector('h1'))).toBe('Политика обработки персональных данных');
         expect(text(root.querySelector('.last-updated'))).toContain(LEGAL_EFFECTIVE_DATE);
-        // 1.4: shared and public decks, complaints; 1.3: plain-language edit; 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
-        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 11 октября 2026 · версия 1.4');
+        // 1.6: interests and recommendations; 1.5: catalogue and author aggregates; 1.4: shared and public decks, complaints; 1.3: plain-language edit; 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
+        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 15 октября 2026 · версия 1.6');
         expect(root.querySelector('.legal-page')?.getAttribute('lang')).toBe('ru');
         const block = text(root.querySelector('app-legal-operator-block'));
         for (const value of [LEGAL_OPERATOR.name, LEGAL_OPERATOR.inn, LEGAL_OPERATOR.ogrnip, LEGAL_OPERATOR.email]) expect(block).toContain(value);
@@ -61,10 +61,11 @@ describe('Personal data policy page', () => {
         }
     });
 
-    it('states truthfully that AI functions are not provided, that consent is not a precondition and that no analytics runs', () => {
+    it('states truthfully that AI functions are not provided, that consent is not a precondition and that no tracking cookies are used', () => {
         const body = text(render(PrivacyPageComponent));
         expect(body).toContain('не предоставляются');
-        expect(body).toContain('не применяет аналитику');
+        expect(body).toContain('Рекламных и отслеживающих cookie нет');
+        expect(body).toContain('Действия в Сообществе учитываются на сервере');
         expect(body).toContain('Самостоятельное удаление аккаунта в интерфейсе пока не включено');
         expect(body).toContain('10 рабочих дней');
         expect(body).not.toMatch(/DeepSeek|OpenRouter|Gemini|GigaChat/);
@@ -103,17 +104,22 @@ describe('Personal data policy page', () => {
         expect(text(heading)).toBe('15. Публичный профиль и колоды сообщества');
         const section = heading.closest('section')!;
         expect(section.getAttribute('aria-labelledby')).toBe('public-profile');
-        // the paragraphs of the features that exist: the public profile, shared decks and complaints; recommendations ship with their task
-        expect(section.querySelectorAll('p')).toHaveLength(3);
+        // Public profile, shared decks, recommendations and complaints.
+        expect(section.querySelectorAll('p')).toHaveLength(4);
         const paragraph = text(section);
         for (const phrase of ['Профиль виден другим, только если вы включили его в настройках.', 'Тогда всем показывается ваш логин и то, что вы отметили: имя, фото, «О себе».',
             'ст. 10.1 152-ФЗ', 'Оно действует до отзыва', 'данные показываются только на mnema.app', 'другие цели и передача третьим лицам запрещены',
             'Отозвать согласие можно переключателем в профиле или письмом оператору: показ прекращается сразу.']) expect(paragraph).toContain(phrase);
         for (const phrase of ['Колоды, которыми вы делитесь.', 'только вы, все, у кого есть ссылка, приглашённые люди или все пользователи',
             'Ни ваши ответы, ни прогресс, ни имена учеников автору не показываются.', 'Жалобы.', 'мы храним вашу жалобу, аккаунт и решение по ней до 3 лет']) expect(paragraph).toContain(phrase);
-        // author statistics and recommendations are not built yet: their sentences ship with them
-        expect(paragraph).not.toContain('общие цифры');
-        expect(paragraph).not.toContain('Сообщество и рекомендации');
+        // The approved catalogue and recommendations wording ships locally with epic 4.
+        expect(paragraph).toContain('общие цифры');
+        expect(paragraph).toContain('Сообщество и рекомендации');
+        expect(paragraph).toContain('до 13 месяцев');
+        expect(paragraph).toContain('Интересы можно посмотреть и сбросить в профиле');
+        expect(paragraph).toContain('Содержимое ваших личных колод для рекомендаций не используется');
+        expect(text(root)).toContain('Действия в Сообществе');
+        expect(text(root)).toContain('Учебная цель: подсказки, рекомендация тарифа и подбор колод');
         const purposes = text(root.querySelector('#purposes')!.closest('section'));
         expect(purposes).toContain('Рассмотрение жалоб на колоды и профили');
         expect(purposes).toContain('До 3 лет с подачи жалобы');
@@ -133,12 +139,12 @@ describe('Personal data policy page', () => {
         const dataTable = tables.find(table => text(table.querySelector('caption')).startsWith('Категории'))!;
         expect([...dataTable.querySelectorAll('thead th')].map(header => text(header))).toEqual(['Категория', 'Состав', 'Источник']);
         expect([...dataTable.querySelectorAll('tbody th')].map(header => text(header))).toEqual(['Данные аккаунта', 'Вход через стороннего провайдера', 'Профиль', 'Учебные данные',
-            'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Жалобы', 'Обращения в поддержку']);
+            'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Действия в Сообществе', 'Интересы', 'Жалобы', 'Обращения в поддержку']);
         const purposes = tables.find(table => text(table.querySelector('caption')).startsWith('Цели'))!;
-        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(10);
+        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(11);
         for (const row of purposes.querySelectorAll('tbody tr')) expect(row.querySelectorAll('td'), text(row)).toHaveLength(3);
         const purposeText = text(purposes);
-        for (const purpose of ['Регистрация, вход, ведение аккаунта и профиля', 'Работа сервиса', 'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки и рекомендация тарифа',
+        for (const purpose of ['Регистрация, вход, ведение аккаунта и профиля', 'Работа сервиса', 'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки, рекомендация тарифа и подбор колод', 'Подбор подходящих колод и проверка рекомендаций',
             'Безопасность', 'Служебные письма', 'Поддержка и обратная связь', 'Рассмотрение жалоб на колоды и профили', 'Резервное копирование и восстановление', 'Выполнение требований закона']) expect(purposeText).toContain(purpose);
         // legal bases per purpose, and the periods of the table
         for (const basis of ['п. 5 ч. 1 ст. 6', 'п. 7 ч. 1 ст. 6', 'п. 2 ч. 1 ст. 6']) expect(purposeText).toContain(basis);
@@ -244,8 +250,8 @@ describe('Terms of service page', () => {
         for (const phrase of ['По умолчанию колода видна только вам.', 'бесплатно разрешаете им смотреть её в Mnema и добавлять себе копию',
             'Вне Mnema ваши материалы этим разрешением не распространяются.', 'лицензией, запрещающей коммерческое использование (NC)',
             'Мы рассматриваем жалобу в течение 30 дней', 'он скрывается и в копиях, где не был изменён']) expect(section('sharing')).toContain(phrase);
-        // the catalog and the author page are epic 3: their sentence ships with them
-        expect(section('sharing')).not.toContain('Сообщество» и в вашем профиле');
+        // The catalogue enabling text is prepared with the recommendations release.
+        expect(section('sharing')).toContain('Сообщество» и в вашем профиле');
         expect(section('liability')).toContain('ст. 400 ГК РФ');
         expect(section('liability')).toContain('Наша ответственность ограничена реальным ущербом');
         expect(section('law')).toContain('в течение 30 дней');

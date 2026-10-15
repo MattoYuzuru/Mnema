@@ -2,3 +2,4 @@ User-agent: *
 Allow: /
 
 Sitemap: https://mnema.app/sitemap.xml
+Sitemap: https://mnema.app/sitemap-decks.xml

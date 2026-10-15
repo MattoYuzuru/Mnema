@@ -467,11 +467,13 @@ describe('PublicDeckPageComponent', () => {
     describe('access screens', () => {
         const screen = () => root().querySelector('app-access-screen section.access');
 
-        it('says «Колода не найдена» for a deck that is not there, with no Community link yet', async () => {
+        it('says «Колода не найдена» for a deck that is not there and points to the Community catalogue', async () => {
             api.summary.mockReturnValue(throwError(() => new PublicDeckFailure('not-found')));
             await open(`/d/${PUBLIC.code}`);
             expect(screen()?.querySelector('h1')?.textContent).toBe('Колода не найдена');
-            expect(screen()?.querySelector('.message')?.textContent?.replace(/\s+/gu, ' ').trim()).toBe('Такой колоды нет, или автор её скрыл. Проверьте ссылку.');
+            expect(screen()?.querySelector('.message')?.textContent?.replace(/\s+/gu, ' ').trim())
+                .toBe('Такой колоды нет, или автор её скрыл. Проверьте ссылку или поищите похожие в Сообществе.');
+            expect(screen()?.querySelector('.message a')?.getAttribute('href')).toBe('/community');
             expect(screen()?.querySelector('.actions a')?.getAttribute('href')).toBe('/');
             expect(meta('robots')?.content).toBe('noindex');
             expect(document.activeElement).toBe(screen()?.querySelector('h1'));
