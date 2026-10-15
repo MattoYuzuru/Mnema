@@ -25,7 +25,7 @@ The [complete candidate report](./candidate-v2-report.md) and [JSON](./candidate
 cover all 300 generation fixtures (80 notes, 80 prompts, 60 edits, 80 exercises), including 90
 held-out cases. The production text route was tested with candidate prompt **v2** and
 `golden-rubric-v3`; both acceptance judges answered every fixture. Active runtime prompts remain
-**v1**. Neither a new prompt activation nor a human-reviewed quality gate is claimed.
+**v1**. The machine report alone claims neither a new prompt activation nor a human-reviewed quality gate; the owner attestation dated 2026-10-15 above updates the human-review status.
 
 | Measure | Result |
 |---|---:|
@@ -59,7 +59,7 @@ This corpus covers short, synthetic text inputs, not media, large decks, long so
 production usage/queue behavior or real-user acceptance. The database/role/retention behavior
 is verified separately by integration tests. Judge opinions still need owner calibration.
 
-## Owner evidence still required
+## Historical owner-review handoff (accepted by the owner on 2026-10-15)
 
 The owner review files live outside the repository, in `~/.local/share/mnema/epic-77-run5-eval/`: `owner-calibration-review.md` (the review itself) and
 `calibration-extra/report.json` (the 20 additional cases and their judge opinions); the candidate report is in this directory. The `owner-calibration-review.md` deliverable contains **60 unique cases**: the balanced

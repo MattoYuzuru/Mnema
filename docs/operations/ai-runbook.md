@@ -11,9 +11,10 @@ the golden eval of the [eval gate](#8-eval-gate-before-changing-a-model-route-or
 ## Production admission — 15 October 2026
 
 The owner confirmed the required RKN approvals and the quality review in the launch chat on
-2026-10-15. Production enables the implemented generation, assessment, speech, image-search and
+2026-10-15. Production enables the implemented generation, assessment, text-to-speech, image-search and
 web-search capability switches. Each still requires a configured provider; the launch does not
-invent missing Yandex Search credentials. Image/video generation remain unavailable. Operational
+invent missing Yandex Search credentials. ABROAD speech-to-text stays off pending the explicit owner decision on original audio described
+in the product contract §6. Image/video generation remain unavailable. Operational
 kill switches, per-account allowances, provider budgets and individual voice consent remain.
 Prompt **v1** and the existing model routes are unchanged; this admission does not activate v2.
 
