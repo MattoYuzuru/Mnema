@@ -3,8 +3,8 @@ import { TestBed } from '@angular/core/testing';
 import { COMMUNITY_LAUNCH, COMMUNITY_LAUNCHED, isCommunityLaunched } from './community-launch';
 
 describe('community launch flag', () => {
-    it('is off until the enabling pull request of the epic flips it, and the token carries the constant', () => {
-        expect(COMMUNITY_LAUNCHED).toBe(false);
+    it('is on since the catalogue launch, and the token carries the constant', () => {
+        expect(COMMUNITY_LAUNCHED).toBe(true);
         expect(TestBed.inject(COMMUNITY_LAUNCH)).toBe(COMMUNITY_LAUNCHED);
     });
 

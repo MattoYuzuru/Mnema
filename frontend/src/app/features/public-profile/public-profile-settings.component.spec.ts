@@ -129,7 +129,7 @@ describe('PublicProfileSettingsComponent', () => {
         await open();
         const order = [...root.querySelectorAll<HTMLElement>('input, a, button')];
         expect(order.map(element => element.tagName === 'A' ? 'link' : (element as HTMLInputElement).closest('label')!.textContent!.trim()))
-            .toEqual(['Показывать мой профиль другим', 'Имя', 'Фото', 'О себе', 'link']);
+            .toEqual(['Показывать мой профиль другим', 'Имя', 'Фото', 'О себе', 'link', 'link']);
         expect(order.every(element => element.getAttribute('tabindex') === null)).toBe(true);
         expect(root.querySelector('input[role=switch]')?.getAttribute('type')).toBe('checkbox');
         expect([...root.querySelectorAll<HTMLInputElement>('.check-row input')].every(input => !input.disabled)).toBe(true);

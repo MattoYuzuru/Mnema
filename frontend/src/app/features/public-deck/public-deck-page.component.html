@@ -6,13 +6,7 @@
     }
     @case ('not-found') {
       <app-access-screen heading="Колода не найдена" eyebrow="Колода">
-        <p>Такой колоды нет, или автор её скрыл.
-          @if (communityRoute; as community) {
-            Проверьте ссылку или поищите похожие в <a [routerLink]="community">Сообществе</a>.
-          } @else {
-            Проверьте ссылку.
-          }
-        </p>
+        <p>Такой колоды нет, или автор её скрыл. Проверьте ссылку или поищите похожие в <a [routerLink]="communityRoute">Сообществе</a>.</p>
         <a access-actions class="button" routerLink="/">На главную</a>
       </app-access-screen>
     }

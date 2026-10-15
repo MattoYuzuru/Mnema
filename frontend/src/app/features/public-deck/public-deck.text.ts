@@ -14,12 +14,8 @@ export function waitText(retryAfter: number | null): string {
     return retryAfter === null ? 'Подождите немного и повторите.' : `Подождите ${retryAfter} с и повторите.`;
 }
 
-/**
- * The «Сообществе» link of the «Колода не найдена» screen. The Community catalogue is epic 3 and has no route yet, so the
- * sentence «…или поищите похожие в Сообществе» is left out until it does.
- * TODO(Community catalogue epic): set the route (for example '/community') when it exists.
- */
-export const COMMUNITY_ROUTE: string | null = null;
+/** The «Сообществе» link of the «Колода не найдена» screen: the community catalogue. */
+export const COMMUNITY_ROUTE = '/community';
 
 /** The label of an exercise type, for the preview list; a mechanic newer than this client is just «Упражнение». */
 export const EXERCISE_FALLBACK_LABEL = 'Упражнение';

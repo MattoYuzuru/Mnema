@@ -42,7 +42,7 @@ artifact:
 | Ссылки и превью без SSR (§9, CD-10) | Реализовано; `/u/{username}` и `/sitemap-decks.xml` — эпик 3 | Share/11, 14, Community/6, 7 |
 | Жалобы, скрытие, юридическое снятие (§11) | Реализовано; очистка через 3 года не написана ([#409](https://github.com/MattoYuzuru/Mnema/issues/409)) | Share/15; `V58` |
 | Обновления копий (§7, CD-5) | Реализовано; автоприём выключен выключателем | эпик 2: Updates/1–6; `V60`, `V61`, `V63`–`V65` |
-| Каталог, поиск, ранг (§10, CD-7, CD-8) | Реализовано в эпике 3 ([#502](https://github.com/MattoYuzuru/Mnema/pull/502)), выкачено выключенным: `learning.community.catalog.enabled` | Community/0–3; `V66`–`V69` |
+| Каталог, поиск, ранг (§10, CD-7, CD-8) | Реализовано в эпике 3 ([#502](https://github.com/MattoYuzuru/Mnema/pull/502)), включено в production вместе с политикой 1.6: `learning.community.catalog.enabled` | Community/0–3; `V66`–`V69` |
 | Интересы, события, «Для вас» (§10, CD-8) | Реализовано в эпике 4 ([#541](https://github.com/MattoYuzuru/Mnema/pull/541)), выкачено выключенным; проверки в evidence | эпик 4: Recs/1–4; V70–V71 |
 | Кабинет: флаги аномалий и «Выбор Мнемы» (§11) | Реализовано в эпике 3 | Community/3, 7; `V68`, `V69` |
 

@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { NEVER, Subject, of, throwError } from 'rxjs';
@@ -51,6 +52,8 @@ describe('ProfilePageComponent', () => {
                 { provide: PlansApiService, useValue: { load: () => NEVER } },
                 { provide: SpeechInputApiService, useValue: { withdrawConsent: () => of(undefined) } },
                 { provide: AuthService, useValue: {
+                        status: signal('authenticated'),
+                        user: signal(null),
                         restore: vi.fn().mockResolvedValue(undefined),
                         setPassword: vi.fn().mockName("AuthService.setPassword")
                     } }

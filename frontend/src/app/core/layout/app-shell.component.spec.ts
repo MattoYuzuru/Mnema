@@ -69,7 +69,7 @@ describe('AppShellComponent', () => {
         expect(root.querySelectorAll('main').length).toBe(1);
         expect(root.querySelector<HTMLAnchorElement>('.skip-link')?.getAttribute('href')).toBe('#main-content');
         expect(Array.from(root.querySelectorAll('.primary-nav a')).map(link => link.getAttribute('href')))
-            .toEqual(['/decks', '/decks/new', '/profile']);
+            .toEqual(['/decks', '/community', '/decks/new', '/profile']);
         expect(root.textContent).not.toContain('Начать обучение');
     });
 
