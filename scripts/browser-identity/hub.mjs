@@ -122,7 +122,8 @@ export async function runHub(ctx) {
       count: region.querySelector('.count')?.textContent.replace(/\\s+/g, ' ').trim() ?? null,
       buttons: [...region.querySelectorAll('button')].map(button => button.textContent.replace(/\\s+/g, ' ').trim()),
       sticky: getComputedStyle(host).position === 'sticky', insideViewport: rect.top >= 0 && rect.bottom <= innerHeight + 1,
-      holdEnabled: hold ? !hold.disabled : null, holdArmed: hold?.getAttribute('aria-pressed') === 'true',
+      holdEnabled: hold ? !hold.disabled && hold.getAttribute('aria-disabled') !== 'true' : null,
+      holdArmed: hold?.getAttribute('aria-pressed') === 'true',
       consequence: consequence ? { text: consequence.textContent.trim(), visible: !consequence.hidden } : null,
       reservedHeight: document.documentElement.style.getPropertyValue('--mn-bulk-bar-height'),
       hint: region.querySelector('.hint')?.textContent.trim() ?? null };`);
@@ -421,8 +422,8 @@ export async function runHub(ctx) {
       'the server preview must count one material and one exercise: ' + JSON.stringify(preview.body));
     await focus('app-bulk-action-bar app-hold-to-delete-button button');
     await keys.Space();   // activation arms the button; the hold is a second, uninterrupted press
+    await waitFor(async () => (await bar())?.holdArmed === true, 'the first press must only arm the hold button');
     const armed = await bar();
-    need(armed.holdArmed, 'the first press must only arm the hold button');
     need(armed.consequence?.visible && armed.consequence.text === 'Удалит 1 материал и 1 упражнение. История занятий сохранится.',
       'the consequence text is not visible while armed: ' + JSON.stringify(armed.consequence));
     await saveScreenshot('hub-hold-to-delete-1440.png', tab);
