@@ -1,5 +1,9 @@
 """Production delivery stays main-only, scoped and approval-gated; no other delivery workflow exists."""
 import re
+import json
+import os
+import subprocess
+import textwrap
 import sys
 import unittest
 from pathlib import Path
@@ -13,9 +17,13 @@ PUBLISH = "    if: ${{ needs.release-scope.outputs.deploy == 'true' && github.re
 VPS = "    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}"
 # Jobs that follow the publication guard through `needs`; only the first may enter prod.
 APPROVED = {'deploy-production', 'post-deploy-smoke'}
+QUALITY = {'backend-tests', 'backend-security', 'backend-runtime', 'backend-quality',
+           'frontend-checks', 'frontend-tests', 'frontend-quality'}
+AGGREGATES = {'backend-quality': ['backend-tests', 'backend-security', 'backend-runtime'],
+              'frontend-quality': ['frontend-checks', 'frontend-tests']}
 ACTIVE = {
-    'deploy.yaml': {'validate-main-ref', 'release-scope', 'backend-quality', 'frontend-quality'},
-    'pull-request.yaml': {'backend-quality', 'frontend-quality'},
+    'deploy.yaml': {'validate-main-ref', 'release-scope'} | QUALITY,
+    'pull-request.yaml': QUALITY,
     'dependency-review.yaml': {'dependency-review'},
 }
 
@@ -88,7 +96,10 @@ def verify(contents):
                 if guards != [expected[name]]:
                     errors.append(f'{filename}/{name}: missing reviewed job guard')
             elif name in ACTIVE.get(filename, set()):
-                if guards:
+                if name in AGGREGATES:
+                    if guards != ['    if: ${{ always() }}'] or '    needs: [' + ', '.join(AGGREGATES[name]) + ']' not in block:
+                        errors.append(f'{filename}/{name}: aggregate must run and require every quality block')
+                elif guards:
                     errors.append(f'{filename}/{name}: quality job must stay enabled')
                 if any(re.match(r'^    (environment|uses):', line) for line in block):
                     errors.append(f'{filename}/{name}: quality job cannot enter environment or delegate')
@@ -131,6 +142,31 @@ class LocalDeliveryContractTest(unittest.TestCase):
                         changed = dict(self.contents)
                         changed[file] = changed[file].replace(f'  {job}:\n', f'  {job}:\n{insertion}\n', 1)
                         self.assertTrue(verify(changed))
+
+    def test_required_aggregates_reject_failure_cancellation_skipping_and_empty_results(self):
+        for filename in ['pull-request.yaml', 'deploy.yaml']:
+            for name, dependencies in AGGREGATES.items():
+                block = '\n'.join(_job_blocks(self.contents[filename])[name])
+                program = textwrap.dedent(block.split("python3 - <<'PYCODE'\n", 1)[1].split('          PYCODE', 1)[0])
+                success = {key: {'result': 'success'} for key in dependencies}
+                cases = [({}, False), (success, True)]
+                for dependency in dependencies:
+                    for state in ['failure', 'cancelled', 'skipped']:
+                        cases.append(({**success, dependency: {'result': state}}, False))
+                for results, expected in cases:
+                    with self.subTest(filename=filename, name=name, results=results):
+                        result = subprocess.run([sys.executable, '-c', program],
+                                                env={**os.environ, 'QUALITY_RESULTS': json.dumps(results)}, capture_output=True)
+                        self.assertEqual(result.returncode == 0, expected)
+
+    def test_aggregate_cannot_drop_a_required_dependency(self):
+        for filename in ['pull-request.yaml', 'deploy.yaml']:
+            for name, dependencies in AGGREGATES.items():
+                changed = dict(self.contents)
+                before = '    needs: [' + ', '.join(dependencies) + ']'
+                after = '    needs: [' + ', '.join(dependencies[:-1]) + ']'
+                changed[filename] = changed[filename].replace(before, after)
+                self.assertTrue(verify(changed))
 
     def test_existing_jobs_cannot_become_workflow_callers(self):
         for file, content in self.contents.items():

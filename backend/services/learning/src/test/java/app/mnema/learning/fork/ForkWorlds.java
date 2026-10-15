@@ -38,8 +38,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 final class ForkWorlds {
     static final JsonMapper JSON = JsonMapper.builder().build();
-    /** Creates per publication: a bulk of 100 does not fit the 10 s of a publication on a busy machine. */
-    private static final int BULK = 20;
 
     /** An author's published deck: its materials (with the nodes the exercises quote) and the exercises' ids. */
     record Source(UUID author, UUID deck, String code, List<StudyFixtures.Material> materials, List<UUID> exercises) { }
@@ -51,6 +49,7 @@ final class ForkWorlds {
     final ManifestPages manifests;
     final StudyFixtures study;
     final SharedScopeFixture shared;
+    final app.mnema.learning.catalog.item.BulkItemFixture bulkItems;
 
     ForkWorlds(int port, DeckService decks, ItemService items, ExerciseService exercises, StudySessionService sessions, MediaCatalog media,
                ImmutableStorage storage, JdbcClient jdbc, PlatformTransactionManager transactions, ManifestPages manifests) {
@@ -61,6 +60,7 @@ final class ForkWorlds {
         this.manifests = manifests;
         this.study = new StudyFixtures(decks, items, exercises, sessions, media, jdbc);
         this.shared = new SharedScopeFixture(decks, items, storage, jdbc, transactions);
+        this.bulkItems = new app.mnema.learning.catalog.item.BulkItemFixture(storage, jdbc, transactions);
     }
 
     // ---- http ----
@@ -132,7 +132,7 @@ final class ForkWorlds {
     }
 
     /**
-     * A big deck built the way an author builds one: materials in publications of {@value #BULK} creates, then {@code exercises} FREE_RESPONSE exercises one by one, published at
+     * A big deck with materials seeded by BulkItemFixture, then {@code exercises} FREE_RESPONSE exercises one by one, published at
      * {@code level}. Every material has its own text; the exercises assess the first materials.
      */
     Source bigSource(String level, int materials, int exercises) {
@@ -140,20 +140,11 @@ final class ForkWorlds {
         HttpIdentityFixture.publicProfile(author, true);
         UUID deck = shared.deck(author, "Большая колода " + UUID.randomUUID().toString().substring(0, 8));
         List<StudyFixtures.Material> created = new ArrayList<>();
-        for (int from = 0; from < materials; from += BULK) {
-            JsonNode head = decks.read(author, deck);
-            ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString()).put("expectedDeckRevisionId", head.path("revisionId").stringValue(null));
-            var changes = body.putArray("changes");
-            for (int index = from; index < Math.min(materials, from + BULK); index++) {
-                changes.addObject().put("operation", "create").put("memberKey", UUID.randomUUID().toString()).set("document", app.mnema.learning.support.MediaFixtures.imageDocument());
-            }
-            JsonNode acknowledged = items.publish(author, deck, Long.parseLong(head.path("rowVersion").stringValue(null)),
-                    app.mnema.learning.catalog.item.ItemPublicationCommand.readBulk(new java.io.ByteArrayInputStream(body.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))))
-                    .acknowledgement().path("changes");
-            for (JsonNode change : acknowledged) {
-                created.add(new StudyFixtures.Material(author, deck, UUID.fromString(change.path("memberKey").stringValue(null)),
-                        UUID.fromString(change.path("itemRevisionId").stringValue(null)), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()));
-            }
+        var documents = java.util.stream.IntStream.range(0, materials)
+                .mapToObj(index -> app.mnema.learning.support.MediaFixtures.imageDocument()).toList();
+        for (var value : bulkItems.append(author, deck, documents)) {
+            created.add(new StudyFixtures.Material(author, deck, value.member(), value.revision(),
+                    UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()));
         }
         List<UUID> ids = new ArrayList<>();
         for (int index = 0; index < exercises; index++) {

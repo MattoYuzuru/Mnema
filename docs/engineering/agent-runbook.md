@@ -5,7 +5,7 @@ artifact:
   title: "Mnema agent runbook: commands and local-machine setup"
   status: current
   created_at: "2026-10-01"
-  updated_at: "2026-10-10"
+  updated_at: "2026-10-15"
   owners: ["project-owner"]
 ---
 
@@ -57,7 +57,8 @@ python3 -m unittest discover -s scripts/tests -p 'test_*.py'   # ~35 s
 coverage). Java compilation is the configured static check (`-Xlint:all -Werror`). CI additionally runs `scripts/verify_github_actions_pins.py`,
 `verify_security_automation_policy.py`, `verify_artifact_security_policy.py`,
 `verify_production_image_pins.py`, the maintained `scripts/test-*.sh` contracts and the
-real cross-service checks; the authoritative list is the `frontend-quality` job in
+real cross-service checks; the authoritative lists are the `frontend-checks`,
+`frontend-tests`, `backend-tests`, `backend-security` and `backend-runtime` jobs in
 [`.github/workflows/pull-request.yaml`](../../.github/workflows/pull-request.yaml).
 Cross-service security/cancellation harness (needs built boot jars):
 
@@ -66,11 +67,72 @@ Cross-service security/cancellation harness (needs built boot jars):
 python3 scripts/learning-security/run.py
 ```
 
+### Test throughput and resource envelope
+
+`clean quality` remains the complete local backend gate. Its default is **two isolated test
+JVMs**, each with a 512 MiB heap and serial JUnit execution. Every JVM owns its PostgreSQL
+and HTTP fixtures; methods sharing clocks, queues, counters or mocks do not run concurrently.
+`-PtestForks=1` selects the serial comparison; only 1 or 2 are accepted. Gradle's daemon heap
+is separate (1500 MiB). These limits are deliberate; do not derive fork counts from the Mac's
+host CPU count, because Colima and the retained development stacks share fewer resources.
+Coordinate heavy checks through the shared `workstation-dev` resource `heavy`, including
+frontend tests. A busy lock is a queue, never permission to stop the current owner.
+
+The ordinary `test` task still discovers all tests. Both CI workflows run four class shards
+(`-PtestShard=1/4` through `4/4`), with at most two JVMs each on separate `ubuntu-latest`
+runners. All compiled candidates are assigned automatically, including nonstandard names
+such as `*EvalRunner`; nested tests stay with their outer class. No manual class allowlist
+can silently leave a new test out. The `testInventory` task uses the existing JUnit Platform
+launcher to discover the expected classes without executing tests or initializing fixtures.
+Packing/merging evidence requires exact agreement with that inventory. Unexpected skips fail;
+intentional provider/eval/media opt-ins live in `backend/test-opt-ins.json`.
+
+Each shard uploads only JaCoCo execution data and bounded suite metadata (7 days), through
+the safe artifact action. Console/XML output and runtime fixtures are not uploaded. The
+aggregate verifies all four shard identities, source/revision, checksums, discovered classes
+and uniqueness, then reads exactly those execution files with `-PcoverageShards=4`.
+The existing 90% per-service line floors apply to the combined report. Ordinary local reports
+read only `test.exec`, so old downloaded shards cannot inflate a later local gate.
+
+Security/cancellation and runtime/media contracts run in separate jobs. `backend-quality`
+remains the required aggregate: failure, cancellation or skipping of a dependency fails it.
+`frontend-quality` likewise requires both `frontend-tests` and `frontend-checks`; the latter
+retains lint/build/styleguide/release/browser-response/delivery contracts and automation checks.
+Frontend specs keep isolated environments and the same coverage thresholds, with two workers
+locally or three in CI (`MNEMA_TEST_WORKERS`, accepted range 1–3); the CI test process and inherited workers each cap V8 heap at 1536 MiB.
+The main test fan-out is eight concurrent jobs (four backend shards, security, runtime,
+frontend tests, frontend checks), below the standard Free account concurrency limit of 20;
+other workflows share that account quota and can cause queueing. Aggregation is a later phase.
+
+The 15-minute job timeout is a growth/failure ceiling, not the five-minute performance goal.
+Every shard prints suite totals and its ten slowest classes. When time grows, inspect those
+measurements and the dataset/fixture phases before increasing the fixed worker/shard ceilings.
+Do not accept fewer classes, new skips or lower coverage to make the time green. Compare a
+serial and a two-JVM run on the same source and environment, record peak JVM/container memory,
+and verify the union of hosted shards before claiming a speedup. A hosted duration excludes
+account queueing; report end-to-end waiting separately when it is material.
+
+Large community preconditions use the test-only `BulkItemFixture`: strict native validation,
+production codecs and path-copy page editing, reachable objects in bounded storage batches,
+normal repository writes, durable root pins and PostgreSQL FK/trigger checks, with rollback.
+It does not disable constraints, database durability or isolation. The scenarios and sizes from
+[community architecture §§5, 7 and 12](../architecture/community-decks.md) remain unchanged:
+1,000 materials, 200-edit slices, crash/retry/idempotency and bounded plan work. Authoring-command
+coverage remains in `ItemServiceIntegrationTest`; real edits, forks and update commands remain
+production operations. Historical operation timings in the Learning guide are not fixture
+construction timings and are not rewritten as new measurements.
+
+References deciding the mechanism: [Gradle test processes](https://docs.gradle.org/current/userguide/java_testing.html#sec:test_execution),
+[Spring parallel-test constraints](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/parallel-test-execution.html),
+[JUnit discovery](https://docs.junit.org/current/api/org.junit.platform.launcher/org/junit/platform/launcher/core/LauncherFactory.html),
+[GitHub runner resources](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+and [account concurrency](https://docs.github.com/en/actions/reference/limits).
+
 ### Docker Hub pulls in CI
 
 GitHub-hosted runners share IPs, so anonymous Docker Hub pulls hit `toomanyrequests` or
 `auth.docker.io` timeouts (PR #411, 2026-10-09). Every CI job that pulls Docker Hub images
-(both quality jobs in PR and Main CI, and the release image build) first runs
+(backend shards/security/runtime, frontend checks in PR and Main CI, and the release image build) first runs
 [`.github/actions/docker-hub-mirror`](../../.github/actions/docker-hub-mirror/action.yml): it
 sets the runner daemon's `registry-mirrors` to `https://mirror.gcr.io` and reloads it. That
 covers `docker run`/`docker build` and Testcontainers, and the daemon falls back to Docker Hub

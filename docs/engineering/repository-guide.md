@@ -5,7 +5,7 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-10-11"
+  updated_at: "2026-10-15"
   owners: ["project-owner"]
 ---
 
@@ -217,10 +217,10 @@ python3 scripts/learning-security/verify_cancellation.py
 ```
 
 The remaining mandatory release/security/smoke contracts are the exact
-commands in the `frontend-quality` job of
+commands in the `frontend-checks` and `frontend-tests` jobs of
 [PR Quality](../../.github/workflows/pull-request.yaml). They include every maintained
 `scripts/test-*.sh` and the smoke unit suite; VPS backup and restore are covered by
-`scripts/tests/test_vps_*.py` in `backend-quality`. Operational contract tests do not
+`scripts/tests/test_vps_*.py` in `backend-runtime`. Operational contract tests do not
 perform a deployment.
 
 The real browser harness covers auth, authoring and one `FREE_RESPONSE` Study interaction in

@@ -36,6 +36,7 @@ import static app.mnema.learning.support.StudyFixtures.text;
 /**
  * The scenes of the combined publication tests, built with the real services: an author's deck, a copy in the same lineage ({@link SharedScopeFixture}), what the
  * author does afterwards (edits, additions, removals, order, exercises, objectives) and the readers of a deck's head (the manifests through {@link ManifestPages}).
+ * Large media-free initial bulks use BulkItemFixture; operations under test and small authoring worlds keep the production command path.
  */
 final class CombinedWorlds {
     static final JsonMapper JSON = JsonMapper.builder().build();
@@ -43,6 +44,7 @@ final class CombinedWorlds {
 
     final DeckService decks;
     final ItemService items;
+    final app.mnema.learning.catalog.item.BulkItemFixture bulkItems;
     final ExerciseService exercises;
     final MediaCatalog media;
     final JdbcClient jdbc;
@@ -55,6 +57,7 @@ final class CombinedWorlds {
                    JdbcClient jdbc, PlatformTransactionManager transactions, ManifestPages manifests) {
         this.decks = decks;
         this.items = items;
+        this.bulkItems = new app.mnema.learning.catalog.item.BulkItemFixture(storage, jdbc, transactions);
         this.exercises = exercises;
         this.media = media;
         this.jdbc = jdbc;
@@ -165,6 +168,13 @@ final class CombinedWorlds {
 
     /** {@code count} new materials in bulk commands of {@value #BULK} (an item publication applies in a transaction of 10 s: a loaded machine needs the margin); returns {member, revision} pairs in order. */
     List<UUID[]> createMany(UUID owner, UUID deck, int count, String prefix) {
+        if (count >= 100) {
+            var documents = java.util.stream.IntStream.range(0, count).mapToObj(index -> {
+                UUID member = UUID.randomUUID();
+                return new app.mnema.learning.catalog.item.BulkItemFixture.Input(member, document(prefix + " " + index, member));
+            }).toList();
+            return bulkItems.appendMembers(owner, deck, documents).stream().map(value -> new UUID[] {value.member(), value.revision()}).toList();
+        }
         List<UUID[]> created = new ArrayList<>();
         for (int at = 0; at < count; at += BULK) {
             JsonNode head = decks.read(owner, deck);
