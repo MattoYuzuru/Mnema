@@ -340,9 +340,9 @@ export async function runHub(ctx) {
     await desktop();
 
     // 2. Sort «Без упражнений сначала» with the keyboard: arrow key on the radio group.
-    need(await page(`return document.querySelector('app-segmented-choice input:checked')?.closest('label')?.textContent.trim() === 'По порядку';`),
+    need(await page(`return document.querySelector('app-deck-materials app-segmented-choice input:checked')?.closest('label')?.textContent.trim() === 'По порядку';`),
       'the authoring order must be the default sort');
-    await focus('app-segmented-choice input:checked');
+    await focus('app-deck-materials app-segmented-choice input:checked');
     await keys.ArrowRight();
     await waitFor(async () => (await rows())[0]?.title === MISSING_A && (await rows()).map(row => row.count).join() === '0,0,1,' + initial[0].count,
       'the keyboard sort did not list materials without exercises first');
@@ -350,7 +350,7 @@ export async function runHub(ctx) {
     need(sorted.map(row => row.folio).join() === '2,3,4,1', 'every row must keep its true ordinal after sorting: ' + sorted.map(row => row.folio).join());
     const serverOrder = (await listApi('&sort=exerciseCount')).items.map(item => item.memberKey);
     need(sorted.map(row => row.href.split('/').at(-1)).join() === serverOrder.join(), 'the list order differs from the API sorted order');
-    need(await page(`return document.querySelector('app-segmented-choice .hint')?.textContent.includes('Сначала материалы без упражнений');`),
+    need(await page(`return document.querySelector('app-deck-materials app-segmented-choice .hint')?.textContent.includes('Сначала материалы без упражнений');`),
       'the live hint under the sort did not change');
     facts.sortByKeyboard = true;
 
