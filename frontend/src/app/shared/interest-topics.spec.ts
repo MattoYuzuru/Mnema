@@ -7,7 +7,7 @@ describe('interest topic exploration', () => {
         expect(groups).toHaveLength(10);
         expect(groups.find(group => group.id === 'languages')?.name).toBe('Языки');
         expect(groups.find(group => group.id === 'other')?.topics.map(topic => topic.id)).toEqual(['other']);
-        expect(groups.flatMap(group => group.topics)).toEqual(expect.arrayContaining(DEMO_INTEREST_TOPICS));
+    expect(groups.flatMap(group => group.topics)).toEqual(expect.arrayContaining([...DEMO_INTEREST_TOPICS]));
     });
     it('offers at most five unselected neighbours deterministically and reaches related directions for small groups', () => {
         const neighbours = relatedInterestTopics(DEMO_INTEREST_TOPICS, 'anatomy', ['anatomy']);
