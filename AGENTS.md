@@ -23,6 +23,8 @@ generic rules summarised below: [`docs/engineering/engineering-standards.md`](do
 | Run, build, test, local stack; machine setup (JDK 25, Colima, Node 24) | [`docs/engineering/agent-runbook.md`](docs/engineering/agent-runbook.md) |
 | Modules, versions, change routes | [`docs/engineering/repository-guide.md`](docs/engineering/repository-guide.md) |
 | Issues / PRs | [`docs/engineering/work-item-standard.md`](docs/engineering/work-item-standard.md) |
+| Улучшение learning core: исследование и эпики LC | [`docs/engineering/learning-core/README.md`](docs/engineering/learning-core/README.md) (`proposed`; не текущий Study contract) |
+| Онбординг: исследование, RFC, архитектура и эпики OB | [`docs/engineering/onboarding/README.md`](docs/engineering/onboarding/README.md) (`accepted` 2026-10-14, не реализовано; промпты сессий в `prompts.md`) |
 | Backend / frontend scoped rules | `backend/AGENTS.md`, `frontend/AGENTS.md` |
 
 Business rules come from the canonical docs and `contracts/`, never from v1 code, old

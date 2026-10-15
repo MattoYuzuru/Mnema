@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "packageId": "mnema-learning-core-2026-10-13",
+  "status": "Backlog",
+  "artifactStatus": "proposed",
+  "githubMapping": {
+    "LC-E1": {
+      "issue": 503,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/503"
+    },
+    "LC-E2": {
+      "issue": 504,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/504"
+    },
+    "LC-101": {
+      "issue": 505,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/505"
+    },
+    "LC-102": {
+      "issue": 506,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/506"
+    },
+    "LC-103": {
+      "issue": 507,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/507"
+    },
+    "LC-104": {
+      "issue": 508,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/508"
+    },
+    "LC-201": {
+      "issue": 509,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/509"
+    },
+    "LC-202": {
+      "issue": 510,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/510"
+    },
+    "LC-203": {
+      "issue": 511,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/511"
+    },
+    "LC-204": {
+      "issue": 512,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/512"
+    },
+    "LC-301": {
+      "issue": 513,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/513"
+    },
+    "LC-302": {
+      "issue": 514,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/514"
+    },
+    "LC-303": {
+      "issue": 515,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/515"
+    },
+    "LC-304": {
+      "issue": 516,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/516"
+    }
+  },
+  "items": [
+    {
+      "localId": "LC-E1",
+      "kind": "epic",
+      "title": "Восстанавливаемая история обучения",
+      "body": "epics/observations.md",
+      "status": "Backlog",
+      "dependsOn": []
+    },
+    {
+      "localId": "LC-E2",
+      "kind": "epic",
+      "title": "Разные проверки одной цели и честное покрытие",
+      "body": "epics/representative-practice.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "LC-E1"
+      ]
+    },
+    {
+      "localId": "LC-101",
+      "kind": "engineering",
+      "parent": "LC-E1",
+      "title": "Контракт минимальных наблюдений",
+      "body": "tasks/lc-101.md",
+      "status": "Backlog",
+      "dependsOn": []
+    },
+    {
+      "localId": "LC-102",
+      "kind": "engineering",
+      "parent": "LC-E1",
+      "title": "Атомарно записывать факты обучения",
+      "body": "tasks/lc-102.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "LC-101"
+      ]
+    },
+    {
+      "localId": "LC-103",
+      "kind": "engineering",
+      "parent": "LC-E1",
+      "title": "Честный backfill и экспорт",
+      "body": "tasks/lc-103.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "LC-102"
+      ]
+    },
+    {
+      "localId": "LC-104",
+      "kind": "verification",
+      "parent": "LC-E1",
+      "title": "Доказать сохранность и завершить первый эпик",
+      "body": "tasks/lc-104.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "LC-101",
+        "LC-102",
+        "LC-103"
+      ]
+    },
+    {
+      "localId": "LC-201",
+      "kind": "engineering",
+      "parent": "LC-E2",
+      "title": "Выбирать разные варианты одной цели",
+      "body": "tasks/lc-201.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "LC-E1",
+        "LC-102",
+        "LC-103"
+      ]
+    },
+    {
+      "localId": "LC-202",
+      "kind": "engineering",
+      "parent": "LC-E2",
+      "title": "Показывать границы проверенного материала",
+      "body": "tasks/lc-202.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "LC-201"
+      ]
+    },
+    {
+      "localId": "LC-203",
+      "kind": "research",
+      "parent": "LC-E2",
+      "title": "Измерять selection и подготовить проверку пользы",
+      "body": "tasks/lc-203.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "LC-103",
+        "LC-201"
+      ]
+    },
+    {
+      "localId": "LC-204",
+      "kind": "verification",
+      "parent": "LC-E2",
+      "title": "Завершить второй эпик с проверяемым результатом",
+      "body": "tasks/lc-204.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "LC-201",
+        "LC-202",
+        "LC-203"
+      ]
+    },
+    {
+      "localId": "LC-301",
+      "kind": "research",
+      "title": "Нужен ли ещё один classifier",
+      "body": "tasks/lc-301.md",
+      "status": "Backlog",
+      "dependsOn": [],
+      "gate": "Human-labelled held-out rubric corpus; separate live data authorization"
+    },
+    {
+      "localId": "LC-302",
+      "kind": "research",
+      "title": "Выбрать кандидат новой модели памяти",
+      "body": "tasks/lc-302.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "LC-E1"
+      ],
+      "gate": "Usable observations; migration decision; no automatic production switch"
+    },
+    {
+      "localId": "LC-303",
+      "kind": "research",
+      "title": "Что делать при содержательной правке",
+      "body": "tasks/lc-303.md",
+      "status": "Backlog",
+      "dependsOn": [],
+      "gate": "Explicit owner decision before changing no-automatic-reset behavior"
+    },
+    {
+      "localId": "LC-304",
+      "kind": "research",
+      "title": "Учиться на ошибке и проверить encoding aids",
+      "body": "tasks/lc-304.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "LC-E1"
+      ],
+      "gate": "Separate flow/experiment scope before changing one-objective-per-session"
+    }
+  ],
+  "githubPublishedAt": "2026-10-15"
+}

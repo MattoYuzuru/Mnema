@@ -436,10 +436,16 @@ the original result; old-epoch presentations cannot affect the new state.
 
 Material progress is a projection, not a mastery percentage:
 
-- `NOT_STARTED`: no current-epoch assessed state;
-- `LEARNING`: introduced/current state at level 0..1;
-- `DUE`: any enabled objective is due at the read clock;
-- `ON_TRACK`: all introduced enabled objectives are future-due and level >=2.
+- `NOT_STARTED`: there are no enabled objectives or none have been introduced;
+- `DUE`: after introduction, any enabled objective is due at the read clock;
+- `LEARNING`: at least one objective is introduced, none are due, but some enabled
+  objectives are not introduced/assessed or are below level 2;
+- `ON_TRACK`: every enabled objective is introduced, assessed, future-due and level >=2.
+
+The states are selected in that order (`NOT_STARTED`, `DUE`, `LEARNING`, `ON_TRACK`).
+Coverage counts distinct objectives bound as `ASSESSED` to enabled current exercises, not the
+number of exercise variants. Adding another exercise for the same objective does
+not enlarge the coverage denominator. Introduction without an answer is not an assessment.
 
 The response also exposes objective coverage, last assessed time and nearest due.
 Unknown objectives are not rendered as 0% or 100%.

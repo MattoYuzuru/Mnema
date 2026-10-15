@@ -5,7 +5,7 @@ artifact:
   title: "Mnema greenfield content and study platform"
   status: accepted
   created_at: "2026-08-15"
-  updated_at: "2026-10-10"
+  updated_at: "2026-10-13"
   owners: ["project-owner"]
   source_tasks: ["project architecture and product review"]
   supersedes: []
@@ -643,6 +643,13 @@ to keep the globally unique attempt receipt separate ([PostgreSQL partitioning](
 
 ## Validation and direct replacement
 
+**Historical rewrite plan.** The phases below describe the original v1 replacement
+and its owner-approved deletion boundary; they are not an executable migration plan
+for current learners. #74–#77 have since been implemented and v1 left the build.
+Current operations follow [production delivery](../operations/production-delivery.md).
+Changes to the current learning model need their own data-preserving migration;
+never apply the account-only allowlist below to current learning data.
+
 The legacy database and its applied Flyway history remain untouched while it exists;
 the replacement runtime owns a new migration baseline built from zero. It does not
 run the old chain or append compatibility migrations. After cutover, the legacy
@@ -685,7 +692,7 @@ After step 6, recovery of deleted v1 content/study/media/import/AI data is impos
 by owner decision. Only account-only/fresh-system recovery and roll-forward exist.
 No runbook may promise an emergency legacy restore.
 
-## Current delivery sequence
+## Historical delivery sequence
 
 1. Refine #75 into reviewable Study/exercise/scheduler slices, then implement from
    the completed #74 content contracts.

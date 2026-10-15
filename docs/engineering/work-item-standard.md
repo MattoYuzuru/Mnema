@@ -5,7 +5,7 @@ artifact:
   title: "Mnema work item and pull request standard"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-10-14"
   owners: ["project-owner"]
 ---
 
@@ -185,6 +185,20 @@ PR отвечает на пять вопросов:
 Не вставляйте полный лог зелёной сборки. Достаточно команды, результата и существенных warnings. Для UI приложите desktop/mobile evidence и keyboard/a11y результат. Для schema/deployment/security изменений нужен независимый review владельца.
 
 ## Статусы
+
+### Пакеты задач в документации
+
+Большой пакет эпиков можно подготовить в документации: parent/child/spike bodies с
+`artifact.status: proposed`, стабильными local IDs и manifest dependencies. Не придумывайте
+GitHub numbers и не ставьте Ready/Done за подготовленный файл.
+
+Публикация пакета: прочитать live repository/Project/status fields, найти существующие issues
+по ID/outcome, создать или обновить bodies без дубликатов, связать parents/dependencies,
+сохранить mapping ID→number в manifest и проверить read-back. Unknown creation outcome
+сначала разрешается read/deduplication, не повторным create. После публикации источник
+статуса — Issue и Project, а не manifest. Пример: [learning core package](./learning-core/README.md).
+
+### Значения статусов
 
 - `Backlog`: outcome полезен, но решения или очередь ещё не готовы.
 - `Ready`: выполнен Definition of Ready, задача помещается в 1–3 дня.
