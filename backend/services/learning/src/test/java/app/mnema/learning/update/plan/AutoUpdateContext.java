@@ -31,6 +31,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.web.context.request.RequestContextHolder;
 
 import javax.sql.DataSource;
 import java.lang.reflect.InvocationTargetException;
@@ -55,7 +56,10 @@ import java.util.concurrent.atomic.AtomicLong;
 abstract class AutoUpdateContext extends PostgresIntegrationTest {
     /** The allowance of the fan-out, per rolling minute, that the test clock paces. */
     static final AtomicInteger ALLOWANCE = PacedFanoutConfig.ALLOWANCE;
-    /** The statements prepared on the pool's connections (counted at the JDBC boundary). */
+    /**
+     * The statements prepared on the pool's connections (counted at the JDBC boundary) by threads serving an HTTP request: the scheduled background work of the
+     * context (catalogue and recommendation upkeep) prepares statements at its own pace and must not leak into a measured request.
+     */
     static final AtomicLong STATEMENTS = new AtomicLong();
 
     /** Counts the statements prepared on the pool's connections: a JDK proxy over the DataSource and over each connection it hands out. */
@@ -78,7 +82,7 @@ abstract class AutoUpdateContext extends PostgresIntegrationTest {
 
         private static Connection counting(Connection connection) {
             return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[] {Connection.class}, (proxy, method, args) -> {
-                if (method.getName().equals("prepareStatement") || method.getName().equals("createStatement") || method.getName().equals("prepareCall")) STATEMENTS.incrementAndGet();
+                if (RequestContextHolder.getRequestAttributes() != null && (method.getName().equals("prepareStatement") || method.getName().equals("createStatement") || method.getName().equals("prepareCall"))) STATEMENTS.incrementAndGet();
                 return call(method, connection, args);
             });
         }

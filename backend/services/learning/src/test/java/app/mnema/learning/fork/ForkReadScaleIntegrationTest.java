@@ -44,6 +44,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ForkReadScaleIntegrationTest extends PostgresIntegrationTest {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ForkReadScaleIntegrationTest.class);
     static final AtomicLong STATEMENTS = new AtomicLong();
+    /** The thread whose statements count: the test's own, which makes the measured call; background jobs prepare statements at their own pace. */
+    private static volatile Thread measured;
 
     /** Counts the statements prepared on the pool's connections: a JDK proxy over the DataSource and over each connection it hands out. */
     @TestConfiguration
@@ -65,7 +67,7 @@ class ForkReadScaleIntegrationTest extends PostgresIntegrationTest {
 
         private static Connection counting(Connection connection) {
             return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[] {Connection.class}, (proxy, method, args) -> {
-                if (method.getName().equals("prepareStatement") || method.getName().equals("createStatement") || method.getName().equals("prepareCall")) STATEMENTS.incrementAndGet();
+                if (Thread.currentThread() == measured && (method.getName().equals("prepareStatement") || method.getName().equals("createStatement") || method.getName().equals("prepareCall"))) STATEMENTS.incrementAndGet();
                 return call(method, connection, args);
             });
         }
@@ -106,6 +108,7 @@ class ForkReadScaleIntegrationTest extends PostgresIntegrationTest {
 
     /** A warm list of the account's decks: the statements of one call and the best of three timings. */
     private Measure list(UUID account) {
+        measured = Thread.currentThread();
         decks.list(account, "50", null);
         long statements = 0;
         double best = Double.MAX_VALUE;
