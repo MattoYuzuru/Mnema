@@ -84,7 +84,7 @@ import { SupportContactComponent } from '../../shared/support-contact.component'
       </article>
     `,
     styles: [`
-      :host { display: block; min-inline-size: 0; color: var(--mn-body); }
+      :host { display: block; min-inline-size: 0; color: var(--mn-body); overflow-wrap: anywhere; }
       .ai-page { max-inline-size: 52rem; margin-inline: auto; padding: var(--mn-space-7) var(--mn-page-gutter); }
       h1 { margin: 0 0 var(--mn-space-3); color: var(--mn-ink); font-family: var(--mn-font-display); font-weight: 500; font-size: clamp(2.2rem, 5vw, 3.5rem); line-height: 1; overflow-wrap: anywhere; }
       h2 { margin: 0 0 var(--mn-space-3); color: var(--mn-ink); font-family: var(--mn-font-display); font-weight: 500; font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.1; overflow-wrap: anywhere; }

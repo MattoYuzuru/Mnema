@@ -1,4 +1,4 @@
-<section #section class="publication" [attr.id]="anchor()" [attr.aria-labelledby]="uid + '-title'">
+<section class="publication" [attr.aria-labelledby]="uid + '-title'">
   <header class="publication-head">
     <h2 #heading class="section-heading" [id]="uid + '-title'" tabindex="-1">{{ text.heading }}</h2>
   </header>
@@ -13,7 +13,7 @@
     </div>
   } @else {
     @let state = current.state;
-    <app-access-controls [state]="state" [checklistOpen]="checklistOpen()" [checklistId]="uid + '-checklist'"
+    <app-access-controls [state]="state" [checklistOpen]="checklistOpen()"
       (saved)="onLevelSaved($event)" (replayed)="refresh()" (refresh)="refresh()" (openChecklist)="openChecklist()" (closeChecklist)="closeChecklist()" />
 
     @if (state.visibility !== 'PRIVATE') {

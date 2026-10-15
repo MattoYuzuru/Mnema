@@ -268,34 +268,21 @@ describe('AppShellComponent and the community catalogue', () => {
         expect(link.getAttribute('aria-current')).toBe('page');
     });
 
-    it('offers the closed book before the session block, opens it on a click and searches into the catalogue', async () => {
-        const { fixture, root, router } = await create(true, false);
-        const book = root.querySelector('.session app-book-search[data-mode=closed]')!;
-        expect(book).not.toBeNull();
-        expect(book.compareDocumentPosition(root.querySelector('.session a.button')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        book.querySelector<HTMLButtonElement>('button.entry')!.click();
-        fixture.detectChanges();
-        expect(book.classList.contains('is-open')).toBe(true);
-        const field = book.querySelector<HTMLInputElement>('input[type=search]')!;
-        field.value = 'испанский';
-        field.dispatchEvent(new Event('input'));
-        book.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
-        await fixture.whenStable();
-        fixture.detectChanges();
-        expect(router.url).toBe('/community?q=%D0%B8%D1%81%D0%BF%D0%B0%D0%BD%D1%81%D0%BA%D0%B8%D0%B9');
-        // The entry folds, and on the community page it steps aside for the page's own book (one search landmark).
-        expect(root.querySelector('.session app-book-search')).toBeNull();
-        expect(root.querySelectorAll('search')).toHaveLength(0);
-    });
-
-    it('searches for everything, without a text, from an empty submit', async () => {
-        const { fixture, root, router } = await create(true, true);
-        const book = root.querySelector('.session app-book-search')!;
-        book.querySelector<HTMLButtonElement>('button.entry')!.click();
-        fixture.detectChanges();
-        book.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
-        await fixture.whenStable();
-        expect(router.url).toBe('/community');
+    it('keeps search out of the header for a guest and a signed-in reader on every route', async () => {
+        for (const signedIn of [false, true]) {
+            const { fixture, root, router } = await create(true, signedIn);
+            expect(root.querySelector('app-book-search, search')).toBeNull();
+            await router.navigateByUrl('/community'); fixture.detectChanges();
+            expect(root.querySelector('app-book-search, search')).toBeNull();
+            if (signedIn) {
+                const identity = root.querySelector('.identity')!;
+                expect(identity.textContent).toBe(USER.email);
+                expect(identity.getAttribute('title')).toBe(USER.email);
+                expect(identity.nextElementSibling?.tagName.toLowerCase()).toBe('app-notification-bell');
+                expect(root.querySelector('.session button.button')?.textContent).toBe('Выйти');
+            }
+            fixture.destroy(); TestBed.resetTestingModule();
+        }
     });
 
     it('leaves the owner console without the catalogue', async () => {

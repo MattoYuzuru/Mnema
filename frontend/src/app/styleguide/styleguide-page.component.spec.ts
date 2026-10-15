@@ -49,26 +49,39 @@ describe('StyleguidePageComponent', () => {
         for (const selector of [
             'app-hold-to-delete-button', 'app-segmented-choice', 'app-toggletip', 'app-usage-meter', 'app-mnema-select', 'app-choice-list',
             'app-batch-pager', 'app-tag-input', 'app-order-row button[data-action=up][aria-disabled=true]', 'app-order-row .field-error', 'app-access-level', 'app-copy-mark', 'app-copy-origin', 'app-copy-status section.notice.error', 'app-copy-status section.notice:not(.error)', 'app-publication-block', '.checklist > .checklist-item[data-state=failed]', 'app-access-screen section.access h4', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-update-badge', 'app-update-summary', 'app-count-tabs [role=tablist]', 'app-compare-columns', 'app-compared-document', 'app-word-diff ins', 'app-word-diff del', 'app-update-unit-row', 'app-telegram-glyph', 'app-mail-glyph', 'app-glyph[data-glyph=colonnade]', 'app-action-menu [role=menu][popover]', 'app-share-button button', 'app-public-deck-card article', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'app-unavailable-note .title', 'app-moderation-notice section.notice.warning h2', 'button.generate-cta', 'button.button.primary',
-            '.check-field > .check-row', '.settings-row.is-switch', '.settings-row.is-switch.is-live', 'fieldset.check-group > legend', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
+            '.check-field > .check-row', '.settings-row.is-switch', '.toggle-button[aria-pressed]', 'fieldset.check-group > legend', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
         ]) {
             expect(root.querySelector(selector), selector).not.toBeNull();
         }
     });
 
-    it('shows the live consent switch: fields follow it, and the pending state keeps controls focusable', () => {
-        const stage = [...root.querySelectorAll<HTMLElement>('.sg-stage')].find(item => item.querySelector('.is-live'))!;
-        const live = stage.querySelector<HTMLInputElement>('input[role=switch]')!;
-        const fields = [...stage.querySelectorAll<HTMLInputElement>('fieldset.check-group input')].slice(0, 3);
-        expect(live.checked).toBe(false);
-        expect(fields.every(field => field.disabled && !field.checked)).toBe(true);
-        live.checked = true;
-        live.dispatchEvent(new Event('change'));
+    it('shows the public profile buttons with conditional fields and independent selections', () => {
+        const toggle = root.querySelector<HTMLButtonElement>('#menus .toggle-button')!;
+        const stage = toggle.closest('.sg-stage')!;
+        expect(toggle.textContent).toBe('Показывать мой профиль другим');
+        expect(toggle.getAttribute('aria-pressed')).toBe('false');
+        expect(stage.querySelector('.toggle-buttons')).toBeNull();
+        expect(root.textContent).not.toContain('Переключатель согласия с полями');
+
+        toggle.click();
         fixture.detectChanges();
-        expect(fields.every(field => !field.disabled)).toBe(true);
-        const pending = [...stage.querySelectorAll<HTMLInputElement>('input[aria-disabled=true]')];
-        expect(pending.length).toBeGreaterThanOrEqual(2);
-        expect(pending.every(field => !field.disabled)).toBe(true);
-        expect(stage.querySelector('[role=status]')?.textContent).toBe('Сохраняем…');
+        expect(toggle.getAttribute('aria-pressed')).toBe('true');
+        const group = stage.querySelector('[role=group]')!;
+        expect(group.getAttribute('aria-label')).toBe('Что показывать?');
+        const fields = [...group.querySelectorAll<HTMLButtonElement>('.toggle-button')];
+        expect(fields.map(field => field.textContent)).toEqual(['Имя', 'Фото', 'О себе']);
+        expect(fields.map(field => field.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'false']);
+        fields[0].click();
+        fixture.detectChanges();
+        expect(fields.map(field => field.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
+        fields[1].click();
+        fixture.detectChanges();
+        expect(fields.map(field => field.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'false']);
+
+        toggle.click();
+        fixture.detectChanges();
+        expect(toggle.getAttribute('aria-pressed')).toBe('false');
+        expect(stage.querySelector('.toggle-buttons')).toBeNull();
     });
 
     it('runs the publication specimens on demo data: a private deck becomes public in place', async () => {
@@ -82,8 +95,6 @@ describe('StyleguidePageComponent', () => {
         expect(checked(blocks[2])).toBe('По приглашению');
         [...blocks[0].querySelectorAll<HTMLInputElement>('app-segmented-choice input')].find(radio => radio.closest('label')!.textContent!.trim() === 'Публичная')!.click();
         fixture.detectChanges();
-        const open = [...blocks[0].querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Сделать публичной…')!;
-        open.click();
         await wait();
         expect(blocks[0].querySelector('app-publication-checklist')).not.toBeNull();
         blocks[0].querySelector<HTMLButtonElement>('.suggest button')!.click();

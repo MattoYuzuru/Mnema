@@ -281,12 +281,12 @@ export async function runUpdates(ctx) {
       await until(() => exists('#profile-username', owner.tab), 'profile form absent');
       const login = await owner.page('return document.querySelector("#profile-username").value;');
       owner.need(/^[A-Za-z0-9_.-]{3,50}$/u.test(login), 'the fixture account has no profile login');
-      await until(() => exists('app-public-profile-settings input[role="switch"]', owner.tab), 'public profile switch absent');
-      if (!(await owner.page(`return document.querySelector('app-public-profile-settings input[role="switch"]').checked;`))) {
-        await owner.focus('app-public-profile-settings input[role="switch"]');
+      await until(() => exists('app-public-profile-settings .profile-toggle', owner.tab), 'public profile switch absent');
+      if (!(await owner.page(`return document.querySelector('app-public-profile-settings .profile-toggle').getAttribute('aria-pressed') === 'true';`))) {
+        await owner.focus('app-public-profile-settings .profile-toggle');
         await owner.press('Space');
       }
-      await until(() => owner.page(`return document.querySelector('app-public-profile-settings input[role="switch"]').checked
+      await until(() => owner.page(`return document.querySelector('app-public-profile-settings .profile-toggle').getAttribute('aria-pressed') === 'true'
         && document.querySelector('app-public-profile-settings .preview app-author-chip .login')?.textContent.trim() === '@' + args[0];`, login), 'the public profile was not switched on');
       record('updates_consent', { state: 'passed', durationMs: Date.now() - begun });
       return true;
@@ -320,12 +320,12 @@ export async function runUpdates(ctx) {
       for (const exercise of pass.exercises) await createExercise(owner, ownerBearer, world.deckId, world.keys[exercise.on], exercise);
 
       await navigate(world.deckPath, owner.tab);
+      await until(() => exists('nav.hub-actions button[aria-haspopup="dialog"]', owner.tab), 'the sharing button did not load');
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
       await until(() => exists('app-access-controls input[type="radio"]', owner.tab), 'the access picker did not load');
-      await owner.focus('app-access-controls input[type="radio"]:checked');
-      for (let step = 0; step < 3; step++) await owner.press('ArrowRight');
-      await until(() => owner.page(`return document.querySelector('app-access-controls input[type="radio"]:checked')?.parentElement.textContent.trim() === 'Публичная';`), 'ArrowRight x3 did not stage «Публичная»');
-      await owner.enter('app-access-controls .change-actions .button.primary', 'Сделать публичной…');
-      await until(() => exists('app-publication-checklist', owner.tab), 'the checklist did not open');
+      await owner.focus('app-access-controls input[value="PUBLIC"]');
+      await owner.press('Space');
+      await until(() => exists('app-publication-checklist', owner.tab), 'selecting Public did not open the required checklist');
       const items = () => owner.page(`return [...document.querySelectorAll('app-publication-checklist li.checklist-item')].map(li => ({
         title: li.querySelector('.checklist-title')?.textContent.trim(), state: li.getAttribute('data-state') }));`);
       await until(async () => (await items()).length === 7, 'the checklist has not seven items');
@@ -441,6 +441,7 @@ export async function runUpdates(ctx) {
       owner.need((await materialRows(owner)).every(row => !row.title.startsWith(pass.heads[3])), 'material #4 is still listed');
       // Republish with «Что нового».
       await openHub(owner, world.deckPath, 4);
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
       await until(() => owner.page(`return [...document.querySelectorAll('section.publication button')].some(button => button.textContent.trim() === args[0]);`, WORDS.publishUpdate), 'the hub offers no «Опубликовать обновление»', 30000);
       const state = (await apiJson(owner, ownerBearer, 'GET', `/api/decks/${world.deckId}/publication`)).body;
       owner.need(state.unpublishedChanges >= 4, 'unpublished changes: ' + state.unpublishedChanges);
@@ -777,6 +778,7 @@ export async function runUpdates(ctx) {
       await owner.metrics(DESKTOP);
       await appendToMaterial(owner, world.deckPath, world.keys[2], pass.later);
       await openHub(owner, world.deckPath, 4);
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
       await until(() => owner.page(`return [...document.querySelectorAll('section.publication button')].some(button => button.textContent.trim() === args[0]);`, WORDS.publishUpdate), 'the hub offers no «Опубликовать обновление»', 30000);
       await owner.enter('section.publication .publication-status button', WORDS.publishUpdate);
       await until(() => exists('section.publication form.publication-update textarea', owner.tab), 'the release note form did not open');

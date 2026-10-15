@@ -188,7 +188,9 @@ try {
       // its public reads, the author card and the shell assets.
       // The update of a copy (Updates/7, #446) is another two passes on two tabs (about 3700 requests: every full load fetches the shell assets and chunks).
       const communityBudget = (config.communityScenario ? 3600 : 0) + (config.updates ? 4800 : 0) + (config.catalog ? 7000 : 0) + (config.recs ? 7000 : 0);
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0) + (config.admin ? 1000 : 0) + communityBudget
+      // Hub/reading проверяет дополнительные полные загрузки материалов и общие lazy chunks. Лимит
+      // остаётся конечным для всего сценария, включая последующий проход по quiet routes onboarding.
+      if (networkRequests > (config.mechanics ? 5000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0) + (config.admin ? 1000 : 0) + communityBudget
           || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0) + (config.community ? 300 : 0) + (config.communityScenario && config.updates ? 300 : 0) + ((config.catalog || config.recs) ? 400 : 0)) {
         asynchronousFailure = true;
         firstAsynchronousFailure ??= 'bounded browser request budget exceeded';
@@ -1059,12 +1061,19 @@ try {
       [320, 900, 2, 'study-320-at-200-percent.png']]) {
       await second.call('Emulation.setDeviceMetricsOverride',
         { width, height, deviceScaleFactor: dpr, mobile: width === 390 });
-      require(await second.callFunction(`function() {
+      const studyLayout = await second.callFunction(`function() {
         const action = document.querySelector('.study-card .button.primary');
-        return matchMedia('(prefers-reduced-motion: reduce)').matches
-          && document.documentElement.scrollWidth <= document.documentElement.clientWidth
-          && action instanceof HTMLElement && action.getBoundingClientRect().height >= 44;
-      }`), 'Study layout or touch target failed under responsive reduced-motion emulation');
+        return { reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+          viewport: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth,
+          actionHeight: action instanceof HTMLElement ? action.getBoundingClientRect().height : null,
+          overflow: [...document.querySelectorAll('header, main, .study-card, .session, .primary-nav, app-native-media-surface, app-audio-player')]
+            .map(e => ({ node: e.tagName, class: e.className, left: e.getBoundingClientRect().left, right: e.getBoundingClientRect().right }))
+            .filter(r => r.left < 0 || r.right > document.documentElement.clientWidth) };
+      }`);
+      if (!studyLayout.reduced || studyLayout.scroll > studyLayout.viewport || studyLayout.actionHeight < 44) {
+        await saveScreenshot('failure-study-layout-' + width + '.png', second);
+        require(false, 'Study layout or touch target failed: ' + JSON.stringify(studyLayout));
+      }
       await saveScreenshot(name, second);
     }
     await second.call('Emulation.setDeviceMetricsOverride',

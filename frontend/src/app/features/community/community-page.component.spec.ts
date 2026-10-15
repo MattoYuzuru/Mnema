@@ -131,7 +131,7 @@ describe('CommunityPageComponent', () => {
         });
         it('keeps the default shelves, adds every recommendation including places 11/12 and explains its topic', async () => {
             await open();
-            expect(root().textContent).toContain('Что хотите изучать?');
+            expect(root().textContent).toContain('Что вы хотите изучать в Мнеме?');
             expect(all<HTMLElement>('app-deck-shelf h2').map(h => h.textContent)[0]).toBe('Для вас');
             const shelf = all<HTMLElement>('app-deck-shelf')[0];
             expect(shelf.querySelectorAll('app-public-deck-card')).toHaveLength(12);
@@ -215,7 +215,7 @@ describe('CommunityPageComponent', () => {
             expect(api.shelves).toHaveBeenCalledTimes(1);
             expect(api.facets).toHaveBeenCalledTimes(1);
             expect(api.decks).not.toHaveBeenCalled();
-            expect(one('h1')?.textContent).toBe('Сообщество');
+            expect(one('h1')?.textContent).toBe('Колоды от сообщества');
             expect(one('h1')?.getAttribute('tabindex')).toBe('-1');
             expect(one('app-book-search[data-mode=open] search[aria-label="Поиск колод"]')).not.toBeNull();
             expect(one('app-catalog-filters')).not.toBeNull();

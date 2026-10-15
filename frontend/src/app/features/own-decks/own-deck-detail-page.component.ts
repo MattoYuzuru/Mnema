@@ -10,7 +10,9 @@ import { AuthoringApiService } from '../authoring/authoring-api.service';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/capabilities-api.service';
 
 import { DeckMetadata, DeckVisibility, OwnDeck, validateDeckMetadata } from './own-deck.models';
-import { AccessLevelComponent } from '../../shared/access-level.component';
+import { PaperDialogComponent } from '../../shared/paper-dialog.component';
+import { GlyphComponent, GlyphName } from '../../shared/glyph.component';
+import { ACCESS_LEVEL_LABELS, AccessLevelComponent } from '../../shared/access-level.component';
 import { ActionMenuComponent, ActionMenuItem } from '../../shared/action-menu.component';
 import { ToastService } from '../../core/notifications/toast.service';
 import { COPY_TEXT, UPDATE_TEXT } from '../../shared/copy-text';
@@ -49,7 +51,7 @@ import {
 @Component({
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
-        DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent, DeckModerationComponent,
+        PaperDialogComponent, GlyphComponent, DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent, DeckModerationComponent,
         CopyOriginComponent, CopyStatusComponent, ToggletipComponent, UnavailableNoteComponent, UpdateBadgeComponent, UpdateNewsComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
@@ -83,8 +85,13 @@ export class OwnDeckDetailPageComponent {
     readonly publishedLevel = signal<DeckVisibility | null>(null);
     /** Bumped when the deck's head revision changes (a saved description), so the publication block re-reads. */
     readonly publicationToken = signal(0);
+    readonly shareButton = viewChild<ElementRef<HTMLButtonElement>>('shareButton');
     readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
     readonly publication = viewChild(PublicationBlockComponent);
+    readonly sharingDialog = viewChild(PaperDialogComponent);
+    readonly shareLevel = computed(() => this.publishedLevel() ?? this.store.detailState().deck?.visibility ?? 'private');
+    readonly shareGlyph = computed<GlyphName>(() => this.shareLevel() === 'link' ? 'link' : this.shareLevel() === 'public' ? 'colonnade' : 'lock');
+    readonly shareLabel = computed(() => `Поделиться. Доступ: ${ACCESS_LEVEL_LABELS[this.shareLevel()]}`);
     /** The copy state of this deck (`null` for an ordinary deck, and while the first read is on its way). */
     readonly fork = computed(() => this.store.detailState().deck?.fork ?? null);
     /** `preparing` or `failed` while the copy is not ready: the hub then shows the state instead of the content. */
@@ -143,7 +150,6 @@ export class OwnDeckDetailPageComponent {
     readonly menuItems = computed<readonly ActionMenuItem[]>(() => {
         const fork = this.fork();
         return [
-            { id: 'access', label: 'Доступ…', glyph: 'lock' },
             ...(fork !== null && !fork.detached ? [{ id: 'detach', label: COPY_TEXT.detach, glyph: 'copy-branch' } as const] : [])
         ];
     });
@@ -261,12 +267,12 @@ export class OwnDeckDetailPageComponent {
             });
         });
         effect(() => {
-            // `/decks/{id}#access` (the link of «Запрошен доступ») lands on the access section once the block is on the page.
+            // Уведомление «Запрошен доступ» открывает окно, когда колода и настройки появились.
             const block = this.publication();
             const deckId = this.store.detailState().deck?.deckId ?? null;
             if (block === undefined || deckId === null || this.fragment() !== 'access' || this.followedAccess === deckId) return;
             this.followedAccess = deckId;
-            untracked(() => block.focusSection());
+            untracked(() => afterNextRender(() => this.sharingDialog()?.open(this.shareButton()?.nativeElement), { injector: this.injector }));
         });
 
         effect(() => {
@@ -302,10 +308,9 @@ export class OwnDeckDetailPageComponent {
         });
     }
 
-    /** «Доступ…» and «Отвязать от автора» of the «⋯» menu. */
+    /** Оставшиеся действия над копией в меню «⋯». */
     onMenu(id: string): void {
-        if (id === 'access') this.publication()?.focusSection();
-        else if (id === 'detach') this.askDetach();
+        if (id === 'detach') this.askDetach();
     }
 
     /** «Повторить» on a copy that could not be prepared. */
@@ -429,9 +434,9 @@ export class OwnDeckDetailPageComponent {
         if (this.editing()) this.closeEditor(); else this.openEditor();
     }
 
-    /** Material list actions that belong to the statistics: list the materials without exercises first. */
-    showMaterialsWithoutExercises(): void {
-        this.materials()?.showMissingFirst();
+    editSharedDescription(): void {
+        this.sharingDialog()?.close();
+        this.openEditor('description');
     }
 
     loadInsights(deckId: string = this.insightsDeckId ?? ''): void {

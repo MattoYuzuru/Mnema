@@ -26,12 +26,9 @@
     </nav>
 
     <div class="session">
-      @if (communityLaunched && !adminMode() && !onCommunityPage()) {
-        <app-book-search class="masthead-search" [class.is-open]="searchOpen()" mode="closed" [hint]="false" [(value)]="searchText" [(expanded)]="searchOpen" (searched)="searchCommunity($event)" />
-      }
       @if (status() === 'authenticated') {
+        <span class="identity" [title]="user()?.email ?? ''">{{ user()?.email }}</span>
         @if (!adminMode()) { <app-notification-bell /> }
-        <span class="identity">{{ user()?.name || user()?.email }}</span>
         <button type="button" class="button mono" (click)="logout()">Выйти</button>
       } @else if (status() === 'pending') {
         <span class="session-note" aria-live="polite">Проверяем вход…</span>

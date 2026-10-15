@@ -65,14 +65,14 @@ describe('InterestSettingsComponent', () => {
         const root = fixture.nativeElement as HTMLElement;
         const button = [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Изменить интересы')!;
         button.focus(); button.click(); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
-        expect(document.activeElement).toBe(root.querySelector('app-interest-picker input'));
-        const anatomy = root.querySelector<HTMLInputElement>('input[data-interest-topic="anatomy"]')!;
-        anatomy.checked = true; anatomy.dispatchEvent(new Event('change')); fixture.detectChanges();
+        expect(document.activeElement).toBe(root.querySelector('app-interest-picker button'));
+        root.querySelector<HTMLButtonElement>('[data-interest-category="medicine"]')!.click(); fixture.detectChanges();
+        root.querySelector<HTMLButtonElement>('button[data-interest-topic="anatomy"]')!.click(); fixture.detectChanges();
         [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Отмена')!.click(); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
         const edit = [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Изменить интересы')!;
         expect(document.activeElement).toBe(edit); expect(api.change).not.toHaveBeenCalled();
         edit.click(); fixture.detectChanges(); await fixture.whenStable();
-        expect(root.querySelector<HTMLInputElement>('input[data-interest-topic="anatomy"]')?.checked).toBe(false);
+        expect(root.querySelector('.chosen [data-interest-topic="anatomy"]')).toBeNull();
     });
     it('disables edit cancellation while saving and after an unknown command outcome', async () => {
         const fixture = TestBed.createComponent(InterestSettingsComponent); fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();

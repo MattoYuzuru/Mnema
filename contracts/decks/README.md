@@ -70,8 +70,8 @@ routes are private/no-store, owner-scoped (absent and foreign Deck, member or re
 same opaque 404) and need `learning.read` (GET) or `learning.write` (POST). The hub loads Deck
 detail, the item list and insights as **three independent requests**: a failed insights request
 shows an inline "statistics unavailable, retry" state and never hides the Deck, the list or any
-action. There are no vanity metrics (opens, streak, time, mastery percent); every widget ends in
-an action.
+action. There are no vanity metrics (opens, streak, time, mastery percent). The five figures share one surface,
+with ordinary numeric legends; statistics have no tables or navigation actions.
 
 | Operation | Request | Success |
 |---|---|---|
@@ -96,15 +96,15 @@ an action.
 
 `GET /api/decks/{deckId}/insights` has no parameters and returns, for the current Deck head:
 
-| Field | Meaning | Widget action |
-|---|---|---|
-| `deckId`, `deckRevisionId`, `deckVersion`, `asOf` | the snapshot it describes; `asOf` is the read clock (UTC) | the client compares `deckRevisionId` with the list to notice staleness |
-| `timezone` | IANA zone used for day boundaries | none |
-| `coverage {total, withExercises, withoutExercises}` | materials with at least one enabled exercise | «Показать» (list `sort=exerciseCount`) and AI exercises |
-| `states {NOT_STARTED, LEARNING, DUE, ON_TRACK}` | count of materials per state; always all four keys; the sum is `coverage.total` | «Учить» (scheduled session) |
-| `dueByDay[7]` | `{date, materials}` for seven consecutive local dates; a material falls in the day of its nearest `nextDue` (as in `study-progress`). Entry 0 is today and also includes everything already due, so it counts materials that can be studied now | start a session now or name the next useful day |
-| `exercisesByMechanic` | all seven mechanics as keys (zero included), enabled current exercises each | add or generate an exercise of an unused mechanic |
-| `captures {open, oldestOpenCreatedAt}` | this Deck's notes that are neither archived nor converted; `oldestOpenCreatedAt` is `null` when none | open the unprocessed notes |
+| Field | Meaning |
+|---|---|
+| `deckId`, `deckRevisionId`, `deckVersion`, `asOf` | the snapshot it describes; `asOf` is the read clock (UTC) |
+| `timezone` | IANA zone used for day boundaries |
+| `coverage {total, withExercises, withoutExercises}` | materials with at least one enabled exercise |
+| `states {NOT_STARTED, LEARNING, DUE, ON_TRACK}` | count of materials per state; always all four keys; the sum is `coverage.total` |
+| `dueByDay[7]` | `{date, materials}` for seven consecutive local dates; a material falls in the day of its nearest `nextDue` (as in `study-progress`). Entry 0 is today and also includes everything already due, so it counts materials that can be studied now |
+| `exercisesByMechanic` | all seven mechanics as keys (zero included), enabled current exercises each |
+| `captures {open, oldestOpenCreatedAt}` | this Deck's notes that are neither archived nor converted; `oldestOpenCreatedAt` is `null` when none |
 
 Materials with no scheduled due time (`NOT_STARTED`) are not in `dueByDay`. The sum of
 `exercisesByMechanic` equals the sum of the per-material `exerciseCount`. Everything derives
@@ -740,3 +740,17 @@ is in [`forks.json`](forks.json) (`fork.lastUpdate`); the architecture is [commu
 New: `UPDATE_REVERT_STALE` (409, with `unitId` when known). Used: `INVALID_REQUEST` (400: `reason` `unit_needed` with `unitId` and `units`, `material_still_used` with `unitId` and `dependency`, `duplicate_unit`,
 `unit_not_returnable`, `publication_refused`), `FORK_DETACHED`, `DECK_PREPARING`, `IDEMPOTENCY_CONFLICT`, `RESOURCE_NOT_FOUND`, `UPDATE_PLAN_BUSY` (the routes share the plan routes' places), `AUTHENTICATION_REQUIRED`,
 `ACCESS_DENIED`.
+
+## Навигация материалов
+
+`GET /api/decks/{deckId}/items/{memberKey}/navigation` — приватный owner-only ответ, как чтение материала:
+`Cache-Control: private, no-store`, `ETag` текущей `deckVersion`, scope `learning.read`. Отсутствующая,
+удалённая или чужая колода/материал дают одинаковый `404 RESOURCE_NOT_FOUND`.
+
+Ответ: `deckId`, `memberKey`, `deckRevisionId`, `deckVersion` (строка), `ordinal` (с нуля), `total`,
+`previousMemberKey` и `nextMemberKey` (UUID либо `null`). У первого предыдущий равен `null`, у последнего
+следующий равен `null`, у единственного оба равны `null`. Соседи определяются текущим counted member root;
+после нахождения позиции читаются максимум три записи дерева, документы и весь список не передаются.
+Поиск текущей позиции использует существующую серверную проекцию `currentOrdinal`, без обещания O(log N).
+Frontend принимает переходы только при совпадении ревизии, версии и позиции с показанным материалом.
+Ошибка навигации не скрывает документ; смена порядка требует обновления чтения.

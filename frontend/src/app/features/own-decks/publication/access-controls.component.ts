@@ -19,12 +19,7 @@ let nextControls = 0;
 /** The levels in the order of the product table (docs/product/community-decks.md, «Доступ»). */
 const LEVELS: readonly PublicationLevel[] = ['PRIVATE', 'LINK', 'INVITE', 'PUBLIC'];
 
-/**
- * Who may open the deck: the level picker and, at «По приглашению», the switch «Принимать запросы доступа». Picking a level only
- * stages it: a short panel says who will see the deck and what happens to the links, and «Применить» sends the one Share/8
- * publication `PUT` (leaving «Приватная» publishes the current head; the other changes carry no `publish`). «Публичная» is not
- * applied here: its button opens the checklist of the publication block. The panel's «Отмена» returns the picker to the real level.
- */
+/** Выбор доступа сохраняется сразу; «Публичная» открывает обязательный чек-лист. Неизвестный исход повторяет точную команду. */
 @Component({
     selector: 'app-access-controls',
     imports: [SegmentedChoiceComponent],
@@ -34,9 +29,8 @@ const LEVELS: readonly PublicationLevel[] = ['PRIVATE', 'LINK', 'INVITE', 'PUBLI
 })
 export class AccessControlsComponent {
     readonly state = input.required<PublicationState>();
-    /** The checklist of the publication block is open (the «Сделать публичной…» button controls it). */
+    /** Обязательный чек-лист открывается при выборе публичного доступа. */
     readonly checklistOpen = input(false);
-    readonly checklistId = input<string | null>(null);
     /** A command was applied: the new state. */
     readonly saved = output<PublicationState>();
     /** An exact retry was answered with the original acknowledgement: the host re-reads the state. */
@@ -53,6 +47,10 @@ export class AccessControlsComponent {
     protected readonly staged = linkedSignal<PublicationLevel, PublicationLevel | null>({ source: this.stored, computation: level => level });
     protected readonly busy = signal(false);
     protected readonly problem = signal<string | null>(null);
+    protected readonly unknownOutcome = signal(false);
+
+    private restoringChoice = false;
+    private readonly picker = viewChild<SegmentedChoiceComponent<PublicationLevel>>(SegmentedChoiceComponent);
 
     protected readonly options: readonly SegmentedOption<PublicationLevel>[] = LEVELS.map(level => ({
         value: level, label: ACCESS_TEXT.levelNames[level], hint: ACCESS_TEXT.levelHints[level]
@@ -65,8 +63,6 @@ export class AccessControlsComponent {
         const to = this.changing();
         return to === null ? [] : levelChangeLines(this.state().visibility, to);
     });
-    protected readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
-    protected readonly publicButton = viewChild<ElementRef<HTMLButtonElement>>('publicButton');
 
     private readonly api = inject(PublicationApiService);
     private readonly toasts = inject(ToastService);
@@ -74,41 +70,35 @@ export class AccessControlsComponent {
     private readonly injector = inject(Injector);
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     /** The exact command of an attempt whose outcome is unknown; retried with the same id. */
-    private pending: { readonly command: PublicationCommand; readonly rowVersion: string } | null = null;
+    private pending: { readonly command: PublicationCommand; readonly rowVersion: string; readonly state: PublicationState; readonly done: string; readonly level: boolean } | null = null;
 
     /** Puts the focus on the picker (the selected segment), e.g. after the checklist was dismissed. */
     focusPicker(): void {
         afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('input[type=radio]:checked')?.focus(), { injector: this.injector });
     }
 
-    /** Puts the focus on the «Сделать публичной…» button of the staged panel. */
-    focusPublicButton(): void {
-        afterNextRender(() => this.publicButton()?.nativeElement.focus(), { injector: this.injector });
-    }
+    /** После закрытия чек-листа фокус возвращается на выбор доступа. */
+    cancelPublicChoice(): void { this.restoreStoredChoice(); this.focusPicker(); }
 
     protected pick(level: PublicationLevel | null): void {
-        if (level === null || this.busy()) return;
+        if (level === null || this.busy() || this.unknownOutcome() || this.restoringChoice) return;
+        if (level !== 'PUBLIC' && this.checklistOpen()) this.closeChecklist.emit();
         this.staged.set(level);
         this.problem.set(null);
-        // Another choice dismisses a checklist opened for «Публичная».
-        if (level !== 'PUBLIC' && this.checklistOpen()) this.closeChecklist.emit();
+        if (level === 'PUBLIC' && this.state().visibility !== 'PUBLIC') this.openChecklist.emit();
+        else this.apply();
     }
 
-    protected cancel(): void {
-        if (this.busy()) return;
-        this.staged.set(this.state().visibility);
-        this.problem.set(null);
-        if (this.checklistOpen()) this.closeChecklist.emit();
-        this.focusPicker();
+    protected retryPending(): void {
+        const pending = this.pending;
+        if (pending === null || this.busy()) return;
+        this.send(pending.command, pending.state, pending.done, pending.level);
     }
 
     protected apply(): void {
         const target = this.changing();
         if (this.busy() || target === null) return;
-        if (target === 'PUBLIC') {
-            if (this.checklistOpen()) this.closeChecklist.emit(); else this.openChecklist.emit();
-            return;
-        }
+        if (target === 'PUBLIC') return;
         const state = this.state();
         this.send(this.reuseOrBuild(state, {
             commandId: '',
@@ -123,7 +113,7 @@ export class AccessControlsComponent {
     protected toggleRequests(event: Event): void {
         const input = event.target as HTMLInputElement;
         const state = this.state();
-        if (this.busy()) { input.checked = state.requestsEnabled; return; }
+        if (this.busy() || this.unknownOutcome()) { input.checked = state.requestsEnabled; return; }
         this.send(this.reuseOrBuild(state, {
             commandId: '', visibility: state.visibility, metadata: state.metadata, requestsEnabled: input.checked, publish: null
         }), state, ACCESS_TEXT.requestsSaved, false, input);
@@ -131,7 +121,21 @@ export class AccessControlsComponent {
 
     /** A busy switch ignores the click instead of losing the focus (`aria-disabled`, never `disabled`). */
     protected hold(event: Event): void {
-        if (this.busy()) event.preventDefault();
+        if (this.busy() || this.unknownOutcome()) event.preventDefault();
+    }
+
+    private restoreStoredChoice(): void {
+        const level = this.state().visibility;
+        this.staged.set(level);
+        // Синхронный отказ может прийти раньше первого рендера выбранного значения: возвращаем также модель нативной группы.
+        this.restoringChoice = true;
+        this.picker()?.value.set(level);
+        this.restoringChoice = false;
+        // Нативная radio-группа меняется до события change. При синхронном отказе Angular видит прежнее
+        // значение привязки и не обновляет checked повторно, поэтому восстанавливаем также состояние DOM.
+        for (const radio of this.host.nativeElement.querySelectorAll<HTMLInputElement>('input[type=radio]')) {
+            radio.checked = radio.value === level;
+        }
     }
 
     private reuseOrBuild(state: PublicationState, draft: PublicationCommand): PublicationCommand {
@@ -142,7 +146,8 @@ export class AccessControlsComponent {
     }
 
     private send(command: PublicationCommand, state: PublicationState, done: string, level: boolean, input?: HTMLInputElement): void {
-        this.pending = { command, rowVersion: state.rowVersion };
+        this.pending = { command, rowVersion: state.rowVersion, state, done, level };
+        this.unknownOutcome.set(false);
         this.busy.set(true);
         this.problem.set(null);
         this.api.save(state.deckId, state.rowVersion, command).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -150,8 +155,13 @@ export class AccessControlsComponent {
                 this.pending = null;
                 this.busy.set(false);
                 this.toasts.echo(done);
-                if (result.replayed) this.replayed.emit();
-                else this.saved.emit(result.acknowledgement.publication);
+                if (result.replayed) {
+                    this.restoreStoredChoice();
+                    this.replayed.emit();
+                } else {
+                    this.staged.set(result.acknowledgement.publication.visibility);
+                    this.saved.emit(result.acknowledgement.publication);
+                }
                 if (level) this.focusPicker();
             },
             error: (error: unknown) => {
@@ -162,8 +172,9 @@ export class AccessControlsComponent {
                 // Only a lost connection or a server fault leaves the outcome unknown (the same command is retried); an answer is final.
                 if (failure !== null && failure.status >= 400 && failure.status < 500) {
                     this.pending = null;
+                    this.restoreStoredChoice();
                     if (failure.status === 412 || failure.status === 409) this.refresh.emit();
-                }
+                } else this.unknownOutcome.set(true);
                 if (level) this.focusPicker();
             }
         });

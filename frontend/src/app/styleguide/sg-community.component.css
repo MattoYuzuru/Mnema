@@ -1,8 +1,6 @@
 /* Styleguide-only layout of the «Сообщество» section (namespaced sg-*; the specimens use the real app classes). */
 .sg-field-box { position: relative; max-inline-size: 26rem; }
 .sg-field-box input { inline-size: 100%; min-block-size: var(--mn-touch-min); }
-.sg-header-strip { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.5rem; border-block: 1px solid var(--mn-ink); padding-block: .75rem; }
-.sg-header-strip app-book-search { flex: 1 1 18rem; }
 .sg-address { margin: 0; overflow-wrap: anywhere; }
 .sg-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .sg-shelf-narrow { max-inline-size: 24rem; }

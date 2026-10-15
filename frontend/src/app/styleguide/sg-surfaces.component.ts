@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ViewEncapsulation, computed, inject, signal } from '@angular/core';
 
+import { PaperDialogComponent } from '../shared/paper-dialog.component';
+
 import { NativeDocument } from '../content/native-document';
 import { documentOf, nativeNode } from '../content/rendering/native-renderer.fixtures';
 import { NativeDocumentRendererComponent } from '../content/rendering/native-document-renderer.component';
@@ -89,7 +91,7 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
 @Component({
     selector: 'app-sg-surfaces',
     encapsulation: ViewEncapsulation.None,
-    imports: [SgSpecimenComponent, AccessScreenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
+    imports: [PaperDialogComponent, SgSpecimenComponent, AccessScreenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
         NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent, AutoLoadComponent,
         AccessLevelComponent, PublicationBlockComponent, AccessPanelComponent, ComplaintDialogComponent, ModerationNoticeComponent, UnavailableNoteComponent,
         CopyMarkComponent, CopyOriginComponent, CopyStatusComponent],
@@ -103,6 +105,9 @@ export class SgSurfacesComponent {
     private readonly toasts = inject(ToastService);
     private readonly shareLinks = inject(ShareLinkService);
     private nextToast = 0;
+    protected readonly profileShown = signal(false);
+    protected readonly profileFields = signal<readonly string[]>([]);
+    protected toggleProfileField(field: string): void { this.profileFields.update(fields => fields.includes(field) ? fields.filter(value => value !== field) : [...fields, field]); }
     protected readonly privateDeck = SG_PRIVATE_DECK;
     protected readonly sharedDeck = SG_SHARED_DECK;
     protected readonly inviteDeck = SG_INVITE_DECK;

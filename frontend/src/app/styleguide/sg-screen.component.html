@@ -35,4 +35,14 @@
       </section>
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Статистика колоды" selector="app-deck-insights" [onPaper]="true"
+    when="Пять графиков на одном листе: разнообразие упражнений занимает две колонки, покрытие — третью; ниже состояния, повторения и заметки. Числа читаются в подписях и легендах.">
+    <app-deck-insights [state]="insights" />
+  </app-sg-specimen>
+  <app-sg-specimen title="Соседние материалы" selector="app-reading-frame" [onPaper]="true"
+    when="Шевроны 120° без фона остаются в боковых полях по центру экрана, пока читатель внутри материала. На узком экране ссылки идут под материалом; несуществующий сосед отсутствует.">
+    <app-reading-frame [previous]="['/styleguide']" [next]="['/styleguide']">
+      <article class="paper-surface"><h3>Материал в порядке колоды</h3><p>Навигация остаётся за пределами текста и не скрывает его при прокрутке.</p></article>
+    </app-reading-frame>
+  </app-sg-specimen>
 </section>

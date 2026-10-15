@@ -94,8 +94,10 @@ describe('Deck hub wire contract (contracts/decks/hub.json)', () => {
             expect(hubFailureOf(new Error('x'))).toBeNull();
         });
 
-        it('names an action for every widget', () => {
-            expect(Object.keys(hub.insights.widgetActions)).toEqual(['coverage', 'states', 'dueByDay', 'exercisesByMechanic', 'captures']);
+        it('defines a unified five-figure presentation without tables or actions', () => {
+            expect(hub.insights.presentation.figures).toEqual(['exercisesByMechanic', 'coverage', 'states', 'dueByDay', 'captures']);
+            expect(hub.insights.presentation.tables).toBe(false);
+            expect(hub.insights.presentation.actions).toBe(false);
         });
     });
 

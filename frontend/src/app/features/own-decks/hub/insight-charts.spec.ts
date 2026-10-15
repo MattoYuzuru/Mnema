@@ -8,7 +8,6 @@ import {
     dayLabel,
     dueBars,
     dueSentence,
-    hasUnusedMechanic,
     mechanicBars,
     mechanicsSentence,
     stateSegments,
@@ -55,7 +54,6 @@ describe('insight charts and wording', () => {
         expect(bars[0].height).toBeGreaterThan(bars[2].height);
         expect(bars[1].materials).toBe(0);
         expect(bars[1].height).toBeGreaterThan(0);
-        expect(bars[0].tableLabel).toMatch(/^Сегодня, /);
         expect(dayLabel('2026-10-04', 2)).toMatch(/вс/);
         expect(dueSentence(insights.dueByDay)).toBe('Сегодня можно повторить 2 материала.');
         const later = insights.dueByDay.map((day, index) => ({ ...day, materials: index === 3 ? 4 : 0 }));
@@ -69,8 +67,6 @@ describe('insight charts and wording', () => {
         expect(bars.map(bar => bar.mechanic)).toEqual([...hub.constants.mechanics]);
         expect(bars.find(bar => bar.mechanic === 'MATCH')?.width).toBe(0);
         expect(bars.find(bar => bar.mechanic === 'CHOICE')?.width).toBe(100);
-        expect(hasUnusedMechanic(insights.exercisesByMechanic)).toBe(true);
-        expect(hasUnusedMechanic(empty.exercisesByMechanic)).toBe(false);
         expect(mechanicsSentence(insights.exercisesByMechanic)).toBe('Всего 14 упражнений; чаще всего «Выбрать ответ»: 6. Не использовано 3 механики из 7.');
         expect(mechanicsSentence(empty.exercisesByMechanic)).toBe('Упражнений пока нет.');
     });
