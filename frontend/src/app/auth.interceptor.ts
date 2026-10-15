@@ -35,7 +35,9 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
             `${prefix}/learning-profile`, `${prefix}/speech-consent`, `${prefix}/promo-codes/redemptions`, `${prefix}/promo-popup`, `${prefix}/promo-popup/events`,
             `${prefix}/experiment-events`, `${prefix}/billing/checkout`,
             // The topic directory of the publication checklist (Share/8) and the invitation redemption of a signed-in viewer (Share/13).
-            `${prefix}/topics`, `${prefix}/invites:redeem`];
+            `${prefix}/topics`, `${prefix}/invites:redeem`,
+            `${prefix}/community/interests`, `${prefix}/community/interests:reset`, `${prefix}/community/events`,
+            `${prefix}/community/exposures`, `${prefix}/community/recommendations`];
         const adminRoute = [`${prefix}/admin/console/access`, `${prefix}/admin/console/report`, `${prefix}/admin/console/audit`, `${prefix}/admin/promo-codes`, `${prefix}/admin/support/tickets`,
             `${prefix}/admin/complaints`, `${prefix}/admin/complaints/journal`].includes(url.pathname)
             // The complaint queue of the owner console (Share/15): one complaint, its unit picker and the two decisions (`:decide`, `:unhide`).

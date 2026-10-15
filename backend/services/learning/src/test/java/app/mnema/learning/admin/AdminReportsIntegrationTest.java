@@ -143,7 +143,7 @@ class AdminReportsIntegrationTest extends PostgresIntegrationTest {
         assertThat(first.entries().stream().map(AdminAudit.Entry::auditId).toList()).doesNotContainAnyElementsOf(next.entries().stream().map(AdminAudit.Entry::auditId).toList());
         for(String statement:new String[]{"UPDATE app_learning.admin_audit SET action='PROMO_DISABLE' WHERE resource_id=:id","DELETE FROM app_learning.admin_audit WHERE resource_id=:id"})
             assertThatThrownBy(() -> jdbc.sql(statement).param("id",resource).update()).as(statement).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-        assertThatThrownBy(() -> jdbc.sql("TRUNCATE app_learning.admin_audit").update()).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.sql("TRUNCATE app_learning.catalog_event, app_learning.deck_exposure_day, app_learning.recommendation_snapshot, app_learning.user_topic_interest, app_learning.community_interest_profile, app_learning.admin_audit").update()).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         assertThat(as(OWNER).perform(get("/admin/console/audit?before=bad")).andReturn().getResponse().getStatus()).isEqualTo(400);
         assertThat(as(OWNER).perform(get("/admin/console/audit")).andReturn().getResponse().getStatus()).isEqualTo(200);
     }

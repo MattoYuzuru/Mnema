@@ -15,6 +15,8 @@ import { SgSpecimenComponent } from './sg-specimen.component';
 import {
     COMMUNITY_CARDS, DEMO_AUTHOR, DEMO_AUTHOR_BARE, DEMO_LANGUAGES, DEMO_TOPICS, INVITATION_CARD, INVITATION_NOTE, demoCards
 } from './sg-community-demo';
+import { InterestSummaryComponent } from '../shared/interest-summary.component';
+import { InterestPickerComponent } from '../shared/interest-picker.component';
 import { TypewriterHintComponent } from '../shared/typewriter-hint.component';
 
 const FIRST_PAGE = 8;
@@ -31,7 +33,7 @@ type SearchKind = 'found' | 'capped' | 'none';
     selector: 'app-sg-community',
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, BookSearchComponent, TypewriterHintComponent, CatalogFiltersComponent, DeckShelfComponent, DeckGridComponent,
-        CommunityEmptyComponent, AuthorHeaderComponent, PublicDeckCardComponent],
+        CommunityEmptyComponent, AuthorHeaderComponent, PublicDeckCardComponent, InterestPickerComponent, InterestSummaryComponent],
     templateUrl: './sg-community.component.html',
     styleUrl: './sg-community.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -40,6 +42,12 @@ export class SgCommunityComponent {
     private readonly destroyRef = inject(DestroyRef);
     private timer: ReturnType<typeof setTimeout> | null = null;
 
+    protected readonly interests = DEMO_TOPICS.map(topic => ({ id: topic.id, name: topic.name, parentId: null }));
+    protected readonly pickedInterests = signal<readonly string[]>(['spanish']);
+    protected readonly interestNotice = signal('');
+    protected readonly recommendationDecks = demoCards(0, 12);
+    protected readonly summarySelected = signal(this.interests.filter(topic => topic.id === 'spanish'));
+    protected readonly summaryInferred = signal(this.interests.filter(topic => topic.id === 'anatomy'));
     protected readonly topics = DEMO_TOPICS;
     protected readonly languages = DEMO_LANGUAGES;
     protected readonly shelfDecks = COMMUNITY_CARDS.slice(0, 4);

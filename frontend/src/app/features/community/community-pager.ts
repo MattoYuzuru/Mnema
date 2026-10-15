@@ -92,6 +92,7 @@ export class CommunityPager<Row extends PagerRow = CommunityCard> {
         this.subscription?.unsubscribe();
         this.subscription = null;
         this.phase.set('idle');
+        this.rows.set([]); this.total.set(0); this.capped.set(false); this.cursor.set(null);
         this.loadingMore.set(false);
     }
 

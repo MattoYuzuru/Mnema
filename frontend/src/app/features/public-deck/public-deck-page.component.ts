@@ -5,6 +5,8 @@ import { ActivatedRoute, Router, RouterLink, Scroll } from '@angular/router';
 import { Subscription, filter, take } from 'rxjs';
 
 import { learnerOrigin } from '../../app.config';
+import { CatalogTelemetry } from '../community/catalog-telemetry.service';
+import { InterestStore } from '../community/interest-store.service';
 import { AuthService } from '../../auth.service';
 import { AuthorCardsService } from '../../author-cards.service';
 import { safeReturnUrl } from '../../auth-protocol';
@@ -101,6 +103,8 @@ export class PublicDeckPageComponent {
     private readonly router = inject(Router);
     private readonly api = inject(PublicDeckApiService);
     private readonly auth = inject(AuthService);
+    private readonly telemetry = inject(CatalogTelemetry);
+    private readonly interests = inject(InterestStore);
     private readonly forks = inject(ForkApiService);
     private readonly access = inject(AccessApiService);
     private readonly authors = inject(AuthorCardsService);
@@ -292,6 +296,7 @@ export class PublicDeckPageComponent {
         this.meta.title(null);
         // A signed-in viewer's bearer must be on the first request, so the server can say OWNER or GRANTEE.
         await this.auth.restore();
+        this.interests.ensure();
         if (sequence !== this.sequence) return;
         const token = this.takeInviteToken(code);
         if (token !== null) this.redeem(token, code, sequence);
@@ -371,6 +376,7 @@ export class PublicDeckPageComponent {
 
     private accept(deck: PublicDeck): void {
         this.deck.set(deck);
+        if (deck.visibility === 'PUBLIC') this.telemetry.detail(deck.code);
         this.phase.set('ready');
         this.meta.indexable(deck.visibility === 'PUBLIC');
         this.meta.title(deck.title);

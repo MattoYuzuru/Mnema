@@ -45,7 +45,7 @@ interface GridRow { readonly deck: PublicDeckCard; readonly delay: number }
       <ul #list class="grid" role="list">
         @for (row of rows(); track row.deck.id) {
           <li class="cell" [style.--mn-cascade-delay]="row.delay + 'ms'">
-            <app-public-deck-card [deck]="row.deck" [headingLevel]="headingLevel()" [link]="deckLink()(row.deck)" [note]="noteFor()?.(row.deck) ?? null"
+            <app-public-deck-card [observe]="observe()" (visible)="visible.emit($event)" (opened)="opened.emit($event)" [deck]="row.deck" [headingLevel]="headingLevel()" [link]="deckLink()(row.deck)" [note]="noteFor()?.(row.deck) ?? null"
               [authorShown]="authorShown()" [menuItems]="menuFor()?.(row.deck) ?? menuItems()"
               (action)="action.emit({ id: $event, deck: row.deck })" />
           </li>
@@ -59,6 +59,9 @@ interface GridRow { readonly deck: PublicDeckCard; readonly delay: number }
 })
 export class DeckGridComponent {
     readonly decks = input.required<readonly PublicDeckCard[]>();
+    readonly observe = input(false);
+    readonly visible = output<PublicDeckCard>();
+    readonly opened = output<PublicDeckCard>();
     readonly results = input<DeckResults | null>(null);
     readonly headingLevel = input<2 | 3 | 4>(3);
     readonly deckLink = input<(deck: PublicDeckCard) => string | readonly string[] | null>(() => null);

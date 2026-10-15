@@ -768,3 +768,28 @@ passing browser run, the full repository gates, an independent review or product
 
 References: [Chromium certificate SPKI switch](https://chromium.googlesource.com/chromium/src/+/main/services/network/public/cpp/network_switches.cc)
 and [Chrome DevTools Network protocol](https://chromedevtools.github.io/devtools-protocol/tot/Network/).
+
+## Community recommendations (`--recs`, Recs/4, #459)
+
+`--recs` is exclusive and composes the same disposable catalogue services as `--catalog`, with
+`learning.community.events.enabled` and `learning.community.for-you.enabled` enabled for that
+run only. It never changes the retained stack or production flags. Built JARs and production
+frontend are required; run under `caffeinate -d -i`, with no other browser run at the same time.
+
+```sh
+caffeinate -d -i python3 scripts/browser-identity/run.py \
+  --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node --recs
+```
+
+The synthetic catalogue is published through the real Learning API with public-profile consent
+from real disposable Identity accounts. Real UI keyboard actions select interest chips, open
+For-you cards, add a copy and reset the profile. Assertions cover a guest's 401/private UI,
+empty/sparse recommendations, explanation, diversity in the first ten, exclusion of authored
+and copied decks, accepted telemetry with bearer, For-you sorting, 320 px, a 720 px viewport
+corresponding to 200% reflow of a 1440 px desktop, reduced motion and named/focusable controls.
+The viewport checks prove reflow, not browser zoom rendering or a physical phone. Chrome CDP
+accessibility smoke does not prove VoiceOver/TalkBack, Safari, Firefox or touch.
+
+Evidence consists of `recs_*` stages in `browser.json` and `recs-*.png` images. Any failed stage
+fails the run; dependent stages are marked skipped. The `--catalog`, `--community` and `--updates`
+regressions are run separately after the recommendation implementation.

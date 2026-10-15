@@ -33,7 +33,7 @@ artifact:
 | Изменить Study | [Study contract](../contracts/study/README.md); продукт — [exercise catalog](./product/exercise-catalog-v2.md) |
 | Изменить authoring/content | [Learning guide](../backend/services/learning/guide.md) и [native content contract](../contracts/content/native-v1/README.md) |
 | Изменить media | Раздел [Media](#media-epic-76) ниже |
-| Колоды сообщества: доступ, публикация, копии, жалобы | [Product contract](./product/community-decks.md) (раздел «Статус реализации»), затем [architecture](./architecture/community-decks.md) и разделы эпика в [Learning guide](../backend/services/learning/guide.md); состояние задач — evidence [эпика 1](./engineering/evidence/community-decks/epic-1/README.md) [эпика 2](./engineering/evidence/community-decks/epic-2/README.md) и [эпика 3](./engineering/evidence/community-decks/epic-3/README.md) |
+| Колоды сообщества: доступ, публикация, копии, жалобы | [Product contract](./product/community-decks.md) (раздел «Статус реализации»), затем [architecture](./architecture/community-decks.md) и разделы эпика в [Learning guide](../backend/services/learning/guide.md); состояние задач — evidence [эпика 1](./engineering/evidence/community-decks/epic-1/README.md) [эпика 2](./engineering/evidence/community-decks/epic-2/README.md) [эпика 3](./engineering/evidence/community-decks/epic-3/README.md) и [эпика 4](./engineering/evidence/community-decks/epic-4/README.md) |
 | Изменить AI | [Generation](../contracts/generation/README.md), [speech](../contracts/speech/README.md), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md); смысл — [product contract](./product/ai-layer-2026-10.md) |
 | GitHub Issue/PR | [Work item standard](./engineering/work-item-standard.md) |
 | Публикация или deployment | [Production delivery](./operations/production-delivery.md), только в scope соответствующего поручения |
@@ -63,7 +63,7 @@ artifact:
 | accepted | [AI layer contract](./product/ai-layer-2026-10.md) | Принятые решения AI-слоя: слои, сценарии, UX, usage, тарифы, промокоды, legal gates. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Текущий статус РКН/эквайринга и оставшиеся human gates; не юридическая гарантия. |
-| accepted | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. Эпики 1 (доступ, публикация, копии, жалобы) и 2 (обновления копий) закрыты и выкачены; эпик 3 идёт, эпик 4 не начат, раздел «Уточнено реализацией» фиксирует отличия от плана. |
+| accepted | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. Эпики 1 (доступ, публикация, копии, жалобы) и 2 (обновления копий) закрыты и выкачены; эпик 3 сделан локально, эпик 4 сделан локально (GitHub недоступен), раздел «Уточнено реализацией» фиксирует отличия от плана. |
 
 ## Architecture и backend
 
@@ -75,7 +75,7 @@ artifact:
 | accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; P0 content/Study реализованы, P1/P2 — границы будущей работы. |
 | accepted | [Native content format](./architecture/learning-content-format-v2.md) | Persisted native document contract. |
 | accepted | [AI generation platform](./architecture/ai-generation-platform.md) | Принятая архитектура AI-слоя: модули в Learning, Мастерская, MBM, провайдеры, usage, уведомления, безопасность. |
-| accepted | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. Таблица статуса реализации по частям (эпик 1 сделан, обновления и каталог нет). |
+| accepted | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. Таблица статуса реализации по частям: эпики 1–2 выкачены, эпик 3 сделан локально, эпик 4 сделан локально. |
 | current | [Revision storage and runtime boundaries](./architecture/revision-storage-and-runtime-boundaries.md) | Выбранное и реализованное storage-направление. |
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Counted-page/structural invariants. |
 | current | [Identity & Account guide](../backend/services/identity-account/guide.md) | Identity runtime. |
@@ -120,7 +120,7 @@ artifact:
 | accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения и реализованные delivery slices. |
 | accepted | [Epic #77 refinement](./engineering/epic-77-refinement.md) | AI-слой: delivery slices, пять прогонов и acceptance эпика. |
 | current | [Epic #77 prompts](./engineering/prompts/epic-77-ai-layer.md) | Промпты последовательных прогонов агента для реактивированного AI-эпика. |
-| accepted | [Community decks refinement](./engineering/community-decks-refinement.md) | Четыре эпика (#419–#422), задачи, зависимости и правила исполнения; статус выполнения эпика 1. |
+| accepted | [Community decks refinement](./engineering/community-decks-refinement.md) | Четыре эпика (#419–#422), задачи, зависимости и правила исполнения; статус всех четырёх эпиков, включая локальные эпики 3–4. |
 | current | [Community decks prompts](./engineering/prompts/community-decks.md) | Промпты сессий ведущего агента для четырёх эпиков колод сообщества. |
 | current | [Community decks: эпик 4 в локальном режиме](./engineering/prompts/community-decks-epic4-local.md) | Самодостаточный промпт эпика 4 для любого харнесса, пока GitHub недоступен: тексты задач, принятые решения и уроки эпиков 1–3. |
 | historical | [Epic #74 refinement](./engineering/epic-74-refinement.md), [dependency decisions](./engineering/epic-74-dependency-decisions.md), [hardware handoff](./engineering/epic-74-hardware-handoff.md) | Выполненный план, принятые зависимости и session handoff #74. |
@@ -189,3 +189,5 @@ history. Не переносите из них правила, имена и т�
 При расхождении prose с executable sources сначала проверяйте build files,
 migrations, routes, tests и workflows, затем исправляйте канонический документ —
 не создавайте ещё один конкурирующий источник.
+
+- **current:** [Community decks, эпик 4: локальная реализация и проверки](./engineering/evidence/community-decks/epic-4/README.md) — Recs/1–4, контракт событий/интересов/подбора, синтетическое сравнение ранкеров, границы проверки и [handoff сессии1](./engineering/evidence/community-decks/epic-4/handoff-session-1.md) после восстановления GitHub.

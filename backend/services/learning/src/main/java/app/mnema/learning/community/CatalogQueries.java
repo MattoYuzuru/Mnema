@@ -78,7 +78,7 @@ class CatalogQueries {
     }
 
     /** The predicates of the filters after {@code WHERE listed}; {@code ranked} reads the topic from the generation's copy ({@code r}). */
-    private static void filters(Sql sql, CatalogQuery query, Instant now, boolean ranked) {
+    static void filters(Sql sql, CatalogQuery query, Instant now, boolean ranked) {
         if (query.topic() != null) {
             String column = (ranked ? "r." : "d.") + (query.topicIsParent() ? "parent_topic_id" : "topic_id");
             sql.add(" AND " + column + " = :topic");

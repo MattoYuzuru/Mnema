@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterRenderEffect, computed, inject, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 import { ActionMenuComponent, ActionMenuItem } from './action-menu.component';
@@ -25,7 +25,7 @@ let nextCard = 0;
       <article class="card" [attr.aria-labelledby]="titleId">
         <div class="head">
           <ng-template #titleText>
-            @if (link(); as to) { <a [routerLink]="to">{{ deck().title }}</a> } @else { {{ deck().title }} }
+            @if (link(); as to) { <a [routerLink]="to" (click)="opened.emit(deck())">{{ deck().title }}</a> } @else { {{ deck().title }} }
           </ng-template>
           @switch (headingLevel()) {
             @case (2) { <h2 class="title" [id]="titleId"><ng-container [ngTemplateOutlet]="titleText" /></h2> }
@@ -78,6 +78,32 @@ export class PublicDeckCardComponent {
     readonly authorShown = input(true);
     /** The `id` of a chosen menu row other than «Поделиться». */
     readonly action = output<string>();
+    readonly observe = input(false);
+    readonly visible = output<PublicDeckCard>();
+    readonly opened = output<PublicDeckCard>();
+    private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
+    private observer: IntersectionObserver | null = null;
+    private observationEpoch = 0;
+    constructor() {
+        inject(DestroyRef).onDestroy(() => { this.observationEpoch++; this.observer?.disconnect(); });
+        afterRenderEffect(() => {
+            const enabled = this.observe();
+            const epoch = ++this.observationEpoch;
+            let fired = false;
+            const deck = this.deck();
+            this.observer?.disconnect();
+            this.observer = null;
+            if (!enabled || typeof IntersectionObserver === 'undefined') return;
+            this.observer = new IntersectionObserver(entries => {
+                if (!fired && epoch === this.observationEpoch && this.observe() && entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= 0.5)) {
+                    fired = true;
+                    this.visible.emit(deck);
+                    this.observer?.disconnect();
+                }
+            }, { threshold: 0.5 });
+            this.observer.observe(this.element.nativeElement);
+        });
+    }
 
     private readonly links = inject(ShareLinkService);
     protected readonly fallbackUrl = signal<string | null>(null);

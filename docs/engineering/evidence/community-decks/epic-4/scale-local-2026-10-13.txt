@@ -1,0 +1,332 @@
+zero_candidates_ms=24.812042
+zero_night_slice_ms=2.351958
+zero_partitions_ms=8.371459
+seed_catalogue_5000_ms=5376.06175
+seed_100k_profiles_2m_interests_200k_copies_ms=6948.538375
+event_insert_1m_ms=4459.578708
+receipt_insert_100k_ms=351.261708
+snapshot_insert_200k_ms=1976.878459
+exposure_insert_140k_ms=147.869958
+candidate_plan
+Sort (actual time=1.605..1.614 rows=97.00 loops=1)
+  Sort Key: d.public_code COLLATE "C"
+  Sort Method: quicksort  Memory: 47kB
+  Buffers: shared hit=1583 read=78 dirtied=2
+  ->  Nested Loop Left Join (actual time=1.044..1.592 rows=97.00 loops=1)
+        Buffers: shared hit=1583 read=78 dirtied=2
+        ->  Hash Join (actual time=1.038..1.439 rows=97.00 loops=1)
+              Hash Cond: (d.deck_id = "*SELECT* 1".deck_id)
+              Buffers: shared hit=1324 read=46 dirtied=2
+              ->  Seq Scan on public_deck d (actual time=0.005..0.213 rows=5000.00 loops=1)
+                    Buffers: shared hit=250
+              ->  Hash (actual time=1.031..1.037 rows=97.00 loops=1)
+                    Buckets: 1024  Batches: 1  Memory Usage: 13kB
+                    Buffers: shared hit=1074 read=46 dirtied=2
+                    ->  Unique (actual time=1.009..1.032 rows=97.00 loops=1)
+                          Buffers: shared hit=1074 read=46 dirtied=2
+                          ->  Merge Append (actual time=1.008..1.026 rows=100.00 loops=1)
+                                Sort Key: "*SELECT* 1".deck_id
+                                Buffers: shared hit=1074 read=46 dirtied=2
+                                ->  Subquery Scan on "*SELECT* 1" (actual time=0.438..0.441 rows=20.00 loops=1)
+                                      Buffers: shared hit=318 read=19 dirtied=2
+                                      ->  Sort (actual time=0.438..0.440 rows=20.00 loops=1)
+                                            Sort Key: d_1.deck_id
+                                            Sort Method: quicksort  Memory: 25kB
+                                            Buffers: shared hit=318 read=19 dirtied=2
+                                            ->  Limit (actual time=0.434..0.437 rows=20.00 loops=1)
+                                                  Buffers: shared hit=318 read=19 dirtied=2
+                                                  ->  Sort (actual time=0.433..0.435 rows=20.00 loops=1)
+                                                        Sort Key: r_1.rank
+                                                        Sort Method: top-N heapsort  Memory: 26kB
+                                                        Buffers: shared hit=318 read=19 dirtied=2
+                                                        ->  Nested Loop Anti Join (actual time=0.188..0.421 rows=250.00 loops=1)
+                                                              Join Filter: (f.upstream_deck_id = d_1.deck_id)
+                                                              Rows Removed by Join Filter: 500
+                                                              Buffers: shared hit=318 read=19 dirtied=2
+                                                              ->  Hash Join (actual time=0.140..0.326 rows=250.00 loops=1)
+                                                                    Hash Cond: (d_1.deck_id = r_1.deck_id)
+                                                                    Buffers: shared hit=316 read=8
+                                                                    ->  Bitmap Heap Scan on public_deck d_1 (actual time=0.045..0.214 rows=250.00 loops=1)
+                                                                          Recheck Cond: ((topic_id = 'english'::text) AND listed)
+                                                                          Filter: (owner_id <> '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid)
+                                                                          Heap Blocks: exact=250
+                                                                          Buffers: shared hit=250 read=4
+                                                                          ->  Bitmap Index Scan on public_deck_topic (actual time=0.032..0.032 rows=250.00 loops=1)
+                                                                                Index Cond: (topic_id = 'english'::text)
+                                                                                Index Searches: 1
+                                                                                Buffers: shared read=4
+                                                                    ->  Hash (actual time=0.093..0.093 rows=250.00 loops=1)
+                                                                          Buckets: 1024  Batches: 1  Memory Usage: 21kB
+                                                                          Buffers: shared hit=66 read=4
+                                                                          ->  Bitmap Heap Scan on deck_rank r_1 (actual time=0.024..0.080 rows=250.00 loops=1)
+                                                                                Recheck Cond: ((generation = '7001'::bigint) AND (topic_id = 'english'::text) AND listed)
+                                                                                Heap Blocks: exact=66
+                                                                                Buffers: shared hit=66 read=4
+                                                                                ->  Bitmap Index Scan on deck_rank_topic (actual time=0.020..0.020 rows=250.00 loops=1)
+                                                                                      Index Cond: ((generation = '7001'::bigint) AND (topic_id = 'english'::text))
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared read=4
+                                                              ->  Materialize (actual time=0.000..0.000 rows=2.00 loops=250)
+                                                                    Storage: Memory  Maximum Storage: 17kB
+                                                                    Buffers: shared hit=2 read=11 dirtied=2
+                                                                    ->  Nested Loop (actual time=0.029..0.046 rows=2.00 loops=1)
+                                                                          Buffers: shared hit=2 read=11 dirtied=2
+                                                                          ->  Index Scan using deck_fork_live on deck_fork f (actual time=0.009..0.012 rows=2.00 loops=1)
+                                                                                Index Cond: (owner_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid)
+                                                                                Index Searches: 1
+                                                                                Buffers: shared hit=1 read=4
+                                                                          ->  Index Scan using deck_scope_key on deck copy (actual time=0.016..0.016 rows=1.00 loops=2)
+                                                                                Index Cond: (deck_id = f.deck_id)
+                                                                                Filter: (deleted_at IS NULL)
+                                                                                Index Searches: 2
+                                                                                Buffers: shared hit=1 read=7 dirtied=2
+                                ->  Subquery Scan on "*SELECT* 2" (actual time=0.228..0.230 rows=20.00 loops=1)
+                                      Buffers: shared hit=331 read=5
+                                      ->  Sort (actual time=0.228..0.229 rows=20.00 loops=1)
+                                            Sort Key: d_2.deck_id
+                                            Sort Method: quicksort  Memory: 25kB
+                                            Buffers: shared hit=331 read=5
+                                            ->  Limit (actual time=0.225..0.227 rows=20.00 loops=1)
+                                                  Buffers: shared hit=331 read=5
+                                                  ->  Sort (actual time=0.224..0.226 rows=20.00 loops=1)
+                                                        Sort Key: r_2.rank
+                                                        Sort Method: top-N heapsort  Memory: 26kB
+                                                        Buffers: shared hit=331 read=5
+                                                        ->  Nested Loop Anti Join (actual time=0.092..0.214 rows=250.00 loops=1)
+                                                              Join Filter: (f_1.upstream_deck_id = d_2.deck_id)
+                                                              Rows Removed by Join Filter: 500
+                                                              Buffers: shared hit=331 read=5
+                                                              ->  Hash Join (actual time=0.087..0.162 rows=250.00 loops=1)
+                                                                    Hash Cond: (d_2.deck_id = r_2.deck_id)
+                                                                    Buffers: shared hit=318 read=5
+                                                                    ->  Bitmap Heap Scan on public_deck d_2 (actual time=0.025..0.083 rows=250.00 loops=1)
+                                                                          Recheck Cond: ((topic_id = 'spanish'::text) AND listed)
+                                                                          Filter: (owner_id <> '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid)
+                                                                          Heap Blocks: exact=250
+                                                                          Buffers: shared hit=251 read=2
+                                                                          ->  Bitmap Index Scan on public_deck_topic (actual time=0.014..0.014 rows=250.00 loops=1)
+                                                                                Index Cond: (topic_id = 'spanish'::text)
+                                                                                Index Searches: 1
+                                                                                Buffers: shared hit=1 read=2
+                                                                    ->  Hash (actual time=0.061..0.061 rows=250.00 loops=1)
+                                                                          Buckets: 1024  Batches: 1  Memory Usage: 21kB
+                                                                          Buffers: shared hit=67 read=3
+                                                                          ->  Bitmap Heap Scan on deck_rank r_2 (actual time=0.024..0.050 rows=250.00 loops=1)
+                                                                                Recheck Cond: ((generation = '7001'::bigint) AND (topic_id = 'spanish'::text) AND listed)
+                                                                                Heap Blocks: exact=66
+                                                                                Buffers: shared hit=67 read=3
+                                                                                ->  Bitmap Index Scan on deck_rank_topic (actual time=0.021..0.021 rows=250.00 loops=1)
+                                                                                      Index Cond: ((generation = '7001'::bigint) AND (topic_id = 'spanish'::text))
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=1 read=3
+                                                              ->  Materialize (actual time=0.000..0.000 rows=2.00 loops=250)
+                                                                    Storage: Memory  Maximum Storage: 17kB
+                                                                    Buffers: shared hit=13
+                                                                    ->  Nested Loop (actual time=0.003..0.005 rows=2.00 loops=1)
+                                                                          Buffers: shared hit=13
+                                                                          ->  Index Scan using deck_fork_live on deck_fork f_1 (actual time=0.001..0.002 rows=2.00 loops=1)
+                                                                                Index Cond: (owner_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid)
+                                                                                Index Searches: 1
+                                                                                Buffers: shared hit=5
+                                                                          ->  Index Scan using deck_scope_key on deck copy_1 (actual time=0.001..0.001 rows=1.00 loops=2)
+                                                                                Index Cond: (deck_id = f_1.deck_id)
+                                                                                Filter: (deleted_at IS NULL)
+                                                                                Index Searches: 2
+                                                                                Buffers: shared hit=8
+                                ->  Subquery Scan on "*SELECT* 3" (actual time=0.236..0.239 rows=20.00 loops=1)
+                                      Buffers: shared hit=331 read=6
+                                      ->  Sort (actual time=0.236..0.238 rows=20.00 loops=1)
+                                            Sort Key: d_3.deck_id
+                                            Sort Method: quicksort  Memory: 25kB
+                                            Buffers: shared hit=331 read=6
+                                            ->  Limit (actual time=0.233..0.236 rows=20.00 loops=1)
+                                                  Buffers: shared hit=331 read=6
+                                                  ->  Sort (actual time=0.233..0.235 rows=20.00 loops=1)
+                                                        Sort Key: r_3.rank
+                                                        Sort Method: top-N heapsort  Memory: 26kB
+                                                        Buffers: shared hit=331 read=6
+                                                        ->  Nested Loop Anti Join (actual time=0.087..0.223 rows=250.00 loops=1)
+                                                              Join Filter: (f_2.upstream_deck_id = d_3.deck_id)
+                                                              Rows Removed by Join Filter: 500
+                                                              Buffers: shared hit=331 read=6
+                                                              ->  Hash Join (actual time=0.081..0.172 rows=250.00 loops=1)
+                                                                    Hash Cond: (d_3.deck_id = r_3.deck_id)
+                                                                    Buffers: shared hit=318 read=6
+                                                                    ->  Bitmap Heap Scan on public_deck d_3 (actual time=0.026..0.101 rows=250.00 loops=1)
+                                                                          Recheck Cond: ((topic_id = 'german'::text) AND listed)
+                                                                          Filter: (owner_id <> '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid)
+                                                                          Heap Blocks: exact=250
+                                                                          Buffers: shared hit=251 read=2
+                                                                          ->  Bitmap Index Scan on public_deck_topic (actual time=0.016..0.016 rows=250.00 loops=1)
+                                                                                Index Cond: (topic_id = 'german'::text)
+                                                                                Index Searches: 1
+                                                                                Buffers: shared hit=1 read=2
+                                                                    ->  Hash (actual time=0.055..0.055 rows=250.00 loops=1)
+                                                                          Buckets: 1024  Batches: 1  Memory Usage: 21kB
+                                                                          Buffers: shared hit=67 read=4
+                                                                          ->  Bitmap Heap Scan on deck_rank r_3 (actual time=0.022..0.044 rows=250.00 loops=1)
+                                                                                Recheck Cond: ((generation = '7001'::bigint) AND (topic_id = 'german'::text) AND listed)
+                                                                                Heap Blocks: exact=66
+                                                                                Buffers: shared hit=67 read=4
+                                                                                ->  Bitmap Index Scan on deck_rank_topic (actual time=0.020..0.020 rows=250.00 loops=1)
+                                                                                      Index Cond: ((generation = '7001'::bigint) AND (topic_id = 'german'::text))
+                                                                                      Index Searches: 1
+                                                                                      Buffers: shared hit=1 read=4
+                                                              ->  Materialize (actual time=0.000..0.000 rows=2.00 loops=250)
+                                                                    Storage: Memory  Maximum Storage: 17kB
+                                                                    Buffers: shared hit=13
+                                                                    ->  Nested Loop (actual time=0.003..0.005 rows=2.00 loops=1)
+                                                                          Buffers: shared hit=13
+                                                                          ->  Index Scan using deck_fork_live on deck_fork f_2 (actual time=0.001..0.001 rows=2.00 loops=1)
+                                                                                Index Cond: (owner_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid)
+                                                                                Index Searches: 1
+                                                                                Buffers: shared hit=5
+                                                                          ->  Index Scan using deck_scope_key on deck copy_2 (actual time=0.001..0.001 rows=1.00 loops=2)
+                                                                                Index Cond: (deck_id = f_2.deck_id)
+                                                                                Filter: (deleted_at IS NULL)
+                                                                                Index Searches: 2
+                                                                                Buffers: shared hit=8
+                                ->  Subquery Scan on "*SELECT* 4" (actual time=0.028..0.030 rows=20.00 loops=1)
+                                      Buffers: shared hit=32 read=2
+                                      ->  Sort (actual time=0.028..0.029 rows=20.00 loops=1)
+                                            Sort Key: d_4.deck_id
+                                            Sort Method: quicksort  Memory: 25kB
+                                            Buffers: shared hit=32 read=2
+                                            ->  Limit (actual time=0.015..0.027 rows=20.00 loops=1)
+                                                  Buffers: shared hit=32 read=2
+                                                  ->  Nested Loop Anti Join (actual time=0.015..0.026 rows=20.00 loops=1)
+                                                        Join Filter: (f_3.upstream_deck_id = d_4.deck_id)
+                                                        Rows Removed by Join Filter: 40
+                                                        Buffers: shared hit=32 read=2
+                                                        ->  Index Scan using public_deck_new on public_deck d_4 (actual time=0.010..0.016 rows=20.00 loops=1)
+                                                              Filter: (owner_id <> '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid)
+                                                              Index Searches: 1
+                                                              Buffers: shared hit=19 read=2
+                                                        ->  Materialize (actual time=0.000..0.000 rows=2.00 loops=20)
+                                                              Storage: Memory  Maximum Storage: 17kB
+                                                              Buffers: shared hit=13
+                                                              ->  Nested Loop (actual time=0.002..0.004 rows=2.00 loops=1)
+                                                                    Buffers: shared hit=13
+                                                                    ->  Index Scan using deck_fork_live on deck_fork f_3 (actual time=0.001..0.001 rows=2.00 loops=1)
+                                                                          Index Cond: (owner_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid)
+                                                                          Index Searches: 1
+                                                                          Buffers: shared hit=5
+                                                                    ->  Index Scan using deck_scope_key on deck copy_3 (actual time=0.001..0.001 rows=1.00 loops=2)
+                                                                          Index Cond: (deck_id = f_3.deck_id)
+                                                                          Filter: (deleted_at IS NULL)
+                                                                          Index Searches: 2
+                                                                          Buffers: shared hit=8
+                                ->  Subquery Scan on "*SELECT* 5" (actual time=0.077..0.079 rows=20.00 loops=1)
+                                      Buffers: shared hit=62 read=14
+                                      ->  Sort (actual time=0.076..0.078 rows=20.00 loops=1)
+                                            Sort Key: d_5.deck_id
+                                            Sort Method: quicksort  Memory: 25kB
+                                            Buffers: shared hit=62 read=14
+                                            ->  Limit (actual time=0.025..0.075 rows=20.00 loops=1)
+                                                  Buffers: shared hit=62 read=14
+                                                  ->  Nested Loop Anti Join (actual time=0.025..0.074 rows=20.00 loops=1)
+                                                        Join Filter: (f_4.upstream_deck_id = d_5.deck_id)
+                                                        Rows Removed by Join Filter: 40
+                                                        Buffers: shared hit=62 read=14
+                                                        ->  Nested Loop (actual time=0.020..0.065 rows=20.00 loops=1)
+                                                              Buffers: shared hit=49 read=14
+                                                              ->  Index Scan using deck_rank_popular on deck_rank r_4 (actual time=0.015..0.016 rows=20.00 loops=1)
+                                                                    Index Cond: (generation = '7001'::bigint)
+                                                                    Index Searches: 1
+                                                                    Buffers: shared hit=1 read=2
+                                                              ->  Index Scan using public_deck_pkey on public_deck d_5 (actual time=0.002..0.002 rows=1.00 loops=20)
+                                                                    Index Cond: (deck_id = r_4.deck_id)
+                                                                    Filter: (listed AND (owner_id <> '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid))
+                                                                    Index Searches: 20
+                                                                    Buffers: shared hit=48 read=12
+                                                        ->  Materialize (actual time=0.000..0.000 rows=2.00 loops=20)
+                                                              Storage: Memory  Maximum Storage: 17kB
+                                                              Buffers: shared hit=13
+                                                              ->  Nested Loop (actual time=0.002..0.004 rows=2.00 loops=1)
+                                                                    Buffers: shared hit=13
+                                                                    ->  Index Scan using deck_fork_live on deck_fork f_4 (actual time=0.001..0.001 rows=2.00 loops=1)
+                                                                          Index Cond: (owner_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid)
+                                                                          Index Searches: 1
+                                                                          Buffers: shared hit=5
+                                                                    ->  Index Scan using deck_scope_key on deck copy_4 (actual time=0.001..0.001 rows=1.00 loops=2)
+                                                                          Index Cond: (deck_id = f_4.deck_id)
+                                                                          Filter: (deleted_at IS NULL)
+                                                                          Index Searches: 2
+                                                                          Buffers: shared hit=8
+        ->  Index Scan using deck_rank_pkey on deck_rank r (actual time=0.001..0.001 rows=1.00 loops=97)
+              Index Cond: ((generation = '7001'::bigint) AND (deck_id = d.deck_id))
+              Index Searches: 97
+              Buffers: shared hit=259 read=32
+Planning:
+  Buffers: shared hit=382 read=30
+Planning Time: 1.062 ms
+Execution Time: 1.805 ms
+candidate_p95_ms=4.04725
+ranker_p95_ms=2.585417
+ranker_constrained_100_ms=7.166708
+account_event_plan
+Append (actual time=0.131..0.724 rows=10.00 loops=1)
+  Buffers: shared read=13
+  ->  Seq Scan on catalog_event_202510 catalog_event_1 (actual time=0.004..0.005 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202511 catalog_event_2 (actual time=0.001..0.001 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202512 catalog_event_3 (actual time=0.001..0.001 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202601 catalog_event_4 (actual time=0.001..0.001 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202602 catalog_event_5 (actual time=0.001..0.001 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202603 catalog_event_6 (actual time=0.001..0.001 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202604 catalog_event_7 (actual time=0.001..0.001 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202605 catalog_event_8 (actual time=0.001..0.001 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202606 catalog_event_9 (actual time=0.001..0.001 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202607 catalog_event_10 (actual time=0.001..0.001 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202608 catalog_event_11 (actual time=0.000..0.001 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202609 catalog_event_12 (actual time=0.000..0.000 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Bitmap Heap Scan on catalog_event_202610 catalog_event_13 (actual time=0.119..0.699 rows=10.00 loops=1)
+        Recheck Cond: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+        Heap Blocks: exact=10
+        Buffers: shared read=13
+        ->  Bitmap Index Scan on catalog_event_202610_account_id_occurred_at_idx (actual time=0.015..0.015 rows=10.00 loops=1)
+              Index Cond: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+              Index Searches: 1
+              Buffers: shared read=3
+  ->  Seq Scan on catalog_event_202611 catalog_event_14 (actual time=0.006..0.006 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+  ->  Seq Scan on catalog_event_202612 catalog_event_15 (actual time=0.002..0.002 rows=0.00 loops=1)
+        Filter: ((account_id = '809d7aea-9eac-f339-b2e3-5e3c8ae0a57c'::uuid) AND (occurred_at >= (statement_timestamp() - '1 year 1 mon'::interval)))
+Planning:
+  Buffers: shared hit=481 read=30
+Planning Time: 1.051 ms
+Execution Time: 0.762 ms
+active_account_page_plan
+Limit (actual time=0.005..0.055 rows=25.00 loops=1)
+  Buffers: shared hit=21 read=7
+  ->  Index Scan using community_interest_profile_pkey on community_interest_profile (actual time=0.004..0.054 rows=25.00 loops=1)
+        Index Cond: (account_id > '00000000-0000-0000-0000-000000000000'::uuid)
+        Filter: (last_active_at >= (statement_timestamp() - '30 days'::interval))
+        Index Searches: 1
+        Buffers: shared hit=21 read=7
+Planning:
+  Buffers: shared hit=27 read=2
+Planning Time: 0.119 ms
+Execution Time: 0.061 ms
+night_slice_25_ms=245.593542
+night_100k_extrapolated_seconds=982.374168
+raw_rows_measured=1000000 raw_bytes_measured=205537280 raw_bytes_per_row=205.53728
+raw_47m_extrapolated_bytes=9660252160
+receipt_rows_measured=100000 receipt_bytes_measured=26476544 receipt_bytes_per_row=264.76544
+receipt_7d_120k_events_per_day_extrapolated_bytes=2.2240296960000002E8 exposures_extra_depend_on_batch_size_max48
+snapshots_measured=200000 snapshot_bytes_measured=434880512
+exposure_day_rows_measured=140000 exposure_bytes_measured=21381120
+profiles_measured=100000 interest_rows_measured=2000000 interest_bytes_measured=237985792
+copies_measured=200000 catalogue_measured=5000
+Measured local disposable PostgreSQL18/macOS Colima; 47M rows and total night are extrapolations, not measured production claims.

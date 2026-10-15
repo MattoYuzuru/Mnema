@@ -16,6 +16,7 @@ import { runAssessment } from './assessment.mjs';
 import { runCommunity } from './community.mjs';
 import { runUpdates } from './updates.mjs';
 import { runCatalog } from './catalog.mjs';
+import { runRecs } from './recs.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const defaultCdpTimeout = Number.isInteger(config.cdpTimeoutMs) && config.cdpTimeoutMs >= 1000 && config.cdpTimeoutMs <= 120_000 ? config.cdpTimeoutMs : 10_000;
@@ -99,6 +100,7 @@ let mechanicsFindings = [];
 let communityOutcome = null;
 let updatesOutcome = null;
 let catalogOutcome = null;
+let recsOutcome = null;
 let diagnostics = () => ({});
 async function openTab() {
   const response = await fetch(`http://127.0.0.1:${config.debugPort}/json/new?about:blank`,
@@ -185,9 +187,9 @@ try {
       // Community decks (#439): two passes of ~24 full page loads each on four tabs (the invitee registers in its own browser context), every one with
       // its public reads, the author card and the shell assets.
       // The update of a copy (Updates/7, #446) is another two passes on two tabs (about 3700 requests: every full load fetches the shell assets and chunks).
-      const communityBudget = (config.communityScenario ? 3600 : 0) + (config.updates ? 4800 : 0) + (config.catalog ? 7000 : 0);
+      const communityBudget = (config.communityScenario ? 3600 : 0) + (config.updates ? 4800 : 0) + (config.catalog ? 7000 : 0) + (config.recs ? 7000 : 0);
       if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0) + (config.admin ? 1000 : 0) + communityBudget
-          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0) + (config.community ? 300 : 0) + (config.communityScenario && config.updates ? 300 : 0) + (config.catalog ? 400 : 0)) {
+          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0) + (config.community ? 300 : 0) + (config.communityScenario && config.updates ? 300 : 0) + ((config.catalog || config.recs) ? 400 : 0)) {
         asynchronousFailure = true;
         firstAsynchronousFailure ??= 'bounded browser request budget exceeded';
       }
@@ -1174,6 +1176,12 @@ try {
       config, record, SafeFailure, until, exists, navigate, saveScreenshot, saveFullScreenshot,
       setStep: value => { step = value; }, ownerTab: cdp, ownerBearer: firstBearer, memberTab: second, memberBearer: secondBearer, openGuestTab });
   }
+  if (config.recs) {
+    step = 'recs_prepare';
+    recsOutcome = await runRecs({
+      config, record, SafeFailure, until, exists, navigate, saveScreenshot, saveFullScreenshot,
+      setStep: value => { step = value; }, ownerTab: cdp, ownerBearer: firstBearer, memberTab: second, memberBearer: secondBearer, openGuestTab });
+  }
   step = 'first_tab_profile';
   // The first tab stayed in the background through the authoring, notification, mechanics and hub flows; bring it back
   // before reading it, as the second tab's focus changes in those flows may have hidden it.
@@ -1256,7 +1264,7 @@ try {
   const screenshot = await cdp.call('Page.captureScreenshot', { format: 'png' });
   await writeFile(join(config.output, 'login.png'), Buffer.from(screenshot.data, 'base64'));
   // A community gap (a flow the product does not complete through its own UI) is a finding like a failed stage: the run is red until it is fixed.
-  const communityFailures = [...(communityOutcome?.failures ?? []), ...(updatesOutcome?.failures ?? []), ...(catalogOutcome?.failures ?? []), ...(communityOutcome?.gaps ?? []).map(gap => ({ stage: 'gap:' + gap.id, reason: gap.effect }))];
+  const communityFailures = [...(communityOutcome?.failures ?? []), ...(updatesOutcome?.failures ?? []), ...(catalogOutcome?.failures ?? []), ...(recsOutcome?.failures ?? []), ...(communityOutcome?.gaps ?? []).map(gap => ({ stage: 'gap:' + gap.id, reason: gap.effect }))];
   const evidence = { state: mechanicsFailures.length === 0 && communityFailures.length === 0 ? 'passed' : 'failed',
     ...(config.mechanics ? { mechanicsFailures, mechanicsFindings, syntheticMicrophone: true, realDeviceMicrophone: false } : {}),
     ...(config.community ? { communityFailures, communityGaps: communityOutcome?.gaps ?? [] } : {}),

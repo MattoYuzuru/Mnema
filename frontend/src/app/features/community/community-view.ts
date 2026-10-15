@@ -20,7 +20,7 @@ export function addressOf(params: ParamMap): CommunityAddress {
     return {
         q: normalizeQuery(params.get('q')),
         filters: fromQueryParams(params),
-        sortGiven: CATALOG_SORTS.some(entry => entry.value === sort)
+        sortGiven: sort === 'for-you' || CATALOG_SORTS.some(entry => entry.value === sort)
     };
 }
 
@@ -32,14 +32,14 @@ export function isShelvesView(address: CommunityAddress): boolean {
 }
 
 /** The address parameters of a search: the text, then the filters (`toQueryParams`); behind a text query «По близости» is the missing `sort`. */
-export function addressParams(q: string, filters: CatalogFilters): Params {
+export function addressParams(q: string, filters: CatalogFilters, explicitSort = false): Params {
     const text = normalizeQuery(q);
-    return { ...(text === '' ? {} : { q: text }), ...toQueryParams(filters, text !== '') };
+    return { ...(text === '' ? {} : { q: text }), ...toQueryParams(filters, text !== ''), ...(explicitSort && filters.sort === 'popular' ? { sort: 'popular' } : {}) };
 }
 
 /** A key that changes exactly when the request to the server changes. */
 export function requestKey(address: CommunityAddress): string {
-    return JSON.stringify(isShelvesView(address) ? { shelves: true } : addressParams(address.q, address.filters));
+    return JSON.stringify(isShelvesView(address) ? { shelves: true } : addressParams(address.q, address.filters, address.sortGiven));
 }
 
 let languageNames: Intl.DisplayNames | null | undefined;

@@ -34,7 +34,7 @@ class CompareAndSetExecutorIntegrationTest extends PostgresIntegrationTest {
                     row_version BIGINT NOT NULL CHECK (row_version >= 0)
                 )
                 """).update();
-        jdbcClient.sql("TRUNCATE app_learning.cas_fixture").update();
+        jdbcClient.sql("TRUNCATE app_learning.catalog_event, app_learning.deck_exposure_day, app_learning.recommendation_snapshot, app_learning.user_topic_interest, app_learning.community_interest_profile, app_learning.cas_fixture").update();
     }
 
     @Test

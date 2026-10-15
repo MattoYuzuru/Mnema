@@ -1,3 +1,9 @@
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import recommendationContract from '../../../../../contracts/community/recommendations.json';
+import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
+import { RecommendationsApiService } from './recommendations-api.service';
+import { parseInterestProfile } from './recommendations.models';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Title } from '@angular/platform-browser';
@@ -68,7 +74,7 @@ describe('CommunityPageComponent', () => {
             avatarUrl: vi.fn().mockReturnValue(null)
         };
         complaints = { fileDeck: vi.fn().mockReturnValue(of(undefined)) };
-        TestBed.configureTestingModule({ providers: [
+        TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(),
             provideRouter([{ path: 'community', component: CommunityPageComponent }, { path: 'login', children: [] }, { path: 'decks', children: [] }, { path: '', children: [] }]),
             { provide: CommunityApiService, useValue: api },
             { provide: AuthService, useValue: { status, user, restore: vi.fn().mockResolvedValue(undefined) } },
@@ -111,6 +117,96 @@ describe('CommunityPageComponent', () => {
         radio.checked = true;
         radio.dispatchEvent(new Event('change'));
     }
+
+    describe('personal shelves and sorting', () => {
+        let personal: { profile: ReturnType<typeof vi.fn>; change: ReturnType<typeof vi.fn>; recommendations: ReturnType<typeof vi.fn>; event: ReturnType<typeof vi.fn>; exposures: ReturnType<typeof vi.fn> };
+        beforeEach(() => {
+            status.set('authenticated'); user.set({ accountId: ME });
+            const decks = Array.from({ length: 12 }, (_, index) => ({ ...parseCommunityCard(recommendationContract.recommendations.decks[0]), code: `Kq7xT3mNp${'123456789ABC'[index]}`, title: `Рекомендация ${index + 1}` }));
+            personal = { profile: vi.fn().mockReturnValue(of(parseInterestProfile(recommendationContract.profile))),
+                change: vi.fn().mockReturnValue(of(parseInterestProfile(recommendationContract.select.response))),
+                recommendations: vi.fn().mockReturnValue(of({ ...recommendationContract.recommendations, decks, total: 12 })),
+                event: vi.fn().mockReturnValue(of(undefined)), exposures: vi.fn().mockReturnValue(of(undefined)) };
+            TestBed.overrideProvider(COMMUNITY_LAUNCH, { useValue: true }); TestBed.overrideProvider(RecommendationsApiService, { useValue: personal });
+        });
+        it('keeps the default shelves, adds every recommendation including places 11/12 and explains its topic', async () => {
+            await open();
+            expect(root().textContent).toContain('Что хотите изучать?');
+            expect(all<HTMLElement>('app-deck-shelf h2').map(h => h.textContent)[0]).toBe('Для вас');
+            const shelf = all<HTMLElement>('app-deck-shelf')[0];
+            expect(shelf.querySelectorAll('app-public-deck-card')).toHaveLength(12);
+            expect(shelf.textContent).toContain('Рекомендация 12'); expect(shelf.textContent).toContain('Потому что вы учите: Испанский');
+            expect(one<HTMLInputElement>('input[type=radio][value=for-you]')?.checked).toBe(true);
+            expect(api.decks).not.toHaveBeenCalled();
+            expect(shelf.querySelector<HTMLAnchorElement>('a.more')?.getAttribute('href')).toBe('/community?sort=for-you');
+        });
+        it('uses the private list for an explicit for-you filter and preserves ordinary relevance for typed search', async () => {
+            await open('/community?sort=for-you&topic=spanish&q=испанский');
+            expect(personal.recommendations.mock.lastCall?.[0]).toMatchObject({ q: 'испанский', filters: { topic: 'spanish', sort: 'for-you' } });
+            expect(api.decks).not.toHaveBeenCalled();
+            await go('/community'); type('анатомия'); await settle();
+            expect(lastQuery()).toMatchObject({ q: 'анатомия', filters: { sort: 'relevance' } });
+            expect(router().url).toBe('/community?q=%D0%B0%D0%BD%D0%B0%D1%82%D0%BE%D0%BC%D0%B8%D1%8F');
+        });
+        it('lets readers deliberately choose popular from the personalized default', async () => {
+            await open(); sort('popular'); await new Promise(resolve => setTimeout(resolve, SORT_DEBOUNCE_MS + 10)); await settle();
+            expect(router().url).toBe('/community?sort=popular'); expect(lastQuery().filters['sort']).toBe('popular');
+        });
+        it('hides a sparse shelf and completes optional onboarding by skipping with an empty selection', async () => {
+            personal.recommendations.mockReturnValue(of({ ...recommendationContract.recommendations, decks: cards(1,3), total: 3 }));
+            await open(); expect(all<HTMLElement>('app-deck-shelf h2').some(h => h.textContent === 'Для вас')).toBe(false);
+            all<HTMLButtonElement>('button').find(button => button.textContent?.trim() === 'Пока пропустить')!.click(); await settle();
+            expect(personal.change.mock.calls[0][0].topicIds).toEqual([]); expect(root().textContent).not.toContain('Что хотите изучать?');
+            expect(document.activeElement).toBe(one('h1'));
+        });
+        it('falls back with an honest note and changes stale private addresses when guests or disabled servers open them', async () => {
+            personal.profile.mockReturnValue(of({ ...parseInterestProfile(recommendationContract.profile), forYouEnabled: false }));
+            await open('/community?sort=for-you');
+            expect(router().url).toBe('/community?sort=popular'); expect(root().textContent).toContain('Подбор «Для вас» сейчас недоступен');
+            expect(personal.recommendations).not.toHaveBeenCalled();
+            status.set('anonymous'); user.set(null); await settle(); await go('/community?sort=for-you');
+            expect(router().url).toBe('/community?sort=popular'); expect(personal.profile).toHaveBeenCalledTimes(1);
+        });
+        it('shows explanation for all personalized grid contexts and clears it on a public/account context', async () => {
+            await open('/community?sort=for-you');
+            expect(one('[data-testid="recommendation-explanation"]')?.textContent).toContain('Потому что вы учите: Испанский');
+            await go('/community?sort=for-you&topic=spanish&q=испанский');
+            expect(one('[data-testid="recommendation-explanation"]')?.textContent).toContain('Испанский');
+            await go('/community?sort=popular'); expect(one('[data-testid="recommendation-explanation"]')).toBeNull();
+            await go('/community?sort=for-you');
+            personal.profile.mockReturnValue(of({ ...parseInterestProfile(recommendationContract.profile), forYouEnabled: false }));
+            user.set({ accountId: OTHER }); await settle(); expect(one('[data-testid="recommendation-explanation"]')).toBeNull();
+        });
+        it.each(['Сохранить интересы', 'Пока пропустить'])('keeps onboarding live status mounted through %s and a delayed shelf reload', async label => {
+            await open();
+            const live = one('app-interest-settings [role=status]'); const component = one('app-interest-settings');
+            const reload = new Subject<CommunityShelves>(); api.shelves.mockReturnValueOnce(reload);
+            const button = all<HTMLButtonElement>('app-interest-settings button').find(button => button.textContent?.trim() === label)!;
+            button.focus(); button.click(); await settle();
+            expect(reload.observed).toBe(true); expect(one('app-interest-settings')).toBe(component); expect(one('app-interest-settings [role=status]')).toBe(live);
+            expect(live?.textContent).toBe('Интересы сохранены.'); expect(one('app-interest-picker')).toBeNull(); expect(document.activeElement).toBe(one('h1'));
+            reload.next(SHELVES); await settle(); expect(one('app-interest-settings [role=status]')).toBe(live); expect(personal.profile).toHaveBeenCalledTimes(1);
+        });
+        it('offers optional onboarding on a first search/filter entry and sparse catalogue fallback', async () => {
+            await open('/community?q=испанский'); expect(one('app-interest-picker')).not.toBeNull();
+            await go('/community?sort=for-you&topic=spanish'); expect(one('app-interest-picker')).not.toBeNull();
+            api.shelves.mockReturnValue(of({ listedCount: 3, shelves: [] })); await go('/community');
+            expect(one('app-deck-grid')).not.toBeNull(); expect(one('app-interest-picker')).not.toBeNull();
+        });
+        it('preserves explicit popular while clearing search and dropping stale filters', async () => {
+            await open('/community?sort=popular&q=испанский'); type(''); await settle();
+            expect(router().url).toBe('/community?sort=popular'); expect(lastQuery().filters['sort']).toBe('popular');
+            await go('/community?sort=popular&topic=gone');
+            expect(router().url).toBe('/community?sort=popular'); expect(lastQuery().filters['sort']).toBe('popular');
+            expect(one<HTMLInputElement>('input[type=radio][value=popular]')?.checked).toBe(true);
+            await go('/community?topic=spanish'); const before = personal.recommendations.mock.calls.length;
+            await go('/community?topic=spanish&sort=popular'); expect(personal.recommendations.mock.calls.length).toBe(before); expect(lastQuery().filters['sort']).toBe('popular');
+        });
+        it('handles a switch disabled after the profile read without a private retry loop', async () => {
+            personal.recommendations.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+            await open('/community?sort=for-you'); expect(router().url).toBe('/community?sort=popular'); expect(personal.recommendations).toHaveBeenCalledTimes(1);
+        });
+    });
 
     describe('the shelves', () => {
         beforeEach(async () => open());
@@ -166,7 +262,7 @@ describe('CommunityPageComponent', () => {
             TestBed.resetTestingModule();
             const pending = new Promise<never>(() => undefined);
             authors.cards.mockReturnValue(pending);
-            TestBed.configureTestingModule({ providers: [
+            TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(),
                 provideRouter([{ path: 'community', component: CommunityPageComponent }]),
                 { provide: CommunityApiService, useValue: api },
                 { provide: AuthService, useValue: { status, user, restore: vi.fn().mockResolvedValue(undefined) } },

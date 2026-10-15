@@ -1,0 +1,45 @@
+{
+  "kind": "descriptive-comparison",
+  "versions": {
+    "catalog-v1": {
+      "impressions": 36000,
+      "events": {
+        "DETAIL_VIEW": 4705,
+        "SEARCH_CLICK": 0,
+        "FORK": 1646,
+        "STUDY_START": 976,
+        "DROP": 212
+      },
+      "actionsPer1000Impressions": {
+        "DETAIL_VIEW": 130.694,
+        "SEARCH_CLICK": 0.0,
+        "FORK": 45.722,
+        "STUDY_START": 27.111,
+        "DROP": 5.889
+      }
+    },
+    "recs-v1": {
+      "impressions": 36000,
+      "events": {
+        "DETAIL_VIEW": 6414,
+        "SEARCH_CLICK": 0,
+        "FORK": 2211,
+        "STUDY_START": 1299,
+        "DROP": 296
+      },
+      "actionsPer1000Impressions": {
+        "DETAIL_VIEW": 178.167,
+        "SEARCH_CLICK": 0.0,
+        "FORK": 61.417,
+        "STUDY_START": 36.083,
+        "DROP": 8.222
+      }
+    }
+  },
+  "limits": [
+    "Anonymous exposure aggregates cannot identify unique-user conversions.",
+    "Rates include repeat actions and may exceed 1000; no clamping or causal lift is claimed.",
+    "Compare equal periods, eligible cohorts and surface mixes; retain ranker attribution on lifecycle events.",
+    "A synthetic preference/response model is assumed, not measured user behaviour."
+  ]
+}

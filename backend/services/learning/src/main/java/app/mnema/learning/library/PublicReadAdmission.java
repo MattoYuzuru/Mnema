@@ -34,10 +34,7 @@ public final class PublicReadAdmission {
 
     /** Runs {@code work} inside a place of the bulkhead; the place is released when it ends, however it ends. */
     public <T> T within(String route, Viewer viewer, Supplier<T> work) {
-        if (!settings.enabled) {
-            count(route, "disabled");
-            throw new ResourceNotFoundException();
-        }
+        requireEnabled(route);
         // A signed-in viewer was admitted by the filter of the public chain before Identity was asked (one token cannot drive unlimited
         // Identity round trips); only guests are counted here.
         if (viewer.isGuest()) {
@@ -59,6 +56,14 @@ public final class PublicReadAdmission {
             return work.get();
         } finally {
             bulkhead.release(guest);
+        }
+    }
+
+    /** Catalogue descendants can check their parent switch before parsing a request. */
+    public void requireEnabled(String route) {
+        if (!settings.enabled) {
+            count(route, "disabled");
+            throw new ResourceNotFoundException();
         }
     }
 

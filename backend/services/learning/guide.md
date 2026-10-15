@@ -1015,7 +1015,7 @@ Roles, wake-up, kill switches, budgets, metrics: the runbook is [`docs/operation
 
 ## Background jobs (#428)
 
-One generic durable executor in `app.mnema.learning.platform.jobs` (migration `V50__learning_jobs.sql`, table `app_learning.learning_job`) for the work that must not run in a request: copy materialisation (community decks Share/10), update apply and auto-update (epic 2), catalog aggregates and rank (epic 3). It adds no dependency and no framework: it is the `platform/wake` + lease pattern of generation steps, made generic. Canon: [community decks architecture](../../../docs/architecture/community-decks.md) sections 2, 5, 7, 12, 14. The handlers plug in as `JobHandler` beans; two ship so far, `deck.copy.materialize` (Share/10, "«Добавить к себе»" below) and `deck.combined.publish` (Updates/2, "Combined publication" below).
+One generic durable executor in `app.mnema.learning.platform.jobs` (migration `V50__learning_jobs.sql`, table `app_learning.learning_job`) for the work that must not run in a request: copy materialisation (community decks Share/10), update apply and auto-update (epic 2), catalog aggregates and rank (epic 3). It adds no dependency and no framework: it is the `platform/wake` + lease pattern of generation steps, made generic. Canon: [community decks architecture](../../../docs/architecture/community-decks.md) sections 2, 5, 7, 12, 14. The handlers plug in as `JobHandler` beans; their owning sections below describe the copy/update, catalogue/rank and recommendation queues, and the runtime policy index lists every queue.
 
 - **API (every role).** `LearningJobs.enqueue(queue, dedupeKey, accountId, payload)` joins the caller's transaction (a command writes its rows and its job atomically; the workers are woken `afterCommit`), is idempotent per `(queue, dedupeKey)` and returns the existing job's id; the same key with another account or payload is `JobIdentityConflictException` (a caller defect, like a reused idempotency key). **The idempotency horizon is the retention**: the key is remembered while the row exists (running, then `learning.jobs.retention`, 7 days, after it ended); a failed or cancelled job keeps its key and is restarted with `LearningJobs.retry(jobId)` (same id and key, `attempts` back to 0, cursor kept), and past the horizon the same key creates a new job. `status(jobId)` returns `JobStatus` (state, attempts, `progressCount` for the "Готовим…" line, the handler's `progress` cursor, a short `lastError` code, never the payload); `cancel(jobId)` is one statement: it cancels a queued job at once and asks a running one to stop before its next slice; it waits at most 2 s for the lock of a slice in flight, then throws `CannotAcquireLockException` with nothing changed. A payload and a cursor are objects of at most 16 KiB. A queue name is `^[a-z][a-z0-9_.-]{0,62}$`; `accountId == null` is a system job.
 - **Handler SPI.** `JobHandler.queue()` and `Slice run(Job)`: ONE bounded unit (a batch of rows and a cursor) per call, returning `Slice.proceed(progress, count)` or `Slice.done(count)`, or throwing `RetryableJobException(code)` / `PermanentJobException(code)` (any other runtime exception is retryable with the code `handler_error`; messages are never stored). The handler runs inside the executor's transaction with the job row locked, so it must stay inside the database and finish well within the queue's lease, and **all its writes must go through that transaction** (no `REQUIRES_NEW`, no `@Async`, no second `DataSource` or connection), otherwise the exactly-once guarantee below does not cover them. Optional `onEnded(Job, JobState)` runs in the transaction that settles a job `FAILED` (permanent error, last attempt, last lost lease) or `CANCELLED`, so a consumer can compensate atomically; it is not called for `SUCCEEDED` or a retry, and a hook that throws is rolled back, the job still ends and the failure is counted as `hook_failed`. At most one handler per queue (otherwise the start fails).
@@ -2528,3 +2528,150 @@ retention/deletion remains owned by the account-purge/legal workstream. TODO(#40
 account-purge/legal workstream): decide retention and inventory both actor/resource UUIDs,
 command receipts and bot actor links. The current deletion paths do not erase these rows;
 there are no audit foreign keys that could block account purge.
+
+## Recommendations and interest profile (Recs/1–3, #456–458)
+
+Implemented locally with `V70__catalog_events.sql` and `V71__topic_interests.sql`; release/activation remains separate.
+The executable wire contract is [`contracts/community/recommendations.json`](../../../contracts/community/recommendations.json).
+`learning.community.events.enabled` and `learning.community.for-you.enabled` both default to `false`.
+The authenticated chain derives the account solely from the verified JWT; GET needs `learning.read`, commands need
+`learning.write`, guests and invalid tokens get 401. Replies are `private, no-store`, with `Vary: Authorization`.
+Disabled routes answer 404 before JSON, query or `If-Match` validation. No private material text or search text is read
+into the model, stored in telemetry or sent to an external service.
+
+### Events, anonymous exposure and retention (Recs/1)
+
+`POST /api/community/events` accepts only `DETAIL_VIEW` and `SEARCH_CLICK`. Exact bounded JSON includes `commandId`,
+public `code`, an allowlisted `surface`, nullable integer `position` (1–1000) and `rankVersion` (`catalog-v1` or `recs-v1`).
+Unknown fields, including account/deck/revision ids and query text, fail 400. The target must be a currently listed public
+source owned by someone else. Guests have no event records. `FORK`, `STUDY_START` and `DROP` are written by the successful
+new server transition in the same transaction, never on command replay or an existing-copy response. Study starts are
+SCHEDULED or PRACTICE, including PREPARING; REPLAY has no interest signal; an immediately EMPTY session emits none. Private, invitation and link sources emit none.
+A detached live copy remains a copy. A failed or rolled-back effect leaves no signal.
+
+`catalog_event` uses PostgreSQL 18 `uuidv7()` and UTC monthly range partitions, primary key `(occurred_at,event_id)` and
+index `(account_id,occurred_at DESC)`. A record snapshots only the public source id, published revision, topic and target
+language plus the action context. There is no FK to a deck or immutable revision, so telemetry cannot delay storage GC.
+For attribution, FORK inherits the last DETAIL_VIEW/SEARCH_CLICK of the same account/source within 30 minutes, else
+`catalog-v1`; STUDY_START/DROP inherit the last retained FORK's version, else `catalog-v1`. Lifecycle surfaces remain
+`copy`, `study`, `decks`, and positions are null. This is reproducible attribution, not a claim of causal recommendation benefit.
+
+`POST /api/community/exposures` accepts 1–48 distinct listed public codes, each with the same nullable position boundary,
+plus the allowlisted surface/version and command id. It writes one impression per item into `deck_exposure_day`, keyed by
+`(UTC day,deck_id,surface,rank_version)`. The aggregate has neither account nor position; reset retains it. Both telemetry
+commands use `command_receipt` with an empty acknowledgement, and HTTP 204; exact retries add no event or impression.
+Their receipt scope is `community.events`, with a **seven-day retry horizon**. Only receipts of that scope expire;
+existing command scopes retain their original semantics. The partial receipt expiry index keeps cleanup bounded; a partial actor/time index covers account purge for the new
+community event and interest scopes.
+
+The `catalog.events.partitions` job retains the current UTC month and previous twelve, prepares the next two, and drops
+older whole partitions. It runs even when recording is off, so previously collected data still expires. Validated date
+names, a transaction advisory lock, transaction-local `lock_timeout=2s` and `statement_timeout=10s` bound its DDL; failures
+retry through `platform.jobs`. It never deletes rows for age-based raw retention. Account reset is the intentional
+account-indexed deletion exception. The separate `catalog.events.receipts` handler removes up to 1000 expired telemetry
+receipts **and** up to 1000 snapshots older than 24 hours per slice; a full batch continues in another transaction.
+Queues have concurrency 1 and a 30-second lease. `RecommendationSchedule` enqueues unique UTC-day keys `partitions:YYYY-MM-DD`
+and `event-receipts:YYYY-MM-DD`, remembering each successful enqueue so idle minute ticks cause no DB work.
+
+### Profile and transparent local signals (Recs/2)
+
+`GET /api/community/interests` returns `rowVersion`, `onboardingComplete`, ordered selected and inferred topic objects,
+all selectable leaf topics and the two server switches. It is available when either events or for-you is enabled.
+`PUT /api/community/interests` replaces at most 20 distinct selectable leaves; an empty array completes/skips onboarding.
+`POST /api/community/interests:reset` clears chips, derived interests and personal raw events, advances `signals_since`,
+invalidates snapshots and leaves `onboardingComplete=true`. Both commands require `commandId` and the canonical quoted
+ETag in `If-Match` (body `rowVersion` is a decimal string): 428 missing, 400 malformed, 412 stale, 409 conflicting replay.
+Interest receipts retain only `{}` and the usual identity/payload digest. On replay the API returns the **current** profile;
+replaying an old selection after reset neither restores nor discloses the previous interests.
+
+One `community_interest_profile` row per account serializes initialization, selection, reset, raw writes, copy increments,
+goal answers and nightly rebuild. The writer acquires its row lock before reading current inputs or writing a copy/goal;
+queued work has no precomputed result to apply later. Profiles, event timestamps and goal answer boundaries use PostgreSQL
+statement time, avoiding a Java/VM clock mismatch. Goal storage keeps microseconds; its existing wire timestamp remains
+whole seconds. First activation can use existing live public-source copies and the optional enum goal; after reset only
+copies created and goals answered at/after the new boundary contribute. Language preferences apply the same boundary.
+
+Weights per signal are chips 8, each live copy 4, a studied public source 3, an opened source 1, goal 0.5. Repeated opens
+of one source do not multiply its vote; a source studied and opened contributes the stronger event vote. Copy and goal
+changes recompute in their effect transaction and advance the profile version exactly once for an effective copy, drop or
+goal answer, even when normalized weights remain identical. This invalidates frozen candidate eligibility; a fresh first
+page excludes a new live copy or can include a deleted copy's source, and old cursors answer 412. Receipt replays and
+existing-copy responses do not advance the version. Nightly rebuild and initialization advance it only for changed
+derived weights; recomputation inside an effective transition does not add a second bump. Nightly events are bounded by account/time and the retained calendar
+window. Scores normalize to `(0,1]`, with at most 20 derived topic rows; no weight leaves the server.
+The reviewed goal mapping uses actual directory parents: LANGUAGE → `languages`; INTERVIEW and WORK → `professional`;
+EXAMS → `exams` and `school`; SELF/skip → none. Parent signals remain parents in `inferredTopics`, so a broad language goal
+explains «Языки» without claiming a specific language. Explicit chips always remain leaves.
+
+`catalog.interests.rebuild` walks profiles active in the last 30 days by account key, 25 accounts per slice, with current
+inputs recomputed under each row lock. It schedules after 03:00 UTC when **either** events or for-you is enabled, key
+`interests:YYYY-MM-DD`; concurrency 1, lease 60 seconds. Both switches off avoids this work. Empty active input is one
+bounded empty index range. TODO(#409; owner: Learning account purge): delete profiles (cascading interests/snapshots),
+raw events by their account/time index and relevant receipts; anonymous exposure aggregates remain.
+
+### Candidates, scoring and a stable private shelf (Recs/3)
+
+`GET /api/community/recommendations` accepts the catalogue filters, `q`, `limit`, `cursor`; sort is absent or `for-you`.
+Ordinary public catalogue parsing still refuses `for-you`. The route requires for-you, catalogue and parent public-route
+switches. It shares the catalogue account limiter and bulkhead before any query/profile connection, with an additional
+bounded text-search semaphore, the catalogue query timeout and unchanged Problem Details (429/503 with Retry-After).
+Search candidate filtering reuses `CatalogQuery`, `CatalogQueries`, topic expansion, language detection and their existing
+bounded search arms; no text is persisted in a snapshot, event, log or metric.
+
+The union is at most 20 per three strongest interest topics (leaf or parent), 20 new, 20 global, at most 100 unique decks.
+All candidates read current listed rows and exclude authored decks and live copies, including detached copies, through
+the existing `deck_fork_live(owner_id,upstream_deck_id)` index. Private copy text is never inspected. Exact formula:
+`base score * (1 + 0.8 * interest) * language factor`; a leaf uses `max(leaf interest,parent interest)`. A confident target
+language preference comes from explicit language leaves (the directory vocabulary, including Latin) or the metadata of
+current public sources of qualifying live copies. A match is 1, a mismatch or absent target language 0.3; without a
+confident preference every factor is 1. A broad LANGUAGE goal establishes no specific language preference.
+For equal canonical scores, including a cold start of all zero scores, ties use interest descending, language factor
+descending, first-listing newest first, then public code. The formula itself has no artificial score floor.
+
+The first ten have strictly at most two of any author or leaf topic. The rule never relaxes to fill a shelf. A bounded
+bipartite author/topic matching (capacity two, one edge per deck) checks feasibility using at most ten augmenting paths.
+The diverse prefix is the lexicographically strongest canonical-order subset of maximum cardinality (up to ten), so
+crossed author/topic choices cannot strand available places. Among at most 4950 exploration pairs of the 100 candidates,
+the first canonical-order pair that leaves a feasible ten-card prefix is reserved. Two
+exploratory candidates (new within 30 days or outside the strongest three interests) are reserved for positions 11/12
+when a full twelve-card shelf can be formed; scarcity returns a shorter diverse shelf. No interest, fewer than four
+eligible matching candidates or fewer than four resulting cards hides it. The explanation is the strongest current topic that
+actually contributes to an allowed source, including a parent when appropriate. Visibility/copy changes recompute this
+explanation against the remaining allowed cards; the formerly strongest hidden topic cannot erase another valid explanation. Cards reuse `CatalogCards` and
+`AudienceCounts`, so neither scores, weights, source ids nor exact audience numbers below ten appear.
+
+A `recommendation_snapshot` freezes up to twelve ordered public codes plus at most 100 candidate codes for the
+account/profile version/query digest/rank generation; the cache is capped at 32 questions per account. The cursor contains
+only a UUIDv7 opaque snapshot handle and integer original-list offset. Query/account mismatch is 400; an expired snapshot,
+profile version or pruned generation is 412. A fresh first request replaces an expired cache entry even when a generation
+has not advanced. Rank-generation row locking fences concurrent pruning. Publications after a snapshot wait for a new
+question/profile/generation; a current visibility or live-copy check still removes ineligible sources immediately, without
+shifting original offsets or repeating a code. The minimum matching pool is rechecked against the frozen **candidate**
+set, not the twelve selected cards. Rechecking first-ten diversity handles topic/author changes without relaxing it.
+The response is `rankVersion: recs-v1`, `decks`, `total` (up to twelve), `totalCapped: false`, `nextCursor`, `explanationTopic`.
+The metric `mnema_community_recommendations_total{rank_version,outcome}` carries only `recs-v1` and `ok|empty`.
+
+### Local evidence and load boundaries
+
+`RecommendationRankerTest`, `RecommendationHttpIntegrationTest`, admission/disabled/parent-disabled tests,
+`RecommendationSignalsIntegrationTest` and `RecommendationMaintenanceIntegrationTest` exercise formula/ties, strict
+reranking, authentic private routes, exact JSON/CAS/receipt handling, reset/rebuild serialization, effective lifecycle
+transitions including PRACTICE (without changing scheduler/global engagement credit), private-source exclusion, account budget, current visibility, snapshot binding/expiry and fixed-clock month boundaries.
+`LearningApplicationIntegrationTest` inventories V70/V71 and the controller; explicit test graph truncates include the new tables.
+
+`RecommendationScaleIntegrationTest` writes `build/community-recommendations-scale.txt` with real EXPLAIN ANALYZE/BUFFERS,
+row-size and time measurements on disposable PostgreSQL 18. The fixture is 5000 public decks, 200000 live copies,
+100000 profiles/2000000 interests, 1000000 raw events and 100000 telemetry receipts. An expanded targeted run measured
+candidate p95 5.05 ms (15 local samples), about 205.54 bytes per raw row with indexes and 264.77 bytes per receipt with
+indexes; two million interests occupy about 238 MB. The expanded fixture measures 200000 snapshots at about 435 MB and
+140000 anonymous deck/day exposure rows at about 21.4 MB. **Extrapolations**, not measured production results: 47 million raw
+rows ≈9.66 GB; seven days at 120000 event receipts/day ≈222 MB, plus impression-command receipts depending on batching
+(up to 48 impressions per command); a 25-account nightly slice of 497 ms implies ≈33.1 minutes for 100000 profiles on
+one worker. Day/page latency varies with I/O, skew and new inputs; the complete scan was not timed. At zero, candidates,
+active-account page and partition maintenance are empty bounded work (local measurements are in the same file).
+The parent owns final source-bound full gates, browser verification and release evidence.
+
+Sources deciding implementation: PostgreSQL 18 [UUID functions](https://www.postgresql.org/docs/18/functions-uuid.html)
+(database uuidv7), [partitioning](https://www.postgresql.org/docs/18/ddl-partitioning.html) (UTC ranges and whole-partition
+retention); [Spring Security resource-server JWT](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html)
+(verified principal and scope-based authority in the existing private chain).

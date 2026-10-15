@@ -30,15 +30,16 @@ describe('UpdateUnitSidesComponent', () => {
     });
     afterEach(() => { fixture?.destroy(); http.verify(); });
 
-    async function show(sides: UnitSides, upstreamCode: string | null): Promise<void> {
+    function show(sides: UnitSides, upstreamCode: string | null): void {
         fixture = TestBed.createComponent(UpdateUnitSidesComponent);
         fixture.componentRef.setInput('sides', sides);
         fixture.componentRef.setInput('upstreamCode', upstreamCode);
         fixture.detectChanges();
-        await fixture.whenStable();
+        // run the effects that ask for the files; no whenStable here: an open HttpClient request keeps the app unstable until it is flushed
+        TestBed.tick();
     }
 
-    /** The media surface reads its files asynchronously: let the answers through, then draw. */
+    /** The media surface reads its files asynchronously: let the flushed answers through, then draw. */
     async function settle(): Promise<void> {
         await new Promise<void>(resolve => setTimeout(resolve, 0));
         await fixture.whenStable();
@@ -48,7 +49,7 @@ describe('UpdateUnitSidesComponent', () => {
     const materials = (mine = imageDocument(MINE_ASSET, 'Моя схема'), author = imageDocument(AUTHOR_ASSET, 'Схема автора')) => materialSides(unit, mine, author);
 
     it('reads the files of the reader\'s side through the owner\'s playback route and those of the author\'s side through the public route of the source', async () => {
-        await show(materials(), CODE);
+        show(materials(), CODE);
         http.expectOne(ownerPath).flush(ownerView(MINE_ASSET, 'https://storage.example/mine.webp'));
         http.expectOne(publicPath(AUTHOR_ASSET)).flush(publicView(AUTHOR_ASSET, 'https://storage.example/author.webp'));
         await settle();
@@ -57,7 +58,7 @@ describe('UpdateUnitSidesComponent', () => {
     });
 
     it('never asks the owner\'s route for a file of the author, nor the public route for a file of the copy', async () => {
-        await show(materials(imageDocument(MINE_ASSET, 'Общая'), imageDocument(MINE_ASSET, 'Общая')), CODE);
+        show(materials(imageDocument(MINE_ASSET, 'Общая'), imageDocument(MINE_ASSET, 'Общая')), CODE);
         // The same asset on both sides is read once by each side, each by its own route.
         http.expectOne(ownerPath).flush(ownerView(MINE_ASSET, 'https://storage.example/mine.webp'));
         http.expectOne(publicPath(MINE_ASSET)).flush(publicView(MINE_ASSET, 'https://storage.example/author.webp'));
@@ -67,7 +68,7 @@ describe('UpdateUnitSidesComponent', () => {
     });
 
     it('keeps a file the public route cannot give as «Файл недоступен», without the owner\'s wording, and leaves the other side alone', async () => {
-        await show(materials(), CODE);
+        show(materials(), CODE);
         http.expectOne(ownerPath).flush(ownerView(MINE_ASSET, 'https://storage.example/mine.webp'));
         http.expectOne(publicPath(AUTHOR_ASSET)).flush({ code: 'RESOURCE_NOT_FOUND' }, { status: 404, statusText: 'Not Found' });
         await settle();
@@ -78,7 +79,7 @@ describe('UpdateUnitSidesComponent', () => {
     });
 
     it('says that a file of the reader\'s own side is unavailable in the owner\'s words when the owner\'s route refuses it', async () => {
-        await show(materials(), CODE);
+        show(materials(), CODE);
         http.expectOne(ownerPath).flush({ code: 'RESOURCE_NOT_FOUND' }, { status: 404, statusText: 'Not Found' });
         http.expectOne(publicPath(AUTHOR_ASSET)).flush(publicView(AUTHOR_ASSET, 'https://storage.example/author.webp'));
         await settle();
@@ -86,13 +87,13 @@ describe('UpdateUnitSidesComponent', () => {
     });
 
     it('uses the public route of the code it is given, and a copy without a code shows the author\'s files as unavailable without asking', async () => {
-        await show(materials(), 'ZyXwVuTs98');
+        show(materials(), 'ZyXwVuTs98');
         http.expectOne(ownerPath).flush(ownerView(MINE_ASSET, 'https://storage.example/mine.webp'));
         http.expectOne(publicPath(AUTHOR_ASSET, 'ZyXwVuTs98')).flush(publicView(AUTHOR_ASSET, 'https://storage.example/author.webp'));
         await settle();
         fixture.destroy();
 
-        await show(materials(), null);
+        show(materials(), null);
         http.expectOne(ownerPath).flush(ownerView(MINE_ASSET, 'https://storage.example/mine.webp'));
         await settle();
         http.expectNone(request => request.url.startsWith('/api/public/'));
@@ -101,11 +102,11 @@ describe('UpdateUnitSidesComponent', () => {
     });
 
     it('draws a material without media with no request at all, and an exercise as plain lines', async () => {
-        await show(materialSides(unit, documentOf([nativeNode('paragraph', {}, [nativeNode('text', { text: 'Текст', marks: [] })])]), null), CODE);
+        show(materialSides(unit, documentOf([nativeNode('paragraph', {}, [nativeNode('text', { text: 'Текст', marks: [] })])]), null), CODE);
         http.expectNone(() => true);
         fixture.destroy();
         const exercise = planUnit('EXERCISE', 2, 'NEW');
-        await show(exerciseSides(exercise), CODE);
+        show(exerciseSides(exercise), CODE);
         http.expectNone(() => true);
         expect(column('mine').textContent).toContain('Нет у вас');
         expect(column('author').textContent).toContain('Что значит hablar?');

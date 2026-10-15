@@ -50,6 +50,7 @@ describe('canonical bearer interceptor', () => {
             '/api/public/decks/Kq7xT3mNpR/items/7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
             '/api/public/decks/Kq7xT3mNpR/media/7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
             '/api/public/decks/Kq7xT3mNpR/complaints', '/api/public/profiles/ivan.k/complaints',
+            '/api/community/interests', '/api/community/interests:reset', '/api/community/events', '/api/community/exposures', '/api/community/recommendations?q=кот',
             '/api/topics', '/api/invites:redeem', '/api/public/decks/Kq7xT3mNpR/access-requests', '/api/public/decks/Kq7xT3mNpR/access-requests:withdraw',
             // the community catalogue: the bearer is optional, and a signed-in viewer's must reach it (limits by account, the author's invitation-only decks)
             '/api/public/community/facets', '/api/public/community/shelves', '/api/public/community/decks?q=spanish&limit=24',
@@ -102,6 +103,7 @@ describe('canonical bearer interceptor', () => {
             '/api/admin/complaints/0199c478-b000-7000-8000-000000000001/other', '/api/admin/complaints/0199c478-b000-7000-8000-000000000001/units/x',
             'https://evil.test/api/public/profiles/ivan.k/complaints',
             // topics, invitation redemption and access requests: exactly the documented routes
+            '/api/community/interests/other', '/api/community/interests:reset/other', '/api/community/events/other', '/api/community/exposures/other', '/api/community/recommendations/other', '/api/community-other/interests',
             '/api/topics/x', '/api/topics-other', '/api/invites', '/api/invites:other', '/api/invites:redeem/x',
             '/api/public/decks/Kq7xT3mNpR/access-requests/x', '/api/public/decks/Kq7xT3mNpR/access-requests:other', '/api/public/decks/Kq7xT3mNp0/access-requests',
             // the catalogue: exactly its four read routes (the sitemap and the owner's editorial shelf are not the page's)
@@ -132,6 +134,15 @@ describe('canonical bearer interceptor', () => {
         signedIn.flush({});
         expect(isCredentialTarget('/api/public/decks/Kq7xT3mNpR', identity, '/api', window.location.origin)).toBe(true);
         expect(isCredentialTarget('/api/public/decks/Kq7xT3mNpR/../decks', identity, '/api', window.location.origin)).toBe(false);
+    });
+
+    it('binds private recommendations to the configured absolute base and exact paths', () => {
+        const base = 'https://learning.test/custom/api';
+        for (const route of ['interests', 'interests:reset', 'events', 'exposures', 'recommendations']) {
+            expect(isCredentialTarget(`${base}/community/${route}?limit=12`, identity, base, window.location.origin)).toBe(true);
+            expect(isCredentialTarget(`${base}/community/${route}/extra`, identity, base, window.location.origin)).toBe(false);
+            expect(isCredentialTarget(`https://evil.test/custom/api/community/${route}`, identity, base, window.location.origin)).toBe(false);
+        }
     });
 
     it('binds401 expiration to the exact request token', () => {

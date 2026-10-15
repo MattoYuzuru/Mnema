@@ -140,4 +140,11 @@
       <app-author-header [author]="authorBare" profileUrl="https://mnema.app/u/dev.olga" [learningNow]="7" [isSelf]="true" [headingLevel]="4" />
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Интересы и рекомендации" selector="&lt;app-interest-picker&gt;" when="Необязательное знакомство в Сообществе; те же темы можно изменить в профиле. Нативные checkbox-чипы ограничены 20 темами. Профиль показывает выбранные и определённые по действиям темы, без весов. Полка «Для вас» содержит все 12 колод, включая два исследовательских места; меньше четырёх не показывается." usage='&lt;app-interest-picker [topics]="topics" [selected]="selected()" (changed)="selected.set($event)" (save)="save($event)" /&gt;'>
+    <app-interest-picker [topics]="interests" [selected]="pickedInterests()" [skippable]="true" (changed)="pickedInterests.set($event)" (save)="pickedInterests.set($event); interestNotice.set('Интересы сохранены.')" />
+    <p class="hint" role="status">{{ interestNotice() }}</p>
+    <h3>Интересы в профиле</h3>
+    <app-interest-summary [selected]="summarySelected()" [inferred]="summaryInferred()" (edit)="interestNotice.set('Выбор можно изменить в форме выше.')" (resetRequested)="summarySelected.set([]); summaryInferred.set([]); interestNotice.set('Интересы сброшены. Новые действия будут формировать профиль заново.')" />
+    <app-deck-shelf title="Для вас" subtitle="Потому что вы учите: Испанский язык" [decks]="recommendationDecks" [moreLink]="['/styleguide']" [moreQueryParams]="{sort:'for-you'}" [deckLink]="link" />
+  </app-sg-specimen>
 </section>

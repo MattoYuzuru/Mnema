@@ -853,6 +853,6 @@ class ComplaintHttpIntegrationTest extends PostgresIntegrationTest {
                 .hasMessageContaining("Invalid complaint transition");
         assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> jdbc.sql("UPDATE app_learning.content_takedown_journal SET action = 'HIDDEN' WHERE complaint_id = :id").param("id", id).update()))
                 .hasMessageContaining("append-only");
-        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> jdbc.sql("TRUNCATE app_learning.content_takedown_journal").update())).hasMessageContaining("append-only");
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> jdbc.sql("TRUNCATE app_learning.catalog_event, app_learning.deck_exposure_day, app_learning.recommendation_snapshot, app_learning.user_topic_interest, app_learning.community_interest_profile, app_learning.content_takedown_journal").update())).hasMessageContaining("append-only");
     }
 }

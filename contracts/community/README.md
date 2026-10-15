@@ -75,3 +75,17 @@ These do not change a shape of [`catalog.json`](catalog.json); they fix what the
   listed is ranked within about a minute (the projector asks for a generation with a one-per-minute key), not at the next hourly one.
 - **`learningNowTotal`** counts DISTINCT learners (non-owner accounts with a study row in the last 30 days) across the author's public decks, listed or not; one person who studies two of his decks counts once. It is not a sum of the
   numbers of the cards. Below 10 it is `null`, above it is floored to two significant digits. It is read live, so it may be fresher than the cards' numbers (which are those of the hourly generation).
+
+## Recommendations (epic 4, #422)
+
+[`recommendations.json`](recommendations.json) owns the authenticated interest profile, reset, client event and aggregate impression commands and the recommendation page. Both sides execute its examples. The events and for-you switches default to false. All new routes live under `/api/community`, in the existing authenticated chain. `for-you` is a frontend sorting value routed to `GET /api/community/recommendations`; ordinary public catalogue routes keep their own wire contract.
+
+The parent writes events only for authenticated accounts, without search text; client events describe opens/search clicks, while copy, study start and drop are server transitions. Daily aggregate exposures carry no account. Interest reset clears the previous signals and records a new boundary; anonymous exposures remain. Weights and exact ranking values stay server-side.
+
+Executable requests and replies are the `profile`, `select`, `reset`, `event`, `exposure`, `recommendations` and `emptyRecommendations` entries; `invariants` define validation, privacy, retention, jobs, load boundaries and the ranking rules. The single-card recommendation example exercises the parser; a real shelf is omitted below four cards.
+
+### Storage and reset boundaries (Recs/1–2)
+
+Telemetry receipt deduplication lasts seven days (`community.events` scope only). Its cleanup is separate from the thirteen-calendar-month raw-event retention. Aggregate exposure commands contain at most 48 actually visible cards; batching does not sample. Interest command receipts persist only an acknowledgement; a replay returns the current profile, preserving idempotency without retaining a profile erased by reset. `If-Match` is the quoted ETag, for example `"0"`; `rowVersion` in the body is the raw decimal string `"0"`.
+
+The broad goal contributes a parent topic rather than inventing a language: `LANGUAGE` → `languages`, `INTERVIEW` → `professional`, `EXAMS` → `exams`/`school`, `WORK` → `professional`, `SELF` → no topic. A missing directory root is ignored. Inferred topics may be parents; explicit chips are leaves.
