@@ -175,6 +175,11 @@ services:
       # Community decks, epic 3 (#421): the public catalogue, its search, author pages and /sitemap-decks.xml. Switched on with policy and terms 1.6,
       # which describe it, and the frontend launch flag; false answers 404 on the catalogue routes and the frontend entry points lead nowhere.
       LEARNING_COMMUNITY_CATALOG_ENABLED: "true"
+      # Community decks, epic 4 (#422): recording of catalogue events and exposures, and the nightly interest profile (policy 1.6, section 15).
+      # Retention and partition upkeep run either way.
+      LEARNING_COMMUNITY_EVENTS_ENABLED: "true"
+      # «Для вас» (Recs/3, #422): the personal shelf and sort for a signed-in reader; needs the catalogue and the frontend launch flag. false answers 404.
+      LEARNING_COMMUNITY_FOR_YOU_ENABLED: "true"
       # Study snapshot retention (#460): on. The first release shipped it off; the read-only check after it found no Study sessions in
       # production (2026-10-11), so there is no backlog to purge.
       LEARNING_STUDY_RETENTION_ENABLED: "true"

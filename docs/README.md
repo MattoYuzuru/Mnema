@@ -65,7 +65,7 @@ artifact:
 | accepted | [AI layer contract](./product/ai-layer-2026-10.md) | Принятые решения AI-слоя: слои, сценарии, UX, usage, тарифы, промокоды, legal gates. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Текущий статус РКН/эквайринга и оставшиеся human gates; не юридическая гарантия. |
-| accepted | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. Эпики 1 (доступ, публикация, копии, жалобы) и 2 (обновления копий) закрыты и выкачены; эпики 3 и 4 влиты (#502, #541); каталог открыт с политикой 1.6, запись событий и «Для вас» пока выключены, раздел «Уточнено реализацией» фиксирует отличия от плана. |
+| accepted | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. Эпики 1 (доступ, публикация, копии, жалобы) и 2 (обновления копий) закрыты и выкачены; эпики 3 и 4 влиты (#502, #541); каталог, запись событий и «Для вас» включены с политикой 1.6, раздел «Уточнено реализацией» фиксирует отличия от плана. |
 
 ## Architecture и backend
 
@@ -77,7 +77,7 @@ artifact:
 | accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; P0 content/Study реализованы, P1/P2 — границы будущей работы. |
 | accepted | [Native content format](./architecture/learning-content-format-v2.md) | Persisted native document contract. |
 | accepted | [AI generation platform](./architecture/ai-generation-platform.md) | Принятая архитектура AI-слоя: модули в Learning, Мастерская, MBM, провайдеры, usage, уведомления, безопасность. |
-| accepted | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. Таблица статуса реализации по частям: эпики 1–4 выкачены, каталог эпика 3 включён, события и «Для вас» эпика 4 выключены до своего шага. |
+| accepted | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. Таблица статуса реализации по частям: эпики 1–4 выкачены, каталог эпика 3, события и «Для вас» эпика 4 включены в production. |
 | current | [Revision storage and runtime boundaries](./architecture/revision-storage-and-runtime-boundaries.md) | Выбранное и реализованное storage-направление. |
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Counted-page/structural invariants. |
 | current | [Identity & Account guide](../backend/services/identity-account/guide.md) | Identity runtime. |
