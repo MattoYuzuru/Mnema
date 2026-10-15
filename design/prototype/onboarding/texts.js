@@ -1,12 +1,12 @@
 // OB-001 texts under owner review. One source for the prototype and for
-// docs/engineering/evidence/onboarding/s0/texts-for-approval.md (same IDs). Edit here, not in markup.
+// docs/engineering/evidence/onboarding/ob-prep/texts-for-approval.md (same IDs). Edit here, not in markup.
 // Placeholders in {braces} are filled by the product at runtime.
 export const T = {
   // Welcome and skip
   'welcome.eyebrow': 'Начало пути',
   'welcome.title': 'Mnema помогает надолго запомнить то, что вы учите',
   'welcome.lead': 'Покажем, как это работает. Это займёт две минуты.',
-  'welcome.start': 'Познакомиться — 2 минуты',
+  'welcome.start': 'Познакомиться — 2 минуты',
   'welcome.skip': 'Мне это знакомо — сразу к делу',
   'skip.toast': 'Знакомство пропущено. Пройти его можно в профиле, а все возможности Mnema собраны в «Пути».',
   'skip.toast.link': 'Открыть «Путь»',
@@ -17,11 +17,11 @@ export const T = {
   'survey.back': 'Назад',
   'survey.skip': 'Пропустить',
   'survey.done': 'Готово',
-  'survey.privacy': 'Ответы видите только вы, изменить их можно в профиле. Они влияют на подсказки и примеры, но не на цены и лимиты.',
+  'survey.privacy': 'Ответы не видны другим пользователям, изменить их можно в профиле. Они помогают подобрать подсказки, колоды и тариф, но не меняют цены и лимиты.',
   'survey.goal.title': 'Для чего вам Mnema?',
   'survey.goal.hint': 'Подберём примеры и подсказки под вашу цель.',
   'survey.interests.title': 'Что хотите изучать?',
-  'survey.interests.hint': 'Выберите до 20 тем. По ним Mnema предложит колоды Сообщества.',
+  'survey.interests.hint': 'Выберите до 20 тем. По ним Mnema предложит колоды Сообщества.',
   'survey.experience.title': 'Учились ли вы по карточкам раньше?',
   'survey.experience.new': 'Впервые',
   'survey.experience.new.hint': 'Покажем всё по шагам.',
@@ -49,7 +49,7 @@ export const T = {
   'tour.back': 'Назад',
   'tour.next': 'Дальше',
   'tour.finish': 'Завершить знакомство',
-  'tour.finish.armed': 'Удерживайте 2 секунды, чтобы завершить знакомство',
+  'tour.finish.armed': 'Удерживайте 2 секунды, чтобы завершить знакомство',
   'tour.finish.toast': 'Знакомство завершено. Пройти его снова можно в профиле.',
   'tour.gate': 'Нажмите «{action}», чтобы продолжить',
   'tour.missing': 'Этого места сейчас нет на экране. Продолжим со следующего шага.',
@@ -63,14 +63,15 @@ export const T = {
   'sample.1.title': 'Это ваша учебная колода',
   'sample.1.body': 'Здесь название, описание и все <span class="key">материалы</span> колоды. Её можно менять и учить, как свою.',
   'sample.2.title': 'Материал — то, что вы учите',
-  'sample.2.slide1': 'Текст можно оформить: <span class="key">жирный</span>, списки, цитаты, ссылки.',
+  'sample.2.slide1': 'Текст можно оформить: выделить <span class="key">жирным</span>, собрать в список, добавить цитату или ссылку.',
   'sample.2.slide2': 'В материал можно добавить <span class="key">картинку</span> и <span class="key">аудио</span>.',
   'sample.2.slide3': 'У каждого материала — свои упражнения. Их можно добавить позже.',
   'sample.3.title': 'Упражнения проверяют, что вы помните',
   'sample.3.body': 'Одно и то же можно спросить по-разному: выбрать ответ, вписать слово или <span class="key">объяснить своими словами</span>. Объяснение проверит ИИ.',
   'sample.4.title': 'Пройдите первое занятие',
-  'sample.4.body': 'Короткое занятие — четыре упражнения. Дальше Mnema сама подскажет, что и когда повторить.',
+  'sample.4.body': 'Короткое занятие — несколько упражнений. Дальше Mnema сама подскажет, что и когда повторить.',
   'sample.4.action': 'Начать занятие',
+  'sample.stamp': 'Учебная',
   'sample.plaque': 'Учебная колода: образец, к которому можно возвращаться',
   'sample.share.refused': 'Учебной колодой поделиться нельзя. Создайте свою — ею можно.',
   'sample.ai.free': 'В учебной колоде 3 проверки ИИ бесплатны. Осталось: {n}.',
@@ -105,7 +106,7 @@ export const T = {
   // Final and congratulations
   'ai.eyebrow': 'ИИ в Mnema',
   'ai.title': 'Найти материал легко. Выучить — труднее',
-  'ai.body': 'Найти или создать материал сегодня легко. Трудно упорядочить его и действительно выучить. ИИ в Mnema за минуты соберёт материалы и упражнения, а повторять поможет расписание.',
+  'ai.body': 'Трудно не найти материал, а упорядочить его и действительно выучить. ИИ в Mnema за минуты соберёт материалы и упражнения, а повторять поможет расписание.',
   'ai.workshop': '<span class="key">Мастерская</span> превращает заметки в материалы и упражнения.',
   'ai.check': '<span class="key">Проверка ИИ</span> оценивает ответ, данный своими словами.',
   'ai.free': 'Бесплатно каждый месяц: {freeAllowance}.',
@@ -124,6 +125,9 @@ export const T = {
   'path.replay': 'Пройти знакомство заново',
   'path.state.done': 'Сделано',
   'path.state.todo': 'Не начато',
+  'path.state.partial': 'Начато',
+  'path.open': 'Открыть «Путь»',
+  'path.new.stamp': 'Новое',
   'path.go': 'Перейти: {title}',
   'path.error': 'Не удалось загрузить «Путь».',
   'path.retry': 'Повторить',
@@ -139,33 +143,40 @@ export const T = {
   'm.FIRST_SESSION': 'Пройдите первое занятие', 'm.FIRST_SESSION.b': 'С него начинается расписание повторений.',
   'm.OWN_MATERIAL': 'Напишите свой материал', 'm.OWN_MATERIAL.b': 'Учите то, что нужно именно вам.',
   'm.MEDIA_IN_MATERIAL': 'Добавьте картинку или звук', 'm.MEDIA_IN_MATERIAL.b': 'Так материал запоминается лучше.',
-  'm.CAPTURE_NOTE': 'Сохраните заметку «На потом»', 'm.CAPTURE_NOTE.b': 'Мысль не потеряется: разберёте её, когда будет время.',
+  'm.CAPTURE_NOTE': 'Сохраните заметку «На потом»', 'm.CAPTURE_NOTE.b': 'Мысль не потеряется: разберёте её, когда будет время.', 'm.CAPTURE_NOTE.partial': 'Заметка сохранена, осталось её разобрать.',
   'm.OWN_EXERCISES': 'Создайте три своих упражнения', 'm.OWN_EXERCISES.b': 'Проверяйте себя так, как удобно вам.',
   'm.AI_EXPLANATION': 'Объясните своими словами', 'm.AI_EXPLANATION.b': 'ИИ проверит, понятна ли мысль, и подскажет, чего не хватает.',
-  'm.VOICE_ANSWER': 'Ответьте голосом', 'm.VOICE_ANSWER.b': 'Удобно, когда заняты руки или нужно тренировать произношение.',
+  'm.VOICE_ANSWER': 'Ответьте голосом', 'm.VOICE_ANSWER.b': 'Удобно, когда заняты руки или сказать проще, чем напечатать.',
   'm.WORKSHOP_APPROVED': 'Соберите материалы в Мастерской', 'm.WORKSHOP_APPROVED.b': 'ИИ превратит заметки в материалы и упражнения, а вы решите, что оставить.',
   'm.RHYTHM_WEEK': 'Проведите неделю в ритме', 'm.RHYTHM_WEEK.b': 'Занимайтесь столько дней в неделю, сколько выбрали.',
-  'm.TWO_DAYS': 'Вернитесь на следующий день', 'm.TWO_DAYS.b': 'Повторение после паузы запоминается прочнее.',
+  'm.TWO_DAYS': 'Позанимайтесь в другой день', 'm.TWO_DAYS.b': 'Повторение после паузы запоминается прочнее.',
   'm.COMMUNITY_COPY': 'Возьмите готовую колоду', 'm.COMMUNITY_COPY.b': 'В Сообществе есть колоды по вашим темам.',
   'hint.capture': 'Сохраните сюда мысль или ссылку — разберёте её потом.',
   'hint.ok': 'Понятно',
 
   // Rhythm
-  'rhythm.day1': 'Первый день на этой неделе',
-  'rhythm.day2': 'Второй день на этой неделе',
-  'rhythm.day3': 'Третий день на этой неделе',
-  'rhythm.target': 'Цель — {n} дня в неделю',
-  'rhythm.met.toast': 'Цель недели выполнена: {n} дня занятий.',
+  'rhythm.summary.eyebrow': 'Занятие завершено',
+  'rhythm.summary.title': 'Все упражнения на сегодня пройдены',
+  'rhythm.summary.next': 'Следующее повторение — завтра.',
+  'rhythm.day': '{ordinal} день на этой неделе',
+  'rhythm.target': 'Цель — {days} в неделю',
+  'rhythm.met.toast': 'Цель недели выполнена: вы занимались {days}.',
   'rhythm.profile.weeks': 'Недель в ритме: {n}',
 
   // Reward (production only after OB-002)
   'reward.eyebrow': 'Путь пройден',
   'reward.title': 'Вы освоили Mnema полностью',
-  'reward.gift': 'Ваш подарок: −10 % на подписку до {date}.',
+  'reward.gift': 'Ваш подарок: −10 % на подписку до {date}.',
   'reward.terms': 'Предложение действует один раз. Условия и сочетание с промокодами — на странице тарифов.',
   'reward.action': 'Выбрать тариф',
   'reward.later': 'Позже',
 };
+
+// Plural and ordinal helpers the product supplies through Intl.PluralRules('ru'); `{days}` is «2 дня», «5 дней».
+const ORDINALS = ['Первый', 'Второй', 'Третий', 'Четвёртый', 'Пятый', 'Шестой', 'Седьмой'];
+const plural = new Intl.PluralRules('ru');
+export const days = n => `${n}\u00a0${{ one: 'день', few: 'дня', many: 'дней', other: 'дня' }[plural.select(n)]}`;
+export const ordinal = n => ORDINALS[n - 1];
 
 export const t = (id, params = {}) => {
   const text = T[id];

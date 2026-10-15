@@ -8,31 +8,31 @@
  {
   "name": "survey-1-1280.png",
   "overflow": false,
-  "running": 11,
+  "running": 0,
   "focus": "survey-title"
  },
  {
   "name": "survey-2-1280.png",
   "overflow": false,
-  "running": 11,
+  "running": 0,
   "focus": "survey-title"
  },
  {
   "name": "survey-3-1280.png",
   "overflow": false,
-  "running": 11,
+  "running": 0,
   "focus": "survey-title"
  },
  {
   "name": "survey-4-1280.png",
   "overflow": false,
-  "running": 11,
+  "running": 0,
   "focus": "survey-title"
  },
  {
   "name": "branch-1280.png",
   "overflow": false,
-  "running": 11,
+  "running": 0,
   "focus": "branch-title"
  },
  {
@@ -123,7 +123,7 @@
   "name": "pause-1280.png",
   "overflow": false,
   "running": 0,
-  "focus": "BODY"
+  "focus": "A"
  },
  {
   "name": "finish-states-1280.png",
@@ -194,37 +194,37 @@
  {
   "name": "survey-2-768.png",
   "overflow": false,
-  "running": 11,
+  "running": 0,
   "focus": "survey-title"
  },
  {
   "name": "survey-2-320.png",
   "overflow": false,
-  "running": 5,
+  "running": 0,
   "focus": "survey-title"
  },
  {
   "name": "survey-4-768.png",
   "overflow": false,
-  "running": 11,
+  "running": 0,
   "focus": "survey-title"
  },
  {
   "name": "survey-4-320.png",
   "overflow": false,
-  "running": 5,
+  "running": 0,
   "focus": "survey-title"
  },
  {
   "name": "branch-768.png",
   "overflow": false,
-  "running": 11,
+  "running": 0,
   "focus": "branch-title"
  },
  {
   "name": "branch-320.png",
   "overflow": false,
-  "running": 7,
+  "running": 0,
   "focus": "branch-title"
  },
  {
@@ -255,13 +255,13 @@
   "name": "pause-768.png",
   "overflow": false,
   "running": 0,
-  "focus": "BODY"
+  "focus": "A"
  },
  {
   "name": "pause-320.png",
   "overflow": false,
   "running": 0,
-  "focus": "BODY"
+  "focus": "A"
  },
  {
   "name": "finish-states-768.png",
@@ -396,6 +396,18 @@
   "focus": "survey-title"
  },
  {
+  "name": "survey-4-forced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "survey-title"
+ },
+ {
+  "name": "survey-4-forced-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "survey-title"
+ },
+ {
   "name": "tour-community-3-forced-1280.png",
   "overflow": false,
   "running": 0,
@@ -476,7 +488,7 @@
  {
   "name": "branch-no-catalog-1280.png",
   "overflow": false,
-  "running": 11,
+  "running": 0,
   "focus": "branch-title"
  }
 ]

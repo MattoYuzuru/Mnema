@@ -18,7 +18,7 @@ const runs = [
   ...ALL.map(hash => ({ hash, width: 1280 })),
   ...KEY.flatMap(hash => [768, 320].map(width => ({ hash, width }))),
   ...['tour-sample-3', 'tour-community-3'].flatMap(hash => [1280, 320].map(width => ({ hash, width, armed: true }))),
-  ...['welcome', 'survey-3', 'tour-community-3', 'finish-states', 'path', 'rhythm', 'congrats'].flatMap(hash => [1280, 320].map(width => ({ hash, width, forced: true }))),
+  ...['welcome', 'survey-3', 'survey-4', 'tour-community-3', 'finish-states', 'path', 'rhythm', 'congrats'].flatMap(hash => [1280, 320].map(width => ({ hash, width, forced: true }))),
   ...['welcome', 'congrats', 'finish-states'].map(hash => ({ hash, width: 1280, reduced: true })),
   { hash: 'branch', width: 1280, query: '&catalog=0', suffix: 'no-catalog' },
 ];

@@ -1,13 +1,13 @@
 // OB-001 onboarding prototype. Design evidence only: no API, no persistence, state lives in the tab.
 // Do not port this router/state into Angular; the accepted architecture is docs/engineering/onboarding/architecture.md §8.
-import { t } from './texts.js';
+import { t, days, ordinal } from './texts.js';
 
 const HOLD_MS = 2000;
 const app = document.querySelector('#app');
 const layer = document.querySelector('#layer');
 const toasts = document.querySelector('#toasts');
 const live = document.querySelector('#tour-live');
-const state = { catalog: true, calm: false, branch: 'sample', goal: 'LANGUAGE', topics: new Set(['Итальянский', 'Психология']), experience: 'NEW', days: '3', slide: 0 };
+const state = { lastTour: { branch: 'sample', index: 2 }, catalog: true, calm: false, branch: 'sample', goal: 'LANGUAGE', topics: new Set(['Итальянский', 'Психология']), experience: 'NEW', days: '3', slide: 0 };
 const params = new URLSearchParams(location.search);
 if (params.has('shot')) document.body.classList.add('shot');
 if (params.has('calm')) state.calm = true;
@@ -45,35 +45,24 @@ const pages = {
   decks: () => `${masthead('decks')}<main class="page" id="main"><h1>Мои колоды</h1>
     <div class="empty-state notice"><p>Колод пока нет. Создайте первую или возьмите готовую в Сообществе.</p></div>
     <div class="row"><a class="button primary" href="#tour-own-1">Новая колода</a><a class="button" href="#tour-community-1">Сообщество</a></div></main>`,
-  sample: () => `${masthead('decks')}<main class="page" id="main">
-    <div data-anchor="hub.header" style="display:grid;gap:.6rem"><p class="eyebrow">Колода</p><h1>Как устроена память</h1>
-      <p class="sample-plaque"><span class="stamp">Учебная</span><span>${t('sample.plaque')}</span></p>
-      <p>Почему мы забываем, как повторение через паузу и самопроверка помогают помнить дольше.</p>
-      <p class="facts"><span>8 материалов</span><span>24 упражнения</span><span>Готово к занятию: 4</span></p></div>
-    <div class="row"><button type="button" class="button primary" data-anchor="hub.start">${t('sample.4.action')}</button>
-      <button type="button" class="button" data-anchor="hub.capture">На потом</button><button type="button" class="button">Мастерская</button></div>
-    <section aria-labelledby="mat-h" data-anchor="hub.materials"><h2 id="mat-h" style="font-size:1.6rem;margin-block-end:.5rem">Материалы</h2>
-      <ul class="material-list">${MATERIALS.map(([title, kind], i) => `<li ${i === 0 ? 'data-anchor="hub.material"' : ''}><a href="#">${title}</a><span class="kind">${kind}</span></li>`).join('')}</ul></section>
-    <section aria-labelledby="ex-h" data-anchor="hub.exercises" class="paper-surface" style="display:grid;gap:.5rem"><h2 id="ex-h" style="font-size:1.4rem">Упражнения материала «Кривая забывания»</h2>
-      <ul class="material-list"><li>Выбор ответа<span class="kind">Выбор</span></li><li>Вставьте пропущенное слово<span class="kind">Пропуск</span></li><li>Объясните своими словами<span class="kind">ИИ · самопроверка</span></li></ul>
-      <p class="hint">${t('sample.ai.free', { n: 3 })}</p></section></main>`,
+  sample: () => hub(SAMPLE_DECK),
+  copy: () => hub(COPY_DECK),
   community: () => `${masthead('community')}<main class="page" id="main"><h1>Сообщество</h1>
     <div data-anchor="community.search" style="display:grid;gap:1rem"><form class="search" role="search" onsubmit="return false"><label class="visually-hidden" for="q">Поиск колод</label><input id="q" type="search" placeholder="Название или тема"><button class="button">Найти</button></form>
     <h2 style="font-size:1.6rem">Для вас</h2>
     <div class="shelf">${[['Итальянский: первые шаги', '32 материала · Языки'], ['Испанский для поездки', '28 материалов · Языки'], ['Введение в Git', '24 материала · IT'], ['Корейский: хангыль', '20 материалов · Языки']]
       .map(([title, facts], i) => `<article class="deck-card" ${i === 0 ? 'data-anchor="community.card"' : ''}><h3>${title}</h3><p class="hint">${facts}</p><p class="hint">Автор: Мнема · редакция</p>
       ${i === 0 ? `<div class="row"><button type="button" class="button primary" data-anchor="community.add">${t('community.3.action')}</button></div>` : ''}</article>`).join('')}</div></div></main>`,
-  copy: () => pages.sample().replace('Как устроена память', 'Итальянский: первые шаги').replace(/<p class="sample-plaque">.*?<\/p>/, '<p class="hint">Копия колоды автора Мнема · редакция</p>'),
   own: () => `${masthead('new')}<main class="page" id="main"><h1>Новая колода</h1>
     <div class="paper-surface" data-anchor="own.name" style="display:grid;gap:.75rem"><label>Название<br><input style="inline-size:100%;min-block-size:2.75rem" value="Испанский: глаголы"></label><label>Описание<br><textarea style="inline-size:100%" rows="2">Спряжение частых глаголов</textarea></label></div>
     <div class="row"><button type="button" class="button" data-anchor="own.material">Новый материал</button><button type="button" class="button" data-anchor="own.exercise">Новое упражнение</button><button type="button" class="button primary" data-anchor="own.start">${t('sample.4.action')}</button></div></main>`,
   path: () => pathPage(),
-  rhythm: () => `${masthead('decks')}<main class="page" id="main"><section class="summary"><p class="eyebrow">Занятие завершено</p><h1>Четыре упражнения позади</h1>
-    <p>Следующее повторение — завтра. Mnema напомнит.</p>
-    <div class="rhythm" aria-labelledby="rh-h"><h2 id="rh-h" style="font-size:1.6rem">${t('rhythm.day3')}</h2>
+  rhythm: () => `${masthead('decks')}<main class="page" id="main"><section class="summary"><p class="eyebrow">${t('rhythm.summary.eyebrow')}</p><h1>${t('rhythm.summary.title')}</h1>
+    <p>${t('rhythm.summary.next')}</p>
+    <div class="rhythm" aria-labelledby="rh-h"><h2 id="rh-h" style="font-size:1.6rem">${t('rhythm.day', { ordinal: ordinal(3) })}</h2>
       <ol class="week" aria-label="Эта неделя: занятия во вторник, четверг и пятницу">${['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d, i) => `<li class="${[1, 3, 4].includes(i) ? 'done' : ''} ${i === 4 ? 'today' : ''}"><span class="day" aria-hidden="true">${[1, 3, 4].includes(i) ? '✓' : ''}</span>${d}</li>`).join('')}</ol>
-      <p class="hint">${t('rhythm.target', { n: 3 })}</p></div>
-    <div class="row"><a class="button primary" href="#decks">К колоде</a><a class="button" href="#path">Открыть «Путь»</a></div></section></main>`,
+      <p class="hint">${t('rhythm.target', { days: days(3) })}</p></div>
+    <div class="row"><a class="button primary" href="#decks">${t('congrats.action')}</a><a class="button" href="#path">${t('path.open')}</a></div></section></main>`,
   states: () => `${masthead('decks')}<main class="page" id="main"><h1>Завершить знакомство: три состояния</h1>
     <p class="hint">Кнопка — вариант общего жеста удержания (app-hold-to-delete-button): 2 с вместо 3, во взведённом состоянии — только знак. Ниже статичные состояния и живая кнопка.</p>
     <div class="states-board">
@@ -85,9 +74,29 @@ const pages = {
     <p class="hint">Отпустили раньше — ничего не происходит. Escape или уход фокуса снимают взвод. После удержания — тост.</p></main>`,
 };
 
+const SAMPLE_DECK = { title: 'Как устроена память', stamp: true, description: 'Почему мы забываем, как повторение через паузу и самопроверка помогают помнить дольше.',
+  facts: ['11 материалов', '36 упражнений', 'Готово к занятию: 4'], materials: MATERIALS, exercisesOf: 'Кривая забывания',
+  exercises: [['Выбор ответа', 'Выбор'], ['Вставьте пропущенное слово', 'Пропуск'], ['Объясните своими словами', 'ИИ · самопроверка']], ai: true };
+const COPY_DECK = { title: 'Итальянский: первые шаги', stamp: false, description: 'Слова и фразы для первых дней в Италии: приветствия, кафе, дорога. Копия колоды редакции Мнемы.',
+  facts: ['30 материалов', '150 упражнений', 'Готово к занятию: 5'], materials: [['Приветствия', 'Аудио'], ['В кафе', 'Пары'], ['Числа до 20', 'Текст'], ['Как спросить дорогу', 'Аудио']],
+  exercisesOf: 'Приветствия', exercises: [['Выберите перевод', 'Выбор'], ['Соедините пары', 'Пары'], ['Скажите вслух и проверьте себя', 'Самопроверка']], ai: false };
+function hub(deck) {
+  return `${masthead('decks')}<main class="page" id="main">
+    <div data-anchor="hub.header" style="display:grid;gap:.6rem"><p class="eyebrow">Колода</p><h1>${deck.title}</h1>
+      ${deck.stamp ? `<p class="sample-plaque"><span class="stamp">${t('sample.stamp')}</span><span>${t('sample.plaque')}</span></p>` : ''}
+      <p>${deck.description}</p><p class="facts">${deck.facts.map(f => `<span>${f}</span>`).join('')}</p></div>
+    <div class="row"><button type="button" class="button primary" data-anchor="hub.start">${t('sample.4.action')}</button>
+      <button type="button" class="button" data-anchor="hub.capture">На потом</button><button type="button" class="button">Мастерская</button></div>
+    <section aria-labelledby="mat-h" data-anchor="hub.materials"><h2 id="mat-h" style="font-size:1.6rem;margin-block-end:.5rem">Материалы</h2>
+      <ul class="material-list">${deck.materials.map(([title, kind], i) => `<li ${i === 0 ? 'data-anchor="hub.material"' : ''}><span>${title}</span><span class="kind">${kind}</span></li>`).join('')}</ul></section>
+    <section aria-labelledby="ex-h" data-anchor="hub.exercises" class="paper-surface" style="display:grid;gap:.5rem"><h2 id="ex-h" style="font-size:1.4rem">Упражнения материала «${deck.exercisesOf}»</h2>
+      <ul class="material-list">${deck.exercises.map(([title, kind]) => `<li>${title}<span class="kind">${kind}</span></li>`).join('')}</ul>
+      ${deck.ai ? `<p class="hint">${t('sample.ai.free', { n: 3 })}</p>` : ''}</section></main>`;
+}
+
 const MILESTONES = [
   ['start', [['GOAL_TOLD', 'done'], ['FIRST_DECK', 'done'], ['FIRST_SESSION', 'done']]],
-  ['materials', [['OWN_MATERIAL', 'todo'], ['MEDIA_IN_MATERIAL', 'todo'], ['CAPTURE_NOTE', 'partial', 'Сохранена, не разобрана']]],
+  ['materials', [['OWN_MATERIAL', 'todo'], ['MEDIA_IN_MATERIAL', 'todo'], ['CAPTURE_NOTE', 'partial', 'm.CAPTURE_NOTE.partial']]],
   ['exercises', [['OWN_EXERCISES', 'partial', null, [2, 3]], ['AI_EXPLANATION', 'done'], ['VOICE_ANSWER', 'todo'], ['WORKSHOP_APPROVED', 'todo']]],
   ['rhythm', [['RHYTHM_WEEK', 'partial', null, [2, 3]], ['TWO_DAYS', 'done'], ['COMMUNITY_COPY', 'todo']]],
 ];
@@ -95,22 +104,22 @@ function pathPage() {
   const done = MILESTONES.flatMap(([, list]) => list).filter(([, s]) => s === 'done').length;
   const total = MILESTONES.flatMap(([, list]) => list).length;
   const row = ([key, st, note, count]) => {
-    const word = st === 'done' ? t('path.state.done') : st === 'todo' ? t('path.state.todo') : count ? `${count[0]} из ${count[1]}` : 'Начато';
+    const word = st === 'done' ? t('path.state.done') : st === 'todo' ? t('path.state.todo') : count ? `${count[0]} из ${count[1]}` : t('path.state.partial');
     return `<li class="milestone" data-state="${st}"><span class="state">${STATE_GLYPH[st]}<span>${word}</span></span>
-      <div><h3>${t('m.' + key)}</h3><p class="benefit">${note ?? t('m.' + key + '.b')}</p>
+      <div><h3>${t('m.' + key)}</h3><p class="benefit">${t(note ?? 'm.' + key + '.b')}</p>
       ${count ? `<div class="bar"><div class="progress-track" aria-hidden="true"><div class="progress-fill" style="--value:${(count[0] / count[1]) * 100}%"></div></div><small>${count[0]} из ${count[1]}</small></div>` : ''}</div>
       ${st === 'done' ? '<span></span>' : `<a class="go" href="#hint" aria-label="${t('path.go', { title: t('m.' + key) })}">${CHEVRON}</a>`}</li>`;
   };
   return `${masthead('profile')}<main class="page" id="main">
-    <p class="notice path-new"><span class="stamp">Новое</span><span>${t('path.new')}</span></p>
+    <p class="notice path-new"><span class="stamp">${t('path.new.stamp')}</span><span>${t('path.new')}</span></p>
     <div class="path-head"><div><p class="eyebrow">Профиль</p><h1>${t('path.title')}</h1><p class="hint">${t('path.intro')}</p></div>
       <div class="path-total"><strong style="color:var(--mn-ink);font-size:1.3rem">${t('path.total', { done, total })}</strong>
       <div class="progress-track" aria-hidden="true"><div class="progress-fill" style="--value:${(done / total) * 100}%"></div></div></div></div>
     ${MILESTONES.map(([chapter, list], i) => {
       const d = list.filter(([, s]) => s === 'done').length;
-      return `<details class="chapter" ${i === 1 || i === 2 ? 'open' : ''}><summary><h2>${t('path.chapter.' + chapter)}</h2><span class="count">${d} из ${list.length}</span></summary><ul class="milestones">${list.map(row).join('')}</ul></details>`;
+      return `<details class="chapter" ${i === 1 ? 'open' : ''}><summary><span class="chapter-name">${t('path.chapter.' + chapter)}</span><span class="count">${d} из ${list.length}</span></summary><ul class="milestones">${list.map(row).join('')}</ul></details>`;
     }).join('')}
-    <div class="row"><a class="button" href="#welcome">${t('path.replay')}</a><button type="button" class="button quiet">${t('path.hide')}</button></div>
+    <div class="row"><a class="button" href="#branch">${t('path.replay')}</a><button type="button" class="button quiet">${t('path.hide')}</button></div>
     <p class="hint">${t('rhythm.profile.weeks', { n: 6 })}</p></main>`;
 }
 
@@ -160,17 +169,17 @@ function render() {
   switch (id) {
     case 'welcome': app.innerHTML = pages.decks(); return renderWelcome();
     case 'branch': app.innerHTML = pages.decks(); return renderBranch();
-    case 'skip': app.innerHTML = pages.decks(); return toast(t('skip.toast'), t('skip.toast.link'), '#path');
+    case 'skip': app.innerHTML = pages.decks(); return toast(t('skip.toast'), t('path.open'), '#path');
     case 'community-stuck': return renderStuck();
-    case 'pause': app.innerHTML = pages.sample(); return renderPause();
+    case 'pause': return renderPause();
     case 'finish-states': app.innerHTML = pages.states(); return mountHold(app.querySelector('[data-live-hold]'), () => toast(t('tour.finish.toast')));
     case 'finished': app.innerHTML = pages.sample(); return toast(t('tour.finish.toast'));
     case 'ai-final': app.innerHTML = pages.sample(); return renderAiFinal();
     case 'congrats': app.innerHTML = pages.sample(); return renderNight('congrats');
     case 'path': app.innerHTML = pages.path(); return;
-    case 'path-toast': app.innerHTML = pages.sample(); return toast(t('path.toast', { event: t('path.toast.example'), done: 6, total: 13 }), 'Открыть «Путь»', '#path');
+    case 'path-toast': app.innerHTML = pages.sample(); return toast(t('path.toast', { event: t('path.toast.example'), done: 6, total: 13 }), t('path.open'), '#path');
     case 'hint': app.innerHTML = pages.sample(); return renderPlaceHint();
-    case 'rhythm': app.innerHTML = pages.rhythm(); return toast(t('rhythm.met.toast', { n: 3 }));
+    case 'rhythm': app.innerHTML = pages.rhythm(); return toast(t('rhythm.met.toast', { days: days(3) }));
     case 'reward': app.innerHTML = pages.path(); return renderNight('reward');
     default: app.innerHTML = pages.decks();
   }
@@ -190,8 +199,9 @@ function sky(seed) {
   }
   return `<div class="sky" aria-hidden="true">${stars.join('')}</div>`;
 }
-function nightShell(content, seed, label) {
-  layer.innerHTML = `<div class="night" role="dialog" aria-modal="true" aria-labelledby="${label}">${sky(seed)}${content}</div>`;
+// Stars only on the welcome and the congratulations (Q12); survey and branch use the same night ground without them.
+function nightShell(content, seed, label, stars = true) {
+  layer.innerHTML = `<div class="night" role="dialog" aria-modal="true" aria-labelledby="${label}">${stars ? sky(seed) : ''}${content}</div>`;
   app.inert = true; cleanup.push(() => { app.inert = false; });
   layer.querySelector(`#${label}`).focus();
 }
@@ -203,28 +213,28 @@ function renderNight(kind) {
   const content = kind === 'congrats'
     ? `<p class="eyebrow">${t('congrats.eyebrow')}</p><h1 id="night-title" tabindex="-1">${t('congrats.title')}</h1><p class="lead">${t('congrats.body')}</p>
        <div class="night-actions"><a class="button primary" href="#decks">${t('congrats.action')}</a></div>`
-    : `<p class="eyebrow">${t('reward.eyebrow')}</p><h1 id="night-title" tabindex="-1">${t('reward.title')}</h1><p class="lead">${t('reward.gift', { date: '21 октября, 23:59 МСК' })}</p><p class="muted">${t('reward.terms')}</p>
+    : `<p class="eyebrow">${t('reward.eyebrow')}</p><h1 id="night-title" tabindex="-1">${t('reward.title')}</h1><p class="lead">${t('reward.gift', { date: '21 октября, 23:59\u00a0МСК' })}</p><p class="muted">${t('reward.terms')}</p>
        <div class="night-actions"><a class="button primary" href="#path">${t('reward.action')}</a><a class="button quiet" href="#path">${t('reward.later')}</a></div>`;
   nightShell(`<div class="night-content">${content}</div>`, kind === 'congrats' ? 11 : 23, 'night-title');
 }
 
 // ---------- survey and branch ----------
 function renderSurvey(n) {
-  const progress = `<div class="progress"><p class="eyebrow">${t('survey.counter', { n })}</p><div class="progress-track" role="progressbar" aria-label="Вопросы" aria-valuemin="0" aria-valuemax="4" aria-valuenow="${n}"><div class="progress-fill" style="--value:${(n - 1) * 25}%"></div></div></div>`;
+  const progress = `<div class="progress"><p class="eyebrow">${t('survey.counter', { n })}</p><div class="progress-track" role="progressbar" aria-label="Пройдено вопросов" aria-valuemin="0" aria-valuemax="4" aria-valuenow="${n - 1}" aria-valuetext="${n - 1} из 4"><div class="progress-fill" style="--value:${(n - 1) * 25}%"></div></div></div>`;
   const radios = (name, options, current) => options.map(([value, label, hint]) => `<label class="choice"><input type="radio" name="${name}" value="${value}" ${current === value ? 'checked' : ''}><span><strong>${label}</strong>${hint ? `<span class="hint">${hint}</span>` : ''}</span></label>`).join('');
   const bodies = {
     1: ['survey.goal.title', `<fieldset class="choices"><legend class="hint">${t('survey.goal.hint')}</legend>${radios('goal', [['EXAMS', 'Экзамены и сессия'], ['INTERVIEW', 'Собеседование'], ['LANGUAGE', 'Язык'], ['WORK', 'Работа'], ['SELF', 'Для себя']], state.goal)}</fieldset>`],
     2: ['survey.interests.title', `<fieldset class="choices"><legend class="hint">${t('survey.interests.hint')}</legend><div class="chips">${['Английский', 'Итальянский', 'Корейский', 'Испанский', 'Программирование', 'История', 'Психология', 'Медицина', 'Экзамены', 'Музыка']
       .map(topic => `<label class="chip"><input type="checkbox" name="topic" value="${topic}" ${state.topics.has(topic) ? 'checked' : ''}><span class="mark" aria-hidden="true">${state.topics.has(topic) ? '✓' : '+'}</span>${topic}</label>`).join('')}</div></fieldset>`],
     3: ['survey.experience.title', `<fieldset class="choices"><legend class="visually-hidden">${t('survey.experience.title')}</legend>${radios('experience', [['NEW', t('survey.experience.new'), t('survey.experience.new.hint')], ['FAMILIAR', t('survey.experience.familiar'), t('survey.experience.familiar.hint')], ['CONFIDENT', t('survey.experience.confident'), t('survey.experience.confident.hint')]], state.experience)}</fieldset>`],
-    4: ['survey.days.title', `<fieldset class="choices"><legend class="hint">${t('survey.days.hint')}</legend><div class="segmented">${[['2', '2 дня'], ['3', '3 дня'], ['5', '5 дней'], ['7', t('survey.days.everyday')]].map(([v, l]) => `<label><input type="radio" name="days" value="${v}" ${state.days === v ? 'checked' : ''}>${l}</label>`).join('')}</div></fieldset>`],
+    4: ['survey.days.title', `<fieldset class="choices"><legend class="hint">${t('survey.days.hint')}</legend><div class="segments">${[['2', days(2)], ['3', days(3)], ['5', days(5)], ['7', t('survey.days.everyday')]].map(([v, l]) => `<label class="segment"><input type="radio" name="days" value="${v}" ${state.days === v ? 'checked' : ''}><span class="mark" aria-hidden="true"></span><span>${l}</span></label>`).join('')}</div></fieldset>`],
   };
   const [title, body] = bodies[n];
   const next = n === 4 ? '#branch' : `#survey-${n + 1}`;
   nightShell(`<section class="sheet" aria-labelledby="survey-title">${progress}<h2 id="survey-title" tabindex="-1">${t(title)}</h2>${body}
     <div class="sheet-actions">${n > 1 ? `<a class="button quiet" href="#survey-${n - 1}">${t('survey.back')}</a>` : '<span></span>'}
       <div class="forward"><a class="button" href="${next}">${t('survey.skip')}</a><a class="button primary" href="${next}">${n === 4 ? t('survey.done') : t('survey.next')}</a></div></div>
-    <p class="hint privacy-note">${t('survey.privacy')}</p></section>`, 3, 'survey-title');
+    <p class="hint privacy-note">${t('survey.privacy')}</p></section>`, 3, 'survey-title', false);
   on(layer, 'change', event => {
     const input = event.target;
     if (input.name === 'topic') { input.checked ? state.topics.add(input.value) : state.topics.delete(input.value); input.nextElementSibling.textContent = input.checked ? '✓' : '+'; }
@@ -232,11 +242,12 @@ function renderSurvey(n) {
   });
 }
 function renderBranch() {
+  if (!state.catalog && state.branch === 'community') state.branch = 'sample';
   const options = [['sample', t('branch.sample'), t('branch.sample.hint'), state.experience === 'NEW' ? t('branch.sample.stamp') : ''],
     ...(state.catalog ? [['community', t('branch.community'), t('branch.community.hint')]] : []), ['own', t('branch.own'), t('branch.own.hint')]];
   nightShell(`<section class="sheet" aria-labelledby="branch-title"><h2 id="branch-title" tabindex="-1">${t('branch.title')}</h2>
     <fieldset class="choices"><legend class="visually-hidden">${t('branch.title')}</legend>${options.map(([v, l, h, stamp]) => `<label class="choice"><input type="radio" name="branch" value="${v}" ${state.branch === v ? 'checked' : ''}><span><strong>${l} ${stamp ? `<span class="stamp">${stamp}</span>` : ''}</strong><span class="hint">${h}</span></span></label>`).join('')}</fieldset>
-    <div class="sheet-actions"><a class="button quiet" href="#survey-4">${t('survey.back')}</a><a class="button primary" id="branch-go" href="#tour-${state.branch}-1">${t('branch.continue')}</a></div></section>`, 5, 'branch-title');
+    <div class="sheet-actions"><a class="button quiet" href="#survey-4">${t('survey.back')}</a><a class="button primary" id="branch-go" href="#tour-${state.branch}-1">${t('branch.continue')}</a></div></section>`, 5, 'branch-title', false);
   on(layer, 'change', event => { state.branch = event.target.value; layer.querySelector('#branch-go').href = `#tour-${state.branch}-1`; });
 }
 
@@ -255,11 +266,14 @@ function renderTour(branch, index) {
     <dialog class="tour-card" aria-labelledby="step-title" aria-describedby="step-body">
       <div class="tour-head"><p class="eyebrow">${t('tour.counter', { n: index + 1, m })}</p><div class="dots" aria-hidden="true">${tour.steps.map((_, i) => `<span class="${i <= index ? 'on' : ''}"></span>`).join('')}</div></div>
       <h2 id="step-title" tabindex="-1">${t(step.title)}</h2><div id="step-body">${body}</div>
-      ${step.gate ? `<p class="gate">→ ${t('tour.gate', { action: t(step.gate) })}</p>` : ''}
+      ${step.gate ? `<p class="gate"><span aria-hidden="true">→</span> ${t('tour.gate', { action: t(step.gate) })}</p>` : ''}
       <div class="tour-nav"><div class="steps"><a class="button quiet" href="${backHref}">${t('tour.back')}</a>${step.gate ? '' : `<a class="button primary" href="${nextHref}">${t('tour.next')}</a>`}</div><span data-hold></span></div>
     </dialog>`;
   const card = layer.querySelector('dialog');
-  card.show();
+  state.lastTour = { branch, index };
+  // ADR-ONB-001: showModal() for informational steps, show() when the step waits for an action on the target.
+  step.gate ? card.show() : card.showModal();
+  on(card, 'cancel', event => { event.preventDefault(); location.hash = 'pause'; });
   mountHold(card.querySelector('[data-hold]'), () => { location.hash = 'finished'; });
   if (step.slides) wireSlider(card, step.slides);
   if (!target) { card.querySelector('#step-body').innerHTML = `<p>${t('tour.missing')}</p>`; return; }
@@ -271,7 +285,11 @@ function renderTour(branch, index) {
     cleanup.push(() => target.removeEventListener('click', go));
   }
   const place = () => positionSpotlight(target, card);
-  target.scrollIntoView({ block: 'center', behavior: 'instant' });
+  // Room for the card under the page, then the target near the top so the card fits below it instead of covering it.
+  document.body.style.paddingBottom = `${card.offsetHeight + 32}px`;
+  const fitsBelow = target.offsetHeight + card.offsetHeight + 64 <= innerHeight;
+  target.style.scrollMarginTop = '2rem';
+  target.scrollIntoView({ block: fitsBelow && !matchMedia('(max-width: 37.5rem)').matches ? 'start' : 'center', behavior: 'instant' });
   place();
   const onMove = () => requestAnimationFrame(place);
   addEventListener('resize', onMove); addEventListener('scroll', onMove, true);
@@ -315,7 +333,7 @@ function positionSpotlight(target, card) {
   card.style.left = `${left}px`; card.style.top = `${top}px`;
 }
 function slider(slides) {
-  return `<div class="slider" aria-roledescription="мини-слайдер"><p aria-live="polite" data-slide>${t(slides[0])}</p>
+  return `<div class="slider" role="group" aria-label="Пояснения к шагу"><p aria-live="polite" data-slide>${t(slides[0])}</p>
     <div class="slider-controls"><button type="button" class="button" data-dir="-1" aria-label="${t('tour.slider.prev')}">‹</button><span class="hint" data-count>1 / ${slides.length}</span><button type="button" class="button" data-dir="1" aria-label="${t('tour.slider.next')}">›</button></div></div>`;
 }
 function wireSlider(card, slides) {
@@ -333,7 +351,9 @@ function renderStuck() {
     <div class="tour-nav"><a class="button quiet" href="#tour-community-1">${t('tour.back')}</a><a class="button primary" href="#tour-own-1">${t('community.stuck.action')}</a></div></dialog>`;
   const search = app.querySelector('#q').getBoundingClientRect();
   Object.assign(layer.querySelector('.place-hint').style, { top: `${search.bottom + scrollY + 12}px`, left: `${search.left + scrollX}px` });
-  layer.querySelector('dialog').show();
+  const card = layer.querySelector('dialog');
+  card.show();
+  card.querySelector('#stuck-title').focus();
 }
 
 // ---------- hold to finish ----------
@@ -363,9 +383,11 @@ function mountHold(host, onDone) {
     }, calm() ? 100 : 25);
   };
   button.addEventListener('click', () => { if (suppressClick) { suppressClick = false; return; } if (!armed) setArmed(true); });
-  button.addEventListener('pointerdown', event => { if (!armed || event.button !== 0) return; event.preventDefault(); const r = button.getBoundingClientRect(); begin(event.clientX - r.left, event.clientY - r.top); });
+  on(document, 'pointerdown', event => { if (armed && !button.contains(event.target)) { stop(); setArmed(false); } });
+  button.addEventListener('pointerdown', event => { if (!armed) { suppressClick = false; return; } if (event.button !== 0) return; event.preventDefault(); const r = button.getBoundingClientRect(); begin(event.clientX - r.left, event.clientY - r.top); });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => button.addEventListener(type, stop));
   button.addEventListener('keydown', event => {
+    if (!armed) suppressClick = false;
     if (event.key === 'Escape' && armed) { event.preventDefault(); event.stopPropagation(); stop(); setArmed(false); return; }
     if (!armed || event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return;
     event.preventDefault(); begin(button.offsetWidth / 2, button.offsetHeight / 2);
@@ -377,7 +399,11 @@ function mountHold(host, onDone) {
 
 // ---------- pause, final, hints, toasts ----------
 function renderPause() {
-  layer.innerHTML = `<div class="pause-pill" role="region" aria-label="${t('tour.pause.label')}"><span>${t('tour.pause.label')}</span><a class="button primary" href="#tour-sample-3">${t('tour.pause.resume')}</a></div>`;
+  const { branch, index } = state.lastTour;
+  const step = TOURS[branch].steps[index];
+  app.innerHTML = pages[step.page ?? TOURS[branch].page]();
+  layer.innerHTML = `<div class="pause-pill" role="region" aria-label="${t('tour.pause.label')}"><span>${t('tour.pause.label')}</span><a class="button primary" href="#tour-${branch}-${index + 1}">${t('tour.pause.resume')}</a></div>`;
+  layer.querySelector('.pause-pill a').focus(); // Escape returns focus to the way back into the tour
 }
 function renderAiFinal() {
   layer.innerHTML = `<svg class="scrim" aria-hidden="true"><rect class="veil" width="100%" height="100%" /></svg>
@@ -386,8 +412,8 @@ function renderAiFinal() {
       <ul style="margin:0;padding-inline-start:1.1rem;display:grid;gap:.35rem"><li>${t('ai.workshop')}</li><li>${t('ai.check')}</li></ul>
       <p class="hint">${t('ai.free', { freeAllowance: '{из тарифа Free}' })} <a href="#ai-final">${t('ai.plans')}</a></p>
       <div class="tour-nav"><a class="button quiet" href="#tour-${state.branch}-4">${t('tour.back')}</a><a class="button primary" href="#congrats">${t('ai.next')}</a></div></dialog>`;
-  app.inert = true; cleanup.push(() => { app.inert = false; });
-  const card = layer.querySelector('dialog'); card.show();
+  const card = layer.querySelector('dialog'); card.showModal();
+  on(card, 'cancel', event => { event.preventDefault(); location.hash = 'pause'; });
   if (matchMedia('(max-width: 37.5rem)').matches) card.style.transform = 'none';
   card.querySelector('#ai-title').focus();
 }
@@ -397,6 +423,7 @@ function renderPlaceHint() {
   const r = target.getBoundingClientRect();
   layer.innerHTML = `<div class="place-hint" role="note" aria-label="Подсказка" style="top:${r.bottom + scrollY + 14}px;left:${Math.max(16, r.left + scrollX - 12)}px"><p>${t('hint.capture')}</p><button type="button" class="button" style="justify-self:start">${t('hint.ok')}</button></div>`;
   layer.querySelector('.place-hint button').addEventListener('click', () => { layer.innerHTML = ''; target.focus(); });
+  live.textContent = t('hint.capture');
 }
 function toast(text, linkText, href) {
   toasts.innerHTML = `<div class="toast"><p>${text}</p><button type="button" class="close" aria-label="Закрыть уведомление">×</button>${linkText ? `<a href="${href}">${linkText}</a>` : ''}</div>`;
