@@ -215,7 +215,7 @@ describe('CommunityPageComponent', () => {
             expect(api.shelves).toHaveBeenCalledTimes(1);
             expect(api.facets).toHaveBeenCalledTimes(1);
             expect(api.decks).not.toHaveBeenCalled();
-            expect(one('h1')?.textContent).toBe('Сообщество');
+            expect(one('h1')?.textContent).toBe('Колоды от сообщества');
             expect(one('h1')?.getAttribute('tabindex')).toBe('-1');
             expect(one('app-book-search[data-mode=open] search[aria-label="Поиск колод"]')).not.toBeNull();
             expect(one('app-catalog-filters')).not.toBeNull();

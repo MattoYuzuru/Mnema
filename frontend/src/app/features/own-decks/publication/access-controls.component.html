@@ -1,25 +1,12 @@
 <div class="controls">
   <app-segmented-choice [legend]="text.levelLegend" [options]="options" [value]="staged()" [name]="uid + '-level'"
-    [disabled]="busy()" (valueChange)="pick($event)" />
+    [busy]="busy() || unknownOutcome()" (valueChange)="pick($event)" />
 
-  <!-- A persistent polite region: the consequences are announced when a pick changes them, also while the arrows move through the levels. -->
   <div class="change-region" aria-live="polite">
-    @if (changing(); as target) {
-      <div class="change notice" role="group" [attr.aria-labelledby]="uid + '-change-title'">
-        <p class="change-title" [id]="uid + '-change-title'">{{ text.changeTitle }}: {{ text.levelNames[target] }}</p>
-        <div [id]="uid + '-lines'">
-          @for (line of lines(); track line) { <p class="change-line">{{ line }}</p> }
-        </div>
-        <div class="change-actions">
-          @if (target === 'PUBLIC') {
-            <button type="button" #publicButton class="button primary" [attr.aria-describedby]="uid + '-lines'"
-              [attr.aria-expanded]="checklistOpen()" [attr.aria-controls]="checklistOpen() ? checklistId() : null" (click)="apply()">{{ text.makePublic }}</button>
-          } @else {
-            <button type="button" class="button primary" [attr.aria-describedby]="uid + '-lines'"
-              [attr.aria-disabled]="busy() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null" (click)="apply()">{{ busy() ? text.applying : text.apply }}</button>
-          }
-          <button type="button" class="button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="cancel()">{{ text.cancel }}</button>
-        </div>
+    @if (busy()) { <p class="hint" role="status">{{ text.applying }}</p> }
+    @if (changing()) {
+      <div class="change">
+        @for (line of lines(); track line) { <p class="change-line">{{ line }}</p> }
       </div>
     }
   </div>
@@ -27,7 +14,7 @@
   @if (state().visibility === 'INVITE') {
     <div class="requests-switch">
       <label class="settings-row is-switch is-live">
-        <input type="checkbox" role="switch" [checked]="state().requestsEnabled" [attr.aria-disabled]="busy() ? 'true' : null"
+        <input type="checkbox" role="switch" [checked]="state().requestsEnabled" [attr.aria-disabled]="busy() || unknownOutcome() ? 'true' : null"
           [attr.aria-describedby]="uid + '-requests-hint'" (click)="hold($event)" (change)="toggleRequests($event)" />
         <span>{{ text.requestsSwitch }}</span>
       </label>
@@ -37,5 +24,9 @@
 
   @if (problem(); as message) {
     <p class="field-error" role="alert">{{ message }}</p>
+    @if (unknownOutcome()) {
+      <p class="hint">Ответ не получен. Повторите действие, чтобы узнать результат.</p>
+      <button type="button" class="button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="retryPending()">Повторить</button>
+    }
   }
 </div>

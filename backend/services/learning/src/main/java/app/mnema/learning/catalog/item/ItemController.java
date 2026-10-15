@@ -46,6 +46,14 @@ public class ItemController {
         return ResponseEntity.ok().headers(privateHeaders()).eTag(item.path("deckVersion").stringValue(null)).body(item);
     }
 
+    @GetMapping("/{memberKey}/navigation")
+    ResponseEntity<JsonNode> navigation(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                         @PathVariable String memberKey) {
+        JsonNode navigation = service.navigation(ItemIds.entity(identity.getSubject()), ItemIds.entity(deckId),
+                ItemIds.entity(memberKey));
+        return ResponseEntity.ok().headers(privateHeaders()).eTag(navigation.path("deckVersion").stringValue(null)).body(navigation);
+    }
+
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<JsonNode> create(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
                                     InputStream body, HttpServletRequest request) {

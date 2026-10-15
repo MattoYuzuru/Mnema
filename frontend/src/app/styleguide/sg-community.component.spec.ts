@@ -33,13 +33,13 @@ describe('SgCommunityComponent', () => {
     it('is the section «Сообщество» with a «когда использовать» note for every specimen', () => {
         expect(root.querySelector('section#community h2')?.textContent).toBe('Сообщество');
         const items = root.querySelectorAll('.sg-specimen');
-        expect(items.length).toBe(10);
+        expect(items.length).toBe(9);
         items.forEach(item => expect(item.querySelector('.sg-when')?.textContent).toContain('Когда использовать'));
     });
 
     it('shows every community element as the real component', () => {
         for (const selector of [
-            'app-book-search search[aria-label] form input[type=search]', 'app-book-search button[aria-expanded]', 'app-typewriter-hint[aria-hidden=true]',
+            'app-book-search search[aria-label] form input[type=search]', 'app-interest-picker button[aria-pressed]', 'app-typewriter-hint[aria-hidden=true]',
             'app-catalog-filters button.disclosure', 'app-catalog-filters .chips', 'app-deck-shelf section h2', 'app-deck-grid ul[role=list]',
             'app-community-empty details', 'app-author-header header', 'app-public-deck-card .stamp.solid'
         ]) expect(root.querySelector(selector), selector).not.toBeNull();

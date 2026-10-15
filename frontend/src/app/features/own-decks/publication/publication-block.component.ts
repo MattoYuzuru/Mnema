@@ -29,12 +29,9 @@ type PublicationView =
 let nextBlock = 0;
 
 /**
- * «Доступ и публикация» of the Deck hub, the one place where the access of a deck is managed. It loads its own request: a failure
- * shows a retry here and never hides the hub. At the top `app-access-controls`: the level picker (Приватная, По ссылке, По
- * приглашению, Публичная; «Публичная» opens the checklist, an inline panel) and, at «По приглашению», the switch for access requests.
- * A shared deck shows its link with a share action, the time of the last publication and, when the deck changed after it,
- * «Изменения для учеников не опубликованы (N)» with «Опубликовать обновление», which opens a small form with the optional «Что нового».
- * At «По приглашению» the panel `app-access-panel` follows: requests, invitation links and people with access.
+ * Содержимое окна «Поделиться»: доступ, опубликованная ссылка, обновления и обязательный чек-лист публичной колоды.
+ * Состояние загружается независимо от хаба. Родитель сохраняет блок смонтированным после закрытия окна,
+ * чтобы незавершённые команды, поля и показанная один раз пригласительная ссылка не терялись.
  */
 @Component({
     selector: 'app-publication-block',
@@ -53,8 +50,6 @@ export class PublicationBlockComponent {
     readonly editDescription = output<void>();
     /** Bump to re-read the state after the deck itself changed (a saved description, for example). */
     readonly reloadToken = input(0);
-    /** The `id` of the section, so a link such as `/decks/{id}#access` lands on it; `null` where several blocks share a page. */
-    readonly anchor = input<string | null>(null);
 
     protected readonly text = PUBLICATION_TEXT;
     protected readonly uid = `mn-publication-${nextBlock++}`;
@@ -73,7 +68,6 @@ export class PublicationBlockComponent {
     protected readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
     protected readonly noteField = viewChild<ElementRef<HTMLTextAreaElement>>('noteField');
     protected readonly updateButton = viewChild<ElementRef<HTMLButtonElement>>('updateButton');
-    protected readonly section = viewChild<ElementRef<HTMLElement>>('section');
     protected readonly controls = viewChild(AccessControlsComponent);
 
     private readonly api = inject(PublicationApiService);
@@ -144,13 +138,7 @@ export class PublicationBlockComponent {
 
     protected closeChecklist(): void {
         this.checklistOpen.set(false);
-        this.controls()?.focusPublicButton();
-    }
-
-    /** «Доступ…» of the hub menu and the notification link: brings the section into view and puts the focus on its heading. */
-    focusSection(): void {
-        this.section()?.nativeElement.scrollIntoView({ block: 'start' });
-        this.heading()?.nativeElement.focus({ preventScroll: true });
+        this.controls()?.cancelPublicChoice();
     }
 
     /** A level was applied by the picker: the new state (the picker keeps the focus). */

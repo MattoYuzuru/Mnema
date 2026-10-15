@@ -10,7 +10,7 @@
     min-inline-size: 0;
 }
 
-.heading { padding-block-end: 1.25rem; border-block-end: 1px solid var(--mn-ink); }
+.heading { min-inline-size: 0; }
 h1 {
     margin: 0;
     color: var(--mn-ink);
@@ -30,7 +30,3 @@ h1:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 .status:empty { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; }
 .notice { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; max-inline-size: 40rem; }
 .notice p { margin: 0; flex: 1 1 14rem; overflow-wrap: anywhere; }
-
-@media (forced-colors: active) {
-    .heading { border-color: CanvasText; }
-}

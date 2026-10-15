@@ -82,8 +82,6 @@ describe('StyleguidePageComponent', () => {
         expect(checked(blocks[2])).toBe('По приглашению');
         [...blocks[0].querySelectorAll<HTMLInputElement>('app-segmented-choice input')].find(radio => radio.closest('label')!.textContent!.trim() === 'Публичная')!.click();
         fixture.detectChanges();
-        const open = [...blocks[0].querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Сделать публичной…')!;
-        open.click();
         await wait();
         expect(blocks[0].querySelector('app-publication-checklist')).not.toBeNull();
         blocks[0].querySelector<HTMLButtonElement>('.suggest button')!.click();

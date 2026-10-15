@@ -274,30 +274,38 @@ describe('OwnDeckDetailPageComponent', () => {
             expect(root().innerHTML).not.toContain('/materials"');
         });
 
-        it('offers «Доступ…» in the «⋯» menu of the deck and brings the access section into focus', async () => {
+        it('opens sharing from an explicit button, keeps publication in the dialog and restores focus on Escape', async () => {
             document.body.append(root());
-            expect(root().querySelector('app-action-menu button[aria-haspopup="menu"]')!.getAttribute('aria-label')).toBe(`Действия с колодой «${deck.metadata.title}»`);
-            const items = [...root().querySelectorAll<HTMLButtonElement>('app-action-menu [role=menuitem]')];
-            expect(items.map(item => item.textContent!.trim())).toEqual(['Доступ…']);
-            const section = root().querySelector<HTMLElement>('app-publication-block section')!;
-            expect(section.id).toBe('access');
-            const reveal = vi.spyOn(section, 'scrollIntoView');
-            items[0].click();
+            const share = root().querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+            const dialog = root().querySelector<HTMLDialogElement>('app-paper-dialog dialog')!;
+            expect(share.textContent).toContain('Поделиться');
+            expect(share.getAttribute('aria-label')).toContain('Приватная');
+            expect(root().querySelector('app-action-menu')).toBeNull();
+            expect(dialog.open).toBe(false);
+            expect(dialog.querySelector('app-publication-block')).not.toBeNull();
+            share.focus(); share.click();
             fixture.detectChanges();
-            expect(reveal).toHaveBeenCalled();
-            expect(document.activeElement).toBe(section.querySelector('h2'));
+            expect(dialog.open).toBe(true);
+            expect(document.activeElement).toBe(dialog.querySelector('h2'));
+            dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+            expect(dialog.open).toBe(false);
+            expect(document.activeElement).toBe(share);
             root().remove();
         });
 
-        it('lands on the access section when the address carries #access, once per deck', async () => {
+        it('opens sharing for the #access notification once per deck', async () => {
+            (document.activeElement as HTMLElement | null)?.blur();
             fragment.next('access');
             document.body.append(root());
             fixture.detectChanges();
             await fixture.whenStable();
-            expect(document.activeElement).toBe(root().querySelector('app-publication-block h2'));
-            (document.activeElement as HTMLElement).blur();
+            const dialog = root().querySelector<HTMLDialogElement>('app-paper-dialog dialog')!;
+            expect(dialog.open).toBe(true);
+            expect(document.activeElement).toBe(dialog.querySelector('h2'));
+            dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
             fixture.detectChanges();
-            expect(document.activeElement).not.toBe(root().querySelector('app-publication-block h2'));
+            expect(dialog.open).toBe(false);
+            expect(document.activeElement).toBe(root().querySelector('button[aria-haspopup="dialog"]'));
             root().remove();
         });
 
@@ -361,12 +369,8 @@ describe('OwnDeckDetailPageComponent', () => {
             expect(third.componentInstance.generationAvailable()).toBe(false);
         });
 
-        it('lists materials without exercises first when a statistics widget asks for them', () => {
-            const withoutExercises = [...root().querySelectorAll<HTMLButtonElement>('app-deck-insights button')]
-                .find(button => button.textContent?.includes('Показать материалы без упражнений'))!;
-            withoutExercises.click();
-            fixture.detectChanges();
-            expect(items.list).toHaveBeenLastCalledWith(deck.deckId, { sort: 'exerciseCount', exerciseCount: true, limit: 50 });
+        it('keeps statistics informational without a second materials action', () => {
+            expect(root().querySelector('app-deck-insights')?.textContent).not.toContain('Показать материалы без упражнений');
         });
     });
     describe('moderation notice', () => {
@@ -415,8 +419,8 @@ describe('OwnDeckDetailPageComponent', () => {
         it('draws an ordinary deck exactly as before: no source line, no state block, only «Доступ…» in the menu', async () => {
             await show(null);
             expect(root().querySelector('app-copy-origin, app-copy-status')).toBeNull();
-            expect(menu()).toEqual(['Доступ…']);
-            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Изменить']);
+            expect(menu()).toEqual([]);
+            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Изменить', 'Поделиться. Доступ: Приватная']);
             expect(live()).toBe('');
         });
 
@@ -424,14 +428,14 @@ describe('OwnDeckDetailPageComponent', () => {
             await show(states.ready);
             expect(root().querySelector('app-copy-origin')!.textContent!.replace(/\s+/gu, ' ').trim()).toBe('Копия колоды «Испанский язык: базовые глаголы»');
             expect(root().querySelector('app-copy-origin a')!.getAttribute('href')).toBe(`/d/${states.ready.upstreamCode}`);
-            expect(menu()).toEqual(['Доступ…', 'Отвязать от автора']);
+            expect(menu()).toEqual(['Отвязать от автора']);
             expect(root().querySelector('app-copy-status')).toBeNull();
             expect(actions()).toContain('Учить');
         });
 
         it('links a ready, attached copy to the update review, and leaves it out for an ordinary deck, a detached copy and a copy being prepared', async () => {
             await show(states.ready);
-            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Проверить обновления', 'Изменить']);
+            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Проверить обновления', 'Изменить', 'Поделиться. Доступ: Приватная']);
             const link = [...root().querySelectorAll<HTMLAnchorElement>('nav.hub-actions > a')].find(anchor => anchor.textContent?.trim() === 'Проверить обновления')!;
             expect(link.getAttribute('href')).toBe(`/decks/${deck.deckId}/update`);
             await show(states.detached);
@@ -448,7 +452,7 @@ describe('OwnDeckDetailPageComponent', () => {
             expect(root().querySelector('app-unavailable-note .hint')!.textContent).toBe(forksFixture.texts.sourceClosed);
             expect(root().querySelector('app-copy-origin')).toBeNull();
             await show(states.detached);
-            expect(menu()).toEqual(['Доступ…']);
+            expect(menu()).toEqual([]);
             expect(root().querySelector('app-copy-origin .stamp')!.textContent).toBe('Отвязана от автора');
         });
 
@@ -947,7 +951,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(toasts.echo).toHaveBeenCalledWith('Копия отвязана от автора.');
                 expect(toasts.echo).toHaveBeenCalledTimes(1);
                 expect(document.activeElement).toBe(root().querySelector('h1'));
-                expect(menu()).toEqual(['Доступ…']);
+                expect(menu()).toEqual([]);
             });
 
             it('says what went wrong and keeps the question open', async () => {

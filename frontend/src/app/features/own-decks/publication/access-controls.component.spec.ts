@@ -36,7 +36,6 @@ describe('AccessControlsComponent', () => {
         fixture = TestBed.createComponent(AccessControlsComponent);
         fixture.componentRef.setInput('state', state);
         fixture.componentRef.setInput('checklistOpen', inputs.checklistOpen ?? false);
-        fixture.componentRef.setInput('checklistId', 'checklist');
         fixture.componentInstance.saved.subscribe(next => saved.push(next));
         fixture.componentInstance.replayed.subscribe(() => replayed++);
         fixture.componentInstance.refresh.subscribe(() => refreshed++);
@@ -70,198 +69,102 @@ describe('AccessControlsComponent', () => {
         expect(root.querySelector('[role=switch]')).toBeNull();
     });
 
-    it('keeps one polite region for the consequences and repeats nothing the hint of the picker already says', async () => {
-        await create(link());
-        const region = root.querySelector('.change-region')!;
-        expect(region.getAttribute('aria-live')).toBe('polite');
-        expect(region.querySelector('.change')).toBeNull();
-        await pick('Приватная');
-        expect(root.querySelector('.change-region')).toBe(region);
-        expect(region.querySelector('.change')).not.toBeNull();
-        expect(region.textContent).not.toContain('Колоду увидите только вы');
-        expect(region.textContent).toContain('Ссылка изменится');
+    it('applies a non-public choice immediately with no apply or cancel step', async () => {
+        const state = link();
+        api.save.mockImplementation((_deck, _version, command) => of(written(invite(), command.commandId)));
+        await create(state);
         await pick('По приглашению');
-        expect(region.textContent).toContain('Ссылка изменится');
-        expect(region.textContent).not.toContain('Колоду откроют только те');
+        expect(lastCommand()).toMatchObject({ visibility: 'INVITE', publish: null, metadata: state.metadata });
+        expect(saved[0].visibility).toBe('INVITE');
+        expect(button('Применить')).toBeUndefined();
+        expect(button('Отмена')).toBeUndefined();
+        expect(toasts.echo).toHaveBeenCalledWith('Доступ изменён: По приглашению');
     });
 
-    it('only stages a pick: a panel says what will happen and nothing is sent until «Применить»', async () => {
-        await create(sharedState({ visibility: 'PUBLIC' }));
-        await pick('По ссылке');
-        expect(api.save).not.toHaveBeenCalled();
-        const panel = root.querySelector('.change')!;
-        expect(panel.getAttribute('role')).toBe('group');
-        expect(document.getElementById(panel.getAttribute('aria-labelledby')!)!.textContent).toBe('Изменить доступ: По ссылке');
-        expect(panel.textContent).toContain('пропадёт из каталога');
-        expect(panel.textContent).toContain('старые ссылки перестанут работать');
-        const apply = button('Применить');
-        expect(document.getElementById(apply.getAttribute('aria-describedby')!)!.textContent).toContain('Ссылка изменится');
-    });
-
-    it('cancels back to the real level and puts the focus on the picker', async () => {
-        await create(link());
-        await pick('Приватная');
-        button('Отмена').click();
-        await settle();
-        expect(checked()).toBe('По ссылке');
-        expect(root.querySelector('.change')).toBeNull();
-        expect(document.activeElement).toBe(root.querySelector('input[type=radio]:checked'));
-        expect(api.save).not.toHaveBeenCalled();
-    });
-
-    it('leaving «Приватная» publishes the current head, with the If-Match of the loaded version', async () => {
+    it('publishes the exact current head when leaving private, with the loaded version', async () => {
         const state = neverPublished();
-        api.save.mockImplementation((_deck, _version, command) => of(written(sharedState({ visibility: 'LINK', link: '/d/Kq7xT3mNpR' }), command.commandId)));
+        api.save.mockImplementation((_deck, _version, command) => of(written(link(), command.commandId)));
         await create(state);
         await pick('По ссылке');
-        expect(root.querySelector('.change')!.textContent).toContain('будет опубликована сейчас');
-        button('Применить').click();
-        await settle();
-        const [deck, version, command] = lastCall(api.save) as [string, string, PublicationCommand];
-        expect(deck).toBe(state.deckId);
-        expect(version).toBe(state.rowVersion);
-        expect(command).toMatchObject({
-            visibility: 'LINK', metadata: state.metadata, requestsEnabled: state.requestsEnabled,
-            publish: { expectedHeadRevisionId: state.headRevisionId, releaseNote: null }
-        });
-        expect(toasts.echo).toHaveBeenCalledWith('Доступ изменён: По ссылке');
-        expect(saved).toHaveLength(1);
-        expect(saved[0].visibility).toBe('LINK');
+        expect(lastCall(api.save).slice(0, 2)).toEqual([state.deckId, state.rowVersion]);
+        expect(lastCommand()).toMatchObject({ visibility: 'LINK', publish: { expectedHeadRevisionId: state.headRevisionId, releaseNote: null } });
     });
 
-    it('moves between shared levels without publishing, and keeps the focus on the picker afterwards', async () => {
-        api.save.mockImplementation((_deck, _version, command) => of(written(sharedState({ visibility: 'INVITE', link: '/d/Kq7xT3mNpR' }), command.commandId)));
+    it('keeps real state selected after a definite rejection and refreshes a stale version', async () => {
+        api.save.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, error: { code: 'VERSION_CONFLICT' } })));
         await create(link());
-        await pick('По приглашению');
-        button('Применить').click();
-        await settle();
-        expect(lastCommand()).toMatchObject({ visibility: 'INVITE', publish: null });
-        fixture.componentRef.setInput('state', saved[0]);
-        await settle();
-        expect(document.activeElement).toBe(root.querySelector('input[type=radio]:checked'));
+        await pick('Приватная');
+        expect(checked()).toBe('По ссылке');
+        expect(refreshed).toBe(1);
+        expect(root.querySelector('[role=alert]')?.textContent).toContain('Колода изменилась');
     });
 
-    it('follows the stored level when the host re-reads it', async () => {
+    it('follows the real visibility on a host refresh', async () => {
         await create(link());
         fixture.componentRef.setInput('state', invite());
         await settle();
         expect(checked()).toBe('По приглашению');
-        // A re-read of the same level (after a conflict, say) keeps the pick; a new level replaces it.
-        await pick('Приватная');
-        fixture.componentRef.setInput('state', { ...invite(), rowVersion: '9' });
-        await settle();
-        expect(checked()).toBe('Приватная');
-        fixture.componentRef.setInput('state', link());
+    });
+
+    it('opens the mandatory public checklist on selection without publishing', async () => {
+        await create(link());
+        await pick('Публичная');
+        expect(opened).toBe(1);
+        expect(api.save).not.toHaveBeenCalled();
+        fixture.componentInstance.cancelPublicChoice();
         await settle();
         expect(checked()).toBe('По ссылке');
+        expect(document.activeElement).toBe(root.querySelector('input[type=radio]:checked'));
     });
 
-    it('says what a downgrade to «Приватная» keeps', async () => {
-        await create(invite());
+    it('closes the public checklist when another level is chosen', async () => {
+        api.save.mockImplementation((_deck, _version, command) => of(written(invite(), command.commandId)));
+        await create(link(), { checklistOpen: true });
+        await pick('По приглашению');
+        expect(closed).toBe(1);
+    });
+
+    it('keeps controls focusable while a change is in flight and ignores concurrent selections', async () => {
+        const pending = new Subject<PublicationWriteResult>();
+        api.save.mockReturnValue(pending);
+        await create(link());
         await pick('Приватная');
-        const text = root.querySelector('.change')!.textContent!;
-        expect(text).not.toContain('Колоду увидите только вы');
-        expect(text).toContain('Ссылка изменится');
-        expect(text).toContain('Выданные доступы сохранятся');
-        expect(text).toContain('Пригласительные ссылки перестанут работать');
-        api.save.mockImplementation((_deck, _version, command) => of(written(neverPublished({ rowVersion: '4' }), command.commandId)));
-        button('Применить').click();
+        await pick('По приглашению');
+        expect(api.save).toHaveBeenCalledTimes(1);
+        expect(root.querySelector('fieldset')!.disabled).toBe(false);
+        expect(root.querySelector('input[type=radio]')?.getAttribute('aria-disabled')).toBe('true');
+        pending.next(written(neverPublished(), lastCommand().commandId)); pending.complete();
         await settle();
-        expect(lastCommand()).toMatchObject({ visibility: 'PRIVATE', publish: null });
+        expect(checked()).toBe('Приватная');
     });
 
-    describe('«Публичная»', () => {
-        it('is not applied here: its button opens the checklist and reports aria-expanded', async () => {
-            await create(link());
-            await pick('Публичная');
-            const open = button('Сделать публичной…');
-            expect(open.getAttribute('aria-expanded')).toBe('false');
-            expect(open.getAttribute('aria-controls')).toBeNull();
-            open.click();
-            expect(opened).toBe(1);
-            expect(api.save).not.toHaveBeenCalled();
-            fixture.componentRef.setInput('checklistOpen', true);
-            await settle();
-            expect(button('Сделать публичной…').getAttribute('aria-expanded')).toBe('true');
-            expect(button('Сделать публичной…').getAttribute('aria-controls')).toBe('checklist');
-            button('Сделать публичной…').click();
-            expect(closed).toBe(1);
-        });
-
-        it('closes an open checklist when another level is picked or the pick is cancelled', async () => {
-            await create(link(), { checklistOpen: true });
-            await pick('Публичная');
-            await pick('По приглашению');
-            expect(closed).toBe(1);
-            await pick('Публичная');
-            button('Отмена').click();
-            await settle();
-            expect(closed).toBe(2);
-            expect(checked()).toBe('По ссылке');
-        });
-
-        it('hands the focus back to its button when asked', async () => {
-            await create(link());
-            await pick('Публичная');
-            fixture.componentInstance.focusPublicButton();
-            await settle();
-            expect(document.activeElement).toBe(button('Сделать публичной…'));
-        });
+    it('locks an unknown outcome and retries the exact command before permitting another choice', async () => {
+        api.save.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 })));
+        await create(link());
+        await pick('Приватная');
+        const first = lastCommand().commandId;
+        await pick('По приглашению');
+        expect(api.save).toHaveBeenCalledTimes(1);
+        api.save.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+        button('Повторить').click(); await settle();
+        expect(lastCommand().commandId).toBe(first);
+        api.save.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 412, error: { code: 'VERSION_CONFLICT' } })));
+        button('Повторить').click(); await settle();
+        expect(lastCommand().commandId).toBe(first);
+        expect(refreshed).toBe(1);
+        expect(button('Повторить')).toBeUndefined();
+        api.save.mockImplementation((_deck, _version, command) => of(written(invite(), command.commandId)));
+        await pick('По приглашению');
+        expect(lastCommand().commandId).not.toBe(first);
     });
 
-    describe('while applying', () => {
-        it('marks the button busy, ignores a second press and a pick, and unlocks after the answer', async () => {
-            const pending = new Subject<PublicationWriteResult>();
-            api.save.mockReturnValue(pending);
-            await create(link());
-            await pick('Приватная');
-            const apply = button('Применить');
-            apply.click();
-            apply.click();
-            await settle();
-            expect(api.save).toHaveBeenCalledTimes(1);
-            expect(button('Применяем…').getAttribute('aria-busy')).toBe('true');
-            expect(button('Применяем…').getAttribute('aria-disabled')).toBe('true');
-            expect(root.querySelector('fieldset')!.disabled).toBe(true);
-            pending.next(written(neverPublished(), lastCommand().commandId));
-            pending.complete();
-            await settle();
-            expect(root.querySelector('fieldset')!.disabled).toBe(false);
-        });
-
-        it('retries a lost answer with the same command id and drops it after a definite answer', async () => {
-            api.save.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 })));
-            await create(link());
-            await pick('Приватная');
-            button('Применить').click();
-            await settle();
-            expect(root.querySelector('[role=alert]')!.textContent).toContain('Не удалось связаться с сервером');
-            const first = lastCommand().commandId;
-            api.save.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
-            button('Применить').click();
-            await settle();
-            expect(lastCommand().commandId).toBe(first);
-            api.save.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 412, error: { code: 'VERSION_CONFLICT' } })));
-            button('Применить').click();
-            await settle();
-            expect(lastCommand().commandId).toBe(first);
-            expect(refreshed).toBe(1);
-            expect(root.querySelector('[role=alert]')!.textContent).toContain('Колода изменилась');
-            api.save.mockReturnValueOnce(of(written(neverPublished(), 'x')));
-            button('Применить').click();
-            await settle();
-            expect(lastCommand().commandId).not.toBe(first);
-        });
-
-        it('asks the host to re-read after a replayed acknowledgement', async () => {
-            api.save.mockImplementation((_deck, _version, command) => of(written(link(), command.commandId, true)));
-            await create(link());
-            await pick('Приватная');
-            button('Применить').click();
-            await settle();
-            expect(replayed).toBe(1);
-            expect(saved).toEqual([]);
-        });
+    it('re-reads a replayed acknowledgement instead of applying the stale state', async () => {
+        api.save.mockImplementation((_deck, _version, command) => of(written(link(), command.commandId, true)));
+        await create(link());
+        await pick('Приватная');
+        expect(replayed).toBe(1);
+        expect(saved).toEqual([]);
+        expect(checked()).toBe('По ссылке');
     });
 
     describe('the requests switch', () => {

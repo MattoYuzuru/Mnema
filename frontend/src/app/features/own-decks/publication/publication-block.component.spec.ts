@@ -115,16 +115,11 @@ describe('PublicationBlockComponent', () => {
             expect(text()).not.toContain('Опубликовать обновление');
         });
 
-        it('opens the checklist in place and closes it again, keeping the button state in aria-expanded', async () => {
+        it('opens the mandatory checklist directly on selecting Public and restores the real level on cancellation', async () => {
             await create();
             await pick('Публичная');
-            const open = button('Сделать публичной…');
-            expect(open.getAttribute('aria-expanded')).toBe('false');
-            open.click();
-            await settle();
-            expect(open.getAttribute('aria-expanded')).toBe('true');
             expect(root.querySelector('app-publication-checklist')).not.toBeNull();
-            expect(open.getAttribute('aria-controls')).toBe(root.querySelector('app-publication-checklist')!.id);
+            expect(api.save).not.toHaveBeenCalled();
             button('Отмена').click();
             await settle();
             expect(root.querySelector('app-publication-checklist')).toBeNull();
@@ -135,7 +130,6 @@ describe('PublicationBlockComponent', () => {
         it('becomes public in place when the checklist publishes', async () => {
             await create();
             await pick('Публичная');
-            button('Сделать публичной…').click();
             await settle();
             const checklist = fixture.debugElement.query(el => el.name === 'app-publication-checklist');
             checklist.componentInstance.published.emit(sharedState({ unpublishedChanges: 0, publishedRevisionId: '44444444-4444-4444-8444-444444444444' }));
@@ -151,7 +145,6 @@ describe('PublicationBlockComponent', () => {
             const edit = vi.fn();
             fixture.componentInstance.editDescription.subscribe(edit);
             await pick('Публичная');
-            button('Сделать публичной…').click();
             await settle();
             button('Добавить описание').click();
             expect(edit).toHaveBeenCalledOnce();
@@ -162,7 +155,6 @@ describe('PublicationBlockComponent', () => {
         it('closes the checklist and focuses the heading once the re-read state is public', async () => {
             await create();
             await pick('Публичная');
-            button('Сделать публичной…').click();
             await settle();
             const checklist = fixture.debugElement.query(el => el.name === 'app-publication-checklist').componentInstance;
             api.read.mockReturnValue(of(sharedState({ unpublishedChanges: 0 })));
@@ -176,7 +168,6 @@ describe('PublicationBlockComponent', () => {
         it('keeps the checklist open when the re-read state is not public', async () => {
             await create();
             await pick('Публичная');
-            button('Сделать публичной…').click();
             await settle();
             const checklist = fixture.debugElement.query(el => el.name === 'app-publication-checklist').componentInstance;
             checklist.replayed.emit();
@@ -218,7 +209,7 @@ describe('PublicationBlockComponent', () => {
             await create(sharedState({ visibility: 'LINK', link: '/d/Kq7xT3mNpR', unpublishedChanges: 0, headRevisionId: sharedState().publishedRevisionId! }));
             expect(level()).toBe('По ссылке');
             await pick('Публичная');
-            expect(button('Сделать публичной…')).toBeDefined();
+            expect(root.querySelector('app-publication-checklist')).not.toBeNull();
             expect(root.querySelector<HTMLAnchorElement>('.publication-link a')!.href).toBe(`${window.location.origin}/d/Kq7xT3mNpR`);
             expect(levels).toEqual(['link']);
         });

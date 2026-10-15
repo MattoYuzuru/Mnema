@@ -233,7 +233,7 @@ export async function runCatalog(ctx) {
       how: document.querySelector('details.how')?.open, label: document.querySelector('app-community-page app-book-search label')?.textContent.trim() };`);
     need(view.shelves === 0 && view.grids === 0 && view.filters === 0, 'the empty Community draws shelves, cards or filters: ' + JSON.stringify(view));
     need(view.book === 1 && view.label === 'Найти колоду', 'the book search is not there');
-    need(view.h1 === 'Сообщество' && view.signIn === 'Войти' && view.how === false, 'heading, sign-in or the closed disclosure is wrong: ' + JSON.stringify(view));
+    need(view.h1 === 'Колоды от сообщества' && view.signIn === 'Войти' && view.how === false, 'heading, sign-in or the closed disclosure is wrong: ' + JSON.stringify(view));
     const marks = await landmarks(guest);
     need(marks.search === 1 && marks.h1 === 1, `search landmarks ${marks.search}, h1 ${marks.h1}`);
     // «Как поделиться колодой» by keyboard: Tab reaches the summary, Enter opens it, Enter closes it, Space opens it again.
@@ -615,32 +615,19 @@ export async function runCatalog(ctx) {
     return { decksForGuest: guestTitles.length, belowThresholdListed: true, inviteForGrantedOnly: true, linkAbsent: true, selfNotice: true, settingsLink: true, noConsent: 'Профиль не найден', unknownName: 'Профиль не найден' };
   });
 
-  // ==== 9. the masthead entry ======================================================================================================================
+  // ==== 9. masthead navigation and session alignment ===============================================================================================
   await stage('masthead', ['seed'], async () => {
-    const entry = 'app-book-search[data-mode="closed"] button.entry';
     await guest.front(); await guest.metrics(DESKTOP);
     await navigate('/', guest.tab);
-    await until(() => exists(entry, guest.tab), 'the masthead has no closed book on the home page', 30000);
-    need((await guest.page(`return document.querySelector(args[0]).getAttribute('aria-expanded');`, entry)) === 'false', 'the closed book is already open');
-    need(await guest.has('Сообщество'), 'the masthead has no «Сообщество»');
-    await guest.enter(entry);
-    await until(() => guest.page(`return document.activeElement?.matches('app-book-search[data-mode="closed"] input[type="search"]') === true;`), 'the focus did not move into the field');
-    await guest.tab.call('Input.insertText', { text: 'испанский' });
-    await guest.press('Enter');
-    await until(async () => (await guest.location()) === '/community' && (await guest.search()) === '?q=%D0%B8%D1%81%D0%BF%D0%B0%D0%BD%D1%81%D0%BA%D0%B8%D0%B9', 'Enter did not lead to /community?q=…');
-    await until(() => settled(guest), 'the search page stayed loading');
-    need((await titlesOf(guest)).length === 3, 'the masthead search found ' + (await titlesOf(guest)).length + ' decks');
-    need(!(await exists('app-book-search[data-mode="closed"]', guest.tab)), 'the masthead book stays on /community');
+    await until(() => exists('header.masthead', guest.tab), 'the masthead is missing', 30000);
+    need(!(await exists('header.masthead app-book-search, header.masthead search, header.masthead input[type="search"]', guest.tab)), 'the masthead still has search controls');
+    await guest.enter('header.masthead nav a', 'Сообщество');
+    await until(async () => (await guest.location()) === '/community', 'community navigation did not open the catalogue');
+    await until(() => settled(guest), 'the catalogue stayed loading');
     const marks = await landmarks(guest);
     need(marks.search === 1, `/community has ${marks.search} search landmarks`);
-    // Escape folds the book and returns the focus to its button.
-    await navigate('/', guest.tab);
-    await until(() => exists(entry, guest.tab), 'the home page lost the closed book', 30000);
-    await guest.enter(entry);
-    await guest.press('Escape');
-    await until(() => focusedName(guest).then(focus => focus?.text === 'Открыть поиск колод'), 'Escape did not return the focus to the book button: ' + JSON.stringify(await focusedName(guest)));
-    // A signed-in reader sees the same entry, and no horizontal overflow at any width.
-    const widths = [390, 768, 900, 1280];
+    need(await exists('app-community-page app-book-search[data-mode="open"]', guest.tab), 'the page lost its open search');
+    const widths = [320, 390, 768, 900, 1280];
     const measured = {};
     for (const actor of [guest, owner]) {
       for (const path of ['/', '/community', '/decks']) {
@@ -658,16 +645,27 @@ export async function runCatalog(ctx) {
           if (!fits.ok) {
             throw new SafeFailure(`${actor.label} ${path} at ${width}px: scrollWidth ${fits.scroll} > ${width}; widest ${JSON.stringify(await widest(actor, 5))}`);
           }
+          need(!(await exists('header.masthead app-book-search, header.masthead search', actor.tab)), `${actor.label} ${path}: header search returned`);
+          if (actor === owner) {
+            const alignment = await actor.page(`const session=document.querySelector('header.masthead .session');
+              const elements=[session.querySelector('.identity'),session.querySelector('app-notification-bell'),session.querySelector('button.button')];
+              const boxes=elements.map(element=>element?.getBoundingClientRect());
+              return {all:elements.every(Boolean),identity:elements[0]?.textContent.trim(),title:elements[0]?.title,
+                centers:boxes.filter(Boolean).map(box=>box.top+box.height/2),
+                within:boxes.filter(Boolean).every(box=>box.left>=0&&box.right<=args[0])};`, width);
+            need(alignment.all && alignment.identity === alignment.title && alignment.identity.includes('@'), 'email/bell/logout missing: ' + JSON.stringify(alignment));
+            need(alignment.within && Math.max(...alignment.centers)-Math.min(...alignment.centers)<2, 'session controls are not aligned: ' + JSON.stringify(alignment));
+          }
           measured[`${actor.label}:${path}:${width}`] = fits.scroll;
         }
       }
     }
     await guest.metrics(PHONE);
     await navigate('/', guest.tab);
-    await until(() => exists(entry, guest.tab), 'the phone masthead lost the book', 30000);
+    await until(() => exists('header.masthead', guest.tab), 'the phone masthead is missing', 30000);
     await shoot(guest, 'catalog-mobile-masthead-guest.png');
     await owner.metrics(DESKTOP);
-    return { closedBook: true, enterNavigates: 'q=испанский', notOnCommunity: true, escapeRestoresFocus: true, widths, noOverflow: Object.keys(measured).length };
+    return { headerSearchAbsent: true, communityNavigation: true, pageSearch: true, sessionAligned: true, widths, noOverflow: Object.keys(measured).length };
   });
 
   // ==== 12. reduced motion =========================================================================================================================

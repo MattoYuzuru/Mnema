@@ -28,7 +28,7 @@ import { InterestStore } from './interest-store.service';
         <button type="button" class="button" [disabled]="store.busy()" (click)="retry()">Повторить</button>
       }
     `,
-    styles: `:host{display:block}.interest-settings{padding-block:24px;border-block:1px solid var(--mn-rule)}h2{font-family:var(--mn-font-display);color:var(--mn-ink)}button{margin:4px 8px 4px 0}.notice{margin-top:16px}`,
+    styles: `:host{display:block}.interest-settings{padding-block:8px}h2{font-family:var(--mn-font-display);color:var(--mn-ink)}button{margin:4px 8px 4px 0}.notice{margin-top:16px}`,
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class InterestSettingsComponent {
@@ -56,7 +56,7 @@ export class InterestSettingsComponent {
         if (this.store.busy() || this.store.retrying()) return;
         this.editing.set(true);
         afterNextRender(() => {
-            (this.host.nativeElement.querySelector<HTMLElement>('app-interest-picker input:not(:disabled)') ?? this.host.nativeElement.querySelector<HTMLElement>('app-interest-picker legend'))?.focus();
+            (this.host.nativeElement.querySelector<HTMLElement>('app-interest-picker button:not(:disabled)') ?? this.host.nativeElement.querySelector<HTMLElement>('app-interest-picker legend'))?.focus();
         }, { injector: this.injector });
     }
     protected cancelEdit(): void {

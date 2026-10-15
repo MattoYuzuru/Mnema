@@ -7,13 +7,13 @@ let nextEmpty = 0;
  * The community catalogue when no deck has been published yet. There are no starter decks, so the page says so plainly (the
  * approved text of the product contract, unchanged), offers the next step and explains it: «Как поделиться колодой» opens three
  * short steps and the catalogue threshold in plain words (a native `details`, so Enter, Space and the state come from the platform). A signed-in reader is led to «Мои колоды»,
- * a guest to «Войти». It is the `.empty-state` of the system: ruled top and bottom, never a card.
+ * a guest to «Войти». It uses the shared `.empty-state.unruled` for an uninterrupted catalogue page.
  */
 @Component({
     selector: 'app-community-empty',
     imports: [RouterLink],
     template: `
-      <section class="empty-state" [attr.aria-labelledby]="titleId">
+      <section class="empty-state unruled" [attr.aria-labelledby]="titleId">
         <h2 [id]="titleId">Пока здесь пусто.</h2>
         <p>Сделайте свою колоду публичной, и она появится здесь первой.</p>
         <details class="how">

@@ -126,11 +126,13 @@ export async function runHub(ctx) {
       consequence: consequence ? { text: consequence.textContent.trim(), visible: !consequence.hidden } : null,
       reservedHeight: document.documentElement.style.getPropertyValue('--mn-bulk-bar-height'),
       hint: region.querySelector('.hint')?.textContent.trim() ?? null };`);
-  const tables = () => page(`return [...document.querySelectorAll('app-deck-insights article.widget')].map(widget => ({
-    title: widget.querySelector('h3')?.textContent.trim() ?? null,
-    rows: [...widget.querySelectorAll('details tbody tr')].map(row => [...row.children].map(cell => cell.textContent.trim())),
-    caption: widget.querySelector('figcaption')?.textContent.replace(/\\s+/g, ' ').trim() ?? null,
-    action: widget.querySelector('.action a, .action button')?.textContent.trim() ?? null }));`);
+  const chartData = () => page(`const root = document.querySelector('app-deck-insights');
+    return { captions: [...root.querySelectorAll('figcaption')].map(e => e.textContent.replace(/\\s+/g, ' ').trim()),
+      mechanics: [...root.querySelectorAll('.mechanic-labels strong')].map(e => Number(e.textContent)),
+      states: [...root.querySelectorAll('.legend strong')].map(e => Number(e.textContent)),
+      days: [...root.querySelectorAll('.day-labels strong')].map(e => Number(e.textContent)),
+      coverage: root.querySelector('.coverage-widget figcaption')?.textContent.replace(/\\s+/g, ' ').trim(),
+      tables: root.querySelectorAll('table, details').length, actions: root.querySelectorAll('.action, a').length };`);
   const figures = () => page(`return [...document.querySelectorAll('app-deck-insights figure')].map(figure => {
     const image = figure.querySelector('svg[role="img"]');
     const caption = figure.querySelector('figcaption');
@@ -148,32 +150,16 @@ export async function runHub(ctx) {
       'the statistics drawings were not rendered when scrolled into view');
     await page(`window.scrollTo({ top: 0, behavior: 'instant' }); return true;`);
   }
-  const expectedTables = insights => [
-    [['С упражнениями', insights.coverage.withExercises], ['Без упражнений', insights.coverage.withoutExercises], ['Всего', insights.coverage.total]],
-    Object.keys(STATE_LABELS).map(state => [STATE_LABELS[state], insights.states[state]]),
-    insights.dueByDay.map(day => [null, day.materials]),
-    MECHANICS.map(mechanic => [null, insights.exercisesByMechanic[mechanic]]),
-    [['Ждут разбора', insights.captures.open]]
-  ].map(group => group.map(([label, value]) => [label, String(value)]));
-  // A null label (the day and mechanic names) is not compared; only its number is.
-  /** The tables on the page must carry exactly the numbers the API sent (the first cell is only compared when known). */
+  /** Числа в обычных текстовых легендах совпадают с реальным API, без таблиц и переходов. */
   async function assertFiguresMatchApi(label) {
     const insights = await insightsApi();
-    const expected = expectedTables(insights);
-    const shown = await tables();
-    need(shown.length === 5, label + ': five widgets expected');
-    shown.forEach((widget, index) => {
-      const wanted = expected[index];
-      const actual = widget.rows.slice(0, wanted.length);
-      const ok = actual.length === wanted.length && wanted.every(([name, value], row) =>
-        actual[row][1] === value && (name === null || actual[row][0] === name));
-      need(ok, `${label}: table "${widget.title}" differs from the API (${JSON.stringify(actual)} vs ${JSON.stringify(wanted)})`);
-      need(widget.caption !== null && widget.caption.length > 10, `${label}: widget "${widget.title}" has no caption`);
-      need(widget.action !== null, `${label}: widget "${widget.title}" ends without an action`);
-    });
-    const coverage = shown[0].caption;
-    need(coverage.includes(`С упражнениями ${insights.coverage.withExercises} из ${insights.coverage.total} `),
-      `${label}: coverage caption does not state ${insights.coverage.withExercises} of ${insights.coverage.total}: ${coverage}`);
+    const shown = await chartData();
+    need(shown.captions.length === 5 && shown.captions.every(caption => caption.length > 10), label + ': five captions expected');
+    need(shown.tables === 0 && shown.actions === 0, label + ': statistics still contain tables/actions');
+    need(JSON.stringify(shown.mechanics) === JSON.stringify(MECHANICS.map(key => insights.exercisesByMechanic[key])), label + ': mechanics differ');
+    need(JSON.stringify(shown.states) === JSON.stringify(Object.keys(STATE_LABELS).map(key => insights.states[key])), label + ': states differ');
+    need(JSON.stringify(shown.days) === JSON.stringify(insights.dueByDay.map(day => day.materials)), label + ': due days differ');
+    need(shown.coverage.includes(`С упражнениями ${insights.coverage.withExercises} из ${insights.coverage.total} `), label + ': coverage differs');
     return insights;
   }
 
@@ -244,7 +230,17 @@ export async function runHub(ctx) {
     await desktop();
 
     // 0. Data: two materials without exercises and one disposable material with exactly one exercise.
-    await publishMaterial(MISSING_A);
+    const readingKey = await publishMaterial(MISSING_A);
+    // Длинный синтетический материал нужен для проверки прилипания стрелок, без пользовательских данных.
+    const reading = await api(`/decks/${deckId}/items/${readingKey}`);
+    const readingDocument = structuredClone(reading.body.document);
+    for (let index = 0; index < 28; index++) readingDocument.root.content.push({ id: crypto.randomUUID(), type: 'paragraph', version: 1,
+      attrs: { lang: 'ru', dir: 'auto' }, content: [{ id: crypto.randomUUID(), type: 'text', version: 1,
+        attrs: { text: 'Длинный материал для проверки чтения. Соседние материалы доступны с боковых полей, а текст остаётся свободным. '.repeat(3), marks: [] }, content: [] }] });
+    const expanded = await api(`/decks/${deckId}/items/${readingKey}`, { method: 'PUT', headers: { 'If-Match': reading.etag },
+      body: JSON.stringify({ commandId: crypto.randomUUID(), expectedDeckRevisionId: reading.body.deckRevisionId,
+        expectedItemRevisionId: reading.body.itemRevisionId, expectedOrdinal: reading.body.ordinal, document: readingDocument }) });
+    need(expanded.status === 200, 'could not prepare long reading material');
     await publishMaterial(MISSING_B);
     const disposableKey = await publishMaterial(DISPOSABLE);
     await addExercise(disposableKey);
@@ -259,18 +255,56 @@ export async function runHub(ctx) {
     need(!(await bodyIncludes('Просмотреть материалы', tab)), 'the old «Просмотреть материалы» entry is still present');
     facts.materials = 4;
 
-    // 1. Statistics: five figures with captions, a real table each, numbers equal to the API's.
+    // Переходы по порядку и повторное использование маршрута, включая края и боковую геометрию.
+    await navigate(initial[0].href, tab);
+    await waitFor(() => exists('app-reading-frame a[rel="next"]', tab), 'first material has no next link');
+    need(!(await exists('app-reading-frame a[rel="prev"]', tab)), 'first material has a previous link');
+    await realClick('app-reading-frame a[rel="next"]');
+    await waitFor(async () => (await sanitizedLocation(tab)).endsWith(readingKey)
+      && await bodyIncludes('Материал 2', tab), 'next link did not reload the reused material route');
+    for (const width of [1440, 1200, 1050, 390]) {
+      await metrics({ width, height: 900, deviceScaleFactor: 1, mobile: width === 390 });
+      await renderSettled();
+      need(!(await documentOverflows()), 'reading frame overflows at ' + width);
+      if (width > 1120) {
+        for (const offset of [300, 900]) {
+          need(await page(`const sheet = document.querySelector('app-reading-frame article');
+            const top = sheet.getBoundingClientRect().top + scrollY; window.scrollTo({ top: top + args[0], behavior: 'instant' }); return true;`, offset), 'reader absent');
+          await renderSettled();
+          need(await page(`const sheet = document.querySelector('app-reading-frame article').getBoundingClientRect();
+            return [...document.querySelectorAll('app-reading-frame a')].every(a => { const r = a.getBoundingClientRect();
+              return Math.abs(r.top + r.height / 2 - innerHeight / 2) <= 2 && r.left >= 0 && r.right <= innerWidth
+                && (r.right <= sheet.left || r.left >= sheet.right); });`), 'reading rails are not centered outside text at ' + width);
+        }
+      }
+      if (width <= 1120) {
+        await page(`document.querySelector('app-reading-frame a[rel="next"]').scrollIntoView({ block: 'center', behavior: 'instant' }); return true;`);
+        await renderSettled();
+        need(await page(`const frame = document.querySelector('app-reading-frame');
+          const content = frame.querySelector('.reading-content'); const sheet = content.getBoundingClientRect();
+          return frame.firstElementChild === content && [...frame.querySelectorAll('.rail a')].every(a => a.getBoundingClientRect().top >= sheet.bottom - 1);`),
+          'compact navigation must follow content visually and in keyboard order at ' + width);
+      }
+      await saveScreenshot('material-navigation-' + width + '.png', tab);
+    }
+    await desktop();
+    await navigate(initial.at(-1).href, tab);
+    await waitFor(() => exists('app-reading-frame a[rel="prev"]', tab), 'last material has no previous link');
+    need(!(await exists('app-reading-frame a[rel="next"]', tab)), 'last material has a next link');
+    await openHub();
+    facts.materialNavigation = { boundaryLinks: true, routeReuse: true, widths: [1440, 1200, 1050, 390] };
+
+    // 1. Пять графиков на одном листе; числовые легенды доступны без таблиц.
     await revealCharts();
     const figs = await figures();
     need(figs.length === 5 && figs.every(figure => figure.drawn && figure.labelledByCaption && figure.captionLength > 10),
       'every statistics figure needs a drawing named by its caption: ' + JSON.stringify(figs));
-    need(await page(`return document.querySelectorAll('app-deck-insights details table').length === 5
-      && [...document.querySelectorAll('app-deck-insights details summary')].every(s => s.textContent.trim() === 'Показать таблицей');`),
-    'every figure needs a <details> with a real table');
-    // Open the first table with a real click on its summary and see that it becomes visible.
-    await realClick('app-deck-insights details summary', 0);
-    need(await page(`const d = document.querySelector('app-deck-insights details'); return d.open && d.querySelector('table').getClientRects().length > 0;`),
-      'the table alternative did not open');
+    need(await page(`const group = document.querySelector('app-deck-insights .widgets');
+      const mechanics = group.querySelector('.mechanics-widget').getBoundingClientRect();
+      const coverage = group.querySelector('.coverage-widget').getBoundingClientRect();
+      return Math.abs(mechanics.top - coverage.top) <= 1 && mechanics.width > coverage.width * 1.8
+        && [...group.querySelectorAll('.widget')].every(e => parseFloat(getComputedStyle(e).borderTopWidth) === 0);`),
+      'statistics must share one surface with a double-width mechanics chart');
     const insights = await assertFiguresMatchApi('initial statistics');
     need(insights.coverage.total === 4 && insights.coverage.withoutExercises >= 2, 'coverage must show materials without exercises: '
       + JSON.stringify(insights.coverage));
@@ -403,8 +437,8 @@ export async function runHub(ctx) {
     need(gone.status === 404, 'the server still serves the deleted material (' + gone.status + ')');
     // Statistics follow the deletion without a reload: coverage, states and the exercise sum.
     await waitFor(async () => {
-      const shown = await tables();
-      return shown[0]?.rows[2]?.[1] === '3';
+      const shown = await chartData();
+      return shown.coverage.includes('из 3 ');
     }, 'statistics did not refresh after the deletion');
     const after = await assertFiguresMatchApi('statistics after the deletion');
     need(after.coverage.total === 3 && after.coverage.withoutExercises === 2 && after.coverage.withExercises === 1,

@@ -18,6 +18,7 @@ import {
 import { InterestSummaryComponent } from '../shared/interest-summary.component';
 import { InterestPickerComponent } from '../shared/interest-picker.component';
 import { TypewriterHintComponent } from '../shared/typewriter-hint.component';
+import { DEMO_INTEREST_TOPICS } from './sg-interest-topics-demo';
 
 const FIRST_PAGE = 8;
 const PAGE = 8;
@@ -42,7 +43,7 @@ export class SgCommunityComponent {
     private readonly destroyRef = inject(DestroyRef);
     private timer: ReturnType<typeof setTimeout> | null = null;
 
-    protected readonly interests = DEMO_TOPICS.map(topic => ({ id: topic.id, name: topic.name, parentId: null }));
+    protected readonly interests = DEMO_INTEREST_TOPICS;
     protected readonly pickedInterests = signal<readonly string[]>(['spanish']);
     protected readonly interestNotice = signal('');
     protected readonly recommendationDecks = demoCards(0, 12);
@@ -61,8 +62,6 @@ export class SgCommunityComponent {
     protected readonly bookKeys = signal([0]);
     protected readonly bookText = signal('');
     protected readonly searched = signal<string | null>(null);
-    protected readonly headerText = signal('');
-    protected readonly headerSearched = signal<string | null>(null);
     protected readonly typewriterText = signal('');
     protected readonly typewriterFocused = signal(false);
 

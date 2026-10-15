@@ -42,7 +42,7 @@ const DECK_PATH = /^\/decks\/[0-9a-f-]{36}$/;
 /** The words of the product contract (docs/product/community-decks.md, «Тексты для пользователя» and the sections cited by each use). */
 const WORDS = {
   consentLabel: 'Показывать мой профиль другим',
-  consentStart: 'Когда профиль публичный, ваш логин видят все, кто открывает ваши публичные колоды',
+  consentStart: 'Другие увидят ваш логин',
   levels: ['Приватная', 'По ссылке', 'По приглашению', 'Публичная'],
   signInToCopy: 'Войдите, чтобы добавить колоду к себе',
   add: 'Добавить к себе',
@@ -230,20 +230,19 @@ export async function runCommunity(ctx) {
       await until(() => exists('#profile-username', owner.tab), 'profile form absent');
       ownerLogin = await owner.page('return document.querySelector("#profile-username").value;');
       owner.need(/^[A-Za-z0-9_.-]{3,50}$/u.test(ownerLogin), 'the fixture account has no profile login (the precondition of a public profile)');
-      await until(() => exists('app-public-profile-settings input[role="switch"]', owner.tab), 'public profile switch absent');
+      await until(() => exists('app-public-profile-settings .profile-toggle', owner.tab), 'public profile switch absent');
       const before = await owner.page(`const root = document.querySelector('app-public-profile-settings');
-        const box = label => [...root.querySelectorAll('label')].find(node => node.textContent.trim() === label)?.querySelector('input');
-        return { switchLabel: root.querySelector('label.is-switch')?.textContent.trim(), switchOn: root.querySelector('input[role="switch"]').checked,
-          switchDisabled: root.querySelector('input[role="switch"]').disabled,
-          fields: ['Имя', 'Фото', 'О себе'].map(label => ({ label, checked: box(label)?.checked, disabled: box(label)?.disabled })),
+        return { switchLabel: root.querySelector('.profile-toggle')?.textContent.trim(), switchOn: root.querySelector('.profile-toggle').getAttribute('aria-pressed') === 'true',
+          switchDisabled: root.querySelector('.profile-toggle').disabled,
+          fieldsHidden: root.querySelector('.profile-fields') === null,
           text: root.querySelector('#public-profile-consent-text')?.textContent.trim() };`);
       owner.need(before.switchLabel === WORDS.consentLabel, `the switch reads «${before.switchLabel}»`);
       owner.need(before.text?.startsWith(WORDS.consentStart), 'the consent text is not the approved one');
       owner.need(!before.switchOn && !before.switchDisabled, 'the consent must start off and be switchable once the login exists');
-      owner.need(before.fields.every(field => field.checked === false && field.disabled === true), 'the per-field boxes must start unticked and disabled: ' + JSON.stringify(before.fields));
-      await owner.focus('app-public-profile-settings input[role="switch"]');
+      owner.need(before.fieldsHidden, 'the optional profile fields should only appear after enabling');
+      await owner.focus('app-public-profile-settings .profile-toggle');
       await owner.press('Space');
-      await until(() => owner.page(`return document.querySelector('app-public-profile-settings input[role="switch"]').checked
+      await until(() => owner.page(`return document.querySelector('app-public-profile-settings .profile-toggle').getAttribute('aria-pressed') === 'true'
         && document.querySelector('app-public-profile-settings .preview app-author-chip .login')?.textContent.trim() === '@' + args[0];`, ownerLogin),
       'switching the profile on by keyboard was not saved and previewed');
       const identity = await owner.page(`const response = await fetch(args[0] + '/api/accounts/me/public-profile', { credentials: 'omit', headers: { Authorization: args[1] } });
@@ -251,8 +250,8 @@ export async function runCommunity(ctx) {
       owner.need(identity.status === 200 && identity.body.enabled === true && identity.body.publishReady === true
         && identity.body.showDisplayName === false && identity.body.showAvatar === false && identity.body.showBio === false,
       'Identity does not report a ready public profile with every field off: ' + JSON.stringify(identity.body));
-      record('community_consent', { state: 'passed', durationMs: Date.now() - begun, switchByKeyboard: true, fieldsStartOffAndDisabled: true,
-        approvedTextShown: true, identityPublishReady: true });
+      record('community_consent', { state: 'passed', durationMs: Date.now() - begun, switchByKeyboard: true, fieldsInitiallyHidden: true,
+        conciseCopyShown: true, identityPublishReady: true });
       return true;
     } catch (error) {
       const reason = error instanceof SafeFailure ? error.message : 'driver: ' + String(error?.message ?? error).slice(0, 160);
@@ -319,6 +318,9 @@ export async function runCommunity(ctx) {
       // The access picker of the hub, with the real keyboard. At the pass's own viewport from here on.
       await owner.metrics(pass.size);
       await navigate(world.deckPath, owner.tab);
+      await until(() => exists('nav.hub-actions button[aria-haspopup="dialog"]', owner.tab), 'the sharing button did not load');
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
+      await until(() => owner.page(`return document.querySelector('app-paper-dialog dialog')?.open === true;`), 'the sharing modal did not open');
       await until(() => exists('app-access-controls input[type="radio"]', owner.tab), 'the access picker did not load');
       const hub = await owner.page(`return { legend: document.querySelector('app-access-controls legend')?.textContent.trim(),
         levels: [...document.querySelectorAll('app-access-controls label.segment .text')].map(node => node.textContent.trim()),
@@ -326,13 +328,9 @@ export async function runCommunity(ctx) {
         heading: document.querySelector('section.publication h2')?.textContent.trim() };`);
       owner.need(JSON.stringify(hub.levels) === JSON.stringify(WORDS.levels), `the levels read ${JSON.stringify(hub.levels)}`);
       owner.need(hub.checked === 'Приватная', 'a new deck must start «Приватная»');
-      await owner.focus('app-access-controls input[type="radio"]:checked');
-      for (let step = 0; step < 3; step++) await owner.press('ArrowRight');
-      await until(() => owner.page(`return document.querySelector('app-access-controls input[type="radio"]:checked')?.parentElement.textContent.trim() === 'Публичная'
-        && document.querySelector('app-access-controls .change-title')?.textContent.trim() === 'Изменить доступ: Публичная';`), 'ArrowRight x3 did not stage «Публичная»');
-      owner.need(!(await exists('app-publication-checklist', owner.tab)), 'the checklist must open only on «Сделать публичной…»');
-      await owner.enter('app-access-controls .change-actions .button.primary', 'Сделать публичной…');
-      await until(() => exists('app-publication-checklist', owner.tab), 'the checklist did not open');
+      await owner.focus('app-access-controls input[value="PUBLIC"]');
+      await owner.press('Space');
+      await until(() => exists('app-publication-checklist', owner.tab), 'selecting Public did not open the required checklist');
       const items = () => owner.page(`return [...document.querySelectorAll('app-publication-checklist li.checklist-item')].map(li => ({
         title: li.querySelector('.checklist-title')?.textContent.trim(), state: li.getAttribute('data-state') }));`);
       await until(async () => (await items()).length === 7, 'the checklist has not seven items');
@@ -658,14 +656,13 @@ export async function runCommunity(ctx) {
       await owner.front();
       await owner.metrics(pass.size);
       await navigate(world.deckPath, owner.tab);
+      await until(() => exists('nav.hub-actions button[aria-haspopup="dialog"]', owner.tab), 'the sharing button did not load');
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
+      await until(() => owner.page(`return document.querySelector('app-paper-dialog dialog')?.open === true;`), 'the sharing modal did not open');
       await until(() => exists('app-access-controls input[type="radio"]:checked', owner.tab), 'the access picker did not load');
       owner.need(await owner.page(`return document.querySelector('app-access-controls input[type="radio"]:checked')?.parentElement.textContent.trim() === 'Публичная';`), 'the deck is not shown as «Публичная»');
       await owner.focus('app-access-controls input[type="radio"]:checked');
       await owner.press('ArrowLeft');
-      await until(() => owner.page(`return document.querySelector('app-access-controls .change-title')?.textContent.trim() === 'Изменить доступ: По приглашению';`), 'ArrowLeft did not stage «По приглашению»');
-      const lines = await owner.page(`return [...document.querySelectorAll('app-access-controls .change-line')].map(node => node.textContent.trim());`);
-      owner.need(lines.includes(WORDS.rotates), 'the consequence «ссылка изменится» is not said: ' + JSON.stringify(lines));
-      await owner.enter('app-access-controls .change-actions .button.primary', 'Применить');
       await until(async () => (await publicationState()).visibility === 'INVITE', 'the level did not change', 30000);
       const invite = await publicationState();
       owner.need(invite.publicCode !== world.code, 'lowering the level kept the public code');
@@ -728,6 +725,9 @@ export async function runCommunity(ctx) {
       // The owner sees the request.
       await owner.front();
       await navigate(world.deckPath, owner.tab);
+      await until(() => exists('nav.hub-actions button[aria-haspopup="dialog"]', owner.tab), 'the sharing button did not load');
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
+      await until(() => owner.page(`return document.querySelector('app-paper-dialog dialog')?.open === true;`), 'the sharing modal did not open');
       await until(() => owner.page(`return document.querySelectorAll('app-access-requests .roster-row').length >= 1;`), 'the owner does not see the access request in the panel', 30000);
       const requests = await owner.page(`return [...document.querySelectorAll('app-access-requests .roster-row')].map(row => ({
         buttons: [...row.querySelectorAll('button')].map(node => node.textContent.trim()), hasTime: row.querySelector('time') !== null }));`);
@@ -742,6 +742,9 @@ export async function runCommunity(ctx) {
       const ownerRequests = async () => {
         await owner.front();
         await navigate(world.deckPath, owner.tab);
+      await until(() => exists('nav.hub-actions button[aria-haspopup="dialog"]', owner.tab), 'the sharing button did not load');
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
+      await until(() => owner.page(`return document.querySelector('app-paper-dialog dialog')?.open === true;`), 'the sharing modal did not open');
         await until(async () => await exists('app-access-requests .roster-row', owner.tab) || await owner.has(WORDS.requestsEmpty), 'the requests panel did not load', 30000);
         return owner.count('app-access-requests .roster-row');
       };
@@ -805,6 +808,9 @@ export async function runCommunity(ctx) {
       await owner.front();
       await owner.metrics(pass.size);
       await navigate(world.deckPath, owner.tab);
+      await until(() => exists('nav.hub-actions button[aria-haspopup="dialog"]', owner.tab), 'the sharing button did not load');
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
+      await until(() => owner.page(`return document.querySelector('app-paper-dialog dialog')?.open === true;`), 'the sharing modal did not open');
       await until(() => exists('app-invite-links form.invite-form', owner.tab), 'the invitation links section did not load', 30000);
       const section = await owner.page(`const root = document.querySelector('app-invite-links');
         return { heading: root.querySelector('h3')?.textContent.trim(), choices: [...root.querySelectorAll('[role="combobox"]')].map(node => node.textContent.trim()),
@@ -903,6 +909,9 @@ export async function runCommunity(ctx) {
         // 6. The owner: the link is used, the invitee is among the people.
         await owner.front();
         await navigate(world.deckPath, owner.tab);
+      await until(() => exists('nav.hub-actions button[aria-haspopup="dialog"]', owner.tab), 'the sharing button did not load');
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
+      await until(() => owner.page(`return document.querySelector('app-paper-dialog dialog')?.open === true;`), 'the sharing modal did not open');
         await until(() => owner.page(`return document.querySelectorAll('app-access-people .roster-row').length === 2 && document.querySelector('app-invite-links .roster-row')?.textContent.includes(args[0]);`, WORDS.inviteUsed),
           'the owner does not see two people and the used link', 30000);
         const ownerRow = await owner.page(`return document.querySelector('app-invite-links .roster-row').textContent.replace(/\\s+/g, ' ').trim();`);
