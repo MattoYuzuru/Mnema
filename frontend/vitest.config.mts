@@ -8,7 +8,6 @@ export default defineConfig({
         environment: 'jsdom',
         restoreMocks: true,
         unstubGlobals: true,
-        unstubEnvs: true,
-        testTimeout: 30000
+        unstubEnvs: true
     }
 });
