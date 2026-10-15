@@ -236,13 +236,16 @@ export async function runHub(ctx) {
     // Длинный синтетический материал нужен для проверки прилипания стрелок, без пользовательских данных.
     const reading = await api(`/decks/${deckId}/items/${readingKey}`);
     const readingDocument = structuredClone(reading.body.document);
-    for (let index = 0; index < 28; index++) readingDocument.root.content.push({ id: crypto.randomUUID(), type: 'paragraph', version: 1,
-      attrs: { lang: 'ru', dir: 'auto' }, content: [{ id: crypto.randomUUID(), type: 'text', version: 1,
-        attrs: { text: 'Длинный материал для проверки чтения. Соседние материалы доступны с боковых полей, а текст остаётся свободным. '.repeat(3), marks: [] }, content: [] }] });
+    const longParagraph = { id: crypto.randomUUID(), type: 'paragraph', version: 1, attrs: {},
+      content: [{ id: crypto.randomUUID(), type: 'text', version: 1,
+        attrs: { text: 'Длинный материал для проверки чтения. Соседние материалы доступны с боковых полей, а текст остаётся свободным. '.repeat(80), marks: [] }, content: [] }] };
+    const childIndex = readingDocument.root.content.length;
+    readingDocument.root.content.push(longParagraph);
     const expanded = await api(`/decks/${deckId}/items/${readingKey}`, { method: 'PUT', headers: { 'If-Match': reading.etag },
       body: JSON.stringify({ commandId: crypto.randomUUID(), expectedDeckRevisionId: reading.body.deckRevisionId,
-        expectedItemRevisionId: reading.body.itemRevisionId, expectedOrdinal: reading.body.ordinal, document: readingDocument }) });
-    need(expanded.status === 200, 'could not prepare long reading material');
+        expectedItemRevisionId: reading.body.itemRevisionId, expectedOrdinal: reading.body.ordinal, document: readingDocument,
+        edits: [{ type: 'insert', nodeId: longParagraph.id, parentId: readingDocument.root.id, childIndex }] }) });
+    need(expanded.status === 200, 'could not prepare long reading material: HTTP ' + expanded.status);
     await publishMaterial(MISSING_B);
     const disposableKey = await publishMaterial(DISPOSABLE);
     await addExercise(disposableKey);
