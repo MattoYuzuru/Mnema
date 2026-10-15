@@ -39,10 +39,13 @@ describe('UpdateUnitSidesComponent', () => {
         TestBed.tick();
     }
 
-    /** The media surface reads its files asynchronously: let the flushed answers through, then draw. */
+    /**
+     * The media surface reads its files asynchronously: let the flushed answers through, then draw. Microtasks only — no timer and no
+     * whenStable, which hung on CI when this file shared a busy worker with others.
+     */
     async function settle(): Promise<void> {
-        await new Promise<void>(resolve => setTimeout(resolve, 0));
-        await fixture.whenStable();
+        for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+        TestBed.tick();
         fixture.detectChanges();
     }
 
