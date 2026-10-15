@@ -77,7 +77,7 @@ artifact:
 | accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; P0 content/Study реализованы, P1/P2 — границы будущей работы. |
 | accepted | [Native content format](./architecture/learning-content-format-v2.md) | Persisted native document contract. |
 | accepted | [AI generation platform](./architecture/ai-generation-platform.md) | Принятая архитектура AI-слоя: модули в Learning, Мастерская, MBM, провайдеры, usage, уведомления, безопасность. |
-| accepted | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. Таблица статуса реализации по частям: эпики 1–2 выкачены, эпик 3 сделан локально, эпик 4 сделан локально. |
+| accepted | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. Таблица статуса реализации по частям: эпики 1–4 выкачены, функции эпиков 3–4 выключены до запуска. |
 | current | [Revision storage and runtime boundaries](./architecture/revision-storage-and-runtime-boundaries.md) | Выбранное и реализованное storage-направление. |
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Counted-page/structural invariants. |
 | current | [Identity & Account guide](../backend/services/identity-account/guide.md) | Identity runtime. |
