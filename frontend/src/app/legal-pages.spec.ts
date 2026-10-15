@@ -23,7 +23,7 @@ describe('Personal data policy page', () => {
         const root = render(PrivacyPageComponent);
         expect(text(root.querySelector('h1'))).toBe('Политика обработки персональных данных');
         expect(text(root.querySelector('.last-updated'))).toContain(LEGAL_EFFECTIVE_DATE);
-        // 1.6: interests and recommendations; 1.5: catalogue and author aggregates; 1.4: shared and public decks, complaints; 1.3: plain-language edit; 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
+        // 1.7: admitted AI flows; 1.6: interests and recommendations; 1.5: catalogue and author aggregates; 1.4: shared and public decks, complaints; 1.3: plain-language edit; 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
         expect(text(root.querySelector('.last-updated'))).toBe('Действует с 15 октября 2026 · версия 1.7');
         expect(root.querySelector('.legal-page')?.getAttribute('lang')).toBe('ru');
         const block = text(root.querySelector('app-legal-operator-block'));
@@ -145,14 +145,19 @@ describe('Personal data policy page', () => {
         expect([...dataTable.querySelectorAll('tbody th')].map(header => text(header))).toEqual(['Данные аккаунта', 'Вход через стороннего провайдера', 'Профиль', 'Учебные данные',
             'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Действия в Сообществе', 'Интересы', 'Жалобы', 'Обращения в поддержку']);
         const purposes = tables.find(table => text(table.querySelector('caption')).startsWith('Цели'))!;
-        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(11);
+        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(13);
         for (const row of purposes.querySelectorAll('tbody tr')) expect(row.querySelectorAll('td'), text(row)).toHaveLength(3);
         const purposeText = text(purposes);
-        for (const purpose of ['Регистрация, вход, ведение аккаунта и профиля', 'Работа сервиса', 'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки, рекомендация тарифа и подбор колод', 'Подбор подходящих колод и проверка рекомендаций',
+        for (const purpose of ['Регистрация, вход, ведение аккаунта и профиля', 'Работа сервиса', 'Создание и правка материалов и упражнений, проверка ответов, озвучивание по вашему запросу', 'Распознавание записи голоса',
+            'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки, рекомендация тарифа и подбор колод', 'Подбор подходящих колод и проверка рекомендаций',
             'Безопасность', 'Служебные письма', 'Поддержка и обратная связь', 'Рассмотрение жалоб на колоды и профили', 'Резервное копирование и восстановление', 'Выполнение требований закона']) expect(purposeText).toContain(purpose);
         // legal bases per purpose, and the periods of the table
         for (const basis of ['п. 5 ч. 1 ст. 6', 'п. 7 ч. 1 ст. 6', 'п. 2 ч. 1 ст. 6']) expect(purposeText).toContain(basis);
         for (const period of ['до 30 дней', '2 часа', 'до 35 минут', '3 суток', '10 минут', 'до 12 месяцев', 'не более двух последних копий', 'Срок, установленный законом']) expect(purposeText).toContain(period);
+        const aiRow = [...purposes.querySelectorAll('tbody tr')].find(row => text(row.querySelector('th')).startsWith('Создание и правка'))!;
+        for (const disclosure of ['Провайдер получает только данные своего действия', 'п. 5 ч. 1 ст. 6', '30 дней после последней активности', '90 дней', '180 дней после последнего использования']) expect(text(aiRow)).toContain(disclosure);
+        const voiceRow = [...purposes.querySelectorAll('tbody tr')].find(row => text(row.querySelector('th')) === 'Распознавание записи голоса')!;
+        for (const disclosure of ['Отдельное согласие на регион обработки', 'п. 1 ч. 1 ст. 6', 'до согласия запись провайдеру не передаётся', 'Запись удаляется после результата или завершения неуспешной обработки', 'до 15 минут']) expect(text(voiceRow)).toContain(disclosure);
         const bases = text(root.querySelector('#bases')!.closest('section'));
         for (const phrase of ['согласие на обработку не нужно', 'ч. 1 ст. 9 152-ФЗ', 'от 24.06.2025 № 156-ФЗ', 'отдельным документом']) expect(bases).toContain(phrase);
         const retention = text(root.querySelector('#retention')!.closest('section'));
