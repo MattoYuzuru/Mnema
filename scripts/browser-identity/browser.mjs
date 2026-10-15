@@ -1059,12 +1059,19 @@ try {
       [320, 900, 2, 'study-320-at-200-percent.png']]) {
       await second.call('Emulation.setDeviceMetricsOverride',
         { width, height, deviceScaleFactor: dpr, mobile: width === 390 });
-      require(await second.callFunction(`function() {
+      const studyLayout = await second.callFunction(`function() {
         const action = document.querySelector('.study-card .button.primary');
-        return matchMedia('(prefers-reduced-motion: reduce)').matches
-          && document.documentElement.scrollWidth <= document.documentElement.clientWidth
-          && action instanceof HTMLElement && action.getBoundingClientRect().height >= 44;
-      }`), 'Study layout or touch target failed under responsive reduced-motion emulation');
+        return { reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+          viewport: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth,
+          actionHeight: action instanceof HTMLElement ? action.getBoundingClientRect().height : null,
+          overflow: [...document.querySelectorAll('header, main, .study-card, .session, .primary-nav, app-native-media-surface, app-audio-player')]
+            .map(e => ({ node: e.tagName, class: e.className, left: e.getBoundingClientRect().left, right: e.getBoundingClientRect().right }))
+            .filter(r => r.left < 0 || r.right > document.documentElement.clientWidth) };
+      }`);
+      if (!studyLayout.reduced || studyLayout.scroll > studyLayout.viewport || studyLayout.actionHeight < 44) {
+        await saveScreenshot('failure-study-layout-' + width + '.png', second);
+        require(false, 'Study layout or touch target failed: ' + JSON.stringify(studyLayout));
+      }
       await saveScreenshot(name, second);
     }
     await second.call('Emulation.setDeviceMetricsOverride',
