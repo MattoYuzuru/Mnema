@@ -24,7 +24,7 @@ describe('Personal data policy page', () => {
         expect(text(root.querySelector('h1'))).toBe('Политика обработки персональных данных');
         expect(text(root.querySelector('.last-updated'))).toContain(LEGAL_EFFECTIVE_DATE);
         // 1.6: interests and recommendations; 1.5: catalogue and author aggregates; 1.4: shared and public decks, complaints; 1.3: plain-language edit; 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
-        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 15 октября 2026 · версия 1.6');
+        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 15 октября 2026 · версия 1.7');
         expect(root.querySelector('.legal-page')?.getAttribute('lang')).toBe('ru');
         const block = text(root.querySelector('app-legal-operator-block'));
         for (const value of [LEGAL_OPERATOR.name, LEGAL_OPERATOR.inn, LEGAL_OPERATOR.ogrnip, LEGAL_OPERATOR.email]) expect(block).toContain(value);
@@ -61,14 +61,18 @@ describe('Personal data policy page', () => {
         }
     });
 
-    it('states truthfully that AI functions are not provided, that consent is not a precondition and that no tracking cookies are used', () => {
+    it('discloses admitted AI flows and separate voice consent without adding tracking cookies', () => {
         const body = text(render(PrivacyPageComponent));
-        expect(body).toContain('не предоставляются');
+        expect(body).toContain('Распознавание голоса запускается только после отдельного согласия');
+        expect(body).toContain('DeepSeek');
+        expect(body).toContain('OpenRouter');
+        expect(body).toContain('Google (Gemini API');
         expect(body).toContain('Рекламных и отслеживающих cookie нет');
         expect(body).toContain('Действия в Сообществе учитываются на сервере');
         expect(body).toContain('Самостоятельное удаление аккаунта в интерфейсе пока не включено');
         expect(body).toContain('10 рабочих дней');
-        expect(body).not.toMatch(/DeepSeek|OpenRouter|Gemini|GigaChat/);
+        expect(body).not.toContain('GigaChat');
+        expect(body).not.toContain('данные внешним ИИ-сервисам не передаются');
     });
 
     it('names Yandex Cloud and the server provider as current Russian processors, and states the hashing truthfully', () => {
@@ -94,7 +98,7 @@ describe('Personal data policy page', () => {
         expect(body).toContain('ключевые хэши (HMAC)');
         expect(body).not.toContain('необратим');
         expect(body).not.toContain('отдельном экране');
-        expect(body).toContain('Сейчас мы запрашиваем согласие только на публичный профиль');
+        expect(body).toContain('Сейчас мы запрашиваем согласие на распознавание голоса и на публичный профиль');
         expect(body).not.toContain('Сейчас ни для одной цели мы не запрашиваем согласие');
     });
 

@@ -48,6 +48,23 @@ class RuntimeTest(unittest.TestCase):
             'config', '--format', 'json'], env=env, check=True, capture_output=True, timeout=20)
         return json.loads(result.stdout)['services']
 
+    def test_ai_keys_reach_only_learning_and_existing_features_have_operational_switches(self):
+        names = ('MNEMA_AI_DEEPSEEK_API_KEY', 'MNEMA_AI_OPENROUTER_API_KEY', 'MNEMA_AI_GOOGLE_API_KEY',
+                 'MNEMA_AI_PIXABAY_API_KEY', 'MNEMA_AI_OPENVERSE_CLIENT_ID', 'MNEMA_AI_OPENVERSE_CLIENT_SECRET',
+                 'MNEMA_AI_YANDEX_SEARCH_API_KEY', 'MNEMA_AI_YANDEX_FOLDER_ID', 'MNEMA_AI_USER_KEY_SECRET',
+                 'MNEMA_AI_EGRESS_PROXY_URL', 'MNEMA_AI_EGRESS_PROXY_USER', 'MNEMA_AI_EGRESS_PROXY_PASSWORD')
+        services = self.render_compose({name: 'private-fixture-' + name for name in names})
+        learning = services['learning']['environment']
+        for name in names:
+            self.assertEqual(learning[name], 'private-fixture-' + name)
+            for other in ('identity-account', 'frontend', 'postgres'):
+                self.assertNotIn(name, services[other].get('environment', {}))
+        for capability in ('AI_GENERATION', 'AI_ASSESSMENT', 'TEXT_TO_SPEECH', 'SPEECH_TO_TEXT', 'IMAGE_SEARCH', 'WEB_SEARCH'):
+            self.assertEqual(learning['LEARNING_FEATURES_' + capability + '_ENABLED'], 'true')
+        for capability in ('IMAGE_GENERATION', 'VIDEO_GENERATION'):
+            self.assertEqual(learning['LEARNING_FEATURES_' + capability + '_ENABLED'], 'false')
+        self.assertEqual(learning['MNEMA_RUNTIME_ROLES'], 'all')
+
     def test_preview_does_not_touch_system_or_generate_keys(self):
         with patch.object(BOOT.sys, 'argv', ['bootstrap', 'preview']), \
              patch.object(BOOT, 'signing_key') as key, patch.object(BOOT, 'create') as create, \

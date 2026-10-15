@@ -1,7 +1,7 @@
 # AI-17 operations and evaluation evidence
 
 Status: operations implementation merged through [PR #370](https://github.com/MattoYuzuru/Mnema/pull/370)
-as `f554a2b5`; owner acceptance of the evaluation remains pending.
+as `f554a2b5`. On 2026-10-15 the owner confirmed in the AI launch chat that the required quality review was completed and approved, together with the RKN approvals. The historical report and its machine-evidence limitations below are preserved; runtime prompt v1 is unchanged.
 Issue [#300](https://github.com/MattoYuzuru/Mnema/issues/300). Final integrated S1–S8 evidence is tracked
 in [#302](https://github.com/MattoYuzuru/Mnema/issues/302). This record claims neither deployment,
 prompt activation nor enabled production AI.
@@ -95,8 +95,7 @@ review and final slice gates are linked from PR #370; the final run5 composition
 
 V39 adds notification triggers/assessment claims; V40 adds ephemeral intent requests. They were
 unmerged/unapplied when numbered. Before an older runtime rollback, drain or remove expired
-ephemeral requests so text does not remain without its sweeper. Keep the public AI flags disabled
-while the human/quality gates are pending. Do not reset retained owner databases.
+ephemeral requests so text does not remain without its sweeper. The owner confirmed the human/quality gates on 2026-10-15; use the current AI runbook for launch state. Do not reset retained owner databases.
 
 Official references consulted: [PostgreSQL NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html)
 for commit-only wake hints and sweep fallback;

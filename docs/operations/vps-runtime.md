@@ -71,7 +71,7 @@ the main RKN notification and the cross-border notification for Cloudflare and
 accepts the part 11 article 12 waiting-period risk. The public
 privacy policy ([source](../../frontend/src/app/privacy-page.component.html)) and
 terms ([source](../../frontend/src/app/terms-page.component.html)) are published from the
-frontend code. Foreign AI stays disabled; payments stay closed. Do not substitute
+frontend code. AI admission was confirmed by the owner on 2026-10-15; the launch enables implemented AI capabilities with provider-specific availability and individual voice consent (see the AI runbook). Payments stay restricted by the separate billing gate. Do not substitute
 fixture keys, Stub providers or a production bypass.
 
 Application configuration (the approved Google, Yandex and GitHub OAuth pairs, the

@@ -8,6 +8,20 @@ own [AI egress proxy](./ai-egress-proxy.md) runbook. Architecture and decisions:
 §9 providers and budgets). The quality gate before a change of a route, a prompt or a model is
 the golden eval of the [eval gate](#8-eval-gate-before-changing-a-model-route-or-prompt).
 
+## Production admission — 15 October 2026
+
+The owner confirmed the required RKN approvals and the quality review in the launch chat on
+2026-10-15. Production enables the implemented generation, assessment, speech, image-search and
+web-search capability switches. Each still requires a configured provider; the launch does not
+invent missing Yandex Search credentials. Image/video generation remain unavailable. Operational
+kill switches, per-account allowances, provider budgets and individual voice consent remain.
+Prompt **v1** and the existing model routes are unchanged; this admission does not activate v2.
+
+Provider credentials travel through the explicit `prod` Environment allowlist to root-only
+`app.env`, then only to the `all` Learning process. The host-generated user HMAC secret and the
+existing egress proxy credentials stay in root-only `runtime.env`, outside GitHub. The optional api/worker overlay stays inactive and keeps its
+AI gates off and API credentials empty. Policy and terms 1.7 describe the active flows.
+
 ## 1. Topology
 
 One Learning image runs in one of three roles (`MNEMA_RUNTIME_ROLES` = `learning.runtime.roles`):
