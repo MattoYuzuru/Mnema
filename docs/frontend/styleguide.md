@@ -112,6 +112,12 @@ bootstrap выбран другой `MNEMA_LOCAL_WEB_PORT`, используйт
 `frontend/angular.json` по умолчанию собирает `development`. Остановите dev-сервер
 через Ctrl+C.
 
+Фикстуры исполняемых образцов лежат внутри `frontend/`: Docker release собирает
+только этот каталог. Импортировать соседние `contracts/` из компонентов нельзя,
+даже если стайлгайд затем удаляется из production-бандла: TypeScript сначала
+разрешает импорты. Общий wire fixture можно импортировать в `*.spec.ts` для
+проверки соответствия локального образца контракту.
+
 Production и обычный локальный `start` отдают production-сборку (`npm run build`),
 поэтому `/styleguide` там **нет**. Флаг работает только с
 `deploy/local-full-stack/frontend.Dockerfile` и допускает `development` или
