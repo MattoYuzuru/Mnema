@@ -7,10 +7,6 @@
  * `mechanics_hold_to_delete_geometry` and the `mechanics-study-*-390` Study checks).
  */
 
-// This file runs before every spec file, and spec files share non-isolated workers: a file that leaves a fake clock on
-// must not stall the real timers of the next one (it hung the `waitFor`/`setTimeout` of whichever file followed on CI).
-vi.useRealTimers();
-
 function define(target: object, name: string, value: unknown): void {
     if (typeof (target as Record<string, unknown>)[name] === 'undefined') {
         Object.defineProperty(target, name, { value, configurable: true, writable: true });
