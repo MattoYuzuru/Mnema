@@ -1,3 +1,6 @@
+import java.math.BigInteger
+import java.security.MessageDigest
+
 plugins {
     id("org.springframework.boot") apply false
     id("io.spring.dependency-management") apply false
@@ -65,7 +68,7 @@ subprojects {
         inputs.property("testShard", shard.getOrElse("all"))
         if (shard.isPresent && name != "goldenEval") {
             val parts = shard.get().split("/").map(String::toInt)
-            require(parts.size == 2 && parts[1] in 1..6 && parts[0] in 1..parts[1]) { "testShard must be index/count, count <= 6" }
+            require(parts.size == 2 && parts[1] in 1..8 && parts[0] in 1..parts[1]) { "testShard must be index/count, count <= 8" }
             // Partition every compiled top-level class, independent of naming/annotations. Nested
             // tests stay with their outer class; the unchanged JUnit engine discovers the tests.
             doFirst {
@@ -75,8 +78,8 @@ subprojects {
                         val root = roots.first { file.toPath().startsWith(it.toPath()) }
                         val className = file.relativeTo(root).invariantSeparatorsPath
                             .removeSuffix(".class").substringBefore('$').replace('/', '.')
-                        val hash = className.hashCode().let { it xor (it ushr 16) }
-                        Math.floorMod(hash, parts[1]) == parts[0] - 1
+                        val hash = BigInteger(1, MessageDigest.getInstance("SHA-256").digest(className.toByteArray(Charsets.UTF_8)))
+                        hash.mod(BigInteger.valueOf(parts[1].toLong())).toInt() == parts[0] - 1
                     }
                 }
                 require(selected.isNotEmpty()) { "Empty test shard" }
@@ -92,7 +95,7 @@ subprojects {
 
     tasks.withType<org.gradle.testing.jacoco.tasks.JacocoReport>().configureEach {
         val coverageShards = providers.gradleProperty("coverageShards").map(String::toInt).getOrElse(0)
-        require(coverageShards in 0..6) { "coverageShards must be 1..6, or absent" }
+        require(coverageShards in 0..8) { "coverageShards must be 1..8, or absent" }
         executionData.setFrom(if (coverageShards == 0) listOf(layout.buildDirectory.file("jacoco/test.exec"))
             else (1..coverageShards).map { layout.buildDirectory.file("jacoco/test-shard-$it.exec") })
         reports {

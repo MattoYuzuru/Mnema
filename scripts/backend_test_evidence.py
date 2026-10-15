@@ -20,15 +20,8 @@ def revision(root: Path) -> str:
 
 
 def bucket(name: str, count: int) -> int:
-    # Match Java String.hashCode over UTF-16, spreading high bits before the small modulo.
-    value = 0
-    encoded = name.encode('utf-16-be')
-    for offset in range(0, len(encoded), 2):
-        value = (31 * value + int.from_bytes(encoded[offset:offset + 2], 'big')) & 0xFFFFFFFF
-    value ^= value >> 16
-    if value >= 0x80000000:
-        value -= 0x100000000
-    return value % count + 1
+    # Match Gradle's positive SHA-256 integer over the outer class's UTF-8 name.
+    return int.from_bytes(hashlib.sha256(name.encode('utf-8')).digest(), 'big') % count + 1
 
 
 def source_digest(root: Path) -> str:
@@ -54,8 +47,8 @@ def require_inventory(root: Path, suites: list[dict], index: int, count: int) ->
 
 
 def pack(root: Path, index: int, count: int, output: Path) -> dict:
-    if not 1 <= index <= count <= 6:
-        raise ValueError("Expected shard index/count with count <= 6")
+    if not 1 <= index <= count <= 8:
+        raise ValueError("Expected shard index/count with count <= 8")
     output.mkdir(parents=True, exist_ok=False)
     suites = []
     execution = {}
@@ -96,8 +89,8 @@ def pack(root: Path, index: int, count: int, output: Path) -> dict:
 
 
 def merge(root: Path, inputs: Path, count: int) -> list[dict]:
-    if not 1 <= count <= 6:
-        raise ValueError("Expected 1..6 shards")
+    if not 1 <= count <= 8:
+        raise ValueError("Expected 1..8 shards")
     manifests = sorted(inputs.glob("*/manifest.json"))
     if len(manifests) != count:
         raise ValueError(f"Expected {count} manifests, found {len(manifests)}")
@@ -144,11 +137,11 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     packing = sub.add_parser("pack")
     packing.add_argument("--index", type=int, required=True)
-    packing.add_argument("--count", type=int, default=6)
+    packing.add_argument("--count", type=int, default=8)
     packing.add_argument("--output", type=Path, default=ROOT / "backend/build/ci-shard")
     merging = sub.add_parser("merge")
     merging.add_argument("--inputs", type=Path, default=ROOT / "backend/build/ci-inputs")
-    merging.add_argument("--count", type=int, default=6)
+    merging.add_argument("--count", type=int, default=8)
     sub.add_parser("verify-local")
     args = parser.parse_args()
     if args.command == "verify-local":
