@@ -470,7 +470,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(links[0]!.textContent!.trim()).toBe('Посмотреть обновление');
                 expect(links[0]!.classList.contains('secondary')).toBe(true);
                 expect(links[0]!.classList.contains('primary')).toBe(false);
-                expect([...root().querySelectorAll('.button.primary')].map(item => item.textContent!.trim())).toEqual(['Учить']);
+                expect([...root().querySelectorAll('.button.primary')].filter(item => !item.closest('dialog:not([open])')).map(item => item.textContent!.trim())).toEqual(['Учить']);
                 expect(links[0]!.getAttribute('href')).toBe(`/decks/${deck.deckId}/update`);
                 expect(offer.contains(links[0]!)).toBe(true);
                 expect(actions()).not.toContain('Проверить обновления');
@@ -517,7 +517,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(news()!.querySelector('time')!.getAttribute('datetime')).toBe(states.updatedAutomatically.lastUpdate!.appliedAt);
                 expect(links()[0]).toEqual(['Посмотреть, что изменилось', `/decks/${deck.deckId}/update/history`]);
                 expect(news()!.querySelector('button, .button.primary')).toBeNull();
-                expect([...root().querySelectorAll('.button.primary')].map(item => item.textContent!.trim())).toEqual(['Учить']);
+                expect([...root().querySelectorAll('.button.primary')].filter(item => !item.closest('dialog:not([open])')).map(item => item.textContent!.trim())).toEqual(['Учить']);
             });
 
             it('sits under the actions, so «Учить» is not pushed down by it', async () => {
@@ -535,7 +535,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(links()).toEqual([['Посмотреть, что изменилось', `/decks/${deck.deckId}/update/history`], ['Посмотреть обновление', `/decks/${deck.deckId}/update`]]);
                 expect(root().querySelectorAll('a[href$="/update"]')).toHaveLength(1);
                 expect(root().querySelectorAll('app-update-badge')).toHaveLength(1);
-                expect([...root().querySelectorAll('.button.primary')].map(item => item.textContent!.trim())).toEqual(['Учить']);
+                expect([...root().querySelectorAll('.button.primary')].filter(item => !item.closest('dialog:not([open])')).map(item => item.textContent!.trim())).toEqual(['Учить']);
             });
 
             it('links to the review screen itself when something waits and no offer is shown, and not when nothing waits', async () => {

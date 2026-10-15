@@ -131,7 +131,7 @@ describe('CommunityPageComponent', () => {
         });
         it('keeps the default shelves, adds every recommendation including places 11/12 and explains its topic', async () => {
             await open();
-            expect(root().textContent).toContain('Что хотите изучать?');
+            expect(root().textContent).toContain('Что вы хотите изучать в Мнеме?');
             expect(all<HTMLElement>('app-deck-shelf h2').map(h => h.textContent)[0]).toBe('Для вас');
             const shelf = all<HTMLElement>('app-deck-shelf')[0];
             expect(shelf.querySelectorAll('app-public-deck-card')).toHaveLength(12);

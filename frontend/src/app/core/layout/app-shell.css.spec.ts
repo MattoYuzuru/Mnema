@@ -8,7 +8,7 @@ describe('masthead stylesheet contract', () => {
     let css = '';
     const rule = (selector: string): string => {
         const escaped = selector.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-        const found = new RegExp(`(?:^|\\n)${escaped} \\{([^}]*)\\}`, 'u').exec(css);
+        const found = new RegExp(`(?:^|(?<!,)\\n)${escaped} \\{([^}]*)\\}`, 'u').exec(css);
         expect(found, selector).not.toBeNull();
         return found![1];
     };

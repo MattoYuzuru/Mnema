@@ -7,7 +7,7 @@
     when="Общий диалог с заголовком и кнопкой закрытия. Нативный dialog делает фон неактивным, удерживает фокус, закрывается по Esc и возвращает фокус к открывшей кнопке. Содержимое сохраняется после закрытия. На узком экране лист ограничен видимой высотой и прокручивается."
     [tokens]="['--mn-sheet', '--mn-ink', '--mn-rule']"
     usage='<app-paper-dialog #dialog title="Поделиться"><p>Настройки доступа</p></app-paper-dialog><button (click)="dialog.open()">Поделиться</button>'>
-    <button type="button" class="button" (click)="paperDialog.open()">Открыть окно</button>
+    <button type="button" class="button" (click)="paperDialog.open()">Открыть диалог</button>
     <app-paper-dialog #paperDialog title="Поделиться" subtitle="Испанские глаголы — образец">
       <p>Здесь находятся настройки доступа к колоде.</p>
     </app-paper-dialog>

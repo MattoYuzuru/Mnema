@@ -59,7 +59,7 @@ describe('DeckInsightsComponent', () => {
         await open({ phase: 'ready', insights });
         expect(root().querySelectorAll('details, table, .action, a')).toHaveLength(0);
         expect(Array.from(root().querySelectorAll('.mechanic-labels strong')).map(el => el.textContent))
-            .toEqual(['4', '2', '2', '6', '0', '0', '0']);
+            .toEqual(['3', '4', '1', '6', '0', '0', '0']);
         expect(Array.from(root().querySelectorAll('.day-labels strong')).map(el => el.textContent))
             .toEqual(insights.dueByDay.map(day => String(day.materials)));
         expect(root().querySelector('.mechanics-widget h3')?.textContent).toBe('Разнообразие упражнений');

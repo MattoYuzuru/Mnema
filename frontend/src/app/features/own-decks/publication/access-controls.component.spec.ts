@@ -90,13 +90,16 @@ describe('AccessControlsComponent', () => {
         expect(lastCommand()).toMatchObject({ visibility: 'LINK', publish: { expectedHeadRevisionId: state.headRevisionId, releaseNote: null } });
     });
 
-    it('keeps real state selected after a definite rejection and refreshes a stale version', async () => {
+    it('restores the native choice after a synchronous rejection so the same action can be retried', async () => {
         api.save.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, error: { code: 'VERSION_CONFLICT' } })));
         await create(link());
         await pick('Приватная');
         expect(checked()).toBe('По ссылке');
         expect(refreshed).toBe(1);
         expect(root.querySelector('[role=alert]')?.textContent).toContain('Колода изменилась');
+        await pick('Приватная');
+        expect(api.save).toHaveBeenCalledTimes(2);
+        expect(checked()).toBe('По ссылке');
     });
 
     it('follows the real visibility on a host refresh', async () => {
@@ -158,7 +161,7 @@ describe('AccessControlsComponent', () => {
         expect(lastCommand().commandId).not.toBe(first);
     });
 
-    it('re-reads a replayed acknowledgement instead of applying the stale state', async () => {
+    it('restores the native choice on a synchronous replay and re-reads instead of applying stale state', async () => {
         api.save.mockImplementation((_deck, _version, command) => of(written(link(), command.commandId, true)));
         await create(link());
         await pick('Приватная');

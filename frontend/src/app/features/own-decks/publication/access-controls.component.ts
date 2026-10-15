@@ -131,6 +131,11 @@ export class AccessControlsComponent {
         this.restoringChoice = true;
         this.picker()?.value.set(level);
         this.restoringChoice = false;
+        // Нативная radio-группа меняется до события change. При синхронном отказе Angular видит прежнее
+        // значение привязки и не обновляет checked повторно, поэтому восстанавливаем также состояние DOM.
+        for (const radio of this.host.nativeElement.querySelectorAll<HTMLInputElement>('input[type=radio]')) {
+            radio.checked = radio.value === level;
+        }
     }
 
     private reuseOrBuild(state: PublicationState, draft: PublicationCommand): PublicationCommand {
