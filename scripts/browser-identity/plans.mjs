@@ -465,7 +465,7 @@ export async function runAiPublic(ctx) {
     await frames();
     const doubled = await layout();
     need(doubled.rootFont >= narrow.rootFont * 1.9 && doubled.scrollWidth <= doubled.clientWidth && doubled.overflowingText === 0,
-      '/ai or its footer does not contain 200% root text at 320 CSS px');
+      '/ai or its footer does not contain 200% root text at 320 CSS px: ' + JSON.stringify({ narrow, doubled }));
     need(doubled.smallLinks === 0, 'the footer loses its touch targets with 200% root text');
     evidence.rootTextScale = 2;
     await footerShot('public-footer-320-2x-text.png');
