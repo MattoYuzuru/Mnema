@@ -50,7 +50,8 @@ problem, never permission to accept skipped tests.
 (cd backend && ./gradlew clean quality)          # compile, tests, JaCoCo, coverage-baseline.json floors
 (cd frontend && npm ci && npm run lint && npm run test && npm run build) # Vitest/jsdom: no browser needed
 python3 scripts/verify_docs.py                 # links, anchors, doc statuses
-python3 -m unittest discover -s scripts/tests -p 'test_*.py'   # ~35 s
+docker build --tag mnema-vps-postgres-fixture:verified deploy/production
+python3 -m unittest discover -s scripts/tests -p 'test_*.py' # includes Docker-backed restore/search fixtures
 ```
 
 `quality` has no separate backend lint/static-analysis task today (compile + tests +

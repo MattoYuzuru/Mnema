@@ -20,9 +20,12 @@ def revision(root: Path) -> str:
 
 
 def bucket(name: str, count: int) -> int:
+    # Match Java String.hashCode over UTF-16, spreading high bits before the small modulo.
     value = 0
-    for char in name:
-        value = (31 * value + ord(char)) & 0xFFFFFFFF
+    encoded = name.encode('utf-16-be')
+    for offset in range(0, len(encoded), 2):
+        value = (31 * value + int.from_bytes(encoded[offset:offset + 2], 'big')) & 0xFFFFFFFF
+    value ^= value >> 16
     if value >= 0x80000000:
         value -= 0x100000000
     return value % count + 1

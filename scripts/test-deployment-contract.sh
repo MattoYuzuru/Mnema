@@ -20,7 +20,7 @@ done
 
 grep -Fq 'workflow_dispatch:' "$MAIN_WORKFLOW"
 grep -Fq 'name: Require exact main branch' "$MAIN_WORKFLOW"
-test "$(grep -c 'needs: validate-main-ref' "$MAIN_WORKFLOW")" -eq 3
+test "$(grep -c 'needs: validate-main-ref' "$MAIN_WORKFLOW")" -eq 6
 for quality_workflow in "$MAIN_WORKFLOW" "$PULL_REQUEST_WORKFLOW"; do
   grep -Fq 'name: Verify Identity to Learning black-box security' "$quality_workflow"
   grep -Fq './backend/gradlew -p backend :services:identity-account:bootJar :services:learning:bootJar' "$quality_workflow"
@@ -30,8 +30,8 @@ for quality_workflow in "$MAIN_WORKFLOW" "$PULL_REQUEST_WORKFLOW"; do
 done
 
 # Every job that pulls Docker Hub images routes them through mirror.gcr.io (anonymous hosted-runner limit, #411).
-test "$(grep -c 'uses: ./.github/actions/docker-hub-mirror' "$PULL_REQUEST_WORKFLOW")" -eq 2
-test "$(grep -c 'uses: ./.github/actions/docker-hub-mirror' "$MAIN_WORKFLOW")" -eq 3
+test "$(grep -c 'uses: ./.github/actions/docker-hub-mirror' "$PULL_REQUEST_WORKFLOW")" -eq 4
+test "$(grep -c 'uses: ./.github/actions/docker-hub-mirror' "$MAIN_WORKFLOW")" -eq 5
 build_job=$(sed -n '/^  build-and-push:/,/^  assemble-vps-candidate:/p' "$MAIN_WORKFLOW")
 printf '%s\n' "$build_job" | grep -Fq '[registry."docker.io"]'
 printf '%s\n' "$build_job" | grep -Fq 'mirrors = ["mirror.gcr.io"]'

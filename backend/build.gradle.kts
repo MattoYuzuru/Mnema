@@ -75,7 +75,8 @@ subprojects {
                         val root = roots.first { file.toPath().startsWith(it.toPath()) }
                         val className = file.relativeTo(root).invariantSeparatorsPath
                             .removeSuffix(".class").substringBefore('$').replace('/', '.')
-                        Math.floorMod(className.hashCode(), parts[1]) == parts[0] - 1
+                        val hash = className.hashCode().let { it xor (it ushr 16) }
+                        Math.floorMod(hash, parts[1]) == parts[0] - 1
                     }
                 }
                 require(selected.isNotEmpty()) { "Empty test shard" }
