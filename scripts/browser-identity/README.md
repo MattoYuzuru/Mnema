@@ -159,8 +159,9 @@ fixture), then checks:
 
 | Stage | Assertions |
 |---|---|
-| statistics | five `<figure>`s drawn when scrolled into view (`@defer (on viewport)`), each `svg[role=img]` named by its `<figcaption>`; every figure has a `<details>` with a real table opened by a real click; all five tables carry exactly the numbers of `GET /api/decks/{id}/insights`; coverage shows materials without exercises; no vanity metric; each widget ends in an action |
+| statistics | five `<figure>`s in one surface, each `svg[role=img]` named by its `<figcaption>`; numerical legends match `GET /api/decks/{id}/insights` and remain available before deferred SVG rendering; no tables or action links; at desktop width mechanics spans two columns beside coverage, with states, due dates and captures below |
 | responsive | `hub-1440.png`, `hub-390.png`, `hub-320-at-200-percent.png` (320 CSS px at DPR 2), the document never overflows horizontally at 390 and 320 |
+| material navigation | first/last boundaries and route reuse through real neighbour links; at 1440/1200 px the chevrons remain vertically centred in the material gutters while scrolling; at 1050/390 px the links follow the document without covering its text (`material-navigation-<width>.png`) |
 | sort | the radio group is changed with a real ArrowRight; materials without exercises come first, every row keeps its true ordinal (`2,3,4,1`), the order equals the API's `sort=exerciseCount` order |
 | «Эталон» | the star is toggled with a real Space press (`aria-pressed`, name «Эталон: <title>»), the server stores it, it survives a reload, and the budget note shows «1 из 10» |
 | selection | checkbox + Shift+click range, tri-state «Выбрать все» (mixed, checked, cleared), the `role="region"` bulk bar with the count, sticky and inside the viewport, its height reserved as `--mn-bulk-bar-height`, **no «ИИ» button while the capability is off**, real Esc clears the selection (`hub-selection-1440.png`, `hub-selection-390.png`) |
