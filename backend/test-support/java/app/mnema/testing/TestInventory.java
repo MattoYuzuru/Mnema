@@ -44,6 +44,7 @@ public final class TestInventory {
         if (names.isEmpty()) throw new IllegalStateException("No discovered test classes");
         Files.createDirectories(output.getParent());
         Files.writeString(output, JsonMapper.builder().build().writeValueAsString(names) + "\n");
+        Files.write(output.resolveSibling("test-inventory.txt"), names);
         System.out.println("Discovered " + names.size() + " test classes without executing tests");
     }
 }

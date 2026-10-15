@@ -87,6 +87,10 @@ def verify(contents):
         if set(jobs) != set(expected) | ACTIVE.get(filename, set()) | (APPROVED if filename == 'deploy.yaml' else set()):
             errors.append(f'{filename}: unexpected or missing jobs')
         for name, block in jobs.items():
+            if name in {'backend-tests', 'backend-quality'}:
+                gradle_commands = [line for line in block if './gradlew ' in line]
+                if not gradle_commands or any('--parallel --max-workers=2' not in line for line in gradle_commands):
+                    errors.append(f'{filename}/{name}: parallel modules require the global two-worker limit')
             if name == 'backend-runtime' and not re.search(r'''^          java-version: ['"]25['"]$''', '\n'.join(block), re.M):
                 errors.append(f'{filename}/{name}: standalone readiness contract requires JDK 25')
             if name == 'backend-security' and '        run: docker pull postgres:18' not in block:
@@ -129,6 +133,14 @@ class LocalDeliveryContractTest(unittest.TestCase):
                     block = '\n'.join(_job_blocks(changed[filename])[job])
                     self.assertIn(old, block)
                     changed[filename] = changed[filename].replace(block, block.replace(old, new))
+                    self.assertTrue(verify(changed))
+
+    def test_parallel_modules_cannot_increase_or_lose_the_global_worker_limit(self):
+        for filename in ('deploy.yaml', 'pull-request.yaml'):
+            for replacement in ('--parallel', '--parallel --max-workers=4'):
+                with self.subTest(file=filename, replacement=replacement):
+                    changed = dict(self.contents)
+                    changed[filename] = changed[filename].replace('--parallel --max-workers=2', replacement)
                     self.assertTrue(verify(changed))
 
     def test_each_operational_guard_is_required(self):

@@ -66,20 +66,41 @@ subprojects {
         systemProperty("junit.jupiter.execution.parallel.enabled", "false")
         val shard = providers.gradleProperty("testShard")
         inputs.property("testShard", shard.getOrElse("all"))
+        val durationProfile = rootProject.file("test-durations.tsv")
+        inputs.file(durationProfile)
         if (shard.isPresent && name != "goldenEval") {
             val parts = shard.get().split("/").map(String::toInt)
             require(parts.size == 2 && parts[1] in 1..8 && parts[0] in 1..parts[1]) { "testShard must be index/count, count <= 8" }
-            // Partition every compiled top-level class, independent of naming/annotations. Nested
-            // tests stay with their outer class; the unchanged JUnit engine discovers the tests.
+            // Longest estimated class first, into the lightest shard. Fresh JUnit discovery is
+            // authoritative; historical weights only balance work, including newly added classes.
             doFirst {
+                val durations = mutableMapOf<String, Long>()
+                durationProfile.readLines().filter { it.isNotBlank() && !it.startsWith('#') }.forEach { line ->
+                    val fields = line.split('\t')
+                    require(fields.size == 2) { "Invalid test duration row: $line" }
+                    val milliseconds = fields[1].toLong()
+                    require(milliseconds in 1..3_600_000 && durations.put(fields[0], milliseconds) == null) {
+                        "Invalid or duplicate test duration: $line"
+                    }
+                }
+                val names = layout.buildDirectory.file("test-inventory.txt").get().asFile.readLines()
+                val hashes = names.associateWith { className ->
+                    BigInteger(1, MessageDigest.getInstance("SHA-256").digest(className.toByteArray(Charsets.UTF_8)))
+                }
+                val totals = LongArray(parts[1])
+                val assignments = mutableMapOf<String, Int>()
+                names.sortedWith(compareByDescending<String> { durations[it] ?: 5_000L }.thenBy { hashes.getValue(it) }).forEach { className ->
+                    val bucket = totals.indices.minBy { totals[it] }
+                    assignments[className] = bucket + 1
+                    totals[bucket] += durations[className] ?: 5_000L
+                }
                 val roots = testClassesDirs.files
                 val selected = testClassesDirs.asFileTree.files.filter { file ->
                     if (file.extension != "class") false else {
                         val root = roots.first { file.toPath().startsWith(it.toPath()) }
                         val className = file.relativeTo(root).invariantSeparatorsPath
                             .removeSuffix(".class").substringBefore('$').replace('/', '.')
-                        val hash = BigInteger(1, MessageDigest.getInstance("SHA-256").digest(className.toByteArray(Charsets.UTF_8)))
-                        hash.mod(BigInteger.valueOf(parts[1].toLong())).toInt() == parts[0] - 1
+                        assignments[className] == parts[0]
                     }
                 }
                 require(selected.isNotEmpty()) { "Empty test shard" }

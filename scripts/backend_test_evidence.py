@@ -19,9 +19,30 @@ def revision(root: Path) -> str:
     return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
 
 
-def bucket(name: str, count: int) -> int:
-    # Match Gradle's positive SHA-256 integer over the outer class's UTF-8 name.
-    return int.from_bytes(hashlib.sha256(name.encode('utf-8')).digest(), 'big') % count + 1
+def partition(names: list[str], durations: dict[str, int], count: int) -> dict[str, int]:
+    """Match Gradle's LPT allocation, with UTF-8 SHA-256 tie-breaking across runtimes."""
+    if not 1 <= count <= 8 or len(names) != len(set(names)):
+        raise ValueError("Invalid shard count or duplicate inventory class")
+    totals = [0] * count
+    assignments = {}
+    for name in sorted(names, key=lambda n: (-durations.get(n, 5000), hashlib.sha256(n.encode('utf-8')).digest())):
+        bucket = min(range(count), key=lambda i: (totals[i], i))
+        assignments[name] = bucket + 1
+        totals[bucket] += durations.get(name, 5000)
+    return assignments
+
+
+def assignments(root: Path, module: str, count: int) -> dict[str, int]:
+    durations = {}
+    for line in (root / 'backend/test-durations.tsv').read_text().splitlines():
+        if not line.strip() or line.startswith('#'):
+            continue
+        fields = line.split('\t')
+        if len(fields) != 2 or fields[0] in durations or not 1 <= int(fields[1]) <= 3_600_000:
+            raise ValueError(f"Invalid or duplicate test duration: {line}")
+        durations[fields[0]] = int(fields[1])
+    names = json.loads((root / f'backend/services/{module}/build/test-inventory.json').read_text())
+    return partition(names, durations, count)
 
 
 def source_digest(root: Path) -> str:
@@ -29,7 +50,7 @@ def source_digest(root: Path) -> str:
     paths = sorted((root / "backend").glob("services/*/src/test/java/**/*.java"))
     paths += sorted((root / "backend").glob("test-support/**/*.java"))
     paths += sorted((root / "backend").glob("**/*.gradle.kts"))
-    paths += [root / "backend/test-opt-ins.json"]
+    paths += [root / "backend/test-opt-ins.json", root / "backend/test-durations.tsv"]
     for path in paths:
         digest.update(path.relative_to(root).as_posix().encode())
         digest.update(b"\0")
@@ -39,8 +60,7 @@ def source_digest(root: Path) -> str:
 
 def require_inventory(root: Path, suites: list[dict], index: int, count: int) -> None:
     for module in MODULES:
-        path = root / f"backend/services/{module}/build/test-inventory.json"
-        expected = {name for name in json.loads(path.read_text()) if bucket(name, count) == index}
+        expected = {name for name, shard in assignments(root, module, count).items() if shard == index}
         actual = {suite['name'].split('$')[0] for suite in suites if suite['module'] == module}
         if not expected or actual != expected:
             raise ValueError(f"Incomplete {module} inventory: missing={sorted(expected-actual)}, unexpected={sorted(actual-expected)}")
@@ -55,13 +75,14 @@ def pack(root: Path, index: int, count: int, output: Path) -> dict:
     allowed_skips = json.loads((root / "backend/test-opt-ins.json").read_text())
     for module in MODULES:
         build = root / "backend/services" / module / "build"
+        allocated = assignments(root, module, count)
         reports = sorted((build / "test-results/test").glob("TEST-*.xml"))
         if not reports:
             raise ValueError(f"No reports for {module}")
         for path in reports:
             suite = ET.parse(path).getroot()
             name = suite.attrib["name"]
-            if bucket(name.split("$")[0], count) != index:
+            if allocated.get(name.split("$")[0]) != index:
                 raise ValueError(f"Suite outside shard: {name}")
             tests = suite.findall("testcase")
             unexpected_skips = [test.get("name") for test in tests if test.find("skipped") is not None
@@ -99,6 +120,7 @@ def merge(root: Path, inputs: Path, count: int) -> list[dict]:
     results = []
     transfers = []
     expected_revision, expected_source = revision(root), source_digest(root)
+    allocated = {module: assignments(root, module, count) for module in MODULES}
     for path in manifests:
         data = json.loads(path.read_text())
         index = data["index"]
@@ -110,7 +132,7 @@ def merge(root: Path, inputs: Path, count: int) -> list[dict]:
             raise ValueError("Missing module suite evidence")
         for suite in data["suites"]:
             key = (suite["module"], suite["name"])
-            if suite["module"] not in MODULES or key in names or bucket(suite["name"].split("$")[0], count) != index:
+            if suite["module"] not in MODULES or key in names or allocated[suite["module"]].get(suite["name"].split("$")[0]) != index:
                 raise ValueError("Duplicate suite or incorrect partition")
             if suite["tests"] < 1 or not 0 <= suite["skipped"] <= suite["tests"] or suite["seconds"] < 0:
                 raise ValueError("Invalid suite counters")
