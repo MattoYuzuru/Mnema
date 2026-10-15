@@ -1,0 +1,482 @@
+[
+ {
+  "name": "welcome-1280.png",
+  "overflow": false,
+  "running": 8,
+  "focus": "night-title"
+ },
+ {
+  "name": "survey-1-1280.png",
+  "overflow": false,
+  "running": 11,
+  "focus": "survey-title"
+ },
+ {
+  "name": "survey-2-1280.png",
+  "overflow": false,
+  "running": 11,
+  "focus": "survey-title"
+ },
+ {
+  "name": "survey-3-1280.png",
+  "overflow": false,
+  "running": 11,
+  "focus": "survey-title"
+ },
+ {
+  "name": "survey-4-1280.png",
+  "overflow": false,
+  "running": 11,
+  "focus": "survey-title"
+ },
+ {
+  "name": "branch-1280.png",
+  "overflow": false,
+  "running": 11,
+  "focus": "branch-title"
+ },
+ {
+  "name": "skip-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "tour-sample-1-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-sample-2-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-sample-3-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-sample-4-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-community-1-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-community-2-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-community-3-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-community-4-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "community-stuck-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "stuck-title"
+ },
+ {
+  "name": "tour-own-1-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-own-2-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-own-3-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-own-4-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "pause-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "finish-states-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "finished-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "ai-final-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "ai-title"
+ },
+ {
+  "name": "congrats-1280.png",
+  "overflow": false,
+  "running": 10,
+  "focus": "night-title"
+ },
+ {
+  "name": "path-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "path-toast-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "hint-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "rhythm-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "reward-1280.png",
+  "overflow": false,
+  "running": 14,
+  "focus": "night-title"
+ },
+ {
+  "name": "welcome-768.png",
+  "overflow": false,
+  "running": 8,
+  "focus": "night-title"
+ },
+ {
+  "name": "welcome-320.png",
+  "overflow": false,
+  "running": 3,
+  "focus": "night-title"
+ },
+ {
+  "name": "survey-2-768.png",
+  "overflow": false,
+  "running": 11,
+  "focus": "survey-title"
+ },
+ {
+  "name": "survey-2-320.png",
+  "overflow": false,
+  "running": 5,
+  "focus": "survey-title"
+ },
+ {
+  "name": "survey-4-768.png",
+  "overflow": false,
+  "running": 11,
+  "focus": "survey-title"
+ },
+ {
+  "name": "survey-4-320.png",
+  "overflow": false,
+  "running": 5,
+  "focus": "survey-title"
+ },
+ {
+  "name": "branch-768.png",
+  "overflow": false,
+  "running": 11,
+  "focus": "branch-title"
+ },
+ {
+  "name": "branch-320.png",
+  "overflow": false,
+  "running": 7,
+  "focus": "branch-title"
+ },
+ {
+  "name": "tour-sample-2-768.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-sample-2-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-community-3-768.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-community-3-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "pause-768.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "pause-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "finish-states-768.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "finish-states-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "ai-final-768.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "ai-title"
+ },
+ {
+  "name": "ai-final-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "ai-title"
+ },
+ {
+  "name": "congrats-768.png",
+  "overflow": false,
+  "running": 10,
+  "focus": "night-title"
+ },
+ {
+  "name": "congrats-320.png",
+  "overflow": false,
+  "running": 6,
+  "focus": "night-title"
+ },
+ {
+  "name": "path-768.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "path-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "hint-768.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "hint-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "rhythm-768.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "rhythm-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "reward-768.png",
+  "overflow": false,
+  "running": 14,
+  "focus": "night-title"
+ },
+ {
+  "name": "reward-320.png",
+  "overflow": false,
+  "running": 6,
+  "focus": "night-title"
+ },
+ {
+  "name": "tour-sample-3-armed-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-sample-3-armed-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-community-3-armed-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-community-3-armed-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "welcome-forced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "night-title"
+ },
+ {
+  "name": "welcome-forced-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "night-title"
+ },
+ {
+  "name": "survey-3-forced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "survey-title"
+ },
+ {
+  "name": "survey-3-forced-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "survey-title"
+ },
+ {
+  "name": "tour-community-3-forced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "tour-community-3-forced-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "step-title"
+ },
+ {
+  "name": "finish-states-forced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "finish-states-forced-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "path-forced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "path-forced-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "rhythm-forced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "rhythm-forced-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "congrats-forced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "night-title"
+ },
+ {
+  "name": "congrats-forced-320.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "night-title"
+ },
+ {
+  "name": "welcome-reduced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "night-title"
+ },
+ {
+  "name": "congrats-reduced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "night-title"
+ },
+ {
+  "name": "finish-states-reduced-1280.png",
+  "overflow": false,
+  "running": 0,
+  "focus": "BODY"
+ },
+ {
+  "name": "branch-no-catalog-1280.png",
+  "overflow": false,
+  "running": 11,
+  "focus": "branch-title"
+ }
+]
