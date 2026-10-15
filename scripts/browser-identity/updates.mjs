@@ -441,6 +441,7 @@ export async function runUpdates(ctx) {
       owner.need((await materialRows(owner)).every(row => !row.title.startsWith(pass.heads[3])), 'material #4 is still listed');
       // Republish with «Что нового».
       await openHub(owner, world.deckPath, 4);
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
       await until(() => owner.page(`return [...document.querySelectorAll('section.publication button')].some(button => button.textContent.trim() === args[0]);`, WORDS.publishUpdate), 'the hub offers no «Опубликовать обновление»', 30000);
       const state = (await apiJson(owner, ownerBearer, 'GET', `/api/decks/${world.deckId}/publication`)).body;
       owner.need(state.unpublishedChanges >= 4, 'unpublished changes: ' + state.unpublishedChanges);
@@ -777,6 +778,7 @@ export async function runUpdates(ctx) {
       await owner.metrics(DESKTOP);
       await appendToMaterial(owner, world.deckPath, world.keys[2], pass.later);
       await openHub(owner, world.deckPath, 4);
+      await owner.enter('nav.hub-actions button[aria-haspopup="dialog"]', 'Поделиться');
       await until(() => owner.page(`return [...document.querySelectorAll('section.publication button')].some(button => button.textContent.trim() === args[0]);`, WORDS.publishUpdate), 'the hub offers no «Опубликовать обновление»', 30000);
       await owner.enter('section.publication .publication-status button', WORDS.publishUpdate);
       await until(() => exists('section.publication form.publication-update textarea', owner.tab), 'the release note form did not open');

@@ -576,7 +576,7 @@ export async function runCatalog(ctx) {
     need(!guestTitles.includes(INVITED.title) && !guestTitles.includes(LINKED.title), 'a guest sees the LINK or the INVITE deck: ' + JSON.stringify(guestTitles));
     need(!(await guest.has(WORDS.granted)), 'a guest sees «Доступна вам»');
     const marks = await landmarks(guest);
-    need(marks.h1 === 1 && marks.search === 1 && !marks.overflow, 'landmarks of the author page: ' + JSON.stringify(marks));
+    need(marks.h1 === 1 && marks.search === 0 && !marks.overflow, 'landmarks of the author page: ' + JSON.stringify(marks));
     await shoot(guest, 'catalog-desktop-author-guest.png', { full: true });
     // The learner who holds the grant: first what the server says to him, then what the page shows.
     const server = await publicGet(`/authors/${world.ownerId}/decks?limit=48`, memberBearer);
@@ -710,13 +710,13 @@ export async function runCatalog(ctx) {
   // ==== 13. accessibility smoke ====================================================================================================================
   await stage('a11y', ['seed'], async () => {
     await guest.tab.call('Accessibility.enable').catch(() => {});
-    const audit = async (actor, label) => {
+    const audit = async (actor, label, searchCount = 1) => {
       const tree = await actor.tab.call('Accessibility.getFullAXTree');
       const interactive = new Set(['link', 'button', 'textbox', 'searchbox', 'combobox', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'slider', 'spinbutton']);
       const unnamed = tree.nodes.filter(node => !node.ignored && interactive.has(node.role?.value) && !String(node.name?.value ?? '').trim()).map(node => node.role.value);
       const roles = tree.nodes.filter(node => !node.ignored).map(node => node.role?.value);
       need(unnamed.length === 0, `${label}: interactive elements without an accessible name: ${JSON.stringify(unnamed)}`);
-      need(roles.filter(role => role === 'search').length === 1, `${label}: ${roles.filter(role => role === 'search').length} search landmarks`);
+      need(roles.filter(role => role === 'search').length === searchCount, `${label}: ${roles.filter(role => role === 'search').length} search landmarks`);
       const marks = await landmarks(actor);
       need(marks.h1 === 1, `${label}: ${marks.h1} h1 headings`);
       return { nodes: tree.nodes.length, interactive: roles.filter(role => interactive.has(role)).length };
@@ -730,7 +730,7 @@ export async function runCatalog(ctx) {
     await guest.metrics(DESKTOP);
     await navigate('/u/' + world.ownerLogin, guest.tab);
     await until(() => exists('app-author-page app-deck-grid li', guest.tab), 'the author page did not render', 30000);
-    results.author = await audit(guest, 'author');
+    results.author = await audit(guest, 'author', 0);
     // The focus is visible after a route change made with the keyboard: a card, then the way back.
     await openCommunity(guest, '/community?q=%D0%B8%D1%81%D0%BF%D0%B0%D0%BD%D1%81%D0%BA%D0%B8%D0%B9');
     await guest.enter('app-public-deck-card .title a', 'Испанские глаголы');

@@ -266,7 +266,8 @@ export async function runHub(ctx) {
     need(!(await exists('app-reading-frame a[rel="prev"]', tab)), 'first material has a previous link');
     await realClick('app-reading-frame a[rel="next"]');
     await waitFor(async () => (await sanitizedLocation(tab)).endsWith(readingKey)
-      && await bodyIncludes('Материал 2', tab), 'next link did not reload the reused material route');
+      && await page(`return document.querySelector('app-browse-page .eyebrow')?.textContent.trim() === 'Материал 2';`),
+      'next link did not reload the reused material route');
     await waitFor(() => page(`return document.activeElement === document.querySelector('app-browse-page h1');`),
       'material route reuse did not focus its new heading');
     for (const width of [1440, 1200, 1050, 390]) {
