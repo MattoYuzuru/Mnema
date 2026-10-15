@@ -61,7 +61,7 @@ describe('the actions of the public deck view: copy, invitation, access request'
             { provide: PublicDeckApiService, useValue: api },
             { provide: ForkApiService, useValue: copies },
             { provide: AccessApiService, useValue: accessApi },
-            { provide: AuthService, useValue: { status, restore: vi.fn().mockResolvedValue(undefined) } },
+            { provide: AuthService, useValue: { status, user: signal(null), restore: vi.fn().mockResolvedValue(undefined) } },
             { provide: AuthorCardsService, useValue: { card: vi.fn().mockResolvedValue(null), avatarUrl: vi.fn() } }
         ] });
     });

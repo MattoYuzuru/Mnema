@@ -62,7 +62,7 @@ describe('PublicDeckPageComponent', () => {
             provideRouter([{ matcher: publicDeckMatcher, component: PublicDeckPageComponent }, { path: 'login', children: [] }, { path: 'decks', children: [] }, { path: '', children: [] }]),
             provideHttpClient(), provideHttpClientTesting(),
             { provide: PublicDeckApiService, useValue: api },
-            { provide: AuthService, useValue: { status, restore } },
+            { provide: AuthService, useValue: { status, user: signal(null), restore } },
             { provide: AuthorCardsService, useValue: authors },
             { provide: ShareLinkService, useValue: sharing },
             { provide: ComplaintApiService, useValue: complaints }
