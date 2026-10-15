@@ -13,11 +13,11 @@ import backend_test_evidence as evidence
 class BackendEvidenceTest(unittest.TestCase):
     def test_partition_matches_jdk25_reference_vectors_including_utf16_names(self):
         # Generated with the Gradle expression in a standalone JDK 25 probe.
-        vectors = {'app.mnema.Test': [1, 1, 2, 1], 'app.mnema.𐐀Case': [1, 1, 2, 1],
-                   'app.mnema.learning.update.plan.ApplyScaleIntegrationTest': [1, 2, 2, 4]}
+        vectors = {'app.mnema.Test': [1, 1, 2, 1, 4, 5], 'app.mnema.𐐀Case': [1, 1, 2, 1, 1, 5],
+                   'app.mnema.learning.update.plan.ApplyScaleIntegrationTest': [1, 2, 2, 4, 4, 2]}
         for name, expected in vectors.items():
             with self.subTest(name=name):
-                self.assertEqual([evidence.bucket(name, count) for count in range(1, 5)], expected)
+                self.assertEqual([evidence.bucket(name, count) for count in range(1, 7)], expected)
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -63,6 +63,14 @@ class BackendEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Expected 2 manifests'):
             evidence.merge(self.root, self.root / 'inputs', 2)
         self.assertFalse(list(self.root.glob('**/test-shard-*.exec')))
+
+    def test_more_than_six_shards_is_rejected_before_writing_outputs(self):
+        output = self.root / 'too-many-shards'
+        with self.assertRaises(ValueError):
+            evidence.pack(self.root, 1, 7, output)
+        self.assertFalse(output.exists())
+        with self.assertRaises(ValueError):
+            evidence.merge(self.root, self.root / 'inputs', 7)
 
     def corrupt_manifest(self, field, value):
         path = self.root / 'inputs/shard-2/manifest.json'

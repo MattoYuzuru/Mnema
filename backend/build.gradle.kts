@@ -65,7 +65,7 @@ subprojects {
         inputs.property("testShard", shard.getOrElse("all"))
         if (shard.isPresent && name != "goldenEval") {
             val parts = shard.get().split("/").map(String::toInt)
-            require(parts.size == 2 && parts[1] in 1..4 && parts[0] in 1..parts[1]) { "testShard must be index/count, count <= 4" }
+            require(parts.size == 2 && parts[1] in 1..6 && parts[0] in 1..parts[1]) { "testShard must be index/count, count <= 6" }
             // Partition every compiled top-level class, independent of naming/annotations. Nested
             // tests stay with their outer class; the unchanged JUnit engine discovers the tests.
             doFirst {
@@ -92,7 +92,7 @@ subprojects {
 
     tasks.withType<org.gradle.testing.jacoco.tasks.JacocoReport>().configureEach {
         val coverageShards = providers.gradleProperty("coverageShards").map(String::toInt).getOrElse(0)
-        require(coverageShards in 0..4) { "coverageShards must be 1..4, or absent" }
+        require(coverageShards in 0..6) { "coverageShards must be 1..6, or absent" }
         executionData.setFrom(if (coverageShards == 0) listOf(layout.buildDirectory.file("jacoco/test.exec"))
             else (1..coverageShards).map { layout.buildDirectory.file("jacoco/test-shard-$it.exec") })
         reports {

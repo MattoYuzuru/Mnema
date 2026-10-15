@@ -87,6 +87,10 @@ def verify(contents):
         if set(jobs) != set(expected) | ACTIVE.get(filename, set()) | (APPROVED if filename == 'deploy.yaml' else set()):
             errors.append(f'{filename}: unexpected or missing jobs')
         for name, block in jobs.items():
+            if name == 'backend-runtime' and not re.search(r'''^          java-version: ['"]25['"]$''', '\n'.join(block), re.M):
+                errors.append(f'{filename}/{name}: standalone readiness contract requires JDK 25')
+            if name == 'backend-security' and '        run: docker pull postgres:18' not in block:
+                errors.append(f'{filename}/{name}: standalone security fixture requires an explicit PostgreSQL pull')
             if any(re.match(r'^    uses:', line) for line in block):
                 errors.append(f'{filename}/{name}: workflow callers are disabled in local-only mode')
             guards = [line for line in block if line.startswith('    if:')]
@@ -115,6 +119,17 @@ class LocalDeliveryContractTest(unittest.TestCase):
 
     def test_checked_in_workflows_keep_quality_and_production_delivery_locked(self):
         self.assertEqual([], verify(self.contents))
+
+    def test_independent_quality_jobs_declare_their_runtime_and_image_prerequisites(self):
+        for filename in ('deploy.yaml', 'pull-request.yaml'):
+            for job, old, new in (('backend-runtime', "java-version: '25'", "java-version: '21'"),
+                                  ('backend-security', 'run: docker pull postgres:18', 'run: true')):
+                with self.subTest(file=filename, job=job):
+                    changed = dict(self.contents)
+                    block = '\n'.join(_job_blocks(changed[filename])[job])
+                    self.assertIn(old, block)
+                    changed[filename] = changed[filename].replace(block, block.replace(old, new))
+                    self.assertTrue(verify(changed))
 
     def test_each_operational_guard_is_required(self):
         cases = {'deploy.yaml': {'build-and-push': PUBLISH, 'assemble-vps-candidate': PUBLISH},

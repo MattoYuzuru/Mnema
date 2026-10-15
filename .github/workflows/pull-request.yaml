@@ -17,9 +17,9 @@ jobs:
     timeout-minutes: 15
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 6
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     permissions:
       contents: read
     steps:
@@ -38,7 +38,7 @@ jobs:
 
       - name: Run isolated backend shard
         working-directory: backend
-        run: ./gradlew test -PtestShard=${{ matrix.shard }}/4 -PtestForks=2
+        run: ./gradlew test -PtestShard=${{ matrix.shard }}/6 -PtestForks=2
 
       - name: Collect bounded backend evidence
         run: python3 scripts/backend_test_evidence.py pack --index ${{ matrix.shard }}
@@ -72,6 +72,9 @@ jobs:
           java-version: '25'
           cache: gradle
 
+      - name: Prepare cached PostgreSQL security fixture
+        run: docker pull postgres:18
+
       - name: Verify Identity to Learning black-box security
         timeout-minutes: 15
         run: |
@@ -91,6 +94,12 @@ jobs:
 
       - name: Route Docker Hub pulls through mirror.gcr.io
         uses: ./.github/actions/docker-hub-mirror
+
+      - name: Set up JDK 25 for the runtime readiness contract
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
 
       - name: Verify VPS runtime and isolated local restore
         timeout-minutes: 5
@@ -157,7 +166,7 @@ jobs:
 
       - name: Enforce combined backend coverage
         working-directory: backend
-        run: ./gradlew compileJava jacocoTestReport jacocoRootReport coverageBaselineCheck -PcoverageShards=4 -x test
+        run: ./gradlew compileJava jacocoTestReport jacocoRootReport coverageBaselineCheck -PcoverageShards=6 -x test
 
       - name: Upload backend coverage report
         uses: ./.github/actions/safe-upload-artifact
@@ -254,7 +263,7 @@ jobs:
         working-directory: frontend
         env:
           NODE_OPTIONS: --max-old-space-size=1536
-          MNEMA_TEST_WORKERS: '3'
+          MNEMA_TEST_WORKERS: '4'
         run: npm run test
 
   frontend-quality:

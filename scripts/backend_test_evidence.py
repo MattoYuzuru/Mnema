@@ -54,8 +54,8 @@ def require_inventory(root: Path, suites: list[dict], index: int, count: int) ->
 
 
 def pack(root: Path, index: int, count: int, output: Path) -> dict:
-    if not 1 <= index <= count <= 4:
-        raise ValueError("Expected shard index/count with count <= 4")
+    if not 1 <= index <= count <= 6:
+        raise ValueError("Expected shard index/count with count <= 6")
     output.mkdir(parents=True, exist_ok=False)
     suites = []
     execution = {}
@@ -96,8 +96,8 @@ def pack(root: Path, index: int, count: int, output: Path) -> dict:
 
 
 def merge(root: Path, inputs: Path, count: int) -> list[dict]:
-    if not 1 <= count <= 4:
-        raise ValueError("Expected 1..4 shards")
+    if not 1 <= count <= 6:
+        raise ValueError("Expected 1..6 shards")
     manifests = sorted(inputs.glob("*/manifest.json"))
     if len(manifests) != count:
         raise ValueError(f"Expected {count} manifests, found {len(manifests)}")
@@ -144,11 +144,11 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     packing = sub.add_parser("pack")
     packing.add_argument("--index", type=int, required=True)
-    packing.add_argument("--count", type=int, default=4)
+    packing.add_argument("--count", type=int, default=6)
     packing.add_argument("--output", type=Path, default=ROOT / "backend/build/ci-shard")
     merging = sub.add_parser("merge")
     merging.add_argument("--inputs", type=Path, default=ROOT / "backend/build/ci-inputs")
-    merging.add_argument("--count", type=int, default=4)
+    merging.add_argument("--count", type=int, default=6)
     sub.add_parser("verify-local")
     args = parser.parse_args()
     if args.command == "verify-local":

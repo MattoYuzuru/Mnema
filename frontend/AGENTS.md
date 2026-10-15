@@ -8,7 +8,7 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
 
 - Run from `frontend/`. Node is **24.21.0** (LTS) in CI and images; the workstation default may be newer.
 - `npm ci`, `npm run lint` (`ng lint`), `npm run test` (Vitest + jsdom via `@angular/build:unit-test`, single run with
-  coverage thresholds; no browser needed; two workers locally, three in CI, with file isolation), `npm run build` (production, output `dist/mnema-frontend`).
+  coverage thresholds; no browser needed; two workers locally, four in CI, with file isolation), `npm run build` (production, output `dist/mnema-frontend`).
 - Unit tests run in jsdom, which has no layout engine (every box is 0x0): specs make no geometry assertions. Reflow,
   containment, grid stacking and decoration placement belong to the real-browser harness scenarios in
   `scripts/browser-identity/mechanics.mjs` (`mechanics_*_reflow`, `mechanics_constellation_geometry`,

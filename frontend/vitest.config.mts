@@ -1,8 +1,8 @@
 import { defineConfig } from 'vitest/config';
 
 const testWorkers = Number(process.env['MNEMA_TEST_WORKERS'] ?? '2');
-if (!Number.isInteger(testWorkers) || testWorkers < 1 || testWorkers > 3) {
-    throw new Error('MNEMA_TEST_WORKERS must be 1, 2 or 3');
+if (!Number.isInteger(testWorkers) || testWorkers < 1 || testWorkers > 4) {
+    throw new Error('MNEMA_TEST_WORKERS must be 1, 2, 3 or 4');
 }
 
 // Runner config for `ng test` (@angular/build:unit-test, vitest runner).

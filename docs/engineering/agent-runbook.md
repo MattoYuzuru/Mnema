@@ -79,8 +79,8 @@ host CPU count, because Colima and the retained development stacks share fewer r
 Coordinate heavy checks through the shared `workstation-dev` resource `heavy`, including
 frontend tests. A busy lock is a queue, never permission to stop the current owner.
 
-The ordinary `test` task still discovers all tests. Both CI workflows run four class shards
-(`-PtestShard=1/4` through `4/4`), with at most two JVMs each on separate `ubuntu-latest`
+The ordinary `test` task still discovers all tests. Both CI workflows run six class shards
+(`-PtestShard=1/6` through `6/6`), with at most two JVMs each on separate `ubuntu-latest`
 runners. All compiled candidates are assigned automatically, including nonstandard names
 such as `*EvalRunner`; nested tests stay with their outer class. No manual class allowlist
 can silently leave a new test out. The `testInventory` task uses the existing JUnit Platform
@@ -90,18 +90,20 @@ intentional provider/eval/media opt-ins live in `backend/test-opt-ins.json`.
 
 Each shard uploads only JaCoCo execution data and bounded suite metadata (7 days), through
 the safe artifact action. Console/XML output and runtime fixtures are not uploaded. The
-aggregate verifies all four shard identities, source/revision, checksums, discovered classes
-and uniqueness, then reads exactly those execution files with `-PcoverageShards=4`.
+aggregate verifies all six shard identities, source/revision, checksums, discovered classes
+and uniqueness, then reads exactly those execution files with `-PcoverageShards=6`.
 The existing 90% per-service line floors apply to the combined report. Ordinary local reports
 read only `test.exec`, so old downloaded shards cannot inflate a later local gate.
 
-Security/cancellation and runtime/media contracts run in separate jobs. `backend-quality`
+Security/cancellation and runtime/media contracts run in separate jobs. Security explicitly
+pulls its cached `postgres:18` input before the cancellation harness; runtime installs JDK 25
+for the compiled readiness-probe contract. Neither relies on a previous Gradle test job's side effects. `backend-quality`
 remains the required aggregate: failure, cancellation or skipping of a dependency fails it.
 `frontend-quality` likewise requires both `frontend-tests` and `frontend-checks`; the latter
 retains lint/build/styleguide/release/browser-response/delivery contracts and automation checks.
 Frontend specs keep isolated environments and the same coverage thresholds, with two workers
-locally or three in CI (`MNEMA_TEST_WORKERS`, accepted range 1–3); the CI test process and inherited workers each cap V8 heap at 1536 MiB.
-The main test fan-out is eight concurrent jobs (four backend shards, security, runtime,
+locally or four in CI (`MNEMA_TEST_WORKERS`, accepted range 1–4); the CI test process and inherited workers each cap V8 heap at 1536 MiB.
+The main test fan-out is ten concurrent jobs (six backend shards, security, runtime,
 frontend tests, frontend checks), below the standard Free account concurrency limit of 20;
 other workflows share that account quota and can cause queueing. Aggregation is a later phase.
 
