@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -302,17 +303,28 @@ class SemanticGraderTest {
     void theDeadlineBoundsTheWholeGradingIncludingTheRepair() {
         GradeRequest request = new GradeRequest(ACCOUNT, UUID.randomUUID(), "q", "", RUBRIC, ANSWER, AnswerSource.TYPED, "ru", 1,
                 Duration.ofMillis(100));
+        var elapsed = new AtomicLong();
         fake.script = sent -> {
-            try {
-                Thread.sleep(250);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-            }
+            elapsed.addAndGet(Duration.ofMillis(250).toNanos());
             return ok("{\"criteria\":[]}");
         };
-        assertThat(reason(grader.grade(request))).isEqualTo("DEADLINE");
+        try (var timed = new SemanticGrader(fake, ASSEMBLER, KEYS, false, elapsed::get)) {
+            assertThat(reason(timed.grade(request))).isEqualTo("DEADLINE");
+        }
         assertThat(fake.requests).as("no repair is started past the deadline").hasSize(1);
-        assertThat(fake.requests.getFirst().deadline()).isLessThanOrEqualTo(Duration.ofMillis(100));
+        assertThat(fake.requests.getFirst().deadline()).isEqualTo(Duration.ofMillis(100));
+    }
+
+    @Test
+    void anExpiredDeadlinePreventsTheFirstProviderCall() {
+        GradeRequest request = new GradeRequest(ACCOUNT, UUID.randomUUID(), "q", "", RUBRIC, ANSWER, AnswerSource.TYPED, "ru", 1,
+                Duration.ofMillis(100));
+        var reads = new AtomicLong();
+        try (var timed = new SemanticGrader(fake, ASSEMBLER, KEYS, false,
+                () -> reads.getAndIncrement() == 0 ? 0 : Duration.ofMillis(250).toNanos())) {
+            assertThat(reason(timed.grade(request))).isEqualTo("DEADLINE");
+        }
+        assertThat(fake.requests).isEmpty();
     }
 
     @Test

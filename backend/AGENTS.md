@@ -8,7 +8,14 @@ routes: [repository guide](../docs/engineering/repository-guide.md). Commands an
 
 - Run Gradle from `backend/` with the wrapper and **JDK 25** (`JAVA_HOME`); the workstation default
   `java` may be newer. Gate: `./gradlew clean quality` (compile, tests, JaCoCo, the floors in
-  `coverage-baseline.json`).
+  `coverage-baseline.json`). Two isolated test JVMs are the bounded default; use `-PtestForks=1` for
+  a serial comparison. Shared test discovery tooling is under `test-support/java`; resource and CI
+  sharding rules live in the runbook.
+- Before adding a large dataset or changing test execution, follow the runbook's
+  [test maintenance rules](../docs/engineering/agent-runbook.md#keeping-tests-fast-as-the-project-grows).
+  Measure setup separately from the operation under test; use bounded bulk fixtures for large
+  preconditions without bypassing storage invariants. Keep useful scenarios, thresholds and
+  automatic discovery; changing the timing profile must never change test membership.
 - Java sources compile with `-Xlint:all -Werror`: a new warning fails the build. Tests run with Mockito
   as a `-javaagent` (declared in `backend/build.gradle.kts`); do not rely on dynamic agent loading.
 - JSON is Jackson 3 (`tools.jackson`). `JsonNode` accessors are strict: `stringValue()`, `intValue()`,

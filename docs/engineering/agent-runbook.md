@@ -5,7 +5,7 @@ artifact:
   title: "Mnema agent runbook: commands and local-machine setup"
   status: current
   created_at: "2026-10-01"
-  updated_at: "2026-10-10"
+  updated_at: "2026-10-15"
   owners: ["project-owner"]
 ---
 
@@ -50,14 +50,16 @@ problem, never permission to accept skipped tests.
 (cd backend && ./gradlew clean quality)          # compile, tests, JaCoCo, coverage-baseline.json floors
 (cd frontend && npm ci && npm run lint && npm run test && npm run build) # Vitest/jsdom: no browser needed
 python3 scripts/verify_docs.py                 # links, anchors, doc statuses
-python3 -m unittest discover -s scripts/tests -p 'test_*.py'   # ~35 s
+docker build --tag mnema-vps-postgres-fixture:verified deploy/production
+python3 -m unittest discover -s scripts/tests -p 'test_*.py' # includes Docker-backed restore/search fixtures
 ```
 
 `quality` has no separate backend lint/static-analysis task today (compile + tests +
 coverage). Java compilation is the configured static check (`-Xlint:all -Werror`). CI additionally runs `scripts/verify_github_actions_pins.py`,
 `verify_security_automation_policy.py`, `verify_artifact_security_policy.py`,
 `verify_production_image_pins.py`, the maintained `scripts/test-*.sh` contracts and the
-real cross-service checks; the authoritative list is the `frontend-quality` job in
+real cross-service checks; the authoritative lists are the `frontend-checks`,
+`frontend-tests`, `backend-tests`, `backend-security` and `backend-runtime` jobs in
 [`.github/workflows/pull-request.yaml`](../../.github/workflows/pull-request.yaml).
 Cross-service security/cancellation harness (needs built boot jars):
 
@@ -66,11 +68,130 @@ Cross-service security/cancellation harness (needs built boot jars):
 python3 scripts/learning-security/run.py
 ```
 
+### Test throughput and resource envelope
+
+`clean quality` remains the complete local backend gate. Its default is **two isolated test
+JVMs**, each with a 512 MiB heap and serial JUnit execution. Every JVM owns its PostgreSQL
+and HTTP fixtures; methods sharing clocks, queues, counters or mocks do not run concurrently.
+`-PtestForks=1` selects the serial comparison; only 1 or 2 are accepted. Gradle's daemon heap
+is separate (1500 MiB). These limits are deliberate; do not derive fork counts from the Mac's
+host CPU count, because Colima and the retained development stacks share fewer resources.
+Coordinate heavy checks through the shared `workstation-dev` resource `heavy`, including
+frontend tests. A busy lock is a queue, never permission to stop the current owner.
+
+The ordinary `test` task still discovers all tests. Both CI workflows run eight class shards
+(`-PtestShard=1/8` through `8/8`), with at most two JVMs each on separate `ubuntu-latest`
+runners. Modules run concurrently with `--parallel --max-workers=2`: Gradle limits the total
+test processes across all `Test` tasks, not two per concurrent module.
+Freshly discovered classes, including nonstandard names such as `*EvalRunner`, are assigned
+longest-estimated-first to the lightest shard within each module; nested tests stay with their outer class.
+`backend/test-durations.tsv` contains only performance estimates, with a 5-second default for
+new classes. Obsolete entries never select tests. Equal estimates use SHA-256 of the UTF-8
+outer class name as a deterministic tie-break, with the lowest shard index winning equal loads.
+No manual class allowlist
+can silently leave a new test out. The `testInventory` task uses the existing JUnit Platform
+launcher to discover the expected classes without executing tests or initializing fixtures.
+Packing/merging evidence requires exact agreement with that inventory. Unexpected skips fail;
+intentional provider/eval/media opt-ins live in `backend/test-opt-ins.json`.
+
+Each shard uploads only JaCoCo execution data and bounded suite metadata (7 days), through
+the safe artifact action. Console/XML output and runtime fixtures are not uploaded. The
+aggregate verifies all eight shard identities, source/revision, checksums, discovered classes
+and uniqueness, then reads exactly those execution files with `-PcoverageShards=8`.
+The existing 90% per-service line floors apply to the combined report. Ordinary local reports
+read only `test.exec`, so old downloaded shards cannot inflate a later local gate.
+
+Security/cancellation and runtime/media contracts run in separate jobs. Security explicitly
+pulls its cached `postgres:18` input before the cancellation harness; runtime installs JDK 25
+for the compiled readiness-probe contract. Neither relies on a previous Gradle test job's
+side effects. `backend-quality` remains the required aggregate: failure, cancellation or skipping of a dependency fails it.
+`frontend-quality` likewise requires both `frontend-tests` and `frontend-checks`; the latter
+retains lint/build/styleguide/release/browser-response/delivery contracts and automation checks.
+Frontend specs keep isolated environments and the same coverage thresholds, with two workers
+locally or four in CI (`MNEMA_TEST_WORKERS`, accepted range 1–4); the CI test process and
+inherited workers each cap V8 heap at 1536 MiB.
+The main test fan-out is twelve concurrent jobs (eight backend shards, security, runtime,
+frontend tests, frontend checks), below the standard Free account concurrency limit of 20;
+two simultaneous PR gates and other workflows share that account quota and can cause queueing.
+Aggregation is a later phase.
+
+The 15-minute job timeout is a growth/failure ceiling, not the five-minute performance goal.
+Every shard prints suite totals and its ten slowest classes. When time grows, inspect those
+measurements and the dataset/fixture phases before increasing the fixed worker/shard ceilings.
+Refresh timing estimates from a complete green set of shard manifests when imbalance returns:
+sum `seconds` for nested suites by outer class, round up to milliseconds (minimum 1), and retain
+the source run/head in the TSV comments. The profile must stay an estimate, never an inventory.
+Changes to it invalidate shard evidence through the source digest; the aggregate independently
+recomputes allocation from current discovery and the same versioned profile.
+Do not accept fewer classes, new skips or lower coverage to make the time green. Compare a
+serial and a two-JVM run on the same source and environment, record peak JVM/container memory,
+and verify the union of hosted shards before claiming a speedup. A hosted duration excludes
+account queueing; report end-to-end waiting separately when it is material.
+
+Large community preconditions use the test-only `BulkItemFixture`: strict native validation,
+production codecs and path-copy page editing, reachable objects in bounded storage batches,
+normal repository writes, durable root pins and PostgreSQL FK/trigger checks, with rollback.
+It does not disable constraints, database durability or isolation. The scenarios and sizes from
+[community architecture §§5, 7 and 12](../architecture/community-decks.md) remain unchanged:
+1,000 materials, 200-edit slices, crash/retry/idempotency and bounded plan work. Authoring-command
+coverage remains in `ItemServiceIntegrationTest`; real edits, forks and update commands remain
+production operations. Historical operation timings in the Learning guide are not fixture
+construction timings and are not rewritten as new measurements.
+
+Catalogue scale measurements reset their feature tables before as well as after
+each scenario; class order and a previous scheduler's rank generation cannot change the dataset.
+Semantic-grading deadline tests advance an injected monotonic nanosecond source through the
+provider call, asserting both that no repair starts after expiry and that an already expired
+budget starts no call. Production still uses `System.nanoTime`, the elapsed-time source specified
+by [Java 25](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/System.html#nanoTime()).
+No deadline or query-performance threshold is relaxed.
+
+References deciding the mechanism: [Gradle test processes](https://docs.gradle.org/current/userguide/java_testing.html#sec:test_execution),
+[Gradle global test-process limit](https://docs.gradle.org/current/dsl/org.gradle.api.tasks.testing.Test.html#org.gradle.api.tasks.testing.Test:maxParallelForks),
+[Spring parallel-test constraints](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/parallel-test-execution.html),
+[JUnit discovery](https://docs.junit.org/current/api/org.junit.platform.launcher/org/junit/platform/launcher/core/LauncherFactory.html),
+[GitHub runner resources](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+and [account concurrency](https://docs.github.com/en/actions/reference/limits).
+
+### Keeping tests fast as the project grows
+
+These rules apply to new tests and throughput changes, including work by agents:
+
+- Choose the lightest layer that observes the required behaviour. Pure calculations and state
+  transitions belong in unit tests; HTTP mapping/wiring can use a slice. Transactions, database
+  constraints, snapshots, races and cross-service contracts still need their real boundary.
+  Coverage percentage alone does not justify replacing those checks with mocks or snapshots.
+- Separate dataset construction from the measured operation. Avoid thousands of individual
+  authoring transactions solely to prepare a large precondition. Reuse the owning domain's
+  bounded fixture builder where it fits; keep production encoding, repository semantics,
+  constraints, durability and rollback. A new bulk shortcut needs parity/rollback evidence.
+  The operation being tested must still run through production commands. Cache only pure,
+  immutable calculations within the fixture, never mutable database state across tests.
+- Keep ownership explicit: each test JVM owns its containers and static fixtures; methods remain
+  serial. Reset shared feature tables before and after a scenario. Do not introduce shared
+  reusable databases, fixed external ports or method-level parallelism to gain speed.
+  For frontend tests, retain isolated environments and restore mocks/timers after use.
+- Model deadlines with an injectable monotonic clock when elapsed time is the behaviour.
+  For asynchronous integration work, await observable completion with a bounded timeout.
+  Do not add arbitrary sleeps, ordering assumptions or retries that hide a failed assertion.
+- New tests enter through normal JUnit/Vitest discovery, never a hand-maintained shard allowlist.
+  The TSV affects scheduling only. Preserve scenario sizes, error paths, intentional skip policy,
+  coverage floors and the required fail-closed aggregates. Never disable a useful slow test to
+  meet the performance goal; investigate its setup and owning layer first.
+- For a material increase in datasets or framework contexts, record targeted setup/operation
+  timings and the full gate's before/after duration on comparable source/runtime. Inspect the
+  slowest classes and shard imbalance, refresh estimates from a complete green run, then repeat
+  the hosted measurement through the required aggregate. Treat a sustained increase beyond
+  the roughly five-minute CI goal as an investigation trigger, not permission to raise timeouts.
+  Keep the fixed JVM/worker/shard caps until new peak-memory and account-concurrency evidence
+  justifies a reviewed change. Other PRs, cache eviction and dependency startup count towards
+  the observed waiting time; report cold/warm runs and queueing explicitly.
+
 ### Docker Hub pulls in CI
 
 GitHub-hosted runners share IPs, so anonymous Docker Hub pulls hit `toomanyrequests` or
 `auth.docker.io` timeouts (PR #411, 2026-10-09). Every CI job that pulls Docker Hub images
-(both quality jobs in PR and Main CI, and the release image build) first runs
+(backend shards/security/runtime, frontend checks in PR and Main CI, and the release image build) first runs
 [`.github/actions/docker-hub-mirror`](../../.github/actions/docker-hub-mirror/action.yml): it
 sets the runner daemon's `registry-mirrors` to `https://mirror.gcr.io` and reloads it. That
 covers `docker run`/`docker build` and Testcontainers, and the daemon falls back to Docker Hub

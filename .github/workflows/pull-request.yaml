@@ -12,8 +12,14 @@ concurrency:
 permissions: {}
 
 jobs:
-  backend-quality:
+  backend-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     permissions:
       contents: read
     steps:
@@ -30,9 +36,44 @@ jobs:
           java-version: '25'
           cache: gradle
 
-      - name: Run backend quality gate
+      - name: Run isolated backend shard
         working-directory: backend
-        run: ./gradlew quality
+        run: ./gradlew test --parallel --max-workers=2 -PtestShard=${{ matrix.shard }}/8 -PtestForks=2
+
+      - name: Collect bounded backend evidence
+        run: python3 scripts/backend_test_evidence.py pack --index ${{ matrix.shard }}
+
+      - name: Upload backend shard evidence
+        uses: ./.github/actions/safe-upload-artifact
+        with:
+          policy-id: pr-backend-shard
+          name: backend-tests-${{ matrix.shard }}
+          path: backend/build/ci-shard/
+          retention-days: 7
+          if-no-files-found: error
+          classification: internal-test-report
+
+  backend-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Route Docker Hub pulls through mirror.gcr.io
+        uses: ./.github/actions/docker-hub-mirror
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Prepare cached PostgreSQL security fixture
+        run: docker pull postgres:18
 
       - name: Verify Identity to Learning black-box security
         timeout-minutes: 15
@@ -41,6 +82,24 @@ jobs:
           MNEMA_RUN_CANCELLATION_INTEGRATION=1 python3 -m unittest discover -s scripts/learning-security/tests -v
           python3 scripts/learning-security/run.py
           python3 scripts/learning-security/verify_cancellation.py
+
+  backend-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Route Docker Hub pulls through mirror.gcr.io
+        uses: ./.github/actions/docker-hub-mirror
+
+      - name: Set up JDK 25 for the runtime readiness contract
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
 
       - name: Verify VPS runtime and isolated local restore
         timeout-minutes: 5
@@ -62,6 +121,53 @@ jobs:
             --volume "$PWD/scripts/require_no_skips.py:/opt/require_no_skips.py:ro" --entrypoint python3 \
             mnema-media-worker:verified /opt/require_no_skips.py tests.test_worker
 
+  backend-quality:
+    if: ${{ always() }}
+    needs: [backend-tests, backend-security, backend-runtime]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require every quality block
+        env:
+          QUALITY_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os
+          results = json.loads(os.environ['QUALITY_RESULTS'])
+          failed = {name: job['result'] for name, job in results.items() if job['result'] != 'success'}
+          if not results or failed:
+              raise SystemExit(f'Quality blocks did not all succeed: {failed}')
+          PYCODE
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Discover the complete backend test inventory
+        working-directory: backend
+        run: ./gradlew testInventory --parallel --max-workers=2
+
+      - name: Download backend shard evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: backend-tests-*
+          path: backend/build/ci-inputs
+
+      - name: Verify shard completeness and combine execution data
+        run: python3 scripts/backend_test_evidence.py merge
+
+      - name: Enforce combined backend coverage
+        working-directory: backend
+        run: ./gradlew --parallel --max-workers=2 compileJava jacocoTestReport jacocoRootReport coverageBaselineCheck -PcoverageShards=8 -x test
+
       - name: Upload backend coverage report
         uses: ./.github/actions/safe-upload-artifact
         with:
@@ -72,7 +178,7 @@ jobs:
           if-no-files-found: warn
           classification: internal-test-report
 
-  frontend-quality:
+  frontend-checks:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -107,10 +213,6 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
-      - name: Run frontend tests
-        working-directory: frontend
-        run: npm run test
-
       - name: Run frontend build
         working-directory: frontend
         run: npm run build
@@ -136,4 +238,54 @@ jobs:
 
       - name: Run release automation unit tests
         run: python3 -m unittest discover -s scripts/smoke/tests -v
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.21.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=1536
+          MNEMA_TEST_WORKERS: '4'
+        run: npm run test
+
+  frontend-quality:
+    if: ${{ always() }}
+    needs: [frontend-checks, frontend-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require every quality block
+        env:
+          QUALITY_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os
+          results = json.loads(os.environ['QUALITY_RESULTS'])
+          failed = {name: job['result'] for name, job in results.items() if job['result'] != 'success'}
+          if not results or failed:
+              raise SystemExit(f'Quality blocks did not all succeed: {failed}')
+          PYCODE
 

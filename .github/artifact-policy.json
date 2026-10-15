@@ -41,6 +41,21 @@
         },
         "validate-main-ref": {
           "contents": "read"
+        },
+        "backend-tests": {
+          "contents": "read"
+        },
+        "backend-security": {
+          "contents": "read"
+        },
+        "backend-runtime": {
+          "contents": "read"
+        },
+        "frontend-checks": {
+          "contents": "read"
+        },
+        "frontend-tests": {
+          "contents": "read"
         }
       }
     },
@@ -50,6 +65,21 @@
           "contents": "read"
         },
         "frontend-quality": {
+          "contents": "read"
+        },
+        "backend-tests": {
+          "contents": "read"
+        },
+        "backend-security": {
+          "contents": "read"
+        },
+        "backend-runtime": {
+          "contents": "read"
+        },
+        "frontend-checks": {
+          "contents": "read"
+        },
+        "frontend-tests": {
           "contents": "read"
         }
       }
@@ -129,6 +159,32 @@
       "ifNoFilesFound": "error",
       "classification": "release-manifest",
       "source": "Five immutable VPS image identifiers and complete verified image security evidence; no secrets"
+    },
+    {
+      "policyId": "pr-backend-shard",
+      "workflow": ".github/workflows/pull-request.yaml",
+      "job": "backend-tests",
+      "name": "backend-tests-${{ matrix.shard }}",
+      "paths": [
+        "backend/build/ci-shard/"
+      ],
+      "retentionDays": 7,
+      "ifNoFilesFound": "error",
+      "classification": "internal-test-report",
+      "source": "JaCoCo execution data and bounded suite metadata; no console output, XML logs, credentials or runtime fixtures"
+    },
+    {
+      "policyId": "main-backend-shard",
+      "workflow": ".github/workflows/deploy.yaml",
+      "job": "backend-tests",
+      "name": "backend-tests-${{ matrix.shard }}",
+      "paths": [
+        "backend/build/ci-shard/"
+      ],
+      "retentionDays": 7,
+      "ifNoFilesFound": "error",
+      "classification": "internal-test-report",
+      "source": "JaCoCo execution data and bounded suite metadata; no console output, XML logs, credentials or runtime fixtures"
     }
   ]
 }
