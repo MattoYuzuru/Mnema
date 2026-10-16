@@ -659,13 +659,14 @@ export async function runOnboarding(ctx) {
     await realClick(A2, 'app-tour-pause button', T.resume);
     const resumedOn2 = await waitFor('the step after the resume on the second device', () => tourState(A2), s => s.card && s.name === norm(T.ownTitles[1]) && s.counter === 'Шаг 2 из 4', 15_000);
     const serverAfter2 = await serverJourney(A2, 'is IN_PROGRESS at own.material after the resume', j => j.state === 'IN_PROGRESS' && j.stepKey === 'own.material');
-    // The deck the learner made is not known to this device: the step cannot take them to the editor and, after four seconds, says so.
-    const settled = await waitFor('the step variant on the second device', () => tourState(A2), s => s.card && (s.body === norm(T.missing) || s.location.includes('/materials/new')), 12_000);
+    // The deck the learner made is not known to this page, so the tour finds it (the latest ready deck of the account) and the step goes to its editor: the anchor appears, the text variant does not.
+    const settled = await waitFor('the step on the second device finds its editor', () => tourState(A2),
+      s => s.card && s.name === norm(T.ownTitles[1]) && s.location === `/decks/${world.deckId}/materials/new?write=1`, 15_000);
+    await waitFor('the anchor of the step on the second device', () => exists('[data-tour-anchor="own.material"]', A2.tab), Boolean, 15_000);
+    await sleep(4500);
+    const afterFour = await tourState(A2);
+    A2.need(afterFour.body !== norm(T.missing), `the second device shows «${T.missing}» for «${T.ownTitles[1]}» although the learner has a deck`);
     await shoot(A2, 'onboarding-second-device-resumed-1440.png');
-    if (settled.body === norm(T.missing)) {
-      finding('second_device_loses_the_deck', `a tour resumed on a second device shows «${T.missing}» for «${T.ownTitles[1]}»: the deck made on the first device is not known there, so no route is followed`,
-        { step: 'own.material', location: settled.location, files: ['onboarding-second-device-resumed-1440.png'] });
-    }
     await device.close();
     actors.splice(actors.indexOf(A2), 1);
     // Back on the first device the plaque is still there; resuming it lands on the same step and the server follows.
@@ -683,7 +684,7 @@ export async function runOnboarding(ctx) {
     await waitFor('the editor again', () => exists('.ProseMirror[contenteditable="true"]', A.tab), Boolean, 20_000);
     a11y.pause = { linksBehindStep: linksBefore, linksBehindPause: linksAfter };
     return { escapePausedTheTour: true, plaqueFocused: true, serverPaused: serverPaused.state, secondDevicePlaqueNoJump: true, secondDeviceVersionUntouched: serverPaused.rowVersion,
-      resumedOnSecondDevice: { step: resumedOn2.name, variant: settled.body === norm(T.missing) ? 'text variant (anchor missing)' : 'editor' }, resumedOnFirstDevice: back.name,
+      resumedOnSecondDevice: { step: resumedOn2.name, anchorFound: true, location: settled.location.replace(/[0-9a-f-]{36}/u, '{id}') }, resumedOnFirstDevice: back.name,
       serverAfterSecondDevice: serverAfter2.state, serverFinal: serverBack.state, axLinksBehindStep: linksBefore, axLinksBehindPause: linksAfter, editorPresent: Boolean(editor) };
   });
 
@@ -820,15 +821,17 @@ export async function runOnboarding(ctx) {
     const total = (await decks(A)).length;
     A.need(total === world.deckCountBefore + 1, `the replay itself changed the number of decks: ${total}`);
     await shoot(A, 'onboarding-replay-choice-1440.png');
-    // There is no way out of the choice other than a branch: Escape does nothing and «Начать» is the only button.
+    // Escape pauses the replayed choice like any step: the server records PAUSE at `choose`, the dialog closes, the plaque reopens the same choice.
     await A.press('Escape');
-    await sleep(300);
-    const stillThere = await firstEntry(A);
-    const noWayOut = stillThere !== null && stillThere.buttons.length === 1;
-    if (noWayOut) {
-      finding('replay_choice_has_no_way_out', 'the replayed branch choice cannot be closed: Escape is swallowed, there is no «Назад» or close button, «Начать» is its only button',
-        { buttons: stillThere.buttons.map(b => b.text), files: ['onboarding-replay-choice-1440.png'] });
-    }
+    const pausedReplay = await waitFor('the plaque after Escape on the replayed choice', () => tourState(A), s => s.plaque !== null, 10_000);
+    A.need(pausedReplay.plaque.label === T.pause && pausedReplay.plaque.button === T.resume && pausedReplay.plaque.focused, 'the plaque is ' + JSON.stringify(pausedReplay.plaque));
+    A.need((await firstEntry(A)) === null, 'the replayed choice stays open behind its pause');
+    const serverPausedChoice = await serverJourney(A, 'is PAUSED at choose', j => j.state === 'PAUSED' && j.stepKey === 'choose' && j.replayCount === 1);
+    await shoot(A, 'onboarding-replay-paused-1440.png');
+    await realClick(A, 'app-tour-pause button', T.resume);
+    const reopened = await awaitCard(A, T.branchTitle, 15_000);
+    A.need(reopened.progress === null && !reopened.buttons.some(b => b.text === T.back), 'the reopened choice carries the survey or a way back');
+    await serverJourney(A, 'is IN_PROGRESS at choose', j => j.state === 'IN_PROGRESS' && j.stepKey === 'choose' && j.replayCount === 1);
     // «Своя колода» on a replay offers the decks the learner already has.
     await read(A, `const own = [...document.querySelectorAll('app-first-entry input[type="radio"]')].find(r => r.value === 'OWN'); own.click(); return true;`);
     await realClick(A, 'app-first-entry button', T.begin);
@@ -844,7 +847,7 @@ export async function runOnboarding(ctx) {
     await A.press('Escape');
     await waitFor('the pause after the replay', () => journey(A), j => j.state === 'PAUSED' && j.stepKey === 'own.material', 10_000);
     return { surveySkipped: true, branchChoice: choose.radios.map(r => r.value), serverStep: server.stepKey, replayCount: server.replayCount, answersUnchanged: true, decksBefore: world.deckCountBefore + 1, decksAfter: after,
-      existingDeckOffered: true, startedAt: step.name, noWayOut };
+      existingDeckOffered: true, startedAt: step.name, escapePausedTheChoice: serverPausedChoice.state, plaqueReopenedTheChoice: true };
   });
 
   // ==== 5. the hold to finish on a phone ============================================================================================================
@@ -856,6 +859,15 @@ export async function runOnboarding(ctx) {
     const welcome = await awaitCard(B, T.welcomeTitle, 30_000);
     B.need(!welcome.overflow.page && !welcome.overflow.dialog, 'the welcome overflows at 390 px');
     await realClick(B, 'app-first-entry button', T.start);
+    // Escape in the survey pauses the journey at the card; the plaque reopens it.
+    await awaitCard(B, T.goal, 15_000);
+    await B.press('Escape');
+    const surveyPause = await waitFor('the plaque after Escape in the survey', () => tourState(B), s => s.plaque !== null, 10_000);
+    B.need(surveyPause.plaque.button === T.resume && surveyPause.plaque.focused && (await firstEntry(B)) === null, 'the pause of the survey is ' + JSON.stringify(surveyPause.plaque));
+    await serverJourney(B, 'is PAUSED at survey.goal', j => j.state === 'PAUSED' && j.stepKey === 'survey.goal');
+    await realClick(B, 'app-tour-pause button', T.resume);
+    await awaitCard(B, T.goal, 15_000);
+    await serverJourney(B, 'is IN_PROGRESS at survey.goal', j => j.state === 'IN_PROGRESS' && j.stepKey === 'survey.goal');
     // Every question is skipped.
     for (let card = 0; card < 6; card++) {
       const state = await waitFor('a survey card or the branch choice', () => firstEntry(B), s => s?.open && s.heading !== norm(T.welcomeTitle), 15_000);
@@ -925,7 +937,7 @@ export async function runOnboarding(ctx) {
     const after = await noVeil(B);
     B.need(after.clear, 'the tour left something on the screen after the hold: ' + JSON.stringify(after.state));
     await shoot(B, 'onboarding-hold-finished-390.png');
-    return { communityHint: browseHint, ownDeckOffered: nudge.name, offerInert: nudge.inert, armedName: T.finishArmed, armedGlyph: true, releasedEarlyDidNothing: true, heldEnterFinished: true, toast, serverFinal: completed.state, sheetAt390: true, skippedQuestionsStoredNothing: true,
+    return { surveyPausedByEscape: true, communityHint: browseHint, ownDeckOffered: nudge.name, offerInert: nudge.inert, armedName: T.finishArmed, armedGlyph: true, releasedEarlyDidNothing: true, heldEnterFinished: true, toast, serverFinal: completed.state, sheetAt390: true, skippedQuestionsStoredNothing: true,
       inertAfterTheTour: 0 };
   });
 
@@ -972,15 +984,16 @@ export async function runOnboarding(ctx) {
     // The page of the step takes the focus to its own heading once it has loaded; the card's heading must still be where the focus is.
     await sleep(1500);
     const search = await tourState(D);
-    if (!search.headingFocused) gap('community_search_focus', `the focus is on «${search.active}» and not on the heading of the step card (the page took it after the route change)`);
+    D.need(search.headingFocused, `the focus is on «${search.active}» and not on the heading of the step card (the page took it after the route change)`);
     D.need(search.gate === null, `the search step names a control: «${search.gate}»`);
-    // A learner who skipped the interests card must not meet a notice about a save that never happened.
+    // A learner who skipped the interests card meets no notice about a save, and the skip was not refused (no 4xx on the interests).
     const notice = await read(D, `return document.body.innerText.includes('Интересы обновились') || document.body.innerText.includes('Не удалось подтвердить сохранение');`);
-    if (notice) {
-      const text = await read(D, `return norm([...document.querySelectorAll('app-community-page p, app-community-page [role="status"], app-community-page [role="alert"]')].map(e => e.textContent).find(t => t.includes('Интересы обновились') || t.includes('Не удалось подтвердить')));`);
-      const interestRequests = D.wire.filter(entry => entry.path.startsWith('/api/community/interests')).map(entry => `${entry.method} ${entry.path.replace('/api/community', '')} ${entry.status ?? '…'}`);
-      gap('interests_notice_after_skip', `the community page of a learner who skipped the interests card says «${text}» (the page's requests: ${JSON.stringify(interestRequests)})`);
-    }
+    const interestRequests = D.wire.filter(entry => entry.path.startsWith('/api/community/interests')).map(entry => `${entry.method} ${entry.path.replace('/api/community', '')} ${entry.status ?? '…'}`);
+    D.need(!notice, `the community page of a learner who skipped the interests card shows a notice about a save (the page's requests: ${JSON.stringify(interestRequests)})`);
+    // The write waits for the profile's version and mends a stale one by itself (a 412 is followed by a read and a PUT that lands): the skip must end stored.
+    const puts = interestRequests.filter(entry => entry.startsWith('PUT '));
+    D.need(puts.length > 0 && puts.at(-1).endsWith(' 200'), 'the skip of the interests did not end stored: ' + JSON.stringify(interestRequests));
+    const mended = puts.length > 1;
     D.need(!search.modal, 'the search step is modal');
     await serverJourney(D, 'is at community.search', j => j.state === 'IN_PROGRESS' && j.stepKey === 'community.search' && j.branch === 'COMMUNITY');
     await shoot(D, 'onboarding-tour-community-search-1440.png');
@@ -1027,7 +1040,7 @@ export async function runOnboarding(ctx) {
     const owned = await decks(D);
     D.need(owned.length === 1, `the learner has ${owned.length} decks after one copy`);
     return { seeded: decksSeeded.length, branchOptions: choose.radios.map(r => r.value), searched: true, informationalStepModal: true, copyStepAction: add.gate, copyCreated: owned.length === 1, copyHub: copyPath.replace(/[0-9a-f-]{36}/u, '{id}'),
-      serverAtStudy: paused.state, studyWithoutVeil: true, studyStep: study.name, sessionStarted: true, sessionCompleted: false };
+      interestsSkipRequests: interestRequests, interestsSkipMendedAStaleVersion: mended, serverAtStudy: paused.state, studyWithoutVeil: true, studyStep: study.name, sessionStarted: true, sessionCompleted: false };
   });
 
   // ==== 8. the accessibility evidence, collected ======================================================================================================
