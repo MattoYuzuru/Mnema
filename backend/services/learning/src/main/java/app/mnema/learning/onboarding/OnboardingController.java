@@ -43,7 +43,9 @@ public final class OnboardingController {
     ResponseEntity<JsonNode> read(@AuthenticationPrincipal Jwt identity, HttpServletRequest request) {
         // The anti-abuse signal Identity reported for this request; unknown (absent claim) is not new.
         boolean newAccount = Boolean.TRUE.equals(IdentityClaims.signals(request).newAccount());
-        JsonNode view = service.read(PromoBodies.owner(identity), newAccount);
+        UUID owner = PromoBodies.owner(identity);
+        // The flag is checked here, before the transactional read: a switched-off tour must not cost a transaction or a query.
+        JsonNode view = service.enabled() ? service.read(owner, newAccount) : OnboardingView.disabled();
         String tag = etag(view);
         if (matches(request.getHeaders(HttpHeaders.IF_NONE_MATCH), tag)) {
             return ResponseEntity.status(HttpStatus.NOT_MODIFIED).headers(headers(tag)).build();

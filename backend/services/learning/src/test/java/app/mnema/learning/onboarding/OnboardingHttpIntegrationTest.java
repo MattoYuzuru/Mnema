@@ -344,7 +344,8 @@ class OnboardingHttpIntegrationTest extends PostgresIntegrationTest {
                     assertThat(response.statusCode()).as(label + ": " + response.body()).isEqualTo(200);
                     JsonNode journey = json(response).path("journey");
                     assertThat(journey.path("state").stringValue()).as(label).isEqualTo(target);
-                    assertThat(journey.path("rowVersion").stringValue()).as(label).isEqualTo(noRow ? "0" : "4");
+                    // a replay from no row creates the row one change past "no row"
+                    assertThat(journey.path("rowVersion").stringValue()).as(label).isEqualTo(noRow ? "1" : "4");
                     assertThat(journey.path("finishedAt").isNull()).as(label).isEqualTo(!List.of("SKIPPED", "COMPLETED").contains(target));
                 }
             }
@@ -431,11 +432,25 @@ class OnboardingHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(journey.path("eligible").booleanValue()).isFalse();
         assertThat(journey.path("autoOffer").booleanValue()).isFalse();
         assertThat(journey.path("replayCount").intValue()).isOne();
-        assertThat(journey.path("rowVersion").stringValue()).isEqualTo("0");
+        assertThat(journey.path("rowVersion").stringValue()).isEqualTo("1");
         assertThat(journey.path("stepKey").stringValue()).isEqualTo("choose");
         assertThat(journey.path("offeredAt").isString()).isTrue();
         assertThat(column(account, "cohort")).isNull();
         assertThat(json(get(account)).path("journey").path("eligible").booleanValue()).isFalse();
+    }
+
+    @Test
+    void aReplayFromNoRowChecksTheStepLikeEveryOtherCommand() {
+        UUID account = UUID.randomUUID();
+        HttpIdentityFixture.signals(account, true, false);
+
+        for (String step : new String[] {"own.details", "sample.hub", "community.search"}) {
+            assertCode(journey(account, command("0", "REPLAY", step, null)), 400, "INVALID_REQUEST");
+        }
+        assertCode(journey(account, command("0", "REPLAY", "tour.unknown", null)), 400, "INVALID_REQUEST");
+        assertCode(journey(account, command("0", "REPLAY", "own.details", "OWN")), 400, "INVALID_REQUEST");
+        assertThat(rows(account)).isZero();
+        assertThat(journey(account, command("0", "REPLAY", "finale.ai", null)).statusCode()).isEqualTo(200);
     }
 
     @Test
@@ -679,9 +694,11 @@ class OnboardingHttpIntegrationTest extends PostgresIntegrationTest {
         session(c2, "SCHEDULED", "2025-06-03", base.plus(Duration.ofDays(1)).toString());
         session(c2, "SCHEDULED", "2025-06-03", base.plus(Duration.ofDays(1)).plusSeconds(3600).toString());
         member("CONTROL", offered);
-        // outside the experiment or the window: a replay row (no cohort), and offers at the exclusive end and just before the start
+        // outside the experiment or the window: a replay row (no cohort), an account the experiment did not bucket, and offers at the exclusive end and just before the start
         UUID replay = member(null, offered);
         session(replay, "SCHEDULED", "2025-06-03", base.plus(Duration.ofDays(1)).toString());
+        UUID unassigned = member("UNASSIGNED", offered);
+        session(unassigned, "SCHEDULED", "2025-06-03", base.plus(Duration.ofDays(1)).toString());
         UUID atEnd = member("TOUR", "2025-06-10T00:00:00Z");
         session(atEnd, "SCHEDULED", "2025-06-11", "2025-06-11T01:00:00Z");
         UUID before = member("TOUR", "2025-05-31T23:59:59Z");

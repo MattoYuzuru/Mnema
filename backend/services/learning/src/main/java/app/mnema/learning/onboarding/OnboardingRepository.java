@@ -25,7 +25,8 @@ class OnboardingRepository {
     record Row(int tourVersion, JourneyState state, Cohort cohort, JourneyBranch branch, String stepKey, Experience experience, Integer weeklyTarget,
                Instant offeredAt, Instant finishedAt, int replayCount, long rowVersion) { }
 
-    enum Cohort { TOUR, CONTROL }
+    /** TOUR and CONTROL are experiment data; UNASSIGNED is an account the experiment did not bucket (disabled, no secret): it gets the tour and the report leaves it out. */
+    enum Cohort { TOUR, CONTROL, UNASSIGNED }
 
     enum Experience { NEW, FAMILIAR, CONFIDENT }
 
@@ -62,14 +63,14 @@ class OnboardingRepository {
                 .param("account", account).query(Boolean.class).single();
     }
 
-    /** Creates the row (version 0) unless one exists. @return whether this call created it */
+    /** Creates the row at {@code row.rowVersion()} unless one exists. @return whether this call created it */
     boolean insert(UUID account, Row row, Instant now) {
-        return jdbc.sql("INSERT INTO app_learning.onboarding_journey(account_id,tour_version,state,cohort,branch,step_key,offered_at,replay_count,updated_at) "
-                        + "VALUES (:account,:tour,:state,:cohort,:branch,:step,:now,:replays,:now) ON CONFLICT (account_id) DO NOTHING")
+        return jdbc.sql("INSERT INTO app_learning.onboarding_journey(account_id,tour_version,state,cohort,branch,step_key,offered_at,replay_count,row_version,updated_at) "
+                        + "VALUES (:account,:tour,:state,:cohort,:branch,:step,:now,:replays,:version,:now) ON CONFLICT (account_id) DO NOTHING")
                 .param("account", account).param("tour", row.tourVersion()).param("state", row.state().name())
                 .param("cohort", row.cohort() == null ? null : row.cohort().name(), Types.VARCHAR)
                 .param("branch", row.branch() == null ? null : row.branch().name(), Types.VARCHAR)
-                .param("step", row.stepKey(), Types.VARCHAR).param("replays", row.replayCount()).param("now", Timestamp.from(now))
+                .param("step", row.stepKey(), Types.VARCHAR).param("replays", row.replayCount()).param("version", row.rowVersion()).param("now", Timestamp.from(now))
                 .update() == 1;
     }
 
@@ -90,14 +91,14 @@ class OnboardingRepository {
      * Per cohort of the experiment, for the accounts that entered it in {@code [from, to)} by {@code offered_at}: the group, the accounts with a completed
      * SCHEDULED session within {@code activationDays} of the offer and those with completed SCHEDULED or PRACTICE sessions on at least two local study dates
      * within {@code returnDays}. One grouped statement over the window's rows; it reaches {@code study_session} by its primary key (account_id, session_id).
-     * Rows created by REPLAY ({@code cohort IS NULL}) are not part of the experiment. No account id leaves the statement.
+     * Rows created by REPLAY ({@code cohort IS NULL}) and accounts the experiment did not bucket ({@code UNASSIGNED}) are not part of it. No account id leaves the statement.
      */
     Map<Cohort, Group> report(Instant from, Instant to, int activationDays, int returnDays) {
         Map<Cohort, Group> groups = new LinkedHashMap<>();
         jdbc.sql("""
                 WITH members AS (
                     SELECT account_id, cohort, offered_at FROM app_learning.onboarding_journey
-                     WHERE cohort IS NOT NULL AND offered_at >= :from AND offered_at < :to
+                     WHERE cohort IN ('TOUR','CONTROL') AND offered_at >= :from AND offered_at < :to
                 ), activity AS (
                     SELECT m.account_id,
                            coalesce(bool_or(s.mode = 'SCHEDULED' AND s.completed_at < m.offered_at + make_interval(days => :activation)), false) AS activated,

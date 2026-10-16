@@ -80,6 +80,14 @@ class OnboardingContractTest {
     }
 
     @Test
+    void anUnassignedAccountIsEligibleAndAutoOfferedButAHeldOutOneIsNot() {
+        JsonNode unassigned = OnboardingView.of(row(OnboardingRepository.Cohort.UNASSIGNED, JourneyState.OFFERED, null, null, null, null, 0)).path("journey");
+        assertThat(unassigned.path("eligible").booleanValue()).isTrue();
+        assertThat(unassigned.path("autoOffer").booleanValue()).isTrue();
+        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0)).path("journey").path("autoOffer").booleanValue()).isFalse();
+    }
+
+    @Test
     void aRowCreatedByReplayIsNotEligibleAndNeverAutoOffered() {
         ObjectNode journey = (ObjectNode) OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.OFFERED, null, null, null, null, null, OFFERED_AT, null, 1, 0))
                 .path("journey");
@@ -149,6 +157,19 @@ class OnboardingContractTest {
                 "{\"commandId\":\"" + id + "\",\"rowVersion\":\"1\",\"goal\":\"EXAMS\"}"}) {
             assertThatThrownBy(() -> OnboardingCommands.preferences(new ByteArrayInputStream(json.getBytes(java.nio.charset.StandardCharsets.UTF_8)))).as(json)
                     .isInstanceOf(InvalidRequestException.class);
+        }
+    }
+
+    @Test
+    void aMalformedBodyIs400EvenWhenTheRowVersionIsAlsoMissing() {
+        String id = "018f1d98-5c10-7abc-8abc-0123456789ab";
+        for (String json : new String[] {"{\"commandId\":\"" + id + "\",\"action\":\"STEP\"}", "{\"commandId\":\"" + id + "\",\"action\":\"PAUSE\",\"note\":\"x\"}",
+                "{\"commandId\":\"" + id + "\",\"action\":\"SKIP\",\"stepKey\":\"welcome\"}", "{\"commandId\":\"" + id + "\",\"action\":\"WAVE\"}"}) {
+            assertThatThrownBy(() -> OnboardingCommands.journey(new ByteArrayInputStream(json.getBytes()))).as(json).isInstanceOf(InvalidRequestException.class);
+        }
+        for (String json : new String[] {"{\"commandId\":\"" + id + "\"}", "{\"commandId\":\"" + id + "\",\"weeklyTarget\":9}",
+                "{\"commandId\":\"" + id + "\",\"goal\":\"EXAMS\",\"weeklyTarget\":3}"}) {
+            assertThatThrownBy(() -> OnboardingCommands.preferences(new ByteArrayInputStream(json.getBytes()))).as(json).isInstanceOf(InvalidRequestException.class);
         }
     }
 

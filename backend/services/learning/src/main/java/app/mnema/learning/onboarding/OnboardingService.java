@@ -12,6 +12,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -114,21 +116,38 @@ public class OnboardingService {
     }
 
     /**
-     * The holdout: the account the experiment puts in {@code control} is held out. A disabled experiment or a missing secret buckets nobody
-     * ({@link ExperimentAssignments#assigned}), and then everybody gets the tour: nobody is held out by accident.
+     * The holdout: the account the experiment puts in {@code control} is held out, any other variant is {@code TOUR}. A disabled experiment or a missing secret buckets
+     * nobody ({@link ExperimentAssignments#assigned}): the account gets the tour and is stored {@code UNASSIGNED}, so it is neither held out by accident nor mixed
+     * into the groups of the report.
      */
     private OnboardingRepository.Cohort cohort(UUID account) {
-        return assignments.assigned(account, EXPERIMENT).filter("control"::equals).isPresent()
-                ? OnboardingRepository.Cohort.CONTROL : OnboardingRepository.Cohort.TOUR;
+        return assignments.assigned(account, EXPERIMENT)
+                .map(variant -> variant.equals("control") ? OnboardingRepository.Cohort.CONTROL : OnboardingRepository.Cohort.TOUR)
+                .orElse(OnboardingRepository.Cohort.UNASSIGNED);
     }
 
-    /** EXPOSURE is the decision to offer the tour; counted only for an experiment that buckets, and a metric never fails the read. */
+    /**
+     * EXPOSURE is the decision to offer the tour: counted after the row is committed (a rolled-back offer counts nothing), only for an experiment that buckets, and
+     * a metric never fails the read.
+     */
     private void exposure(UUID account) {
         if (assignments.assigned(account, EXPERIMENT).isEmpty()) return;
-        try {
-            experimentEvents.record(account, EXPERIMENT, ExperimentEvents.Event.EXPOSURE);
-        } catch (RateLimitedException limited) {
-            // Best effort: the counter is analytics, not state.
+        Runnable count = () -> {
+            try {
+                experimentEvents.record(account, EXPERIMENT, ExperimentEvents.Event.EXPOSURE);
+            } catch (RateLimitedException limited) {
+                // Best effort: the counter is analytics, not state.
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    count.run();
+                }
+            });
+        } else {
+            count.run();
         }
     }
 
@@ -140,19 +159,20 @@ public class OnboardingService {
         JourneyState from = found.map(OnboardingRepository.Row::state).orElse(JourneyState.NOT_OFFERED);
         JourneyState to = action.target(from);
         if (to == null) throw new OnboardingTransitionException();
+        // A branch step must belong to the journey's branch: the commanded one, else the stored one; a replay clears the branch first.
+        JourneyBranch branch = action == JourneyAction.REPLAY ? null : command.branch() != null ? command.branch() : found.map(OnboardingRepository.Row::branch).orElse(null);
+        if (command.stepKey() != null) {
+            JourneyBranch stepBranch = JourneySteps.branchOf(command.stepKey());
+            if (stepBranch != null && stepBranch != branch) throw new InvalidRequestException();
+        }
         Instant now = repository.now();
         if (found.isEmpty()) {
-            // REPLAY from NOT_OFFERED: the row exists outside the cohort (no holdout, no exposure, never auto-offered).
+            // REPLAY from NOT_OFFERED: the row exists outside the cohort (no holdout, no exposure, never auto-offered) and is already one change past "no row".
             OnboardingRepository.Row created = new OnboardingRepository.Row(JourneySteps.TOUR_VERSION, to, null, null, command.stepKey(), null, null, now, null,
-                    1, 0);
+                    1, 1);
             if (!repository.insert(account, created, now)) throw new VersionConflictException();
         } else {
             OnboardingRepository.Row row = found.get();
-            JourneyBranch branch = action == JourneyAction.REPLAY ? null : command.branch() != null ? command.branch() : row.branch();
-            if (command.stepKey() != null) {
-                JourneyBranch stepBranch = JourneySteps.branchOf(command.stepKey());
-                if (stepBranch != null && stepBranch != branch) throw new InvalidRequestException();
-            }
             Instant finished = switch (action.finish()) {
                 case KEEP -> row.finishedAt();
                 case SET -> now;

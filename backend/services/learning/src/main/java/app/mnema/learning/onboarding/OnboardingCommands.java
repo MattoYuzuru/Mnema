@@ -13,7 +13,7 @@ import java.util.UUID;
 /**
  * Strict reading of the two tour commands ({@code contracts/onboarding/journey.json}, {@code commands} and {@code invalid}): bounded JSON, exactly the named
  * members, every value of its type. All of it is independent of the stored state, so a malformed command is a 400 whatever the row looks like; a missing
- * {@code rowVersion} is a 428 and the stale one is the service's 412.
+ * {@code rowVersion} is a 428 (after the rest of the body has proved valid) and the stale one is the service's 412.
  */
 final class OnboardingCommands {
     /** A tour command: {@code stepKey} and {@code branch} are null when absent. */
@@ -31,7 +31,7 @@ final class OnboardingCommands {
     static Journey journey(InputStream input) {
         JsonNode body = PromoBodies.object(input, Set.of("commandId", "action"), JOURNEY_FIELDS);
         UUID commandId = commandId(body);
-        long rowVersion = rowVersion(body);
+        Long rowVersion = rowVersion(body);
         JourneyAction action = enumeration(JourneyAction.class, PromoBodies.text(body, "action"));
         if (action == null) throw new InvalidRequestException();
         String stepKey = PromoBodies.text(body, "stepKey");
@@ -41,13 +41,13 @@ final class OnboardingCommands {
         if (stepKey != null && !JourneySteps.known(stepKey)) throw new InvalidRequestException();
         // A branch travels with a step of that branch: the first step into the branch sets it.
         if (branch != null && (stepKey == null || JourneySteps.branchOf(stepKey) != branch)) throw new InvalidRequestException();
-        return new Journey(commandId, rowVersion, action, stepKey, branch, body);
+        return new Journey(commandId, requireVersion(rowVersion), action, stepKey, branch, body);
     }
 
     static Preferences preferences(InputStream input) {
         JsonNode body = PromoBodies.object(input, Set.of("commandId"), PREFERENCE_FIELDS);
         UUID commandId = commandId(body);
-        long rowVersion = rowVersion(body);
+        Long rowVersion = rowVersion(body);
         boolean setExperience = body.has("experience");
         boolean setWeeklyTarget = body.has("weeklyTarget");
         if (!setExperience && !setWeeklyTarget) throw new InvalidRequestException();
@@ -55,7 +55,7 @@ final class OnboardingCommands {
         if (body.path("experience").isString() && experience == null) throw new InvalidRequestException();
         Integer weeklyTarget = PromoBodies.integer(body, "weeklyTarget");
         if (weeklyTarget != null && (weeklyTarget < 1 || weeklyTarget > 7)) throw new InvalidRequestException();
-        return new Preferences(commandId, rowVersion, setExperience, experience, setWeeklyTarget, weeklyTarget, body);
+        return new Preferences(commandId, requireVersion(rowVersion), setExperience, experience, setWeeklyTarget, weeklyTarget, body);
     }
 
     private static boolean allowed(JourneyAction.Presence presence, boolean present) {
@@ -87,11 +87,17 @@ final class OnboardingCommands {
         }
     }
 
-    /** One canonical decimal string ({@code "0"} for no row); absent is a 428, any other shape a 400. */
-    private static long rowVersion(JsonNode body) {
+    /** One canonical decimal string ({@code "0"} for no row); null when absent (the caller answers 428 once the rest of the body is known to be valid), any other shape a 400. */
+    private static Long rowVersion(JsonNode body) {
         String text = PromoBodies.text(body, "rowVersion");
-        if (text == null) throw new VersionPreconditionRequiredException();
+        if (text == null) return null;
         if (!text.matches("0|[1-9][0-9]{0,17}")) throw new InvalidRequestException();
         return Long.parseLong(text);
+    }
+
+    /** The body shape is right, so a missing version is now the 428 of the command. */
+    private static long requireVersion(Long rowVersion) {
+        if (rowVersion == null) throw new VersionPreconditionRequiredException();
+        return rowVersion;
     }
 }

@@ -29,10 +29,10 @@ public class ExperimentAssignments {
         this.secret = secret.isBlank() ? null : secret.getBytes(StandardCharsets.UTF_8);
     }
 
-    /** The variant of every enabled experiment for {@code account}, ordered by key. */
+    /** The variant of every enabled client-visible experiment for {@code account}, ordered by key; a server-only experiment is never listed. */
     public Map<String, String> variants(UUID account) {
         Map<String, String> variants = new TreeMap<>();
-        settings.enabled().keySet().forEach(key -> variants.put(key, variant(account, key)));
+        settings.enabled().values().stream().filter(ExperimentSettings.Experiment::client).forEach(experiment -> variants.put(experiment.key(), variant(account, experiment.key())));
         return variants;
     }
 
@@ -59,6 +59,11 @@ public class ExperimentAssignments {
 
     boolean known(String key) {
         return settings.isEnabled(key);
+    }
+
+    /** Whether a client may count events against {@code key}: enabled and not server-only. */
+    boolean clientVisible(String key) {
+        return settings.isClient(key);
     }
 
     private int bucket(UUID account, String key) {

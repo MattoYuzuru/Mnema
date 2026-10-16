@@ -87,6 +87,27 @@ class ExperimentTest {
     }
 
     @Test
+    void aServerOnlyExperimentIsAssignedButNeverListedForAClientNorCountedFromOne() {
+        MockEnvironment environment = environment("plans_year_first", "control:50,plans_year_first:50", true)
+                .withProperty("learning.experiments.holdout.variants", "control:15,tour:85")
+                .withProperty("learning.experiments.holdout.enabled", "true")
+                .withProperty("learning.experiments.holdout.client", "false");
+        ExperimentAssignments assignments = new ExperimentAssignments(new ExperimentSettings(environment), "secret");
+        var meters = new SimpleMeterRegistry();
+        ExperimentEvents events = new ExperimentEvents(assignments, meters);
+        UUID account = UUID.randomUUID();
+
+        assertThat(assignments.variants(account).keySet()).containsExactly("plans_year_first");
+        assertThat(assignments.assigned(account, "holdout")).isPresent();
+        assertThat(events.recordFromClient(account, "holdout", ExperimentEvents.Event.EXPOSURE)).isFalse();
+        assertThat(meters.find("mnema_experiment_events_total").tag("key", "holdout").counters()).isEmpty();
+        assertThat(events.trackedAccounts()).isZero();
+        assertThat(events.record(account, "holdout", ExperimentEvents.Event.EXPOSURE)).isTrue();
+        assertThat(meters.find("mnema_experiment_events_total").tag("key", "holdout").counters()).hasSize(1);
+        assertThat(events.recordFromClient(account, "plans_year_first", ExperimentEvents.Event.EXPOSURE)).isTrue();
+    }
+
+    @Test
     void aDisabledExperimentIsNotExposedAndNeverBucketed() {
         ExperimentAssignments assignments = new ExperimentAssignments(new ExperimentSettings(
                 environment("plans_year_first", "control:50,plans_year_first:50", false)), "secret");

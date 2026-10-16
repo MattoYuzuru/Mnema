@@ -8,6 +8,8 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Instant;
@@ -67,8 +69,8 @@ class OnboardingCohortTest {
     }
 
     @Test
-    void aDisabledExperimentOrAMissingSecretHoldsNobodyOutAndCountsNothing() {
-        assertThat(offeredCohort(Optional.empty(), OnboardingRepository.Cohort.TOUR)).isEqualTo(OnboardingRepository.Cohort.TOUR);
+    void aDisabledExperimentOrAMissingSecretHoldsNobodyOutCountsNothingAndStaysOutOfTheGroups() {
+        assertThat(offeredCohort(Optional.empty(), OnboardingRepository.Cohort.UNASSIGNED)).isEqualTo(OnboardingRepository.Cohort.UNASSIGNED);
         verify(events, never()).record(any(), any(), any());
     }
 
@@ -76,6 +78,35 @@ class OnboardingCohortTest {
     void aRateLimitedExposureNeverFailsTheRead() {
         when(events.record(account, "onboarding_v1", ExperimentEvents.Event.EXPOSURE)).thenThrow(new RateLimitedException(5));
         assertThat(offeredCohort(Optional.of("tour"), OnboardingRepository.Cohort.TOUR)).isEqualTo(OnboardingRepository.Cohort.TOUR);
+    }
+
+    @Test
+    void theExposureIsCountedOnlyAfterTheOfferCommits() {
+        when(assignments.assigned(account, "onboarding_v1")).thenReturn(Optional.of("tour"));
+        when(repository.find(account)).thenReturn(Optional.empty()).thenReturn(Optional.of(created(OnboardingRepository.Cohort.TOUR)));
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.read(account, true);
+            verify(events, never()).record(any(), any(), any());
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) synchronization.afterCommit();
+            verify(events).record(account, "onboarding_v1", ExperimentEvents.Event.EXPOSURE);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void aRolledBackOfferCountsNoExposure() {
+        when(assignments.assigned(account, "onboarding_v1")).thenReturn(Optional.of("tour"));
+        when(repository.find(account)).thenReturn(Optional.empty()).thenReturn(Optional.of(created(OnboardingRepository.Cohort.TOUR)));
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.read(account, true);
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            verify(events, never()).record(any(), any(), any());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test

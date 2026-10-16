@@ -25,7 +25,7 @@ final class OnboardingView {
 
     static ObjectNode of(OnboardingRepository.Row row) {
         boolean eligible = row.cohort() != null;
-        boolean autoOffer = eligible && row.cohort() == OnboardingRepository.Cohort.TOUR && row.state() == JourneyState.OFFERED;
+        boolean autoOffer = eligible && row.cohort() != OnboardingRepository.Cohort.CONTROL && row.state() == JourneyState.OFFERED;
         return envelope(true, journey(row.state(), eligible, autoOffer, row.tourVersion(), row.branch(), row.stepKey(), row.experience(), row.weeklyTarget(),
                 row.offeredAt(), row.finishedAt(), row.replayCount(), row.rowVersion()));
     }

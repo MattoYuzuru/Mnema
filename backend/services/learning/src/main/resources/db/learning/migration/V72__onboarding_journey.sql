@@ -1,13 +1,14 @@
 -- Onboarding journey (OB-101, OB-105; #520, #525). One row per account that was offered or started the first-entry tour; no row means «not offered».
--- cohort is the holdout assignment frozen when the row was created by eligibility (TOUR or CONTROL); NULL marks a row created by REPLAY outside the cohort,
--- so the owner report never counts it. weeks_met and last_met_week are reserved for the rhythm of OB-401 and stay at their defaults until then.
+-- cohort is the holdout assignment frozen when the row was created by eligibility: TOUR or CONTROL when the experiment bucketed the account, UNASSIGNED when it
+-- did not (experiment disabled or no secret: the account gets the tour but is no experiment data); NULL marks a row created by REPLAY outside the cohort.
+-- The owner report counts only TOUR and CONTROL. weeks_met and last_met_week are reserved for the rhythm of OB-401 and stay at their defaults until then.
 -- Personal data tied to the account (tour state, experience, weekly target): deleted with the account (#409, TODO on OnboardingRepository).
 SET LOCAL lock_timeout = '5s';
 CREATE TABLE app_learning.onboarding_journey (
     account_id UUID PRIMARY KEY,
     tour_version SMALLINT NOT NULL CHECK (tour_version >= 1),
     state TEXT NOT NULL CHECK (state IN ('OFFERED','IN_PROGRESS','PAUSED','SKIPPED','COMPLETED')),
-    cohort TEXT CHECK (cohort IS NULL OR cohort IN ('TOUR','CONTROL')),
+    cohort TEXT CHECK (cohort IS NULL OR cohort IN ('TOUR','CONTROL','UNASSIGNED')),
     branch TEXT CHECK (branch IS NULL OR branch IN ('SAMPLE','COMMUNITY','OWN')),
     step_key TEXT CHECK (step_key IS NULL OR char_length(step_key) BETWEEN 1 AND 64),
     experience TEXT CHECK (experience IS NULL OR experience IN ('NEW','FAMILIAR','CONFIDENT')),

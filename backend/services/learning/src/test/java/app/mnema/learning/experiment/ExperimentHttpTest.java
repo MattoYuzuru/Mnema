@@ -26,7 +26,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /** The experiment endpoint and the paywall's {@code experiments} member, on the real configuration (the default experiment is enabled). */
-@SpringBootTest(properties = "learning.experiment-secret=http-test-secret")
+@SpringBootTest(properties = {"learning.experiment-secret=http-test-secret", "learning.experiments.onboarding_v1.enabled=true"})
 class ExperimentHttpTest extends PostgresIntegrationTest {
     @Autowired private ExperimentController controller;
     @Autowired private ExperimentAssignments assignments;
@@ -54,6 +54,23 @@ class ExperimentHttpTest extends PostgresIntegrationTest {
         var body = new tools.jackson.databind.json.JsonMapper().readTree(response.getContentAsString());
         assertThat(body.path("experiments").path("plans_year_first").stringValue(null)).isEqualTo(assignments.variant(account, "plans_year_first"));
         assertThat(body.path("pendingDiscount").isNull()).isTrue();
+    }
+
+    @Test
+    void theServerOnlyOnboardingExperimentIsNotOnTheWireAndAClientCannotCountEventsOnIt() throws Exception {
+        UUID account = UUID.randomUUID();
+        assertThat(assignments.assigned(account, "onboarding_v1")).isPresent();
+
+        var plansBody = new tools.jackson.databind.json.JsonMapper().readTree(
+                as(account, plans).perform(get("/plans")).andReturn().getResponse().getContentAsString());
+        assertThat(plansBody.path("experiments").has("plans_year_first")).isTrue();
+        assertThat(plansBody.path("experiments").has("onboarding_v1")).isFalse();
+
+        var ignored = as(account, controller).perform(post("/experiment-events").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"key\":\"onboarding_v1\",\"event\":\"EXPOSURE\"}")).andReturn().getResponse();
+        assertThat(ignored.getStatus()).isEqualTo(204);
+        assertThat(meters.find("mnema_experiment_events_total").tag("key", "onboarding_v1").tag("event", "EXPOSURE").counters()
+                .stream().mapToDouble(io.micrometer.core.instrument.Counter::count).sum()).isZero();
     }
 
     @Test

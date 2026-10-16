@@ -28,7 +28,8 @@ Backend tests and the frontend contract spec both execute the fixture.
   `eligible=false` and no row.
 - **Holdout (OB-105).** When the row is created the server assigns the account to the cohort of the experiment
   `onboarding_v1` (existing `ExperimentAssignments`; `control` is the holdout) and freezes it on the row. A disabled
-  experiment or a missing experiment secret puts the account in `TOUR` (nobody is held out by accident). `eligible`
+  experiment or a missing experiment secret stores the account as `UNASSIGNED`: it gets the tour and the report leaves it out
+  (nobody is held out by accident, and nobody is mixed into the groups). `eligible`
   is true for a row created by eligibility; `autoOffer` is true only for `OFFERED` + `eligible` + not held out — the client
   opens «Начало пути» by itself only then. The variant itself is not on the wire. Every account, the holdout included,
   can start the tour from the profile (`REPLAY`).
