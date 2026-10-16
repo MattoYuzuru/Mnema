@@ -125,7 +125,7 @@ export interface Setup {
     engine: TourEngine;
     events: TourEvents;
     goal: { state: ReturnType<typeof signal<string>>; answered: ReturnType<typeof signal<boolean>>; load: ReturnType<typeof vi.fn>; answer: ReturnType<typeof vi.fn> };
-    interests: { onboarding: ReturnType<typeof signal<boolean>>; ensure: ReturnType<typeof vi.fn>; ready: ReturnType<typeof signal<boolean>>; save: ReturnType<typeof vi.fn>; skip: ReturnType<typeof vi.fn>; profile: ReturnType<typeof signal<unknown>>; busy: ReturnType<typeof signal<boolean>>; error: ReturnType<typeof signal<string>> };
+    interests: { onboarding: ReturnType<typeof signal<boolean>>; ensure: ReturnType<typeof vi.fn>; ready: ReturnType<typeof signal<boolean>>; save: ReturnType<typeof vi.fn>; skip: ReturnType<typeof vi.fn>; reload: ReturnType<typeof vi.fn>; profile: ReturnType<typeof signal<unknown>>; busy: ReturnType<typeof signal<boolean>>; error: ReturnType<typeof signal<string>> };
     toasts: { notify: ReturnType<typeof vi.fn> };
     community: { facets: ReturnType<typeof vi.fn> };
     capabilities: { read: ReturnType<typeof vi.fn> };
@@ -138,7 +138,7 @@ export function setup(options: { journey?: Parameters<typeof viewOf>[0]; view?: 
         state: signal('ready'), answered: signal(options.goalAnswered ?? false), load: vi.fn(() => Promise.resolve()),
         answer: vi.fn(() => Promise.resolve(true))
     };
-    const interests = { onboarding: signal(options.interestsOpen ?? true), ensure: vi.fn(), ready: signal(true), save: vi.fn(), skip: vi.fn(() => Promise.resolve()), profile: signal<unknown>(null), busy: signal(false), error: signal('') };
+    const interests = { onboarding: signal(options.interestsOpen ?? true), ensure: vi.fn(), ready: signal(true), save: vi.fn(), skip: vi.fn(() => Promise.resolve()), reload: vi.fn(), profile: signal<unknown>(null), busy: signal(false), error: signal('') };
     const toasts = { notify: vi.fn(), echo: vi.fn() };
     const community = { facets: vi.fn(() => options.listed === 'error' ? throwError(() => new Error('down')) : of({ listedCount: options.listed ?? 10 })) };
     const capabilities = { read: vi.fn(() => of(options.ai === true ? AI_ON : CAPABILITIES_UNAVAILABLE)) };

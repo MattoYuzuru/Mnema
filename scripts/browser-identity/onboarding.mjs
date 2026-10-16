@@ -990,10 +990,10 @@ export async function runOnboarding(ctx) {
     const notice = await read(D, `return document.body.innerText.includes('Интересы обновились') || document.body.innerText.includes('Не удалось подтвердить сохранение');`);
     const interestRequests = D.wire.filter(entry => entry.path.startsWith('/api/community/interests')).map(entry => `${entry.method} ${entry.path.replace('/api/community', '')} ${entry.status ?? '…'}`);
     D.need(!notice, `the community page of a learner who skipped the interests card shows a notice about a save (the page's requests: ${JSON.stringify(interestRequests)})`);
-    // The write waits for the profile's version and mends a stale one by itself (a 412 is followed by a read and a PUT that lands): the skip must end stored.
+    // The goal answer bumps the interest profile's version on the server; the survey re-reads the interests after it, so the skip lands with one PUT.
     const puts = interestRequests.filter(entry => entry.startsWith('PUT '));
-    D.need(puts.length > 0 && puts.at(-1).endsWith(' 200'), 'the skip of the interests did not end stored: ' + JSON.stringify(interestRequests));
-    const mended = puts.length > 1;
+    D.need(puts.length === 1 && puts[0].endsWith(' 200'), 'the skip of the interests was not one stored PUT: ' + JSON.stringify(interestRequests));
+    const mended = false;
     D.need(!search.modal, 'the search step is modal');
     await serverJourney(D, 'is at community.search', j => j.state === 'IN_PROGRESS' && j.stepKey === 'community.search' && j.branch === 'COMMUNITY');
     await shoot(D, 'onboarding-tour-community-search-1440.png');

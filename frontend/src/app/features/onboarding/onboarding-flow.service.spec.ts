@@ -135,10 +135,17 @@ describe('OnboardingFlow', () => {
         });
 
         it('stays on the goal card when the goal could not be stored', async () => {
-            const { flow, goal } = await atSurvey();
+            const { flow, goal, interests } = await atSurvey();
             goal.answer.mockResolvedValueOnce(false);
             await flow.answerGoal('EXAMS');
             expect(flow.card()).toBe('survey.goal');
+            expect(interests.reload).not.toHaveBeenCalled();
+        });
+
+        it('re-reads the interests after the goal is stored: the server bumps their version from the goal', async () => {
+            const { flow, interests } = await atSurvey();
+            await flow.answerGoal('LANGUAGE');
+            expect(interests.reload).toHaveBeenCalledTimes(1);
         });
 
         it('records a skipped goal the way the old question did', async () => {

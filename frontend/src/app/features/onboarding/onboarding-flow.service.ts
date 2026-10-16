@@ -251,7 +251,13 @@ export class OnboardingFlow {
         if (this.busy()) return;
         const from = this.card();
         this.busy.set(true);
-        try { if (await this.goal.answer(goal)) this.advance(from); } finally { this.busy.set(false); }
+        try {
+            if (await this.goal.answer(goal)) {
+                // The server re-derives the interest profile from the goal and bumps its version: re-read it so the interests card writes the current one.
+                this.interests.reload();
+                this.advance(from);
+            }
+        } finally { this.busy.set(false); }
     }
 
     /** «Пропустить»: the question is left unanswered. Ignored while an answer is being saved, so one press never moves the survey twice. */
