@@ -1,5 +1,5 @@
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterRenderEffect, computed, inject, input, linkedSignal, output, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterRenderEffect, computed, effect, inject, input, linkedSignal, output, signal, untracked, viewChild } from '@angular/core';
 
 import { onboardingText } from '../core/onboarding/onboarding-texts';
 import { Point } from '../core/onboarding/tour-geometry';
@@ -42,8 +42,9 @@ export type TourCardMode = 'normal' | 'missing' | 'preparing';
             @for (dot of dots(); track $index) { <span [class.on]="dot"></span> }
           </div>
         </div>
-        <!-- Inside the card, so it is heard on a modal step too (the page outside a modal dialog is inert); it lives as long as the card does. -->
-        <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{{ counter() }}. {{ title() }}</div>
+        <!-- Inside the card, so it is heard on a modal step too (the page outside a modal dialog is inert). Empty when the card opens, because the
+             dialog is described by the counter then; it says «Шаг N из M» only when the step changes under an open card (the heading says the rest). -->
+        <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{{ announcement() }}</div>
         <h2 #heading [id]="titleId" tabindex="-1">{{ title() }}</h2>
         <div [id]="bodyId" class="tour-body">
           @if (mode() === 'missing') {
@@ -124,6 +125,8 @@ export class TourCardComponent {
     protected readonly counterId = `mn-tour-card-${this.id}-counter`;
 
     protected readonly counter = computed(() => onboardingText('tour.counter', { n: this.position(), m: this.total() }));
+    protected readonly announcement = signal('');
+    private announced: string | null = null;
     protected readonly dots = computed(() => Array.from({ length: this.total() }, (_, index) => index < this.position()));
     protected readonly floating = computed(() => !this.sheet() && !this.inline());
     protected readonly actionLabel = computed(() => {
@@ -150,6 +153,14 @@ export class TourCardComponent {
     private opened: 'modal' | 'modeless' | null = null;
 
     constructor() {
+        effect(() => {
+            const counter = this.counter();
+            untracked(() => {
+                const first = this.announced === null;
+                this.announced = counter;
+                if (!first) this.announcement.set(counter);
+            });
+        });
         afterRenderEffect(() => {
             const modal = this.modal();
             const dialog = this.surface()?.nativeElement;

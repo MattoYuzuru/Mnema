@@ -117,8 +117,10 @@ export class JourneyStore {
     private send<C extends JourneyCommand | PreferencesCommand>(build: (rowVersion: string) => C, call: (command: C) => Observable<OnboardingRead>,
         validate: (command: C) => unknown): Promise<JourneyResult> {
         const failed: JourneyResult = { status: 'failed' };
+        // The account is the one that asked: a command queued behind others and started after a sign-out belongs to the previous account.
+        const epoch = this.epoch;
         const run = async (): Promise<JourneyResult> => {
-            const epoch = this.epoch;
+            if (epoch !== this.epoch) return failed;
             const view = await this.load();
             const journey = view?.journey ?? null;
             if (view === null || !view.enabled || journey === null || epoch !== this.epoch) return failed;

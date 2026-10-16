@@ -36,6 +36,9 @@ describe('the fake journey store', () => {
         await expect(inProgress().act('STEP', { stepKey: 'tour.unknown' as never })).resolves.toEqual({ status: 'failed' });
         await expect(inProgress().act('STEP', { stepKey: 'own.material' })).resolves.toEqual({ status: 'failed' });
         await expect(inProgress().act('STEP', { stepKey: 'community.add', branch: 'OWN' })).resolves.toEqual({ status: 'failed' });
+        // «choose» belongs to no branch: a branch sent with it is refused.
+        await expect(inProgress().act('STEP', { stepKey: 'choose', branch: 'OWN' })).resolves.toEqual({ status: 'failed' });
+        await expect(inProgress().act('STEP', { stepKey: 'choose' })).resolves.toMatchObject({ status: 'applied' });
         await expect(inProgress().act('STEP')).resolves.toEqual({ status: 'failed' });
         await expect(storeIn('OFFERED').act('START', { stepKey: 'survey.goal', branch: 'OWN' })).resolves.toEqual({ status: 'failed' });
         await expect(storeIn('OFFERED').act('SKIP', { stepKey: 'welcome' })).resolves.toEqual({ status: 'failed' });
@@ -50,6 +53,12 @@ describe('the fake journey store', () => {
         expect(store.journey()?.finishedAt).not.toBeNull();
         await store.act('UNDO_FINISH');
         expect(store.journey()).toMatchObject({ state: 'PAUSED', finishedAt: null });
+    });
+
+    it('answers 409 to the preferences of an account with no journey yet, like the server', async () => {
+        const store = storeIn('NOT_OFFERED');
+        await expect(store.setPreferences({ experience: 'NEW' })).resolves.toMatchObject({ status: 'refused' });
+        expect(store.journey()?.experience).toBeNull();
     });
 
     it('rejects a weekly target outside the contract and keeps the journey as it was', async () => {

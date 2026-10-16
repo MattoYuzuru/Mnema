@@ -311,5 +311,24 @@ describe('JourneyStore', () => {
             await expect(result).resolves.toEqual({ status: 'failed' });
             expect(store.view()).toBeNull();
         });
+
+        it('drops a command that was still waiting behind another one when the account changed: it is sent for nobody', async () => {
+            await loaded();
+            const first = new Subject<OnboardingRead>();
+            api.command.mockReturnValueOnce(first).mockReturnValue(of(read(paused, '"other"')));
+            const running = store.act('PAUSE');
+            const queued = store.act('RESUME');
+            await vi.advanceTimersByTimeAsync(0);
+            store.reset();
+            // The next account is loaded before the queued command gets its turn.
+            api.read.mockReturnValueOnce(of({ kind: 'view', ...read(offered, '"next"') }));
+            await store.load();
+            first.next(read(paused, '"previous"'));
+            first.complete();
+            await expect(running).resolves.toEqual({ status: 'failed' });
+            await expect(queued).resolves.toEqual({ status: 'failed' });
+            expect(api.command).toHaveBeenCalledTimes(1);
+            expect(store.journey()?.state).toBe('OFFERED');
+        });
     });
 });

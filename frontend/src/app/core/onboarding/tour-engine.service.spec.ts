@@ -536,10 +536,42 @@ describe('TourEngine', () => {
 
     describe('events and the way back', () => {
         it('tells the page whether a gate took the event, so exactly one side navigates', () => {
-            expect(events.emit('study.started')).toBe(false);
-            engine.start(TOUR, 'sample.study');
+            const GATED: TourDefinition = { id: 'g2', branch: 'OWN', steps: [
+                step({ key: 'own.details', anchor: 'a', gate: { action: 'deck.created', label: 'Создать колоду' } }),
+                step({ key: 'own.material', anchor: 'b', route: '/decks/d/materials/new', gate: 'next' })
+            ] };
             expect(events.emit('deck.created')).toBe(false);
-            expect(events.emit('study.started')).toBe(true);
+            engine.start(GATED);
+            expect(events.emit('study.started')).toBe(false);
+            expect(events.emit('deck.created')).toBe(true);
+            expect(engine.step()?.key).toBe('own.material');
+        });
+
+        it('takes the event only when the tour is about to go to the next place itself', () => {
+            const WITH_PLACES: TourDefinition = { id: 'p', branch: 'OWN', steps: [
+                step({ key: 'own.details', anchor: 'a', route: '/decks/new', gate: { action: 'deck.created', label: 'Создать колоду' } }),
+                step({ key: 'own.material', anchor: 'b', route: '/decks/d/materials/new', gate: { action: 'material.published', label: null } }),
+                step({ key: 'own.exercise', anchor: 'c', gate: { action: 'exercise.published', label: null } }),
+                step({ key: 'own.study', anchor: 'd', gate: { action: 'study.started', label: 'Учить', pauses: true } })
+            ] };
+            const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+            engine.start(WITH_PLACES);
+            navigate.mockClear();
+            // Paused: the tour goes nowhere until it is continued, so the page keeps its own way.
+            engine.pause();
+            expect(events.emit('deck.created', { deckId: 'd' })).toBe(false);
+            expect(navigate).not.toHaveBeenCalled();
+            // Continued: it moves on and goes to the place of the step the gate was waiting to open.
+            engine.resume();
+            expect(engine.step()?.key).toBe('own.material');
+            expect(navigate).toHaveBeenCalledWith('/decks/d/materials/new');
+            // The next step has no place of its own: the page goes where it always goes.
+            expect(events.emit('material.published')).toBe(false);
+            expect(engine.step()?.key).toBe('own.exercise');
+            // A gate that pauses the tour (the study session) leaves the page alone too.
+            expect(events.emit('exercise.published')).toBe(false);
+            expect(events.emit('study.started')).toBe(false);
+            expect(engine.paused()).toBe(true);
         });
 
         it('offers no way back to a step before a gate that was passed by an action: it would be done a second time', () => {
@@ -594,6 +626,25 @@ describe('TourEngine', () => {
             engine.next();
             await flush();
             expect(engine.active()).toBe(false);
+        });
+
+        it('goes nowhere when it folds into the plaque at a step with a place of its own', async () => {
+            const FIXED2: TourDefinition = { id: 'f2', branch: 'OWN', steps: [
+                step({ key: 'own.details', anchor: 'a', route: '/decks/new' }),
+                step({ key: 'own.material', anchor: 'b', route: '/decks/d/materials/new' })
+            ] };
+            const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+            persistence.act.mockResolvedValueOnce(refusal({ state: 'PAUSED', stepKey: 'own.material' }));
+            engine.start(FIXED2);
+            navigate.mockClear();
+            // Another device paused the journey further on: the answer to our PAUSE says so.
+            engine.pause();
+            await flush();
+            expect(engine.step()?.key).toBe('own.material');
+            expect(engine.paused()).toBe(true);
+            expect(navigate).not.toHaveBeenCalled();
+            engine.resume();
+            expect(navigate).toHaveBeenCalledWith('/decks/d/materials/new');
         });
 
         it('does not follow an answer that arrives after the tour was replaced', async () => {

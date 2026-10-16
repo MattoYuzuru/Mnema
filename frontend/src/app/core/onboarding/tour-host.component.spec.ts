@@ -102,7 +102,7 @@ describe('TourHostComponent', () => {
             expect(card()).not.toBeNull();
             expect(card()!.getAttribute('role')).toBe('dialog');
             expect(heading().textContent).toBe('Заголовок sample.hub');
-            expect(announced()).toBe('Шаг 1 из 3. Заголовок sample.hub');
+            expect(announced()).toBe('');
             expect(document.activeElement).toBe(heading());
         });
 
@@ -111,7 +111,7 @@ describe('TourHostComponent', () => {
             await settle();
             (root.querySelector('.steps .button.primary') as HTMLButtonElement).click();
             await settle();
-            expect(announced()).toBe('Шаг 2 из 3. Заголовок sample.material');
+            expect(announced()).toBe('Шаг 2 из 3');
             expect(document.activeElement).toBe(heading());
             expect(heading().textContent).toBe('Заголовок sample.material');
         });
@@ -204,6 +204,18 @@ describe('TourHostComponent', () => {
             complaint.remove();
         });
 
+        it('stays with the step while a dialog of its own target opens (the consent of a microphone, a prompt sheet)', async () => {
+            await toGate();
+            const own = document.createElement('dialog');
+            root.querySelector('#start')!.append(own);
+            own.setAttribute('open', '');
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await settle();
+            expect(engine.paused()).toBe(false);
+            expect(root.querySelector('#start')!.closest('[inert]')).toBeNull();
+            own.remove();
+        });
+
         it('gives the page back when the learner goes back to an informational step', async () => {
             await toGate();
             engine.back();
@@ -259,7 +271,8 @@ describe('TourHostComponent', () => {
             expect(root.querySelector('app-tour-pause')).toBeNull();
             expect(heading().textContent).toBe('Заголовок sample.material');
             expect(document.activeElement).toBe(heading());
-            expect(announced()).toBe('Шаг 2 из 3. Заголовок sample.material');
+            // The card is drawn again when the plaque gives way: the dialog is described by the counter, the live region has nothing to add.
+            expect(announced()).toBe('');
             expect(calls.map(([action]) => action)).toEqual(['STEP', 'PAUSE', 'RESUME']);
         });
 

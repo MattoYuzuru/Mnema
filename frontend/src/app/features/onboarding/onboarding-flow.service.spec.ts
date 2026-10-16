@@ -1,3 +1,4 @@
+import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
@@ -552,7 +553,7 @@ describe('OnboardingFlow', () => {
         });
 
         it('does not say the survey was skipped when SKIP is refused', async () => {
-            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.goal', autoOffer: true } });
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.goal', autoOffer: false } });
             s.flow.open('welcome');
             await s.flow.skipAll();
             expect(s.store.rejections.at(-1)).toEqual({ action: 'SKIP', reason: 'transition' });
@@ -593,7 +594,7 @@ describe('OnboardingFlow', () => {
         });
 
         it('moves the survey on from the card an answer was given on only once, whatever happens meanwhile', async () => {
-            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.experience', autoOffer: true } });
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.experience', autoOffer: false } });
             s.flow.open('survey.experience');
             const first = s.flow.answerExperience('NEW');
             const second = s.flow.answerExperience('FAMILIAR');
@@ -604,9 +605,49 @@ describe('OnboardingFlow', () => {
         });
     });
 
+    describe('waiting for the interests', () => {
+        it('stops watching them as soon as they are there, and as soon as the wait runs out, so nothing keeps running on the root injector', async () => {
+            vi.useFakeTimers();
+            const s = setup({ interestsOpen: true });
+            const flag = signal(false);
+            let reads = 0;
+            const watched = computed(() => { reads++; return flag(); });
+            (s.interests as { ready: unknown }).ready = watched;
+            s.flow.open('welcome');
+            TestBed.tick();
+            const whileWaiting = reads;
+            expect(whileWaiting).toBeGreaterThan(0);
+            flag.set(true);
+            TestBed.tick();
+            const afterReady = reads;
+            flag.set(false);
+            TestBed.tick();
+            flag.set(true);
+            TestBed.tick();
+            expect(reads).toBe(afterReady);
+        });
+
+        it('gives up after three seconds, goes on without the question, and stops watching', async () => {
+            vi.useFakeTimers();
+            const s = setup({ interestsOpen: true });
+            const flag = signal(false);
+            let reads = 0;
+            (s.interests as { ready: unknown }).ready = computed(() => { reads++; return flag(); });
+            s.flow.open('welcome');
+            TestBed.tick();
+            await vi.advanceTimersByTimeAsync(3_100);
+            TestBed.tick();
+            const afterGivingUp = reads;
+            flag.set(true);
+            TestBed.tick();
+            expect(reads).toBe(afterGivingUp);
+            expect(s.flow.card()).toBe('welcome');
+        });
+    });
+
     describe('«Пропустить»', () => {
         it('records the goal as skipped, leaves the interests as complete, and just goes on for any other card', async () => {
-            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.goal', autoOffer: true } });
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.goal', autoOffer: false } });
             s.flow.open('survey.goal');
             s.flow.skip();
             await Promise.resolve();
@@ -620,7 +661,7 @@ describe('OnboardingFlow', () => {
         });
 
         it('does nothing while an answer is being saved, so one press never moves the survey twice', async () => {
-            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.experience', autoOffer: true } });
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.experience', autoOffer: false } });
             s.flow.open('survey.experience');
             const answering = s.flow.answerExperience('NEW');
             s.flow.skip();
@@ -629,7 +670,7 @@ describe('OnboardingFlow', () => {
         });
 
         it('waits for a save of the interests that is still on its way instead of skipping them over it', async () => {
-            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.interests', autoOffer: true } });
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.interests', autoOffer: false } });
             s.flow.open('survey.interests');
             s.interests.busy.set(true);
             s.flow.skipInterests();

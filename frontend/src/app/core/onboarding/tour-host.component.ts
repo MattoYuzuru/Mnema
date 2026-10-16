@@ -91,7 +91,7 @@ export class TourHostComponent {
             // Another modal dialog opened over the page (a complaint) would be inert with it: the tour steps aside instead of trapping it.
             const view = this.document.defaultView;
             const observer = view !== null && typeof view.MutationObserver === 'function'
-                ? new view.MutationObserver(() => { if (otherDialogOpen(this.document)) this.engine.pause(); }) : null;
+                ? new view.MutationObserver(() => { if (otherDialogOpen(this.document, target)) this.engine.pause(); }) : null;
             observer?.observe(this.document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['open'] });
             onCleanup(() => { observer?.disconnect(); restore(); });
         });

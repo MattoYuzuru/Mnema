@@ -40,12 +40,17 @@ describe('TourCardComponent', () => {
             expect(dialog().getAttribute('aria-describedby')).toBe(`${counter.id} ${host.querySelector('.tour-body')!.id}`);
         });
 
-        it('announces «Шаг N из M» with the title from a live region inside the card, which stays live when the page behind is inert', () => {
+        it('keeps a live region inside the card, silent when the card opens (the dialog is described by the counter) and saying «Шаг N из M» when the step changes', () => {
             render();
             const region = host.querySelector<HTMLElement>('dialog [role=status]')!;
             expect(region.getAttribute('aria-live')).toBe('polite');
-            expect(region.textContent!.trim()).toBe('Шаг 2 из 4. Материал — то, что вы учите');
             expect(region.closest('dialog')).toBe(dialog());
+            expect(region.textContent!.trim()).toBe('');
+            fixture.componentRef.setInput('position', 3);
+            fixture.detectChanges();
+            TestBed.tick();
+            fixture.detectChanges();
+            expect(region.textContent!.trim()).toBe('Шаг 3 из 4');
         });
 
         it('gives every card its own ids', () => {

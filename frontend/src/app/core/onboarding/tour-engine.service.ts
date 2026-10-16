@@ -72,6 +72,11 @@ export class TourEngine {
     /** The steps the learner counts: «Шаг N из M» leaves the external finale screens out. */
     readonly total = computed(() => this.definition()?.steps.filter(step => step.external !== true).length ?? 0);
     readonly step = computed<TourStep | null>(() => this.definition()?.steps[this.position()] ?? null);
+    /** The tour in progress records into the account's journey (not a demonstration with its own persistence, like the styleguide's). */
+    readonly recordsJourney = computed(() => {
+        const run = this.run();
+        return run !== null && run.persistence === this.injector.get(TOUR_PERSISTENCE);
+    });
     /** The element of the current step's anchor, once registered. */
     readonly target = computed(() => {
         const step = this.step();
@@ -196,9 +201,21 @@ export class TourEngine {
         this.enterStep();
     }
 
-    private navigateTo(step: TourStep): void {
+    private routeOf(step: TourStep): string | null {
         const route = typeof step.route === 'function' ? step.route() : step.route;
-        if (route !== undefined && route !== null && this.router.url !== route) this.router.navigateByUrl(route).catch(() => undefined);
+        return route ?? null;
+    }
+
+    private navigateTo(step: TourStep): void {
+        const route = this.routeOf(step);
+        if (route !== null && this.router.url !== route) this.router.navigateByUrl(route).catch(() => undefined);
+    }
+
+    /** Whether the step after the current one has a place the tour will take the learner to by itself. */
+    private nextStepHasPlace(): boolean {
+        const run = this.run();
+        const upcoming = run?.definition.steps[this.position() + 1];
+        return upcoming !== undefined && this.routeOf(upcoming) !== null;
     }
 
     private enterStep(navigate = true): void {
@@ -216,11 +233,13 @@ export class TourEngine {
             const { action, pauses } = step.gate;
             this.stopGate = this.events.listen(event => {
                 if (event !== action) return false;
-                if (pauses === true) this.pause();
-                else if (this.pausedState()) this.gateMetWhilePaused = true;
-                else this.next();
-                // The page that published the event leaves the next place to the tour (it goes there itself).
-                return true;
+                if (pauses === true) { this.pause(); return false; }
+                // A paused tour goes nowhere until it is continued (then it moves on and navigates); the page keeps its own way meanwhile.
+                if (this.pausedState()) { this.gateMetWhilePaused = true; return false; }
+                // The page that published the event leaves the next place to the tour only when the tour is about to go there itself.
+                const takesOver = this.nextStepHasPlace();
+                this.next();
+                return takesOver;
             });
         }
     }
@@ -251,7 +270,8 @@ export class TourEngine {
         if (run === null) return;
         if (!view.enabled || journey === null || (journey.state !== 'IN_PROGRESS' && journey.state !== 'PAUSED')) { this.stop(); return; }
         const index = journey.stepKey === null ? -1 : run.definition.steps.findIndex(step => step.key === journey.stepKey);
-        if (index >= 0 && index !== this.position()) { this.position.set(index); this.enterStep(); }
+        // A journey that is paused folds into the plaque where the learner is: the way to the step's place is the plaque's «Продолжить».
+        if (index >= 0 && index !== this.position()) { this.position.set(index); this.enterStep(journey.state !== 'PAUSED'); }
         if (journey.state === 'PAUSED') this.pausedState.set(true);
         else if (this.pausedState()) { this.pausedState.set(false); this.focusCounter.update(count => count + 1); }
     }

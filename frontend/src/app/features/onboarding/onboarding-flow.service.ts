@@ -1,7 +1,6 @@
-import { Injectable, Injector, computed, effect, inject, signal, untracked } from '@angular/core';
+import { EffectRef, Injectable, Injector, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Router } from '@angular/router';
-import { toObservable } from '@angular/core/rxjs-interop';
-import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
+import { catchError, firstValueFrom, of } from 'rxjs';
 
 import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 import { ToastService } from '../../core/notifications/toast.service';
@@ -383,12 +382,19 @@ export class OnboardingFlow {
         await Promise.all([this.goal.load(), this.ensureCapabilities(), this.loadCatalogue(), this.interestsReady()]);
     }
 
-    /** The interests are read when the account is known; the survey decides whether to ask about them only after that, or after a wait. */
-    private async interestsReady(): Promise<void> {
-        if (this.interests.ready()) return;
-        try {
-            await firstValueFrom(toObservable(this.interests.ready, { injector: this.injector }).pipe(filter(ready => ready), timeout(INTERESTS_WAIT_MS)));
-        } catch { /* Without the interests the card is left out: the survey never waits on one question. */ }
+    /**
+     * The interests are read when the account is known; the survey decides whether to ask about them only after that, or after a wait.
+     * The watching effect is destroyed as soon as the wait ends, either way, so nothing is left running on the root injector.
+     */
+    private interestsReady(): Promise<void> {
+        if (this.interests.ready()) return Promise.resolve();
+        // Without the interests the card is left out: the survey never waits on one question.
+        return new Promise<void>(resolve => {
+            let watcher: EffectRef | null = null;
+            const finish = (): void => { clearTimeout(timer); watcher?.destroy(); resolve(); };
+            const timer = setTimeout(finish, INTERESTS_WAIT_MS);
+            watcher = effect(() => { if (this.interests.ready()) finish(); }, { injector: this.injector });
+        });
     }
 
     private ensureCapabilities(): Promise<void> {

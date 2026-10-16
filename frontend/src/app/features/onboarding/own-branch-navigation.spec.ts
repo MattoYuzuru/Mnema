@@ -30,7 +30,7 @@ describe('the own-deck tour and the address after each step', () => {
     };
 
     const begin = async (ai: boolean): Promise<void> => {
-        s = setup({ ai, journey: { state: 'IN_PROGRESS', branch: 'OWN', stepKey: 'own.details', autoOffer: true, experience: 'NEW' } });
+        s = setup({ ai, journey: { state: 'IN_PROGRESS', branch: 'OWN', stepKey: 'own.details', autoOffer: false, experience: 'NEW' } });
         router = TestBed.inject(Router);
         router.resetConfig([{ path: '**', children: [] }]);
         await s.flow.startTour('OWN');
@@ -75,6 +75,26 @@ describe('the own-deck tour and the address after each step', () => {
         expect(s.engine.step()?.key).toBe('own.material');
         expect(await finish('material.published', { deckId: DECK, memberKey: MATERIAL }, `/decks/${DECK}/workshop/s1`))
             .toBe(`/decks/${DECK}/materials/${MATERIAL}/exercises/new`);
+    });
+
+    it('lets the page go to its own place, exactly once, when the tour is paused, and the plaque takes the learner on afterwards', async () => {
+        await begin(true);
+        s.engine.pause();
+        await settle();
+        expect(await finish('deck.created', { deckId: DECK }, `/decks/${DECK}`)).toBe(`/decks/${DECK}`);
+        s.engine.resume();
+        await settle();
+        expect(router.url).toBe(`/decks/${DECK}/materials/new`);
+        expect(s.engine.step()?.key).toBe('own.material');
+    });
+
+    it('lets the page go to its own place when the next step has no place of its own', async () => {
+        await begin(true);
+        await finish('deck.created', { deckId: DECK }, `/decks/${DECK}`);
+        await finish('material.published', { deckId: DECK, memberKey: MATERIAL }, `/decks/${DECK}/materials/${MATERIAL}`);
+        await finish('exercise.published', { deckId: DECK }, `/decks/${DECK}/exercises/x/edit`);
+        // The study step pauses the tour for the session: the event does not belong to the tour's navigation.
+        expect(s.events.emit('study.started')).toBe(false);
     });
 
     it('lets the page go to its own place when no tour is running', async () => {

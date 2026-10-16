@@ -28,11 +28,11 @@ export function onboardingSuppressed(url: string): boolean {
 
 /**
  * Whether the first-entry survey («Начало пути») asks the goal question for this account, so the inline question must not. The survey
- * asks it only on the first run of a journey that was offered by itself: onboarding is on, the account is in the cohort (`eligible`) and
- * either was auto-offered (`autoOffer`: the welcome opened at once, the survey is its second card) or reached the survey on its own
- * (`state` past `OFFERED`) without a REPLAY. The holdout (eligible, not auto-offered, still `OFFERED`) never sees the survey, and a
- * journey started by REPLAY (`replayCount > 0`) goes straight to the branch choice and never asks the goal; for both the inline question
- * stays, so the goal is not lost. Accounts that are not new keep the inline question as it was.
+ * asks it only on the first run of a journey that was offered by itself: onboarding is on, the account is in the cohort (`eligible`),
+ * and either the welcome is still to be shown (`autoOffer`, which the server reports while the journey is `OFFERED`) or the survey was
+ * already begun (`state` past `OFFERED`) without a REPLAY. The holdout (eligible, not auto-offered, still `OFFERED`) never sees the
+ * survey, and a journey started by REPLAY (`replayCount > 0`) goes straight to the branch choice and never asks the goal; for both the
+ * inline question stays, so the goal is not lost. Accounts that are not new keep the inline question as it was.
  */
 export function surveyAsksTheGoal(enabled: boolean, journey: Journey | null): boolean {
     return enabled && journey !== null && journey.eligible && (journey.autoOffer || (journey.state !== 'OFFERED' && journey.replayCount === 0));

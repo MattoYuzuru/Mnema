@@ -168,6 +168,18 @@ describe('OnboardingHostComponent', () => {
         });
     });
 
+    describe('a tour of another origin', () => {
+        it('is not stopped when onboarding is switched off: only the tours that record into the journey are', async () => {
+            await render({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false } });
+            const demonstration = { act: vi.fn(() => Promise.resolve({ status: 'failed' as const })) };
+            s.engine.start({ id: 'demo', branch: null, steps: [{ key: 'finale.ai', anchor: 'hub.start', title: 'Т', body: { kind: 'paragraphs', paragraphs: [] }, gate: 'next' }] },
+                undefined, { persistence: demonstration });
+            s.store.view.set({ ...s.store.view()!, enabled: false, journey: null });
+            await settle();
+            expect(s.engine.active()).toBe(true);
+        });
+    });
+
     describe('a journey paused somewhere else', () => {
         it('shows the plaque once the page has the journey, and does not jump into the tour', async () => {
             await render({ journey: { state: 'PAUSED', stepKey: 'own.material', branch: 'OWN', autoOffer: false }, ai: true });

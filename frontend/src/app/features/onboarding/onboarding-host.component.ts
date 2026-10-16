@@ -104,7 +104,7 @@ export class OnboardingHostComponent {
         effect(() => {
             const answered = this.store.view() !== null;
             const enabled = this.store.enabled();
-            if (answered && !enabled && this.engine.active()) untracked(() => this.engine.stop());
+            if (answered && !enabled && this.engine.recordsJourney()) untracked(() => this.engine.stop());
         });
 
         // A journey paused (or left on a branch step) elsewhere shows the plaque once the page has found it.

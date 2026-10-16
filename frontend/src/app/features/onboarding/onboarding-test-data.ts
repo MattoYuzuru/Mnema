@@ -40,7 +40,7 @@ const TRANSITIONS = contract.transitions as unknown as Readonly<Record<JourneyAc
 const STEP_BRANCH = new Map<string, string | null>(contract.steps.map(step => [step.key, step.branch]));
 
 /** Why a command is not applied, so a spec can tell a rule from a failure: `transition` is the server's 409, `invalid` its 400. */
-export type Rejection = { readonly action: JourneyAction; readonly reason: 'transition' | 'invalid' | 'failure' };
+export type Rejection = { readonly action: JourneyAction | 'PREFERENCES'; readonly reason: 'transition' | 'invalid' | 'failure' };
 
 /**
  * A stand-in for `JourneyStore` that keeps the journey the way the server does (`contracts/onboarding/journey.json`): a command from a
@@ -79,7 +79,9 @@ export class FakeJourneyStore {
         const branch = options?.branch;
         const effectiveBranch = branch ?? (action === 'REPLAY' ? null : journey.branch);
         const known = stepKey === undefined || STEP_BRANCH.has(stepKey);
-        const matches = stepKey === undefined || !known || (STEP_BRANCH.get(stepKey) ?? effectiveBranch) === effectiveBranch;
+        const stepBranch = stepKey === undefined || !known ? null : STEP_BRANCH.get(stepKey) ?? null;
+        // A step of a branch needs that branch; a step without one takes no `branch` at all (the server refuses it).
+        const matches = stepKey === undefined || !known || (stepBranch === null ? branch === undefined : stepBranch === effectiveBranch);
         const allowed = (rule.stepKey !== 'required' || stepKey !== undefined) && (rule.stepKey !== 'forbidden' || stepKey === undefined)
             && (rule.branch !== 'forbidden' || branch === undefined);
         if (!known || !matches || !allowed) { this.rejections.push({ action, reason: 'invalid' }); return Promise.resolve({ status: 'failed' }); }
@@ -99,6 +101,8 @@ export class FakeJourneyStore {
         const current = this.view();
         const journey = this.journey();
         if (current === null || journey === null || this.failNext) { this.failNext = false; return Promise.resolve({ status: 'failed' }); }
+        // There is no row to write the answers to until the journey exists: the server answers 409 with the current view.
+        if (journey.state === 'NOT_OFFERED') { this.rejections.push({ action: 'PREFERENCES', reason: 'transition' }); return Promise.resolve({ status: 'refused', view: current }); }
         const target = changes.weeklyTarget;
         if (typeof target === 'number' && (target < contract.constants.weeklyTarget.min || target > contract.constants.weeklyTarget.max)) {
             return Promise.resolve({ status: 'failed' });

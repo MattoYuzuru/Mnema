@@ -44,10 +44,15 @@ export function tourSurfaces(document: Document): Element[] {
     return Array.from(document.querySelectorAll('[data-tour-surface]'));
 }
 
-/** Another modal dialog (a complaint, a confirmation) is open, one that is not a surface of the tour. */
-export function otherDialogOpen(document: Document): boolean {
+/**
+ * Another modal dialog (a complaint, a confirmation) is open, one that is not a surface of the tour. A dialog inside `target` (the
+ * microphone consent of the composer, the prompt sheet of the Workshop) belongs to the step's own target and stays live with it,
+ * so `ignoringInside` leaves it out.
+ */
+export function otherDialogOpen(document: Document, ignoringInside: Element | null = null): boolean {
     const surfaces = tourSurfaces(document);
-    return Array.from(document.querySelectorAll('dialog[open]')).some(dialog => !surfaces.some(surface => surface.contains(dialog)));
+    return Array.from(document.querySelectorAll('dialog[open]'))
+        .some(dialog => !surfaces.some(surface => surface.contains(dialog)) && !(ignoringInside?.contains(dialog) ?? false));
 }
 
 /** A popover (a menu) is open that is not part of the tour's own surfaces or the toast region. */
