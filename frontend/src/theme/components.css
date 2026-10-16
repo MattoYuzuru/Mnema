@@ -244,3 +244,25 @@ app-paper-dialog { display: contents; }
 
 /* Пустое состояние внутри уже разделённой страницы, без лишних горизонтальных правил. */
 .empty-state.unruled { border-block: 0; }
+
+/*
+ * Content on the night surface (`app-night-sky`): welcome, congratulations, the survey ground. Scoped to the surface, so the paper
+ * classes above keep their look everywhere else. Text is `--mn-on-night` (16.9:1), secondary `--mn-on-night-muted` (11:1), the rubric the
+ * lavender star colour (8.3:1); the primary button is a paper plate with ink text and one soft glow.
+ */
+app-night-sky :is(h1, h2) { margin: 0; color: var(--mn-on-night); font: 600 clamp(2.2rem, 7vw, 3.8rem)/1.1 var(--mn-font-display); }
+app-night-sky :is(h1, h2)[tabindex='-1']:focus-visible { outline: none; }
+app-night-sky .eyebrow { margin: 0; color: var(--mn-star-lavender); }
+app-night-sky .lead { margin: 0; max-inline-size: 32rem; color: var(--mn-on-night); font-size: clamp(1.05rem, 2.6vw, 1.25rem); }
+app-night-sky .muted { margin: 0; color: var(--mn-on-night-muted); }
+app-night-sky a { color: var(--mn-on-night); font-weight: 650; }
+app-night-sky :focus-visible { outline: 3px solid var(--mn-star-lavender); outline-offset: 3px; }
+app-night-sky .actions { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: center; inline-size: 100%; }
+app-night-sky .actions .button { flex: 1 1 15rem; max-inline-size: 19rem; }
+app-night-sky .button { border-color: var(--mn-on-night); color: var(--mn-on-night); --mn-wave-fill: rgb(251 248 239 / 14%); }
+app-night-sky .button.primary { color: var(--mn-ink); background: var(--mn-on-night); box-shadow: 0 0 1.75rem .25rem var(--mn-glow); --mn-wave-fill: var(--mn-path-hover); }
+app-night-sky .button.quiet { border-color: transparent; }
+@media (forced-colors: active) {
+    app-night-sky :is(h1, h2), app-night-sky :is(.eyebrow, .lead, .muted, a) { color: CanvasText; }
+    app-night-sky .button, app-night-sky .button.primary { border: 2px solid ButtonText; color: ButtonText; background: ButtonFace; box-shadow: none; }
+}

@@ -347,4 +347,16 @@ describe('StyleguidePageComponent', () => {
         expect(failure).toHaveBeenCalledWith('Колода больше недоступна');
         expect(root.querySelector('app-complaint-dialog')).toBeNull();
     });
+
+    it('lists the tour tokens in the palette, the hold time in the motion section and the tour among the components', () => {
+        const palette = root.querySelector('#palette')!.textContent!;
+        for (const token of ['--mn-night', '--mn-on-night', '--mn-on-night-muted', '--mn-star-lavender', '--mn-star-paper', '--mn-scrim', '--mn-glow', '--mn-path-hover']) {
+            expect(palette).toContain(token);
+        }
+        expect(root.querySelector('#motion')!.textContent).toContain('--mn-tour-hold');
+        const semantic = root.querySelector('#semantic')!.textContent!;
+        expect(semantic).toContain('Текст на ночи');
+        expect(semantic).toContain('Заливка удержания');
+        expect(root.querySelector('section#tour app-tour-card')).not.toBeNull();
+    });
 });

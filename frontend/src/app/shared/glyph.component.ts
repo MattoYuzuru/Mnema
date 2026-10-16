@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 /** Every drawing of {@link GlyphComponent}; the names are the whole public vocabulary. */
 export const GLYPH_NAMES = [
-    'book-search', 'book-open', 'share', 'copy-branch', 'lock', 'link', 'scroll-seal', 'colonnade', 'more', 'image', 'audio', 'video', 'exercise', 'goal', 'order'
+    'book-search', 'book-open', 'share', 'copy-branch', 'lock', 'link', 'scroll-seal', 'colonnade', 'more', 'image', 'audio', 'video', 'exercise', 'goal', 'order', 'finger-hold'
 ] as const;
 export type GlyphName = typeof GLYPH_NAMES[number];
 
@@ -92,6 +92,12 @@ export type GlyphName = typeof GLYPH_NAMES[number];
         @case ('video') {
           <rect x="3.5" y="5" width="17" height="14" rx="1" />
           <path d="m10 9 5 3-5 3Z" />
+        }
+        @case ('finger-hold') {
+          <path d="M9.5 3.5v9.75a2.5 2.5 0 0 0 5 0V3.5" />
+          <path d="M10.75 12.5h2.5" />
+          <rect x="3.5" y="17.5" width="17" height="3" rx="1" />
+          <path d="M6.5 13 8 14.5M17.5 13 16 14.5" />
         }
       }
     </svg>`,
