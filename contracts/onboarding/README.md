@@ -40,7 +40,8 @@ Backend tests and the frontend contract spec both execute the fixture.
 - **Steps.** `stepKey` is one of the closed registry `steps` (a step of another branch than the journey's is 400);
   the client's tour definitions and the server's registry are tested against the fixture, and the counters
   `mnema_onboarding_journey_total{action,step}` take their labels from it only. `branch` is `SAMPLE|COMMUNITY|OWN`,
-  set by the first `STEP` into a branch step and cleared by `REPLAY`.
+  set by the first `STEP` into a branch step and cleared by `REPLAY`; a `branch` without a `stepKey` of that branch is 400.
+  A repeated `commandId` answers the stored view with `Idempotency-Replayed: true`.
 - **Report.** The owner console reads aggregates only, with the window of the console report (`from`/`to` are UTC dates,
   `to` exclusive, 1–90 days, `to` not after tomorrow; otherwise 400): for accounts that entered the cohort in `[from, to)` (by
   `offeredAt`), per variant the group size, the activated accounts (a completed SCHEDULED session within 7 days of
