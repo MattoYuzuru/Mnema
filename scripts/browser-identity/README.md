@@ -794,3 +794,82 @@ accessibility smoke does not prove VoiceOver/TalkBack, Safari, Firefox or touch.
 Evidence consists of `recs_*` stages in `browser.json` and `recs-*.png` images. Any failed stage
 fails the run; dependent stages are marked skipped. The `--catalog`, `--community` and `--updates`
 regressions are run separately after the recommendation implementation.
+
+## Onboarding tour (`--onboarding`, OB-E1)
+
+```sh
+caffeinate -d -i python3 scripts/browser-identity/run.py \
+  --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node --onboarding
+```
+
+Prerequisites are those of `--catalog` (built `bootJar`s of Identity and Learning, the built Angular `dist`, cached `postgres:18`, Chrome); no MinIO, worker, FFmpeg or AWS
+CLI. **Exclusive**: it cannot be combined with any other scenario flag, because the account that meets the tour is a fresh one and the base flow's authoring pages are
+exactly what the tour takes over. About 40 s of browser time; with the start of the two JVMs and PostgreSQL 1 to 2 minutes in all (49 s warm, 2.5 minutes cold); the default deadline is 600 s.
+
+The composition is the one of `--catalog` (the ordinary Learning with the three community kill switches, the catalogue switch, a short rank schedule, the frontend launch
+flag opened for this loopback run, the fixture endpoints) plus, for the ordinary Learning of this run only:
+
+- `LEARNING_ONBOARDING_ENABLED=true` and `LEARNING_ONBOARDING_ELIGIBLE_FROM=<five minutes before the start of the run>` (the journey ships off, and `eligible-from` is
+  required, and validated at startup, when it is on). An account is offered the tour when the clock is past that instant, Identity marks it new (`mnema_new_account`, 48
+  hours) and it owns no live deck: every account the scenario registers is. The experiment `onboarding_v1` stays off (`LEARNING_ONBOARDING_EXPERIMENT_ENABLED` is not set),
+  so nobody is held out and everybody gets the tour. The holdout itself is not exercised here.
+- `LEARNING_COMMUNITY_EVENTS_ENABLED` and `LEARNING_COMMUNITY_FOR_YOU_ENABLED` (the switches of `--recs`): the second question of the survey is the interest picker of «Для вас»,
+  and without them its card is not asked.
+- AI generation stays off, as shipped (`features.aiEnabled` is `false` in the served `app-config.js`): the composer is replaced by the plain editor (`?write=1`), and the
+  congratulation follows the study session with no «ИИ в Mnema» card.
+
+`browser.mjs` leaves the base flow whole (it runs inside one labelled block) and calls `onboarding.mjs`, which registers **its own accounts through the real form, one per
+browser context** (`openGuestTab`: no shared cookie, so a second context is a second device). Everything a learner does goes through the real UI with CDP mouse and keyboard
+events; the clicks on the controls a tour step points at are real mouse clicks that first check what is under the pointer (a card or a veil over the control is a
+failure, with the name of the cover). The API is only read: the journey (`GET /api/onboarding`, with the person's own bearer), the learning profile and the deck list, to see
+what the server stored. The four decks of the community branch are seeded through the real Learning API, in the background while the first account walks its branch, so that
+the first account's branch choice meets an empty catalogue (four listed decks make «Найти готовую колоду» appear).
+
+| Stage | Account, viewport | Assertions |
+|---|---|---|
+| `welcome` | `onb_journey`, 1440, then 390 and 320 at DPR 2 | «Начало пути» opens by itself on a fresh account: a modal `<dialog>` named by its heading, the focus on the `h1`, thirty stars, two buttons of **equal height**, both in the window; the server journey is `OFFERED`, `autoOffer`; the accessibility tree (CDP `Accessibility.getFullAXTree`) has the dialog with that name, a level-one heading and exactly the two named buttons (the page behind is not in the tree); with `prefers-reduced-motion: reduce` no animation is running (the baseline of the same page runs eleven); with `forced-colors: active` the sky is not drawn and the text keeps its color; no horizontal scroll at 1440, 390 and 320 px |
+| `survey` | same, **keyboard only** | Tab and Enter start it; the goal by Tab + Space; the interests skipped by Tab to «Пропустить»; the counters «Вопрос N из 4» and the `progressbar` (name «Пройдено вопросов», value text «0 из 4» … «3 из 4», in the DOM and in the accessibility tree); the focus on each card's heading; the survey has no stars; a **reload** on the third card reopens the same card; «Впервые» by Space, «3 дня» by ArrowRight, «Готово» by Enter; the branch choice offers «Создать свою» only (**empty catalogue**: no «Найти готовую колоду», no template: no «Посмотреть на примере», no stamp); the server keeps `experience: NEW`, `weeklyTarget: 3` and the learning profile |
+| `own_details` | same, 1440 (then 390/320, forced colors) | «Шаг 1 из 4», `role="dialog"` with the heading as its name, the focus is on the heading (the first card is announced by it; the card's own polite status region is empty, and says «Шаг N из 4» on the next ones), the gate line names the real button; the card is **not** modal once the target is on the screen, the rest of the page is `inert` (the masthead included), the target and the tour's own surfaces are not; the cut-out surrounds the form; the accessibility tree has the dialog and only named buttons; in forced colors the frame is a 3 px outline; at 390 and 320 px the card is a bottom sheet and nothing scrolls sideways |
+| `own_create_deck` | same | the deck is created through the real form and the real button (a real click: the card must not cover it); the server follows to `own.material`; **the page must be the editor (`?write=1`)**: when it is not, a `gap` is recorded and the scenario goes on by hand (SPA navigation) |
+| `pause_resume` | same + a second context (**another device**) | Escape pauses: the plaque «Знакомство на паузе» is a labelled region, the focus is on «Продолжить знакомство», no veil, nothing inert (the accessibility tree has more links behind the pause than behind the step), the server is `PAUSED`; the second device signs the same account in through the form and shows the plaque **without moving** and without a command (the row version is unchanged); «Продолжить» there returns to the same step (the deck of the first device is not known there: finding below); back on the first device the learner who has wandered to `/decks` presses «Продолжить» and must land on the step's page |
+| `own_material` | same | the editor: text typed, the draft acknowledged, «Опубликовать» by a real click; the tour moves to the exercise step whose page must be `/decks/…/materials/…/exercises/new` |
+| `own_exercise` | same | a free-response exercise made in the real editor, «Создать упражнение» by a real click; the next step is the hub with «Учить» |
+| `own_study` | same | the gate line names «Учить»; a real click starts the session: the server is `PAUSED` at `own.study`, and **in the setup, while answering and at the feedback** there is no veil, no card, no plaque, no inert element and no open dialog |
+| `own_finale` | same | no «ИИ в Mnema» (AI is off); the congratulation «Начало положено» is a modal dialog named by its heading with the focus on it and its stars; «К колоде» completes: the server is `COMPLETED` with `finishedAt` and branch `OWN`, the learner is on the hub, nothing is inert or open, a reload does not bring «Начало пути» back, one deck exists |
+| `replay` | same | «Пройти знакомство заново» in the profile opens the branch choice **without the survey** (no progress bar, no «Назад»); the server is `IN_PROGRESS` at `choose`, `replayCount: 1`, branch `null`; the journey's answers and `GET /api/learning-profile` are byte for byte unchanged and the replay made no deck; «Своя колода» offers «Новая колода» and the existing deck; choosing the existing deck starts the tour at «Первый материал» with the deck count unchanged |
+| `hold` | `onb_hold`, 390 (touch emulation off: mouse) | the community branch first: the hint at the search and, after the (compressed) two minutes, the offer «Не нашли подходящую?» which takes the focus and must be live; «Создать свою» moves the tour to the own-deck branch; a paused tour is not moved by a page load of `/profile` and «Продолжить» returns to the step's page; the first click arms «Завершить знакомство» (`aria-pressed`, glyph, **accessible name «Удерживайте 2 секунды, чтобы завершить знакомство»** in the accessibility tree); a pointer press released after 600 ms does nothing; **holding Enter for 2.4 s** finishes: the toast «Знакомство завершено. Пройти его снова можно в профиле.», the server is `COMPLETED`, nothing is inert or open; the questions skipped stored nothing |
+| `skip` | `onb_skip`, 320 at DPR 2 | no horizontal scroll; «Мне это знакомо — сразу к делу» closes the dialog; the toast with «Открыть «Путь»» (to `/profile`); the server is `SKIPPED` with `finishedAt`; a reload does not bring the welcome back |
+| `community` | `onb_community`, 1440 | the branch choice offers «Найти готовую колоду» and «Создать свою» (four listed decks, no template); the tour starts at `/community`, the focus must be on the step card's heading (not on the page's); a **search** by keyboard («Английские»), a real click on the card; the informational step «Что внутри колоды» is modal, named, with «Назад», «Дальше» and the hold button, all named in the accessibility tree; «Дальше»; «Добавить к себе» (the gate names it) by a real click; the copy's hub with «Учить»; the click pauses the tour (server `PAUSED` at `community.study`) and the study setup has no veil; one deck (the copy) exists |
+| `a11y` | | the evidence above, collected in `onboarding-a11y.json`: welcome, survey card, informational step, action-gated step, the inert state and its removal, the keyboard path, the reduced-motion and forced-colors results, the narrow layouts |
+| `sign_out` | two accounts | the real «Выйти» (two logouts that carry only the bearer, which the runner audits) |
+
+A failed stage writes `failure-onboarding-<stage>-<journey|hold|skip|community>.png` and `failure-onboarding_<stage>.txt`, the stages that need it are `skipped`, and the run
+fails. A card that does not appear says what the server holds for the account and where the learner is. `gap:<id>` entries are steps the tour should have brought the learner to
+and did not (the scenario goes on by hand so that later steps still produce evidence); `onboardingFindings` in `browser.json` are observations that do not fail the run.
+
+Screenshots (`onboarding-*.png`): `welcome-{1440,390,320-at-200-percent,reduced-motion-1440,forced-colors-1440}`, `survey-goal-1440`, `survey-experience-after-reload-1440`,
+`branch-choice-{1440,390,community-1440}`, `tour-own-details-{1440,390,320-at-200-percent,forced-colors-1440}`, `pause-1440`, `second-device-{plaque,resumed}-1440`,
+`tour-own-study-1440`, `study-no-veil-1440`, `finale-1440`, `replay-choice-1440`, `hold-{armed,finished}-390`, `skip-toast-320-at-200-percent`,
+`tour-community-{search,deck,study}-1440`, `tour-community-stuck-nudge-390`.
+
+Defects this scenario found (the product fixes belong to their own changes; each is a `gap` or a failed stage until then): the credential allowlist of `auth.interceptor.ts` did not
+carry `/api/onboarding`, `/onboarding/journey` and `/onboarding/preferences`, so the page's own read went out without the bearer (401) and «Начало пути» never opened in a browser
+(every unit spec passed); the pages' own redirects after «Создать колоду», «Опубликовать» and «Создать упражнение» replaced the tour's navigation (`gap:own_*_route`); a paused tour moved the
+page on a load and «Продолжить» did not navigate (`gap:paused_tour_navigates_on_load`, `gap:resume_does_not_navigate`); the offer «Не нашли подходящую?» was inert (`gap:stuck_nudge_inert`).
+Still open at the last run: `gap:community_search_focus` (after the route change to `/community` the page takes the focus to its own heading, «Подберём колоды для вас», away from the
+step card) and `gap:interests_notice_after_skip` («Пропустить» on the interests card sends a `PUT /api/community/interests` that answers 412, and `/community` then says «Интересы обновились…
+Ваш выбор ещё не сохранён»). Findings that do not fail the run: a tour resumed on a second device cannot follow the route of a deck it does not know (the step shows «Этого места сейчас нет на экране»
+after four seconds), and the replayed branch choice has no way out.
+
+Not covered, and why:
+
+- The **community branch is covered up to the study gate** (search, open, «Что внутри колоды», «Добавить к себе», the copy's hub, «Учить» pauses the tour and the session setup has no
+  veil); the session of the copy is not played to its end, and the finale after it is the own-deck branch's. The **sample branch** («На примере») does not exist until OB-E2
+  (`sampleDeck.available` is `false`): only its absence from the choice is checked. The brief tour of `FAMILIAR`/`CONFIDENT`, the AI finale card (AI is off) and the holdout
+  (the experiment is off) are not exercised.
+- The two timers of the community step (45 s and 120 s) are **compressed to 1.5 s and 4 s** by wrapping `window.setTimeout` in the page of one account (`hold`); nothing else is
+  changed. The real delays are the product's constants and are not waited for.
+- Chrome only, headless: no VoiceOver, NVDA, TalkBack or any other screen reader (the accessibility tree and the live region's text are checked, not what a reader says); no real
+  touch input (the 390 px pass is an emulated viewport driven by the mouse; the hold is a mouse press and a held key); no Safari or Firefox; forced colors and reduced motion are
+  Chrome's emulation of the media features, not an operating-system setting; 320 px is the 320 px layout rasterized at DPR 2, not the browser's text-size setting.
+- The cross-device case is two browser contexts of one machine; the pause is read by the second context at its sign-in, not pushed to it.
