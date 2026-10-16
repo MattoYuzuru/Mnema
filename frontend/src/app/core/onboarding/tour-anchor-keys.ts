@@ -1,11 +1,26 @@
 /**
- * The registry of anchor keys a tour definition may name. A page adds its key here when it mounts `mnTourAnchor`;
- * `tourDefinitionProblems` (tour-definition.ts) and its spec check every definition against this list, so a renamed or removed
- * anchor fails a test instead of silently showing «Этого места сейчас нет на экране».
+ * The registry of anchor keys. A key is the whole contract between a page and a tour definition: the component that owns the place
+ * writes `mnTourAnchor="community.search"`, the definition names the same key, and `tour-anchor-registry.spec.ts` checks both
+ * sides against this list (a key nobody mounts, a mounted key that is not here and a definition that names a key that is not here
+ * all fail the spec instead of showing «Этого места сейчас нет на экране» to a learner). Add a key here when a page mounts it.
  */
-export const TOUR_ANCHOR_KEYS: readonly string[] = [
-    'nav.decks', 'nav.community', 'nav.new', 'nav.profile',
-    'hub.header', 'hub.material', 'hub.exercises', 'hub.start',
-    'community.search', 'community.card', 'community.add',
-    'own.name', 'own.material', 'own.exercise', 'own.start'
-];
+export const TOUR_ANCHORS = {
+    /** `/community`: the search, the shelves and the results. */
+    communitySearch: 'community.search',
+    /** `/d/:code`: the summary of the deck: title, author, size. */
+    communityDeck: 'community.deck',
+    /** `/d/:code`: «Добавить к себе». */
+    communityAdd: 'community.add',
+    /** `/decks/new`: the form of a new deck. */
+    ownDetails: 'own.details',
+    /** `/decks/:deckId/materials/new`: the composer, or the editor when AI is not available. */
+    ownMaterial: 'own.material',
+    /** `/decks/:deckId/materials/:memberKey/exercises/new`: the exercise form. */
+    ownExercise: 'own.exercise',
+    /** `/decks/:deckId`: «Учить», the way into the first session of a branch. */
+    hubStart: 'hub.start'
+} as const;
+
+export type TourAnchorKey = typeof TOUR_ANCHORS[keyof typeof TOUR_ANCHORS];
+
+export const TOUR_ANCHOR_KEYS: readonly TourAnchorKey[] = Object.values(TOUR_ANCHORS);

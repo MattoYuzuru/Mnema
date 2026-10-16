@@ -5,13 +5,13 @@ import { paragraphs, slides } from './tour-rich-text';
 import { TourDefinition, TourStep } from './tour.models';
 
 const step = (overrides: Partial<TourStep> = {}): TourStep => ({
-    key: 'sample.hub', anchor: 'hub.header', title: 'Заголовок', body: paragraphs('Текст.'), gate: 'next', ...overrides
+    key: 'sample.hub', anchor: 'hub.start', title: 'Заголовок', body: paragraphs('Текст.'), gate: 'next', ...overrides
 });
 const tour = (steps: readonly TourStep[], branch: TourDefinition['branch'] = 'SAMPLE'): TourDefinition => ({ id: 't', branch, steps });
 
 describe('tourDefinitionProblems', () => {
     it('finds nothing wrong with the styleguide demonstration tour', () => {
-        expect(tourDefinitionProblems(DEMO_TOUR)).toEqual([]);
+        expect(tourDefinitionProblems(DEMO_TOUR, ['hub.header', 'hub.material', 'hub.exercises', 'hub.start'])).toEqual([]);
     });
 
     it('keeps the anchor registry free of repeats', () => {
@@ -45,6 +45,11 @@ describe('tourDefinitionProblems', () => {
         expect(tourDefinitionProblems(tour([step({ title: ' ' })]))).toEqual(['t/sample.hub: no title']);
         expect(tourDefinitionProblems(tour([step({ body: { kind: 'paragraphs', paragraphs: [] } })]))).toEqual(['t/sample.hub: no body']);
         expect(tourDefinitionProblems(tour([step({ body: slides('Один.') })]))).toEqual(['t/sample.hub: a mini-slider needs at least two slides']);
-        expect(tourDefinitionProblems(tour([step({ gate: { action: '', label: 'Добавить к себе' } })]))).toEqual(['t/sample.hub: an action gate needs an event and a label']);
+        expect(tourDefinitionProblems(tour([step({ gate: { action: 'x', label: '' } })]))).toEqual(['t/sample.hub: an action gate needs an event and a label or null']);
+    });
+
+    it('accepts a gate without a label and an external finale step with no anchor, title or body, and reports a step after an external one', () => {
+        expect(tourDefinitionProblems(tour([step({ gate: { action: 'x', label: null, pauses: true } }), step({ key: 'sample.material', external: true, anchor: '', title: '', body: { kind: 'paragraphs', paragraphs: [] } })]))).toEqual([]);
+        expect(tourDefinitionProblems(tour([step({ external: true }), step({ key: 'sample.material' })]))).toEqual(['t/sample.material: a step after an external one']);
     });
 });

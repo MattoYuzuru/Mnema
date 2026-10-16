@@ -8,6 +8,10 @@ import { Box, Size } from '../core/onboarding/tour-geometry';
 import { HoldToDeleteButtonComponent } from '../shared/hold-to-delete-button.component';
 import { NightSkyComponent } from '../shared/night-sky.component';
 import { TOUR_HOLD_MS, TourCardComponent } from '../shared/tour-card.component';
+import { PlaceHintComponent } from '../shared/place-hint.component';
+import { SegmentedChoiceComponent } from '../shared/segmented-choice.component';
+import { SurveyCardComponent } from '../shared/survey-card.component';
+import { TourNudgeComponent } from '../shared/tour-nudge.component';
 import { TourPauseComponent } from '../shared/tour-pause.component';
 import { TourScrimComponent } from '../shared/tour-scrim.component';
 import { DEMO_GATE_BODY, DEMO_INFO_BODY, DEMO_SLIDES_BODY, DEMO_TOUR, DemoTourPersistence } from './sg-tour-demo';
@@ -17,7 +21,8 @@ import { SgSpecimenComponent } from './sg-specimen.component';
 @Component({
     selector: 'app-sg-tour',
     encapsulation: ViewEncapsulation.None,
-    imports: [SgSpecimenComponent, TourCardComponent, TourScrimComponent, TourPauseComponent, NightSkyComponent, HoldToDeleteButtonComponent, TourAnchorDirective],
+    imports: [SgSpecimenComponent, TourCardComponent, TourScrimComponent, TourPauseComponent, NightSkyComponent, HoldToDeleteButtonComponent, TourAnchorDirective,
+        SurveyCardComponent, SegmentedChoiceComponent, PlaceHintComponent, TourNudgeComponent],
     templateUrl: './sg-tour.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -28,6 +33,23 @@ export class SgTourComponent {
     protected readonly finishLabel = onboardingText('tour.finish');
     protected readonly finishArmedName = onboardingText('tour.finish.armed');
     protected readonly holdMs = TOUR_HOLD_MS;
+    protected readonly experienceText = {
+        title: onboardingText('survey.experience.title'),
+        options: [
+            { value: 'NEW', label: onboardingText('survey.experience.new'), hint: onboardingText('survey.experience.new.hint') },
+            { value: 'FAMILIAR', label: onboardingText('survey.experience.familiar'), hint: onboardingText('survey.experience.familiar.hint') },
+            { value: 'CONFIDENT', label: onboardingText('survey.experience.confident'), hint: onboardingText('survey.experience.confident.hint') }
+        ]
+    };
+    protected readonly experience = signal<string | null>('FAMILIAR');
+    protected readonly surveyNext = onboardingText('survey.next');
+    protected readonly surveySkip = onboardingText('survey.skip');
+    protected readonly surveyBack = onboardingText('survey.back');
+    protected readonly surveyPrivacy = onboardingText('survey.privacy');
+    protected readonly browseHint = onboardingText('community.browse.hint');
+    protected readonly stuck = {
+        title: onboardingText('community.stuck.title'), body: onboardingText('community.stuck.body'), action: onboardingText('community.stuck.action')
+    };
     protected readonly infoBody = DEMO_INFO_BODY;
     protected readonly slidesBody = DEMO_SLIDES_BODY;
     protected readonly gateBody = DEMO_GATE_BODY;

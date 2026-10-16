@@ -5,6 +5,7 @@ import { NEVER, Subject, of, throwError } from 'rxjs';
 
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { QuietZone } from '../../core/notifications/quiet-zone';
+import { AttentionCoordinator } from '../../core/onboarding/attention-coordinator';
 import { PromoApiService } from './promo-api.service';
 import { POPUP_PREFERENCE_KEY, POPUP_SESSION_KEY, PromoPopupService } from './promo-popup.service';
 import { PromoCampaign } from './promo.models';
@@ -270,5 +271,29 @@ describe('PromoPopupService', () => {
         await reloaded.request();
         expect(api.popup).toHaveBeenCalledOnce();
         expect(localStorage.getItem(POPUP_PREFERENCE_KEY + 'first-account')).toBeNull();
+    });
+
+    describe('with the onboarding', () => {
+        it('is not asked for while the coordinator says another surface speaks, and keeps the session\'s chance', async () => {
+            const attention = TestBed.inject(AttentionCoordinator);
+            attention.report('first-entry', true);
+            await service.request();
+            expect(api.popup).not.toHaveBeenCalled();
+            expect(sessionStorage.getItem(POPUP_SESSION_KEY)).toBeNull();
+            attention.report('first-entry', false);
+            await service.request();
+            expect(service.campaign()).toEqual(CAMPAIGN);
+        });
+
+        it('drops the answer that arrives after the first entry came up meanwhile, and shows nothing', async () => {
+            const answer = new Subject<PromoCampaign | null>();
+            api.popup.mockReturnValue(answer);
+            const request = service.request();
+            TestBed.inject(AttentionCoordinator).report('first-entry', true);
+            answer.next(CAMPAIGN);
+            answer.complete();
+            await request;
+            expect(service.campaign()).toBeNull();
+        });
     });
 });

@@ -252,4 +252,21 @@ describe('JourneyStore', () => {
             await expect(store.setPreferences({ experience: 'NEW' })).resolves.toEqual(paused);
         });
     });
+
+    describe('reset', () => {
+        it('forgets the view and the validator, so the next account starts clean', async () => {
+            await loaded();
+            store.reset();
+            expect(store.view()).toBeNull();
+            expect(store.journey()).toBeNull();
+            expect(store.enabled()).toBe(false);
+            api.read.mockReturnValueOnce(of({ kind: 'view', ...read(paused, '"other"') }));
+            await store.load();
+            // A refresh after the reset must not echo the previous account's validator.
+            api.read.mockReturnValueOnce(of({ kind: 'not-modified' }));
+            await store.load({ refresh: true });
+            expect(api.read).toHaveBeenLastCalledWith('"other"');
+            expect(api.read.mock.calls[1][0]).toBeNull();
+        });
+    });
 });

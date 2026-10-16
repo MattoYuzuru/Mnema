@@ -1,4 +1,4 @@
-import { ONBOARDING_TEXTS, OnboardingTextKey, onboardingText } from './onboarding-texts';
+import { ONBOARDING_TEXTS, OnboardingTextKey, UNLISTED_TEXT_KEYS, onboardingText } from './onboarding-texts';
 
 interface NodeFs { readFileSync(path: string, encoding: 'utf8'): string }
 
@@ -18,7 +18,7 @@ describe('onboarding texts', () => {
     it('repeats every approved string verbatim', () => {
         const keys = Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[];
         expect(keys.length).toBeGreaterThan(10);
-        for (const key of keys.filter(name => name !== 'tour.slider.label')) {
+        for (const key of keys.filter(name => !UNLISTED_TEXT_KEYS.includes(name))) {
             expect(approved.has(key), `${key} is an approved text`).toBe(true);
             expect(ONBOARDING_TEXTS[key], key).toBe(approved.get(key));
         }

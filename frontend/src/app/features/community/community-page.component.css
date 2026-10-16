@@ -30,3 +30,7 @@ h1:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 .status:empty { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; }
 .notice { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; max-inline-size: 40rem; }
 .notice p { margin: 0; flex: 1 1 14rem; overflow-wrap: anywhere; }
+
+/* The region the community tour points at: the search, the filters and the shelves, with the page's own rhythm between them. */
+.catalogue { display: grid; gap: clamp(1.25rem, 3vw, 2rem); min-inline-size: 0; }
+.browse-hint { justify-self: start; }

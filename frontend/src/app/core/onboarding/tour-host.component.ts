@@ -1,10 +1,12 @@
 import { DOCUMENT } from '@angular/common';
+import { Router } from '@angular/router';
 import { ChangeDetectionStrategy, Component, ElementRef, afterRenderEffect, computed, inject, signal, untracked, viewChild } from '@angular/core';
 
 import { TourCardComponent } from '../../shared/tour-card.component';
 import { TourPauseComponent } from '../../shared/tour-pause.component';
 import { TourScrimComponent } from '../../shared/tour-scrim.component';
 import { onboardingText } from './onboarding-texts';
+import { currentUrl, isStudyUrl } from './study-route';
 import { Box, CardPlacement, Point, Size, cutoutBox, isBottomSheet, makeRoomDelta, placeCard, revealDelta, sameBox } from './tour-geometry';
 import { TourEngine } from './tour-engine.service';
 import { inertOutside } from './tour-inert';
@@ -28,7 +30,7 @@ import { TourStep, isActionGate } from './tour.models';
           [mode]="mode()" [canBack]="engine.index() > 0" [modal]="modal()" [sheet]="sheet()" [at]="at()"
           (back)="engine.back()" (next)="engine.next()" (finish)="engine.finish()" (pauseRequest)="engine.pause()" />
       }
-      @if (engine.active() && engine.paused()) {
+      @if (engine.active() && engine.paused() && !studying()) {
         <app-tour-pause (resumed)="engine.resume()" />
       }
       <div class="visually-hidden" aria-live="polite" aria-atomic="true">{{ announcement() }}</div>
@@ -50,7 +52,13 @@ export class TourHostComponent {
     protected readonly radius = signal(2);
 
     /** The current step while the tour is on the screen (not paused). */
-    protected readonly shown = computed(() => this.engine.active() && !this.engine.paused() ? this.engine.step() : null);
+    protected readonly shown = computed(() => {
+        const step = this.engine.step();
+        return this.engine.active() && !this.engine.paused() && step?.external !== true ? step : null;
+    });
+    /** A study session leaves the plaque out: it comes back with the page the learner returns to. */
+    protected readonly studying = computed(() => isStudyUrl(this.url()));
+    private readonly url = currentUrl(inject(Router));
     protected readonly mode = computed(() => this.engine.preparing() ? 'preparing' as const : this.engine.phase() === 'missing' ? 'missing' as const : 'normal' as const);
     /** An informational step, and any step whose target is not usable yet, is modal; only a step that waits for the target is not. */
     protected readonly modal = computed(() => {

@@ -25,7 +25,7 @@ describe('SgTourComponent', () => {
     it('shows the card of a step in all its states, each with a «когда использовать» note', () => {
         expect(section().querySelectorAll('.sg-specimen').length).toBeGreaterThanOrEqual(9);
         for (const title of ['Карточка шага: информационный шаг', 'Карточка шага: шаг с действием', 'Карточка шага: мини-слайдер', 'Карточка шага: нет места на экране и подготовка',
-            'Нижний лист на телефоне', 'Вуаль с вырезом', 'Ночная поверхность', 'Пауза', 'Завершение удержанием', 'Живой тур']) {
+            'Нижний лист на телефоне', 'Вуаль с вырезом', 'Ночная поверхность', 'Карточка опроса на ночи', 'Подсказка на месте', 'Предложение тура', 'Пауза', 'Завершение удержанием', 'Живой тур']) {
             expect(specimen(title), title).toBeDefined();
             expect(specimen(title).querySelector('.sg-when')!.textContent, title).toContain('Когда использовать');
         }

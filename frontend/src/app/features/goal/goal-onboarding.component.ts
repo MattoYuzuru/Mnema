@@ -5,6 +5,8 @@ import { NavigationEnd, Router } from '@angular/router';
 import { filter, map } from 'rxjs';
 
 import { AuthService } from '../../auth.service';
+import { JourneyStore } from '../../core/onboarding/journey.store';
+import { Journey } from '../../core/onboarding/onboarding.models';
 import { GOAL_COPY } from './goal-copy';
 import { LEARNING_GOALS, LearningGoal } from './goal.models';
 import { LearningGoalStore } from './learning-goal.store';
@@ -22,6 +24,15 @@ const ONBOARDING_PATHS: ReadonlySet<string> = new Set(['/decks', '/profile', '/p
 export function onboardingSuppressed(url: string): boolean {
     const path = url.split(/[?#]/u)[0].replace(/\/+$/u, '');
     return !ONBOARDING_PATHS.has(path);
+}
+
+/**
+ * Whether the first-entry survey («Начало пути») asks the goal question for this account, so the inline question must not: onboarding is on
+ * and the journey is in the cohort (`eligible`) and was offered by itself (`autoOffer`) or is past the offer. The holdout (eligible but
+ * not auto-offered, still `OFFERED`) and the accounts that are not new keep the inline question as it was.
+ */
+export function surveyAsksTheGoal(enabled: boolean, journey: Journey | null): boolean {
+    return enabled && journey !== null && journey.eligible && (journey.autoOffer || journey.state !== 'OFFERED');
 }
 
 /**
@@ -61,6 +72,7 @@ export class GoalOnboardingComponent {
     private readonly auth = inject(AuthService);
     private readonly router = inject(Router);
     private readonly document = inject(DOCUMENT);
+    private readonly journey = inject(JourneyStore);
 
     private readonly uid = `mn-goal-${nextOnboarding++}`;
     protected readonly groupName = `${this.uid}-goal`;
@@ -76,13 +88,15 @@ export class GoalOnboardingComponent {
     private readonly dismissed = signal(false);
 
     protected readonly visible = computed(() => this.status() === 'authenticated' && this.store.state() === 'ready'
-        && !this.store.answered() && !this.dismissed() && !onboardingSuppressed(this.url()));
+        && !this.store.answered() && !this.dismissed() && !onboardingSuppressed(this.url())
+        // The question waits for the journey's answer (one read per entry) and yields to the survey that asks it.
+        && !this.journey.loading() && !surveyAsksTheGoal(this.journey.enabled(), this.journey.journey()));
 
     constructor() {
         effect(() => {
             const status = this.status();
             untracked(() => {
-                if (status === 'authenticated') void this.store.load();
+                if (status === 'authenticated') { void this.store.load(); void this.journey.load(); }
                 else if (status === 'anonymous') { this.store.reset(); this.dismissed.set(false); this.choice.set(null); }
             });
         });

@@ -64,7 +64,7 @@ describe('stylesheet contract of the tour elements', () => {
         it('turns the content into system colours in forced colours', () => {
             const forced = media(read('../theme/components.css').slice(read('../theme/components.css').indexOf('Content on the night surface')), 'forced-colors: active');
             expect(forced).toContain('CanvasText');
-            expect(forced).toMatch(/app-night-sky \.button[^{]*\{[^}]*ButtonText[^}]*box-shadow:\s*none/u);
+            expect(forced).toMatch(/app-night-sky \.content > \.actions \.button[^{]*\{[^}]*ButtonText[^}]*box-shadow:\s*none/u);
         });
     });
 

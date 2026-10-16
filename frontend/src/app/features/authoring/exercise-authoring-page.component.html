@@ -1,4 +1,4 @@
-<section class="exercise-page" aria-labelledby="exercise-title">
+<section class="exercise-page" aria-labelledby="exercise-title" mnTourAnchor="own.exercise">
   @if (deck(); as currentDeck) {
     @if (proposalEdit(); as edit) {
       <a class="back-link" data-back-workshop [routerLink]="['/decks', currentDeck.deckId, 'workshop', edit.sessionId]">← К мастерской</a>

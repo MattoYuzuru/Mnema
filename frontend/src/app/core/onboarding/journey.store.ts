@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, Injector, computed, inject, signal } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 
 import { OnboardingApiService, validateJourneyCommand, validatePreferencesCommand } from './onboarding-api.service';
@@ -30,7 +30,9 @@ export type JourneyError = 'load' | 'command';
  */
 @Injectable({ providedIn: 'root' })
 export class JourneyStore {
-    private readonly api = inject(OnboardingApiService);
+    private readonly injector = inject(Injector);
+    /** Resolved on first use, so a screen that only reads the journey (the goal question) needs no HTTP client of its own. */
+    private get api(): OnboardingApiService { return this.injector.get(OnboardingApiService); }
 
     private readonly state = signal<OnboardingView | null>(null);
     readonly view = this.state.asReadonly();
@@ -70,6 +72,15 @@ export class JourneyStore {
             ...(changes.experience === undefined ? {} : { experience: changes.experience }),
             ...(changes.weeklyTarget === undefined ? {} : { weeklyTarget: changes.weeklyTarget })
         }), command => this.api.preferences(command), validatePreferencesCommand);
+    }
+
+    /** Signing out: the next account starts with no view and no validator. */
+    reset(): void {
+        this.state.set(null);
+        this.etag = null;
+        this.error.set(null);
+        this.loading.set(false);
+        this.inflight = null;
     }
 
     private fetch(etag: string | null): Promise<OnboardingView | null> {

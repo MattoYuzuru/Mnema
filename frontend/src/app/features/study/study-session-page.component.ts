@@ -1,3 +1,4 @@
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -129,6 +130,7 @@ export class StudySessionPageComponent {
     private readonly recovery = inject(StudyRecoveryService);
     private readonly quietZone = inject(QuietZone);
     private readonly promoPopup = inject(PromoPopupService);
+    private readonly tour = inject(TourEvents);
     readonly flow = inject(StudyAssessmentFlow);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
@@ -150,7 +152,13 @@ export class StudySessionPageComponent {
             const phase = this.phase();
             this.quietZone.set(TASK_OPEN.includes(phase));
             // Ask only after the completion phase has released the quiet zone, including an immediately answered request.
-            if (phase === 'complete') untracked(() => void this.promoPopup.request());
+            if (phase === 'complete') {
+                untracked(() => {
+                    // The tour that paused for the session goes on at its finale; it is told first, so the promo window finds the tour on the screen.
+                    this.tour.emit('study.completed');
+                    void this.promoPopup.request();
+                });
+            }
         });
         // The grader may hand the learner to self-check while the waiting card is on screen.
         effect(() => {

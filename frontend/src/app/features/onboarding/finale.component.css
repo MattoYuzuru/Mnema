@@ -1,0 +1,16 @@
+:host { display: contents; }
+.finale-card { box-sizing: border-box; position: fixed; inset: 0; z-index: 1001; margin: auto; inline-size: min(32rem, calc(100vw - 2 * var(--mn-page-gutter))); max-inline-size: none; max-block-size: calc(100dvh - 2rem); overflow: auto;
+    gap: .8rem; border: 1px solid var(--mn-rule); border-block-start: 3px solid var(--mn-ink); padding: 1.25rem 1.4rem 1.1rem; color: var(--mn-body); background: var(--mn-sheet); }
+.finale-card[open] { display: grid; }
+.finale-card::backdrop { background: transparent; }
+h2 { margin: 0; color: var(--mn-ink); font: 600 1.9rem/1.1 var(--mn-font-display); }
+h2:focus-visible { outline: none; }
+p { margin: 0; }
+.eyebrow { margin: 0; }
+ul { display: grid; gap: .35rem; margin: 0; padding-inline-start: 1.1rem; }
+.key { color: var(--mn-ink); font-weight: 700; }
+.nav { display: flex; justify-content: flex-end; border-block-start: 1px solid var(--mn-rule); padding-block-start: .75rem; }
+.finale-night { box-sizing: border-box; inline-size: 100%; max-inline-size: none; block-size: 100%; max-block-size: none; margin: 0; border: 0; padding: 0; overflow: auto; background: var(--mn-night); }
+.finale-night::backdrop { background: var(--mn-night); }
+.finale-night app-night-sky { min-block-size: 100dvh; }
+@media (forced-colors: active) { .finale-card { border: 2px solid CanvasText; } .key { text-decoration: underline; } }

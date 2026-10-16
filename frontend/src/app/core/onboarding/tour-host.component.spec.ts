@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 
 import { spyObj } from '../../../testing/mocks';
 import { ToastService } from '../notifications/toast.service';
@@ -52,7 +52,7 @@ describe('TourHostComponent', () => {
         toasts = { echo: vi.fn() };
         TestBed.configureTestingModule({
             imports: [PageComponent],
-            providers: [provideRouter([]), { provide: ToastService, useValue: spyObj<ToastService>(toasts) },
+            providers: [provideRouter([{ path: '**', children: [] }]), { provide: ToastService, useValue: spyObj<ToastService>(toasts) },
                 { provide: TOUR_PERSISTENCE, useValue: { act: (action: JourneyAction, options?: ActionOptions) => { calls.push([action, options]); return Promise.resolve(null); } } }]
         });
         fixture = TestBed.createComponent(PageComponent);
@@ -306,6 +306,36 @@ describe('TourHostComponent', () => {
             engine.setPreparing(true);
             await settle();
             expect(root.querySelector('.tour-body')!.textContent!.trim()).toBe('Готовим колоду…');
+        });
+    });
+
+    describe('external steps and the study route', () => {
+        const FINALE = { key: 'finale.ai' as const, anchor: '', title: '', body: paragraphs(''), gate: 'next' as const, external: true };
+
+        it('shows nothing for a step another component draws, and does not announce it', async () => {
+            engine.start({ id: 'f', branch: null, steps: [step({ key: 'finale.done', anchor: 'hub.header' }), FINALE] });
+            await settle();
+            expect(card()).not.toBeNull();
+            engine.next();
+            await settle();
+            expect(card()).toBeNull();
+            expect(root.querySelector('app-tour-scrim')).toBeNull();
+            expect(liveRegion().textContent).toBe('');
+            expect(engine.total()).toBe(1);
+        });
+
+        it('leaves the pause plaque out of a study session, and brings it back on any other page', async () => {
+            engine.start(TOUR, 'sample.study');
+            engine.pause();
+            await settle();
+            expect(root.querySelector('app-tour-pause')).not.toBeNull();
+            await TestBed.inject(Router).navigateByUrl('/decks/1/study');
+            await settle();
+            expect(root.querySelector('app-tour-pause')).toBeNull();
+            expect(engine.paused()).toBe(true);
+            await TestBed.inject(Router).navigateByUrl('/decks/1');
+            await settle();
+            expect(root.querySelector('app-tour-pause')).not.toBeNull();
         });
     });
 

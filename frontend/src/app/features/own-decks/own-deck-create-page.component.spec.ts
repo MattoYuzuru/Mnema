@@ -6,6 +6,8 @@ import { DeckMutationState, OwnDecksStore } from './own-decks.store';
 import { OwnDeckCreatePageComponent } from './own-deck-create-page.component';
 import { OwnDeckRecoveryService } from './own-deck-recovery.service';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
+import { TourEvents } from '../../core/onboarding/tour-events';
+import { OwnDeck } from './own-deck.models';
 
 describe('OwnDeckCreatePageComponent', () => {
     let fixture: ComponentFixture<OwnDeckCreatePageComponent>;
@@ -90,5 +92,28 @@ describe('OwnDeckCreatePageComponent', () => {
         expect(root.querySelector<HTMLTextAreaElement>('#create-title')?.readOnly).toBe(true);
         expect(root.textContent).toContain('Создание не подтверждено');
         expect(root.textContent).not.toContain('Колода не создана');
+    });
+
+    describe('for the onboarding tour', () => {
+        it('marks the form as the place the tour points at and the button as the control its gate names', () => {
+            const root = fixture.nativeElement as HTMLElement;
+            expect(root.querySelector('form')!.getAttribute('data-tour-anchor')).toBe('own.details');
+            expect(root.querySelector('button[type=submit]')!.textContent!.trim()).toBe('Создать колоду');
+        });
+
+        it('says that the deck was made, with its id, once it is confirmed, and only then', async () => {
+            const seen: [string, unknown][] = [];
+            TestBed.inject(TourEvents).listen((event, payload) => seen.push([event, payload]));
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+            mutation.set({ phase: 'pending', pending: { operation: 'create', command: { commandId: 'c', metadata: { title: 'Т', description: '' } } } as never });
+            fixture.detectChanges();
+            expect(seen).toEqual([]);
+            const deck = { deckId: '11111111-1111-4111-8111-111111111111' } as OwnDeck;
+            mutation.set({ phase: 'completed', operation: 'create', deck, confirmation: 'fresh' });
+            fixture.detectChanges();
+            await fixture.whenStable();
+            expect(seen).toEqual([['deck.created', { deckId: deck.deckId }]]);
+            expect(navigate).toHaveBeenCalledWith(['/decks', deck.deckId]);
+        });
     });
 });

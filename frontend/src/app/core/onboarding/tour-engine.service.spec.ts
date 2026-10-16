@@ -406,4 +406,86 @@ describe('TourEngine', () => {
             expect(vi.getTimerCount()).toBe(0);
         });
     });
+
+    describe('what the onboarding flow asks of it', () => {
+        const FINALE: TourStep[] = [
+            { key: 'finale.ai', anchor: '', title: '', body: paragraphs(''), gate: 'next', external: true },
+            { key: 'finale.done', anchor: '', title: '', body: paragraphs(''), gate: 'next', external: true }
+        ];
+        const STUDY: TourStep = step({ key: 'sample.study', anchor: 'hub.start', gate: { action: 'study.started', label: 'Начать занятие', pauses: true } });
+        const WITH_FINALE: TourDefinition = { id: 'sample', branch: 'SAMPLE', steps: [TOUR.steps[0], STUDY, ...FINALE] };
+
+        it('counts only the steps the learner counts: «Шаг N из M» leaves the external finale out', () => {
+            engine.start(WITH_FINALE);
+            expect(engine.total()).toBe(2);
+        });
+
+        it('asks a route function when the step is entered and stays where it is for null', () => {
+            const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+            let deck: string | null = null;
+            engine.start({ id: 'r', branch: null, steps: [step({ key: 'finale.ai', anchor: 'hub.start' }),
+                step({ key: 'finale.done', anchor: 'hub.start', route: () => deck === null ? null : `/decks/${deck}` })] });
+            deck = 'abc';
+            engine.next();
+            expect(navigate).toHaveBeenCalledWith('/decks/abc');
+            navigate.mockClear();
+            deck = null;
+            engine.back();
+            engine.next();
+            expect(navigate).not.toHaveBeenCalled();
+        });
+
+        it('pauses, instead of moving on, when the event of a pausing gate arrives, and records the pause on that step', () => {
+            engine.start(WITH_FINALE, 'sample.study');
+            events.emit('study.started');
+            expect(engine.paused()).toBe(true);
+            expect(engine.step()?.key).toBe('sample.study');
+            expect(calls).toEqual([['PAUSE', { stepKey: 'sample.study' }]]);
+        });
+
+        it('continues a paused tour at another step and records RESUME there, while the plaque still returns to the paused step', () => {
+            engine.start(WITH_FINALE, 'sample.study');
+            events.emit('study.started');
+            engine.resume();
+            expect(engine.step()?.key).toBe('sample.study');
+            events.emit('study.started');
+            calls.length = 0;
+            engine.resumeAt('finale.ai');
+            expect(engine.paused()).toBe(false);
+            expect(engine.step()?.key).toBe('finale.ai');
+            expect(calls).toEqual([['RESUME', { stepKey: 'finale.ai' }]]);
+            engine.next();
+            expect(engine.step()?.key).toBe('finale.done');
+            expect(calls.at(-1)).toEqual(['STEP', { stepKey: 'finale.done' }]);
+            engine.next();
+            expect(engine.lastEnd()?.reason).toBe('completed');
+        });
+
+        it('resumeAt does nothing for a tour that is not paused or a step that is not in it', () => {
+            engine.start(WITH_FINALE);
+            engine.resumeAt('finale.ai');
+            expect(engine.step()?.key).toBe('sample.hub');
+            engine.pause();
+            engine.resumeAt('own.details');
+            expect(engine.paused()).toBe(true);
+        });
+
+        it('starts folded into the plaque, recording nothing, when another device paused the journey', () => {
+            engine.start(WITH_FINALE, 'sample.study', { paused: true });
+            expect(engine.active()).toBe(true);
+            expect(engine.paused()).toBe(true);
+            expect(calls).toEqual([]);
+            engine.resume();
+            expect(calls).toEqual([['RESUME', { stepKey: 'sample.study' }]]);
+        });
+
+        it('hands the payload of an event to every listener, and the engine ignores it', () => {
+            const seen: unknown[] = [];
+            const stop = events.listen((event, payload) => seen.push([event, payload]));
+            events.emit('deck.created', { deckId: 'd1' });
+            stop();
+            events.emit('deck.created', { deckId: 'd2' });
+            expect(seen).toEqual([['deck.created', { deckId: 'd1' }]]);
+        });
+    });
 });

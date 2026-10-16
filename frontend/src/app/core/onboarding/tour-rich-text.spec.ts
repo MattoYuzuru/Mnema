@@ -1,4 +1,4 @@
-import { paragraphs, plainText, richText, slides } from './tour-rich-text';
+import { linkedText, paragraphs, plainText, richText, slides } from './tour-rich-text';
 
 describe('tour rich text', () => {
     it('reads the key spans of the approved texts into segments', () => {
@@ -36,5 +36,13 @@ describe('tour rich text', () => {
         const body = slides('x <span class="key">y</span>', 'z');
         expect(body.kind).toBe('slides');
         expect(body.kind === 'slides' && plainText(body.slides[0])).toBe('x y');
+    });
+
+    it('splits a sentence with one link, leaving the address to the caller', () => {
+        expect(linkedText('Все возможности собраны в <a href="#path">«Пути»</a> в профиле.')).toEqual({ before: 'Все возможности собраны в ', link: '«Пути»', after: ' в профиле.' });
+    });
+
+    it('takes a text without a link as all «before»', () => {
+        expect(linkedText('Просто текст')).toEqual({ before: 'Просто текст', link: '', after: '' });
     });
 });

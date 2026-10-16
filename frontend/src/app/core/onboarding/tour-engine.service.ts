@@ -25,6 +25,8 @@ export type TourPhase = 'locating' | 'ready' | 'missing';
 export interface TourStartOptions {
     /** Where progress is recorded instead of the default (a demonstration or a test). */
     readonly persistence?: TourPersistence;
+    /** Start folded into the pause plaque, recording nothing: the journey is already paused (another device paused it). */
+    readonly paused?: boolean;
 }
 
 interface Run {
@@ -66,7 +68,8 @@ export class TourEngine {
     readonly phase = this.phaseState.asReadonly();
     /** Zero-based; «Шаг N из M» shows `index + 1`. */
     readonly index = this.position.asReadonly();
-    readonly total = computed(() => this.definition()?.steps.length ?? 0);
+    /** The steps the learner counts: «Шаг N из M» leaves the external finale screens out. */
+    readonly total = computed(() => this.definition()?.steps.filter(step => step.external !== true).length ?? 0);
     readonly step = computed<TourStep | null>(() => this.definition()?.steps[this.position()] ?? null);
     /** The element of the current step's anchor, once registered. */
     readonly target = computed(() => {
@@ -102,6 +105,7 @@ export class TourEngine {
         this.position.set(Math.max(0, found));
         this.run.set({ definition, persistence: options.persistence ?? this.injector.get(TOUR_PERSISTENCE) });
         this.enterStep();
+        if (options.paused === true) this.pausedState.set(true);
     }
 
     next(): void {
@@ -136,6 +140,20 @@ export class TourEngine {
             this.gateMetWhilePaused = false;
             this.next();
         }
+    }
+
+    /**
+     * Continues a paused tour at another step than the one it paused on, and records RESUME there: after the study session the tour
+     * goes on at the finale, while the plaque of a session left midway still returns to the step it paused on.
+     */
+    resumeAt(key: TourStep['key']): void {
+        const run = this.run();
+        if (run === null || !this.pausedState()) return;
+        const index = run.definition.steps.findIndex(step => step.key === key);
+        if (index < 0) return;
+        this.position.set(index);
+        this.enterStep();
+        this.record(run, 'RESUME', { stepKey: key });
     }
 
     /** «Завершить знакомство» (after the hold): records COMPLETE and says so in a toast. */
@@ -175,12 +193,14 @@ export class TourEngine {
         this.pausedState.set(false);
         this.focusCounter.update(count => count + 1);
         if (step === null) return;
-        if (step.route !== undefined && this.router.url !== step.route) this.router.navigateByUrl(step.route).catch(() => undefined);
+        const route = typeof step.route === 'function' ? step.route() : step.route;
+        if (route !== undefined && route !== null && this.router.url !== route) this.router.navigateByUrl(route).catch(() => undefined);
         if (isActionGate(step.gate)) {
-            const action = step.gate.action;
+            const { action, pauses } = step.gate;
             this.stopGate = this.events.listen(event => {
                 if (event !== action) return;
-                if (this.pausedState()) this.gateMetWhilePaused = true;
+                if (pauses === true) this.pause();
+                else if (this.pausedState()) this.gateMetWhilePaused = true;
                 else this.next();
             });
         }

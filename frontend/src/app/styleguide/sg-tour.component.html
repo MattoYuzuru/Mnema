@@ -76,6 +76,36 @@
     </div>
   </app-sg-specimen>
 
+  <app-sg-specimen title="Карточка опроса на ночи" selector="<app-survey-card>"
+    when="Вопрос опроса «Начала пути» и выбор пути: бумажная карточка на ночной поверхности без звёзд. У вопроса есть «Вопрос N из 4» и полоса role=progressbar (пройдено вопросов); вопрос, на который ответ уже есть, пропускается и оставляет в нумерации пропуск. «Пропустить» есть на каждой карточке, ответы не видны другим и ИИ не передаются. Заголовок принимает фокус при открытии."
+    [tokens]="['--mn-night', '--mn-sheet', '--mn-star-lavender', '--mn-ink']"
+    usage='<app-survey-card title="Учились ли вы по карточкам раньше?" [question]="3"><app-segmented-choice … /><div actions>…</div><p note class="hint">…</p></app-survey-card>'>
+    <app-night-sky layout="panel" [stars]="false">
+      <app-survey-card [title]="experienceText.title" [question]="3">
+        <app-segmented-choice [legend]="experienceText.title" [legendHidden]="true" [options]="experienceText.options" [(value)]="experience" name="sg-survey-experience" />
+        <ng-container ngProjectAs="[actions]">
+          <button type="button" class="button quiet">{{ surveyBack }}</button>
+          <div class="sg-survey-forward"><button type="button" class="button">{{ surveySkip }}</button><button type="button" class="button primary">{{ surveyNext }}</button></div>
+        </ng-container>
+        <p note class="hint">{{ surveyPrivacy }}</p>
+      </app-survey-card>
+    </app-night-sky>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Подсказка на месте" selector="<app-place-hint>"
+    when="Короткая фраза у того, о чём она, без вуали: подсказка у поиска Сообщества после 45 секунд без открытия колоды. Это note: не берёт фокус, ничего не двигает и уходит вместе с хозяином."
+    [tokens]="['--mn-ink', '--mn-sheet']"
+    usage='<app-place-hint>Не знаете, что выбрать? Начните с темы из вашего списка.</app-place-hint>'>
+    <app-place-hint>{{ browseHint }}</app-place-hint>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Предложение тура" selector="<app-tour-nudge>"
+    when="Предложение, которое тур делает своими словами и без вуали: «Не нашли подходящую?» через 2 минуты в каталоге с одним действием («Создать свою», переход в ветку «Своя колода») и «Назад». Не модальное, фокус не забирает сразу (только при появлении тура)."
+    [tokens]="['--mn-sheet', '--mn-ink', '--mn-rule']"
+    usage='<app-tour-nudge title="…" body="…" action="Создать свою" (accepted)="…" (dismissed)="…" />'>
+    <app-tour-nudge [title]="stuck.title" [body]="stuck.body" [action]="stuck.action" [inline]="true" />
+  </app-sg-specimen>
+
   <app-sg-specimen title="Пауза" selector="<app-tour-pause>"
     when="Esc во время тура сворачивает его: вуали и карточки нет, внизу плашка «Знакомство на паузе», фокус на «Продолжить знакомство». Прогресс не теряется, продолжение возвращает на тот же шаг."
     [tokens]="['--mn-sheet', '--mn-ink']">

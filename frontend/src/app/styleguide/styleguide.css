@@ -167,3 +167,5 @@
 .sg-mock-hub h4 { margin: 0; }
 .sg-mock-list { margin: 0; padding-inline-start: 1.2rem; }
 @media (forced-colors: active) { .sg-veil-stage, .sg-hold-states figure, .sg-mock-hub, .sg-mock-hub > header, .sg-mock-hub > section { border-color: CanvasText; } }
+.sg-survey-forward { display: flex; flex-wrap: wrap; gap: .5rem; }
+.sg-root app-night-sky app-survey-card { margin-block: 1rem; }

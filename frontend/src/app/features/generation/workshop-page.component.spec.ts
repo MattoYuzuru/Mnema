@@ -1,3 +1,4 @@
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -343,6 +344,8 @@ describe('WorkshopPageComponent', () => {
 
         it('approves the material on show and moves on to the next one that still waits, with focus on its title', async () => {
             await open(reviewing(artifactWith(third, 2, 'PUBLISHED')), '1');
+            const seen: [string, unknown][] = [];
+            TestBed.inject(TourEvents).listen((event, payload) => seen.push([event, payload]));
             document.body.append(root());
             api.approveArtifact.mockReturnValue(of(ackFor(ids.first)));
             api.getSession.mockReturnValue(of(parseSessionDetail(sessionWith([artifactWith(ids.first, 0, 'PUBLISHED', { rowVersion: '5' }), proposed(ids.second, 1), artifactWith(third, 2, 'PUBLISHED')], { state: 'REVIEW' }))));
@@ -353,6 +356,7 @@ describe('WorkshopPageComponent', () => {
                 { rowVersion: '8', revisionId: ids.deckRevision }, expect.any(String));
             expect(dots()[1]!.getAttribute('aria-current')).toBe('step');
             expect(toast.echo).toHaveBeenCalledWith('Материал одобрен');
+            expect(seen).toEqual([['material.published', { deckId: ids.deckId }]]);
             expect(document.activeElement).toBe(root().querySelector('app-proposal-view h2'));
             root().remove();
         });

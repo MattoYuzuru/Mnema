@@ -31,3 +31,12 @@ export function paragraphs(...sources: readonly string[]): TourBody {
 export function slides(...sources: readonly string[]): TourBody {
     return { kind: 'slides', slides: sources.map(richText) };
 }
+
+/**
+ * A sentence with one link in it, `before<a href="#path">link</a>after` (the congratulation points to «Пути»). The address of the link
+ * is the caller's: the text only says where it stands. A text without a link is all `before`.
+ */
+export function linkedText(source: string): { readonly before: string; readonly link: string; readonly after: string } {
+    const match = /^(.*?)<a href="[^"]*">(.*?)<\/a>(.*)$/su.exec(source);
+    return match === null ? { before: source, link: '', after: '' } : { before: match[1], link: match[2], after: match[3] };
+}

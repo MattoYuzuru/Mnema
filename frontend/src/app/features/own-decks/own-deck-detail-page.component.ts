@@ -1,3 +1,6 @@
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
+import { TourEngine } from '../../core/onboarding/tour-engine.service';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, LOCALE_ID, afterNextRender, computed, effect, inject, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -52,7 +55,7 @@ import {
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
         PaperDialogComponent, GlyphComponent, DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent, DeckModerationComponent,
-        CopyOriginComponent, CopyStatusComponent, ToggletipComponent, UnavailableNoteComponent, UpdateBadgeComponent, UpdateNewsComponent],
+        CopyOriginComponent, CopyStatusComponent, ToggletipComponent, UnavailableNoteComponent, UpdateBadgeComponent, UpdateNewsComponent, TourAnchorDirective],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',
@@ -183,6 +186,8 @@ export class OwnDeckDetailPageComponent {
     private readonly toasts = inject(ToastService);
     private readonly capabilities = inject(CapabilitiesApiService);
     private readonly router = inject(Router);
+    private readonly tour = inject(TourEvents);
+    private readonly tourEngine = inject(TourEngine);
     private readonly injector = inject(Injector);
     private readonly destroyRef = inject(DestroyRef);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
@@ -201,6 +206,9 @@ export class OwnDeckDetailPageComponent {
     private pollAttempt = 0;
     private lastPollAt = 0;
     private polledDeckId: string | null = null;
+
+    /** «Учить»: the tour that waits for the session is told that it begins (the page the link opens is the study session). */
+    startStudy(): void { this.tour.emit('study.started'); }
 
     constructor() {
         this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
@@ -258,6 +266,12 @@ export class OwnDeckDetailPageComponent {
             const deck = this.store.detailState().deck;
             untracked(() => this.announceCopyState(deck));
         });
+        // The tour that points at «Учить» says «Готовим колоду…» while the copy is being prepared, instead of timing out into its text variant.
+        effect(() => {
+            const preparing = this.copyState() === 'preparing';
+            untracked(() => { if (this.tourEngine.active() || !preparing) this.tourEngine.setPreparing(preparing); });
+        });
+        this.destroyRef.onDestroy(() => this.tourEngine.setPreparing(false));
         effect(() => {
             // While the copy is being prepared the page asks again at a bounded backoff; a ready, failed or ordinary deck needs nothing.
             const copyState = this.copyState();

@@ -8,6 +8,9 @@ import hubFixture from '../../../../../contracts/decks/hub.json';
 import forksFixture from '../../../../../contracts/decks/forks.json';
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { ToastService } from '../../core/notifications/toast.service';
+import { TourEngine } from '../../core/onboarding/tour-engine.service';
+import { TourEvents } from '../../core/onboarding/tour-events';
+import { paragraphs } from '../../core/onboarding/tour-rich-text';
 import { OwnDeck } from './own-deck.models';
 import { DeckDetailState, DeckMutationState, OwnDecksStore } from './own-decks.store';
 import { OwnDeckDetailPageComponent } from './own-deck-detail-page.component';
@@ -966,6 +969,44 @@ describe('OwnDeckDetailPageComponent', () => {
                 }
                 expect(store.refreshDetail).not.toHaveBeenCalled();
             });
+        });
+    });
+
+    describe('for the onboarding tour', () => {
+        const root = () => fixture.nativeElement as HTMLElement;
+        const study = () => [...root().querySelectorAll<HTMLAnchorElement>('a')].find(link => link.textContent?.trim() === 'Учить')!;
+        const states = forksFixture.fork as unknown as Record<'preparing' | 'ready', DeckFork>;
+
+        it('marks «Учить» as the place the tour points at and says that the session begins when it is pressed', () => {
+            const seen: string[] = [];
+            TestBed.inject(TourEvents).listen(event => seen.push(event));
+            expect(study().getAttribute('data-tour-anchor')).toBe('hub.start');
+            study().addEventListener('click', event => event.preventDefault());
+            study().click();
+            expect(seen).toEqual(['study.started']);
+        });
+
+        it('tells a running tour that the copy is still being prepared, and that it is ready, instead of letting it time out', async () => {
+            const engine = TestBed.inject(TourEngine);
+            engine.start({ id: 't', branch: 'COMMUNITY', steps: [{ key: 'community.study', anchor: 'hub.start', title: 'Т', body: paragraphs('Текст'), gate: 'next' }] });
+            detail.set({ phase: 'ready', deckId: deck.deckId, failure: null, deck: { ...deck, fork: states.preparing } });
+            fixture.detectChanges();
+            TestBed.tick();
+            expect(engine.preparing()).toBe(true);
+            detail.set({ phase: 'ready', deckId: deck.deckId, failure: null, deck: { ...deck, fork: states.ready } });
+            fixture.detectChanges();
+            TestBed.tick();
+            expect(engine.preparing()).toBe(false);
+            engine.stop();
+        });
+
+        it('lets go of the preparing note when the page is left', () => {
+            const engine = TestBed.inject(TourEngine);
+            engine.start({ id: 't', branch: 'COMMUNITY', steps: [{ key: 'community.study', anchor: 'hub.start', title: 'Т', body: paragraphs('Текст'), gate: 'next' }] });
+            engine.setPreparing(true);
+            fixture.destroy();
+            expect(engine.preparing()).toBe(false);
+            engine.stop();
         });
     });
 });
