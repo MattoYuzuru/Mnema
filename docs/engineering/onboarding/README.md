@@ -5,6 +5,7 @@ artifact:
   title: "Onboarding: research, RFC, architecture and backlog"
   status: accepted
   created_at: "2026-10-14"
+  updated_at: "2026-10-17"
   updated_at: "2026-10-14"
   owners: ["project-owner"]
 ---
@@ -13,7 +14,7 @@ artifact:
 
 Пакет по поручению владельца 2026-10-14: исследование онбордингов, RFC, архитектура,
 ADR, четыре эпика с задачами, промпты и решения владельца. Решения приняты владельцем 2026-10-14
-(`accepted`), ничего ещё не реализовано. Задачи опубликованы как Issues в Mnema Kanban (Backlog);
+(`accepted`); OB-E1 реализован локально в S1 (ветка `feat/517-onboarding`, не влита) — фактический статус в [progress](progress.md). Задачи опубликованы как Issues в Mnema Kanban (Backlog);
 номера — в [manifest](manifest.json). Соседний пакет — [learning core](../learning-core/README.md).
 
 ## Начать здесь

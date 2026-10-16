@@ -5,7 +5,7 @@ artifact:
   title: "Onboarding: progress ledger and handoff index"
   status: current
   created_at: "2026-10-14"
-  updated_at: "2026-10-16"
+  updated_at: "2026-10-17"
   owners: ["project-owner"]
 ---
 
@@ -23,8 +23,8 @@ artifact:
 |---|---|
 | Пакет документов | `docs/engineering/onboarding/` (в main) |
 | Ветка реализации | `feat/517-onboarding` (worktree `/Users/yuzuru/Projects/Mnema-wt-onboarding`), draft PR [MattoYuzuru/Mnema#554](https://github.com/MattoYuzuru/Mnema/pull/554); задачи OB-001/002/003/202 на доске — In review |
-| База ветки | `origin/main` 42e35d0f (2026-10-15; эпики Сообщества 3–4 в нём) |
-| Последний handoff | [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) |
+| База ветки | `origin/main` 42e35d0f (S0), в S1 влит `origin/main` b6f14df8 (a29b7301, 2026-10-16) |
+| Последний handoff | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) (ветка не запушена: PR #554 показывает только S0) |
 
 ## Статус задач
 
@@ -33,11 +33,11 @@ artifact:
 | OB-001 | local complete, delivery pending | 0801bcb7, 386bc99f | `design/prototype/onboarding/`, [тексты](../evidence/onboarding/ob-prep/texts-for-approval.md), [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) | Утверждено владельцем 2026-10-16; PR #554 |
 | OB-002 | in progress | e8969264, 386bc99f | [раздел 1.7](../evidence/onboarding/ob-prep/ob-002-policy-draft.md) | Текст утверждён 2026-10-16; дата вступления — в PR включения флагов |
 | OB-003 | blocked: сборка по отдельному поручению владельца | — | [планы и digest](../evidence/onboarding/ob-prep/deck-plans.md); MnemaDeckStudio `runs/base-*` | Планы утверждены 2026-10-16; 10 колод; канон согласован |
-| OB-101 | not started | — | — | |
-| OB-102 | not started | — | — | |
-| OB-103 | not started | — | — | |
-| OB-104 | not started | — | — | |
-| OB-105 | not started | — | — | |
+| OB-101 | local complete, delivery pending | 4d824cc5, 9b2b69c5, a0d2bf3b, 70d6b537 | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), `contracts/onboarding/` | V72; флаги prod off |
+| OB-102 | local complete, delivery pending | 213d67c6, e034d361, 335e59bf | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) | Открыты AC: VoiceOver smoke, resize/scroll в браузере |
+| OB-103 | local complete, delivery pending | e5f30a26, e034d361, 062ed44b, 748043a2 | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), [harness](../evidence/onboarding/ob-e1/onboarding-results.json) | |
+| OB-104 | local complete, delivery pending | e5f30a26, e034d361, 335e59bf, 062ed44b | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), [harness](../evidence/onboarding/ob-e1/onboarding-results.json) | e2e в одноразовом harness, не на retained stack; «Сообщество» до открытия занятия; 2 строки на утверждение |
+| OB-105 | local complete, delivery pending | 9b2b69c5, 420d43cb, a0d2bf3b, 77294b3a | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) | Holdout server-only; production после OB-002 |
 | OB-201 | not started | — | — | |
 | OB-202 | blocked: OB-201 (сборка в S2) | — | [план](../evidence/onboarding/ob-prep/deck-plans.md#ob-202-учебная-колода-как-устроена-память); `runs/onboarding-memory-sample` | План утверждён 2026-10-16 |
 | OB-203 | not started | — | — | |
@@ -56,6 +56,7 @@ artifact:
 | Дата | Сессия | Агент / модель | База → HEAD | Итог | Handoff |
 |---|---|---|---|---|---|
 | 2026-10-15/16 | S0 | Claude Opus 5.5 (lead), 2 × Opus 5.5 research, Opus 5.5 review | 42e35d0f → 0efe11d1 (+ handoff) | OB-001/002/003/202 подготовлены; 2026-10-16 утверждены владельцем, корейский перепланирован | [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) |
+| 2026-10-16/17 | S1 | Claude Opus 5.5 (lead), 2 × Sonnet 5.5 high (backend, frontend), Sonnet 5.5 high (harness), 3 × Opus 5.5 high review | 71ab1c89 + merge b6f14df8 → 748043a2 (+ handoff) | OB-101…OB-105 local complete; полный gate и harness `--onboarding` зелёные | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) |
 
 Handoff-файлы кладутся в `docs/engineering/evidence/onboarding/<epic>/handoff-session-<N>.md` ветки
 реализации и перечисляются здесь.
