@@ -74,6 +74,19 @@ class ExperimentTest {
     }
 
     @Test
+    void assignedIsEmptyWhereVariantFallsBackToControlSoAHoldoutNeverHoldsEverybodyOut() {
+        UUID account = UUID.randomUUID();
+        ExperimentAssignments bucketing = assignments("secret-1");
+
+        assertThat(bucketing.assigned(account, "plans_year_first")).contains(bucketing.variant(account, "plans_year_first"));
+        assertThat(bucketing.assigned(account, "no_such_experiment")).isEmpty();
+        assertThat(assignments("").assigned(account, "plans_year_first")).isEmpty();
+        assertThat(assignments("").variant(account, "plans_year_first")).isEqualTo("control");
+        assertThat(new ExperimentAssignments(new ExperimentSettings(environment("plans_year_first", "control:50,plans_year_first:50", false)), "secret")
+                .assigned(account, "plans_year_first")).isEmpty();
+    }
+
+    @Test
     void aDisabledExperimentIsNotExposedAndNeverBucketed() {
         ExperimentAssignments assignments = new ExperimentAssignments(new ExperimentSettings(
                 environment("plans_year_first", "control:50,plans_year_first:50", false)), "secret");

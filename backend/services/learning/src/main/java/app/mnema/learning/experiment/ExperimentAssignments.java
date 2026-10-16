@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -37,15 +38,23 @@ public class ExperimentAssignments {
 
     /** @return the variant of {@code account} in {@code key}, {@code control} for an unknown or disabled experiment or a missing secret */
     public String variant(UUID account, String key) {
+        return assigned(account, key).orElse(ExperimentSettings.CONTROL);
+    }
+
+    /**
+     * @return the variant of {@code account} in {@code key}, or empty when the experiment is unknown or disabled or the secret is missing: a caller that
+     * must not turn "nobody is bucketed" into "everybody is held out" (a holdout) asks this instead of {@link #variant}
+     */
+    public Optional<String> assigned(UUID account, String key) {
         ExperimentSettings.Experiment experiment = settings.enabled().get(key);
-        if (experiment == null || secret == null) return ExperimentSettings.CONTROL;
+        if (experiment == null || secret == null) return Optional.empty();
         int bucket = bucket(account, key);
         int upper = 0;
         for (ExperimentSettings.Variant variant : experiment.variants()) {
             upper += variant.weight();
-            if (bucket < upper) return variant.name();
+            if (bucket < upper) return Optional.of(variant.name());
         }
-        return ExperimentSettings.CONTROL;
+        return Optional.of(ExperimentSettings.CONTROL);
     }
 
     boolean known(String key) {

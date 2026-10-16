@@ -1,0 +1,61 @@
+package app.mnema.learning.onboarding;
+
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
+/**
+ * The answer of {@code GET /api/onboarding} and of both commands ({@code views} of {@code contracts/onboarding/journey.json}). Every member is always present:
+ * {@code milestones}, {@code path}, {@code rhythm} and {@code sampleDeck} are reserved for OB-E2..E4 so that the client never changes shape.
+ */
+final class OnboardingView {
+    private OnboardingView() { }
+
+    /** The tour is turned off: no journey. */
+    static ObjectNode disabled() {
+        return envelope(false, null);
+    }
+
+    /** No row: the account was never offered the tour and did not start it. */
+    static ObjectNode notOffered() {
+        return envelope(true, journey(JourneyState.NOT_OFFERED, false, false, JourneySteps.TOUR_VERSION, null, null, null, null, null, null, 0, 0));
+    }
+
+    static ObjectNode of(OnboardingRepository.Row row) {
+        boolean eligible = row.cohort() != null;
+        boolean autoOffer = eligible && row.cohort() == OnboardingRepository.Cohort.TOUR && row.state() == JourneyState.OFFERED;
+        return envelope(true, journey(row.state(), eligible, autoOffer, row.tourVersion(), row.branch(), row.stepKey(), row.experience(), row.weeklyTarget(),
+                row.offeredAt(), row.finishedAt(), row.replayCount(), row.rowVersion()));
+    }
+
+    private static ObjectNode journey(JourneyState state, boolean eligible, boolean autoOffer, int tourVersion, JourneyBranch branch, String stepKey,
+                                      OnboardingRepository.Experience experience, Integer weeklyTarget, Instant offeredAt, Instant finishedAt,
+                                      int replayCount, long rowVersion) {
+        ObjectNode journey = JsonNodeFactory.instance.objectNode();
+        journey.put("state", state.name()).put("eligible", eligible).put("autoOffer", autoOffer).put("tourVersion", tourVersion);
+        journey.put("branch", branch == null ? null : branch.name()).put("stepKey", stepKey);
+        journey.put("experience", experience == null ? null : experience.name());
+        if (weeklyTarget == null) journey.putNull("weeklyTarget");
+        else journey.put("weeklyTarget", weeklyTarget.intValue());
+        journey.put("offeredAt", time(offeredAt)).put("finishedAt", time(finishedAt));
+        return journey.put("replayCount", replayCount).put("rowVersion", Long.toString(rowVersion));
+    }
+
+    private static ObjectNode envelope(boolean enabled, ObjectNode journey) {
+        ObjectNode view = JsonNodeFactory.instance.objectNode();
+        view.put("enabled", enabled);
+        if (journey == null) view.putNull("journey");
+        else view.set("journey", journey);
+        view.putArray("milestones");
+        view.putNull("path");
+        view.putNull("rhythm");
+        view.putObject("sampleDeck").put("available", false).putNull("deckId").put("updateAvailable", false);
+        return view;
+    }
+
+    private static String time(Instant instant) {
+        return instant == null ? null : instant.truncatedTo(ChronoUnit.SECONDS).toString();
+    }
+}

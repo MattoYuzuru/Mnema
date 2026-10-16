@@ -2675,3 +2675,38 @@ Sources deciding implementation: PostgreSQL 18 [UUID functions](https://www.post
 (database uuidv7), [partitioning](https://www.postgresql.org/docs/18/ddl-partitioning.html) (UTC ranges and whole-partition
 retention); [Spring Security resource-server JWT](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html)
 (verified principal and scope-based authority in the existing private chain).
+
+## Onboarding journey (OB-101, OB-105; migration `V72__onboarding_journey.sql`)
+
+Package `app.mnema.learning.onboarding`; the wire contract and its executable fixture are [`contracts/onboarding`](../../../contracts/onboarding/README.md),
+the design [onboarding architecture](../../../docs/engineering/onboarding/architecture.md). `GET /api/onboarding`, `PUT /api/onboarding/journey`
+and `PUT /api/onboarding/preferences` follow the blanket scope rule (`learning.read` / `learning.write`); every answer is `private, no-store` with a strong
+`ETag` (128 bits of the SHA-256 of the canonical JSON of the view) and a matching `If-None-Match` on `GET` is a 304.
+
+- **Switches.** `learning.onboarding.enabled` (default `false`) and `learning.onboarding.eligible-from` (ISO-8601 instant; required and validated at startup when
+  the flag is on, `OnboardingSettings`). Off: `GET` answers the `disabled` view without touching the database, both `PUT`s are `409 ONBOARDING_UNAVAILABLE`
+  (checked before the body is read), the owner report keeps working. The local full stack turns it on (`compose.local-full-stack.yml`:
+  `LEARNING_ONBOARDING_ENABLED`, `LEARNING_ONBOARDING_ELIGIBLE_FROM`, `LEARNING_ONBOARDING_EXPERIMENT_ENABLED`); production config is untouched and stays off.
+- **Eligibility.** The first `GET` of an account inserts the `OFFERED` row (`INSERT … ON CONFLICT DO NOTHING`, so concurrent first reads create exactly one) only when the
+  flag is on, the database time is at or after `eligible-from`, Identity marks the account new (`IdentityClaims.signals(request).newAccount()`; an absent or malformed
+  `mnema_new_account` is unknown, which is not new) and the account owns no `deck` row with `deleted_at IS NULL`. Anything else is the `NOT_OFFERED` view and no row.
+- **Holdout (`learning.experiments.onboarding_v1`, `control:15,tour:85`, disabled by default).** The cohort is frozen on the row when it is created:
+  `ExperimentAssignments.assigned` (empty for a disabled experiment or a missing `MNEMA_EXPERIMENT_SECRET`, unlike `variant`, which then says `control`) `control`
+  gives `CONTROL`, everything else `TOUR`, so nobody is held out by accident. An EXPOSURE is counted through `ExperimentEvents` when the row is created and the experiment
+  buckets. A row created by `REPLAY` from `NOT_OFFERED` has `cohort` NULL and is outside the experiment. The experiment env name is
+  `LEARNING_ONBOARDING_EXPERIMENT_ENABLED` because an environment variable cannot spell an experiment key with an underscore.
+- **Commands.** `JourneyAction` is the transition table of the fixture and `JourneySteps` the step registry (`OnboardingContractTest` compares both with `journey.json`).
+  A command is idempotent through `CommandReceiptService` (scope `onboarding`, types `journey.command` and `preferences.command`; the receipt and the compare-and-set update
+  are one transaction, a repeat returns the stored view with `Idempotency-Replayed: true`) and compare-and-set on `row_version`: stale `412 VERSION_CONFLICT`, missing `428`.
+  Order of checks: body shape (400, state independent) → version → transition table (`409 ONBOARDING_TRANSITION`) → a branch step must match the stored or the commanded
+  branch (400). A `branch` in a command must come with a `stepKey` of that branch. `PUT /preferences` needs a row, at least one of `experience`/`weeklyTarget`; `null` clears.
+- **Report.** `GET /api/admin/onboarding/experiment?from=&to=` (`OnboardingReportController`): the console owner on the admin client (`AdminConsoleAccess`), the console
+  window (`AdminReportRange`, UTC dates, 1-90 days). One grouped statement over the cohort rows of the window by `offered_at`: accounts, activated (a COMPLETE SCHEDULED
+  `study_session` completed within 7 days after the offer) and returned (COMPLETE SCHEDULED or PRACTICE sessions on two distinct `local_study_date`s within 14 days);
+  `smallSample` is true while a group has fewer than 100 accounts, and both variants are always listed. No index beyond the primary key: one narrow row per account,
+  an owner-only report over at most 90 days, `study_session` reached by its primary key. A time-ordered partial index is the first thing to add if the table grows by orders of magnitude.
+- **Metrics.** `mnema_onboarding_journey_total{action,step}` counts committed, non-replayed journey commands; `step` is a registry key or `none`.
+- **Purge.** TODO(#409; owner: Learning's account-purge epic): delete `onboarding_journey` by `account_id` and the account's receipts of scope `onboarding`
+  (`command_receipt_onboarding_actor`); see `OnboardingRepository`.
+- **Tests.** `OnboardingContractTest` (fixture equality, strict parser), `OnboardingHttpIntegrationTest` (real servlet stack and PostgreSQL: eligibility, concurrent first
+  reads, the whole table, idempotency, CAS races, ETag, report), `OnboardingDisabledHttpIntegrationTest` (flag off).

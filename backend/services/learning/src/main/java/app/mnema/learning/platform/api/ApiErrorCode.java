@@ -125,6 +125,16 @@ enum ApiErrorCode {
             "Promo code unavailable",
             "Promo codes cannot be redeemed from this network right now."
     ),
+    ONBOARDING_TRANSITION(
+            HttpStatus.CONFLICT,
+            "Journey transition not allowed",
+            "The tour cannot take this action in its current state."
+    ),
+    ONBOARDING_UNAVAILABLE(
+            HttpStatus.CONFLICT,
+            "Onboarding unavailable",
+            "The onboarding tour is turned off."
+    ),
     MEDIA_UPLOAD_CONFLICT(HttpStatus.CONFLICT, "Media upload conflict", "The upload state or parts do not match the command."),
     MEDIA_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Media storage unavailable", "Media storage is temporarily unavailable."),
     VERSION_CONFLICT(
