@@ -37,9 +37,11 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
             // The topic directory of the publication checklist (Share/8) and the invitation redemption of a signed-in viewer (Share/13).
             `${prefix}/topics`, `${prefix}/invites:redeem`,
             `${prefix}/community/interests`, `${prefix}/community/interests:reset`, `${prefix}/community/events`,
-            `${prefix}/community/exposures`, `${prefix}/community/recommendations`];
+            `${prefix}/community/exposures`, `${prefix}/community/recommendations`,
+            // The onboarding journey (contracts/onboarding): the view and its two commands.
+            `${prefix}/onboarding`, `${prefix}/onboarding/journey`, `${prefix}/onboarding/preferences`];
         const adminRoute = [`${prefix}/admin/console/access`, `${prefix}/admin/console/report`, `${prefix}/admin/console/audit`, `${prefix}/admin/promo-codes`, `${prefix}/admin/support/tickets`,
-            `${prefix}/admin/complaints`, `${prefix}/admin/complaints/journal`].includes(url.pathname)
+            `${prefix}/admin/complaints`, `${prefix}/admin/complaints/journal`, `${prefix}/admin/onboarding/experiment`].includes(url.pathname)
             // The complaint queue of the owner console (Share/15): one complaint, its unit picker and the two decisions (`:decide`, `:unhide`).
             || new RegExp(`^${pattern}/admin/complaints/${accountId}(?:/units|:decide|:unhide)?$`, 'iu').test(url.pathname)
             || new RegExp(`^${pattern}/admin/console/users/${accountId}$`, 'iu').test(url.pathname)
