@@ -13,8 +13,8 @@ the golden eval of the [eval gate](#8-eval-gate-before-changing-a-model-route-or
 The owner confirmed the required RKN approvals and the quality review in the launch chat on
 2026-10-15. Production enables the implemented generation, assessment, text-to-speech, image-search and
 web-search capability switches. Each still requires a configured provider; the launch does not
-invent missing Yandex Search credentials. ABROAD speech-to-text stays off pending the explicit owner decision on original audio described
-in the product contract §6. Image/video generation remain unavailable. Operational
+invent missing Yandex Search credentials. On 2026-10-16 the owner admitted ABROAD speech-to-text with original audio
+as described in the product contract §6; the production capability switch is enabled with per-account consent. Image/video generation remain unavailable. Operational
 kill switches, per-account allowances, provider budgets and individual voice consent remain.
 Prompt **v1** and the existing model routes are unchanged; this admission does not activate v2.
 
@@ -261,7 +261,11 @@ Voice is never processed without the account's consent for the region that proce
 `RU` for a route in Russia, `ABROAD` for Gemini). An input whose consent was withdrawn, is outdated, or no longer
 covers the region fails `UNAVAILABLE` with its audio deleted and **no provider is called**; a rise of
 `mnema_stt_inputs_total{outcome="UNAVAILABLE"}` right after a consent-version change is expected. After a change of
-`learning.speech.consent-version` every account sees the consent prompt again. **Do not enable speech to text with the `ABROAD` route (Gemini) in production** until the owner amends the decision of 2026-10-04 (#280): the voice that route sends is not de-identified. An unrecognised or too-long clip is `NO_SPEECH` or `TOO_LONG`,
+`learning.speech.consent-version` every account sees the consent prompt again. The owner admitted the `ABROAD` route
+(Gemini, original audio) on 2026-10-16, replacing the restriction of 2026-10-04 (#280). The audio is not de-identified;
+the compact first-use dialog names Google and the foreign route before the consent button, with retention/context details
+expandable. Consent version `speech-2026-10-3` is shared by the UI and server; old clients fail closed.
+An unrecognised or too-long clip is `NO_SPEECH` or `TOO_LONG`,
 the learner's own. Audio is never kept after a result; a failure with the audio still present points to a stuck
 sweeper (`SpeechInputSweeper` runs in every role).
 

@@ -16,7 +16,7 @@ export type SpeechErrorCode = (typeof SPEECH_ERROR_CODES)[number];
  * server asks for, so a consent always names the text the person read. It equals `learning.speech.consent-version`; change both when the text changes
  * (the server then answers `409 SPEECH_CONSENT_OUTDATED` to the older client).
  */
-export const SPEECH_DISCLOSURE_VERSION = 'speech-2026-10-2';
+export const SPEECH_DISCLOSURE_VERSION = 'speech-2026-10-3';
 
 /** The consent a processing region needs: the version changes when the active route's region changes, so a move abroad asks again. */
 export interface SpeechConsentTerms { readonly version: string | number; readonly processing: ProcessingRegion; }

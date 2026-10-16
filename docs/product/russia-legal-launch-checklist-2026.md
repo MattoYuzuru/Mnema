@@ -4,7 +4,7 @@ artifact:
   type: launch-checklist
   title: "Mnema legal and payment launch status"
   status: proposed
-  updated_at: "2026-10-15"
+  updated_at: "2026-10-16"
   owners: ["project-owner"]
 ---
 
@@ -19,8 +19,10 @@ review of the actual recipients, contracts and data flows.
 The owner reported receiving the required RKN confirmations and explicitly confirmed the
 quality review in the AI launch chat. Policy and terms **1.7** disclose text generation,
 assessment, Google TTS and licensed image-search recipients, plus the conditional voice flow.
-The original-audio ABROAD STT decision remains open in the [AI product contract](ai-layer-2026-10.md#6-legal-и-human-gates),
-so that capability stays off. Operational switches and individual voice consent remain;
+On 2026-10-16 the owner separately admitted original-audio ABROAD STT through Google and the existing gateway
+in the [AI product contract](ai-layer-2026-10.md#6-legal-и-human-gates). This is an owner decision, not an independent legal opinion.
+Each account explicitly consents before its first recording; the compact disclosure names foreign processing
+and the recipient, retains expandable details and allows withdrawal in the profile. Operational switches remain;
 image/video generation are unavailable and Yandex web-search credentials are still missing.
 This update supersedes the historical AI-disabled/policy-version statements below;
 production rollout evidence belongs in the [AI runbook](../operations/ai-runbook.md).
