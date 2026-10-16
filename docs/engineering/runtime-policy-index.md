@@ -385,3 +385,15 @@ Planner query/memory bounds и CSS tokens имеют другие причины
 новых операций; существующие revision/attempt IDs и format versions не менять.
 Среда только локальная, rollout и восстановление серверных данных здесь не
 заявлены.
+
+
+## AI production admission — 2026-10-15
+
+The owner confirmed the RKN and quality review gates in the launch chat. The production Compose
+explicitly enables `ai-generation`, `ai-assessment`, `text-to-speech`, `image-search` and `web-search`; actual availability still requires a provider and a usable route.
+ABROAD speech-to-text stays off pending the explicit original-audio decision in the product contract.
+Image/video generation stay off. The existing `all` topology and v1 prompt remain. Secrets are
+explicitly allowlisted in `deploy/production/app-config.keys`, delivered from `prod` Environment
+secrets and interpolated only into Learning. Host-generated HMAC and egress credentials stay in
+root-only runtime.env and are not on the CI allowlist. The optional split overlay is not activated.
+Individual voice consent, budgets, kill switches and current tariff allowances remain in force.
