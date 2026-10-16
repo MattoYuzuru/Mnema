@@ -22,7 +22,7 @@ artifact:
 | Поле | Значение |
 |---|---|
 | Пакет документов | `docs/engineering/onboarding/` (в main) |
-| Ветка реализации | `feat/517-onboarding` (локально, не запушена; worktree `/Users/yuzuru/Projects/Mnema-wt-onboarding`) |
+| Ветка реализации | `feat/517-onboarding` (worktree `/Users/yuzuru/Projects/Mnema-wt-onboarding`), draft PR [MattoYuzuru/Mnema#554](https://github.com/MattoYuzuru/Mnema/pull/554); задачи OB-001/002/003/202 на доске — In review |
 | База ветки | `origin/main` 42e35d0f (2026-10-15; эпики Сообщества 3–4 в нём) |
 | Последний handoff | [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) |
 
