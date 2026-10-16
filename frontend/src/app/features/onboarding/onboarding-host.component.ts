@@ -1,13 +1,16 @@
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, effect, inject, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, afterRenderEffect, computed, effect, inject, untracked, viewChild } from '@angular/core';
+import { Router } from '@angular/router';
 
 import { AuthService } from '../../auth.service';
 import { AttentionCoordinator } from '../../core/onboarding/attention-coordinator';
 import { JourneyStore } from '../../core/onboarding/journey.store';
 import { onboardingText } from '../../core/onboarding/onboarding-texts';
+import { currentUrl, isStudyUrl } from '../../core/onboarding/study-route';
 import { TourHints } from '../../core/onboarding/tour-hints';
 import { TourEngine } from '../../core/onboarding/tour-engine.service';
 import { TourNudgeComponent } from '../../shared/tour-nudge.component';
+import { TourPauseComponent } from '../../shared/tour-pause.component';
 import { FinaleComponent } from './finale.component';
 import { FirstEntryComponent } from './first-entry.component';
 import { OnboardingFlow } from './onboarding-flow.service';
@@ -23,10 +26,13 @@ const MODAL_RECHECK_MS = 1_000;
  */
 @Component({
     selector: 'app-onboarding-host',
-    imports: [FirstEntryComponent, FinaleComponent, TourNudgeComponent],
+    imports: [FirstEntryComponent, FinaleComponent, TourNudgeComponent, TourPauseComponent],
     template: `
       <app-first-entry />
       <app-finale />
+      @if (flow.pausedCard() !== null && flow.card() === null && !engine.active() && !studying()) {
+        <app-tour-pause (resumed)="flow.resumeSurface()" />
+      }
       @if (hints.stuck() && engine.active() && !engine.paused()) {
         <app-tour-nudge [title]="text('community.stuck.title')" [body]="text('community.stuck.body')" [action]="text('community.stuck.action')"
           (accepted)="flow.switchToOwn()" (dismissed)="hints.stuck.set(false)" />
@@ -46,6 +52,11 @@ export class OnboardingHostComponent {
     private readonly attention = inject(AttentionCoordinator);
     private readonly document = inject(DOCUMENT);
     private readonly nudge = viewChild(TourNudgeComponent);
+    private readonly plaque = viewChild(TourPauseComponent);
+    private readonly router = inject(Router);
+    private readonly url = currentUrl(this.router);
+    /** A study session is nothing for the plaque to sit over (as for the tour's own). */
+    protected readonly studying = computed(() => isStudyUrl(this.url()));
     private recheck: ReturnType<typeof setTimeout> | null = null;
 
     constructor() {
@@ -112,6 +123,16 @@ export class OnboardingHostComponent {
             const journey = this.store.journey();
             const account = this.auth.user()?.accountId;
             if (journey !== null && account !== undefined) untracked(() => void this.flow.resumeIfPaused(account));
+        });
+
+        // The plaque takes the focus when the learner paused on the surface, not when a reload finds the journey paused.
+        let focusedPause = 0;
+        afterRenderEffect(() => {
+            const request = this.flow.pauseRequest();
+            const plaque = this.plaque();
+            if (plaque === undefined || request === focusedPause) return;
+            focusedPause = request;
+            plaque.focusResume();
         });
 
         // The offer to make one's own deck takes the focus once, when it appears.

@@ -38,7 +38,7 @@ export function daysLabel(count: number): string {
     imports: [NightSkyComponent, SurveyCardComponent, SegmentedChoiceComponent, InterestPickerComponent, NgTemplateOutlet],
     template: `
       @if (flow.card(); as card) {
-        <dialog #surface class="first-entry" closedby="none" [attr.aria-label]="dialogLabel()" (cancel)="$event.preventDefault()" (close)="reopen()">
+        <dialog #surface class="first-entry" closedby="none" [attr.aria-label]="dialogLabel()" (cancel)="escape($event)" (keydown.escape)="escape($event)" (close)="reopen()">
           <app-night-sky layout="panel" seed="mnema-first-entry" [stars]="card === 'welcome'">
             @if (card === 'welcome') {
               <p class="eyebrow">{{ text('welcome.eyebrow') }}</p>
@@ -237,6 +237,17 @@ export class FirstEntryComponent {
     protected saveInterests(ids: readonly string[]): void {
         this.waitingFrom = this.flow.card();
         this.interests.save(ids);
+    }
+
+    /**
+     * Escape: the surface is never dismissed by the browser, but once the journey has begun it is the learner's way out, the same
+     * pause as the tour's (the welcome only offers, so there is nothing to pause there). `closedby="none"` may keep the browser from
+     * sending `cancel` at all, so the key itself is heard too; the pause is guarded against the two arriving together.
+     */
+    protected escape(event: Event): void {
+        if (event.defaultPrevented && event.type === 'keydown') return;
+        event.preventDefault();
+        void this.flow.pause();
     }
 
     /**

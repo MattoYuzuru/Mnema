@@ -174,6 +174,19 @@ export class TourEngine {
         this.record(run, 'RESUME', { stepKey: key });
     }
 
+    /**
+     * Asks for the focus to return to the card heading: a page that was activated under a running step (the step's route) must not leave
+     * the focus on its own heading, because the card is what the learner is being told about.
+     */
+    refocus(): void {
+        if (this.run() !== null && !this.pausedState()) this.focusCounter.update(count => count + 1);
+    }
+
+    /** Whether a card of the tour is on the screen and owns the focus: running, not folded into the plaque, and drawn by the host. */
+    get holdsFocus(): boolean {
+        return this.run() !== null && !this.pausedState() && this.step()?.external !== true;
+    }
+
     /** «Завершить знакомство» (after the hold): records COMPLETE and says so in a toast. */
     finish(): void {
         this.end('finished');

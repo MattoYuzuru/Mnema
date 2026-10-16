@@ -180,9 +180,47 @@ describe('OnboardingHostComponent', () => {
         });
     });
 
+    describe('a journey paused in the survey or the branch choice', () => {
+        it('shows the plaque instead of opening the surface by itself, and «Продолжить знакомство» reopens the same card', async () => {
+            await render({ journey: { state: 'PAUSED', stepKey: 'survey.days', autoOffer: false } });
+            expect(root.querySelector('dialog')).toBeNull();
+            const plaque = root.querySelector('app-tour-pause')!;
+            expect(plaque).not.toBeNull();
+            expect(plaque.textContent).toContain('Знакомство на паузе');
+            // A reload finding the pause does not steal the focus.
+            expect(document.activeElement).not.toBe(plaque.querySelector('button'));
+            (plaque.querySelector('button') as HTMLButtonElement).click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await settle();
+            expect(s.store.calls).toEqual([['RESUME', { stepKey: 'survey.days' }]]);
+            expect(root.querySelector('dialog.first-entry')).not.toBeNull();
+            expect(s.flow.card()).toBe('survey.days');
+            expect(root.querySelector('app-tour-pause')).toBeNull();
+        });
+
+        it('takes the focus to the plaque when the learner paused on the surface', async () => {
+            await render({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.experience', autoOffer: false } });
+            expect(s.flow.card()).toBe('survey.experience');
+            await s.flow.pause();
+            await settle();
+            const plaque = root.querySelector('app-tour-pause')!;
+            expect(plaque).not.toBeNull();
+            expect(document.activeElement).toBe(plaque.querySelector('button'));
+        });
+
+        it('has no plaque for a journey that is not paused in the survey, nor while a tour runs', async () => {
+            await render({ journey: { state: 'PAUSED', stepKey: 'own.material', branch: 'OWN', autoOffer: false }, ai: true });
+            // The tour\'s own plaque belongs to the tour host; this host draws none of its own for a tour step.
+            expect(root.querySelector('app-tour-pause')).toBeNull();
+        });
+    });
+
     describe('a journey paused somewhere else', () => {
         it('shows the plaque once the page has the journey, and does not jump into the tour', async () => {
             await render({ journey: { state: 'PAUSED', stepKey: 'own.material', branch: 'OWN', autoOffer: false }, ai: true });
+            // The deck the step points at is looked for first (this device knows none), so the plaque follows a moment later.
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await settle();
             expect(s.engine.active()).toBe(true);
             expect(s.engine.paused()).toBe(true);
             expect(s.flow.card()).toBeNull();

@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
-import { Subscription } from 'rxjs';
+import { Subscription, firstValueFrom } from 'rxjs';
 import { AuthService } from '../../auth.service';
 import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 import { InterestProfile } from './recommendations.models';
@@ -95,6 +95,40 @@ export class InterestStore {
             }
         });
     }
+    /**
+     * «Пропустить» in the first-entry survey: records the onboarding as complete with an empty selection, quietly. It waits for the
+     * profile to be read (its version is what the write needs), and when the server says the version is stale it reads the profile again
+     * and sends the same skip once more. Neither a notice nor an error is shown: the learner chose to leave the question.
+     */
+    async skip(): Promise<void> {
+        const account = this.account();
+        if (account === null) return;
+        for (let waited = 0; (this.busy() || !this.ready()) && waited < 60; waited++) await new Promise<void>(resolve => setTimeout(resolve, 50));
+        const sequence = ++this.sequence;
+        const alive = (): boolean => sequence === this.sequence && account === this.account();
+        this.busy.set(true);
+        try {
+            for (let attempt = 0; attempt < 2; attempt++) {
+                const profile = this.profile();
+                if (profile === null || profile.onboardingComplete) return;
+                try {
+                    const next = await firstValueFrom(this.api.change({ commandId: crypto.randomUUID(), topicIds: [] }, profile.rowVersion, false));
+                    if (alive()) { this.pending = null; this.state.set(next); }
+                    return;
+                } catch (error) {
+                    if (!alive() || !(error instanceof HttpErrorResponse) || error.status !== 412) return;
+                    const fresh = await firstValueFrom(this.api.profile());
+                    if (!alive()) return;
+                    this.state.set(fresh);
+                }
+            }
+        } catch {
+            // Nothing to tell the learner: the question stays unanswered and the Community may ask again.
+        } finally {
+            if (alive()) this.busy.set(false);
+        }
+    }
+
     retry(): void { if (this.pending !== null) this.save([]); else this.reload(); }
     readonly retrying = computed(() => this.error() !== '' && this.profile() !== null);
 }

@@ -40,6 +40,9 @@ export const INTERESTS_WAIT_MS = 3_000;
 /** The decks a replay of «Своя колода» offers to continue with. */
 const REPLAY_DECKS = 6;
 
+/** The steps whose place is a page of a particular deck. */
+const DECK_STEPS: ReadonlySet<StepKey> = new Set<StepKey>(['own.material', 'own.exercise', 'own.study', 'community.study']);
+
 export interface ReplayDeck {
     readonly deckId: string;
     readonly title: string;
@@ -88,6 +91,15 @@ export class OnboardingFlow {
         if (journey.state === 'OFFERED') return journey.autoOffer ? 'welcome' : null;
         return journey.state === 'IN_PROGRESS' && isFirstEntryKey(journey.stepKey) ? journey.stepKey : null;
     });
+
+    /** The card a journey that was paused in the survey or the branch choice goes back to: the plaque «Продолжить знакомство» reopens it. */
+    readonly pausedCard = computed<FirstEntryKey | null>(() => {
+        const journey = this.store.journey();
+        if (journey === null || !this.store.enabled()) return null;
+        return journey.state === 'PAUSED' && isFirstEntryKey(journey.stepKey) ? journey.stepKey : null;
+    });
+    /** Counts the pauses the learner asked for on the surface: the plaque takes the focus then, and not when a reload finds one. */
+    readonly pauseRequest = signal(0);
 
     /** What the branch choice offers; a hidden option is simply not in the list. */
     readonly branches = computed<readonly Branch[]>(() => {
@@ -185,6 +197,38 @@ export class OnboardingFlow {
         this.go(this.following(current), current);
     }
 
+    /**
+     * Escape on the surface after the journey has begun: the same pause as the tour's. The server records PAUSE at the card, the surface
+     * closes, and the plaque reopens that card. The welcome has nothing to pause (the journey is only offered), so it stays.
+     */
+    async pause(): Promise<void> {
+        const card = this.card();
+        if (card === null || card === 'welcome' || this.busy()) return;
+        this.busy.set(true);
+        try {
+            const result = await this.store.act('PAUSE', { stepKey: card === 'replay.deck' ? 'choose' : card });
+            // A command that never arrived keeps the card for another try; an answer from the server closes it (it is the truth now).
+            if (result.status === 'failed') return;
+            this.close();
+            if (isApplied(result)) this.pauseRequest.update(count => count + 1);
+        } finally { this.busy.set(false); }
+    }
+
+    /** «Продолжить знакомство» on the plaque: RESUME at the card the journey was paused on, and the surface opens at it. */
+    async resumeSurface(): Promise<void> {
+        const key = this.pausedCard();
+        if (key === null || this.card() !== null || this.busy()) return;
+        this.busy.set(true);
+        try {
+            const result = await this.store.act('RESUME', { stepKey: key });
+            if (!isApplied(result)) return;
+            // The branch choice of a replay has no survey before it and no way back to one.
+            const replaying = key === 'choose' && (result.view.journey?.replayCount ?? 0) > 0;
+            this.open(key);
+            if (replaying) { this.replaying.set(true); void this.loadReplayDecks(); }
+        } finally { this.busy.set(false); }
+    }
+
     back(): void {
         const current = this.card();
         if (current === 'replay.deck') { this.card.set('choose'); return; }
@@ -225,7 +269,8 @@ export class OnboardingFlow {
         // A save that is still on its way owns the card: the skip waits for it (the picker's own button was pressed).
         if (this.interests.busy()) return;
         const from = this.card();
-        this.interests.save([]);
+        // The write waits for the profile's version and mends a stale one by itself; the survey does not wait for it.
+        void this.interests.skip();
         this.advance(from);
     }
 
@@ -336,7 +381,25 @@ export class OnboardingFlow {
         if (definition === null || this.engine.active()) return;
         const onFinale = key === 'finale.ai' || key === 'finale.done';
         const known = definition.steps.some(step => step.key === key);
-        this.engine.start(definition, known ? key : onFinale ? finaleKey(false) : STUDY_STEP[branch], { paused: true });
+        const start = known ? key : onFinale ? finaleKey(false) : STUDY_STEP[branch];
+        // Another device (or a reload) has no memory of the deck the tour works with: the steps that point at it need it found first.
+        if (DECK_STEPS.has(start)) await this.findDeckContext();
+        if (this.engine.active()) return;
+        this.engine.start(definition, start, { paused: true });
+    }
+
+    /**
+     * The deck the tour works with when this page knows none: the learner's most recently changed deck that is ready (a copy still being
+     * prepared is not). With none, the steps that need a deck keep their text variant instead of pointing at a place that is not there.
+     */
+    private async findDeckContext(): Promise<void> {
+        if (this.deck() !== null) return;
+        try {
+            const page = await firstValueFrom(this.injector.get(OwnDecksApiService).list());
+            const latest = page.items.filter(deck => deck.fork?.preparing !== true)
+                .reduce<(typeof page.items)[number] | null>((best, deck) => best === null || deck.updatedAt > best.updatedAt ? deck : best, null);
+            if (latest !== null && this.deck() === null) this.deck.set(latest.deckId);
+        } catch { /* Without the list the step shows its text variant. */ }
     }
 
     /** Signing out forgets the previous account's flow. */

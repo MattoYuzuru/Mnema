@@ -15,6 +15,7 @@ import { ToastRegionComponent } from '../notifications/toast-region.component';
 import { GoalOnboardingComponent } from '../../features/goal/goal-onboarding.component';
 import { PromoPopupHostComponent } from '../../features/promo/promo-popup-host.component';
 import { OnboardingHostComponent } from '../../features/onboarding/onboarding-host.component';
+import { TourEngine } from '../onboarding/tour-engine.service';
 import { TourHostComponent } from '../onboarding/tour-host.component';
 
 @Component({
@@ -31,6 +32,7 @@ export class AppShellComponent {
     readonly status = toSignal(this.auth.status$, { initialValue: this.auth.status() });
     readonly user = toSignal(this.auth.user$, { initialValue: this.auth.user() });
     private readonly router = inject(Router);
+    private readonly tour = inject(TourEngine);
 
     readonly routeUrl = toSignal(this.router.events.pipe(
         filter(event => event instanceof NavigationEnd), map(event => event.urlAfterRedirects)
@@ -73,6 +75,8 @@ export class AppShellComponent {
 
     focusPageHeading(): void {
         queueMicrotask(() => {
+            // A running tour step owns the focus: the card heading takes it back after the page is activated, instead of the page heading.
+            if (this.tour.holdsFocus) { this.tour.refocus(); return; }
             const heading = document.querySelector<HTMLElement>('#main-content h1');
             heading?.focus();
         });

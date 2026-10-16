@@ -151,7 +151,7 @@ describe('OnboardingFlow', () => {
             const { flow, interests } = await atSurvey({ goalAnswered: true });
             expect(flow.card()).toBe('survey.interests');
             flow.skipInterests();
-            expect(interests.save).toHaveBeenCalledWith([]);
+            expect(interests.skip).toHaveBeenCalled();
             expect(flow.card()).toBe('survey.experience');
         });
 
@@ -498,6 +498,41 @@ describe('OnboardingFlow', () => {
             expect(store.calls.at(-1)).toEqual(['RESUME', { stepKey: 'community.add' }]);
         });
 
+        describe('on a device that knows no deck', () => {
+            const decks = (...items: { deckId: string; updatedAt: string; preparing?: boolean }[]) => of({ nextCursor: null,
+                items: items.map(item => ({ deckId: item.deckId, updatedAt: item.updatedAt, fork: item.preparing === true ? { preparing: true } : null })) });
+
+            it('finds the most recently changed deck that is ready, so the step\'s place is there to be taken', async () => {
+                const s = setup({ journey: { state: 'PAUSED', stepKey: 'own.material', branch: 'OWN', autoOffer: false }, ai: true });
+                s.decks.list.mockReturnValue(decks({ deckId: 'old', updatedAt: '2026-10-01T10:00:00Z' }, { deckId: 'new', updatedAt: '2026-10-09T10:00:00Z' },
+                    { deckId: 'copying', updatedAt: '2026-10-10T10:00:00Z', preparing: true }));
+                await s.flow.resumeIfPaused('a');
+                expect(s.flow.currentDeck()).toBe('new');
+                expect(s.engine.step()?.key).toBe('own.material');
+                const route = s.engine.step()?.route;
+                expect(typeof route === 'function' ? route() : route).toBe('/decks/new/materials/new');
+            });
+
+            it('does not look for a deck when the step does not point at one', async () => {
+                const s = setup({ journey: { state: 'PAUSED', stepKey: 'community.search', branch: 'COMMUNITY', autoOffer: false } });
+                await s.flow.resumeIfPaused('a');
+                expect(s.decks.list).not.toHaveBeenCalled();
+            });
+
+            it('falls back to the text of the step when the learner has no deck, or the list cannot be read', async () => {
+                const none = setup({ journey: { state: 'PAUSED', stepKey: 'own.study', branch: 'OWN', autoOffer: false } });
+                await none.flow.resumeIfPaused('a');
+                expect(none.flow.currentDeck()).toBeNull();
+                expect(none.engine.step()?.key).toBe('own.study');
+                TestBed.resetTestingModule();
+                const broken = setup({ journey: { state: 'PAUSED', stepKey: 'community.study', branch: 'COMMUNITY', autoOffer: false } });
+                broken.decks.list.mockReturnValue(throwError(() => new Error('down')));
+                await broken.flow.resumeIfPaused('a');
+                expect(broken.flow.currentDeck()).toBeNull();
+                expect(broken.engine.active()).toBe(true);
+            });
+        });
+
         it('picks the paused finale up at the finale', async () => {
             const { flow, engine } = setup({ journey: { state: 'PAUSED', stepKey: 'finale.ai', branch: 'OWN', autoOffer: false }, ai: true });
             await flow.resumeIfPaused('a');
@@ -605,6 +640,86 @@ describe('OnboardingFlow', () => {
         });
     });
 
+    describe('leaving the surface with Escape after the journey has begun', () => {
+        const midSurvey = async (card: 'survey.goal' | 'survey.experience' | 'choose' = 'survey.experience'): Promise<Setup> => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: card, autoOffer: false }, goalAnswered: true });
+            s.flow.open(card);
+            return s;
+        };
+
+        it('records PAUSE at the card, closes the surface and asks the plaque to take the focus', async () => {
+            const s = await midSurvey();
+            await s.flow.pause();
+            expect(s.store.calls).toEqual([['PAUSE', { stepKey: 'survey.experience' }]]);
+            expect(s.flow.card()).toBeNull();
+            expect(s.flow.pauseRequest()).toBe(1);
+            expect(s.flow.pausedCard()).toBe('survey.experience');
+        });
+
+        it('pauses the branch choice too, and the deck choice of a replay at the branch choice', async () => {
+            const s = await midSurvey('choose');
+            s.flow.card.set('replay.deck');
+            await s.flow.pause();
+            expect(s.store.calls).toEqual([['PAUSE', { stepKey: 'choose' }]]);
+            expect(s.flow.pausedCard()).toBe('choose');
+        });
+
+        it('has nothing to pause at the welcome, where the journey is only offered', async () => {
+            const s = setup();
+            s.flow.open('welcome');
+            await s.flow.pause();
+            expect(s.store.calls).toEqual([]);
+            expect(s.flow.card()).toBe('welcome');
+        });
+
+        it('keeps the card when the pause never reached the server, and closes it when the server answers with another journey', async () => {
+            const s = await midSurvey();
+            s.store.failNext = true;
+            await s.flow.pause();
+            expect(s.flow.card()).toBe('survey.experience');
+            await s.store.act('PAUSE');
+            await s.flow.pause();
+            expect(s.store.rejections.at(-1)).toEqual({ action: 'PAUSE', reason: 'transition' });
+            expect(s.flow.card()).toBeNull();
+            expect(s.flow.pauseRequest()).toBe(0);
+        });
+
+        it('is one pause however many times the key arrives', async () => {
+            const s = await midSurvey();
+            await Promise.all([s.flow.pause(), s.flow.pause()]);
+            expect(s.store.calls).toEqual([['PAUSE', { stepKey: 'survey.experience' }]]);
+        });
+
+        it('finds a journey paused in the survey after a reload, and reopens the same card with RESUME', async () => {
+            const s = setup({ journey: { state: 'PAUSED', stepKey: 'survey.days', autoOffer: false } });
+            expect(s.flow.pausedCard()).toBe('survey.days');
+            expect(s.flow.pendingCard()).toBeNull();
+            await s.flow.resumeSurface();
+            expect(s.store.calls).toEqual([['RESUME', { stepKey: 'survey.days' }]]);
+            expect(s.flow.card()).toBe('survey.days');
+            expect(s.flow.pausedCard()).toBeNull();
+        });
+
+        it('reopens the branch choice of a replay as a replay: no survey, the learner\'s decks offered', async () => {
+            const s = setup({ journey: { state: 'PAUSED', stepKey: 'choose', autoOffer: false, replayCount: 1 } });
+            s.decks.list.mockReturnValue(of({ nextCursor: null, items: [{ deckId: 'd1', metadata: { title: 'Моя' }, fork: null, updatedAt: '2026-10-01T00:00:00Z' }] }));
+            await s.flow.resumeSurface();
+            expect(s.flow.card()).toBe('choose');
+            expect(s.flow.replaying()).toBe(true);
+            expect(s.decks.list).toHaveBeenCalled();
+        });
+
+        it('does not reopen when the resume was not taken, and is not paused for a tour step', async () => {
+            const s = setup({ journey: { state: 'PAUSED', stepKey: 'survey.days', autoOffer: false } });
+            s.store.failNext = true;
+            await s.flow.resumeSurface();
+            expect(s.flow.card()).toBeNull();
+            TestBed.resetTestingModule();
+            const tour = setup({ journey: { state: 'PAUSED', stepKey: 'own.material', branch: 'OWN', autoOffer: false } });
+            expect(tour.flow.pausedCard()).toBeNull();
+        });
+    });
+
     describe('waiting for the interests', () => {
         it('stops watching them as soon as they are there, and as soon as the wait runs out, so nothing keeps running on the root injector', async () => {
             vi.useFakeTimers();
@@ -654,7 +769,7 @@ describe('OnboardingFlow', () => {
             expect(s.goal.answer).toHaveBeenCalledWith(null);
             await vi.waitFor(() => expect(s.flow.card()).toBe('survey.interests'));
             s.flow.skip();
-            expect(s.interests.save).toHaveBeenCalledWith([]);
+            expect(s.interests.skip).toHaveBeenCalled();
             expect(s.flow.card()).toBe('survey.experience');
             s.flow.skip();
             expect(s.flow.card()).toBe('survey.days');
@@ -674,7 +789,7 @@ describe('OnboardingFlow', () => {
             s.flow.open('survey.interests');
             s.interests.busy.set(true);
             s.flow.skipInterests();
-            expect(s.interests.save).not.toHaveBeenCalled();
+            expect(s.interests.skip).not.toHaveBeenCalled();
             expect(s.flow.card()).toBe('survey.interests');
         });
     });

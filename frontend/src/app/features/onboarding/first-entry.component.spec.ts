@@ -155,6 +155,55 @@ describe('FirstEntryComponent', () => {
         });
     });
 
+    describe('Escape after the journey has begun', () => {
+        const press = (): KeyboardEvent => {
+            const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+            dialog()!.dispatchEvent(event);
+            return event;
+        };
+
+        it('is the same pause as the tour\'s: PAUSE at the card, the surface closes', async () => {
+            await render({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.experience', autoOffer: false } });
+            await open('survey.experience');
+            expect(press().defaultPrevented).toBe(true);
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await settle();
+            expect(s.store.calls).toEqual([['PAUSE', { stepKey: 'survey.experience' }]]);
+            expect(dialog()).toBeNull();
+        });
+
+        it('also answers the dialog\'s own cancel, once, for a browser that still sends it', async () => {
+            await render({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false } });
+            await open('choose');
+            const cancel = new Event('cancel', { cancelable: true });
+            dialog()!.dispatchEvent(cancel);
+            press();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await settle();
+            expect(cancel.defaultPrevented).toBe(true);
+            expect(s.store.calls).toEqual([['PAUSE', { stepKey: 'choose' }]]);
+        });
+
+        it('leaves the welcome alone: nothing has begun, so there is nothing to pause', async () => {
+            await render();
+            await open('welcome');
+            expect(press().defaultPrevented).toBe(true);
+            await settle();
+            expect(s.store.calls).toEqual([]);
+            expect(dialog()!.open).toBe(true);
+        });
+
+        it('leaves a key somebody else handled alone', async () => {
+            await render({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.experience', autoOffer: false } });
+            await open('survey.experience');
+            const handled = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+            handled.preventDefault();
+            dialog()!.dispatchEvent(handled);
+            await settle();
+            expect(s.store.calls).toEqual([]);
+        });
+    });
+
     describe('the interests card', () => {
         beforeEach(async () => { await render({ goalAnswered: true }); await open('welcome'); await click('Познакомиться — 2 минуты'); });
 
@@ -196,7 +245,7 @@ describe('FirstEntryComponent', () => {
             // The first card of the survey has nothing to go back to (never back to the welcome).
             expect(root.textContent).not.toContain('Назад');
             await click('Пропустить');
-            expect(s.interests.save).toHaveBeenCalledWith([]);
+            expect(s.interests.skip).toHaveBeenCalled();
             expect(plain(root.querySelector('.eyebrow')!.textContent)).toBe('Вопрос 3 из 4');
         });
     });
