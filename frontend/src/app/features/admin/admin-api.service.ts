@@ -11,7 +11,7 @@ import {
     parseComplaintPage, parseJournalPage, parseUnitsPage
 } from './admin-complaints.models';
 import {
-    AdminAccess, AdminPromo, AdminReport, AuditPage, CommandReceipt, Conversation, DirectoryDetail, DirectoryPage,
+    AdminAccess, AdminPromo, AdminReport, OnboardingExperimentReport, parseOnboardingReport, AuditPage, CommandReceipt, Conversation, DirectoryDetail, DirectoryPage,
     PromoCreate, PromoPage, SupportPage, TicketCommand, UserReport, object, parseAccess, parseAuditPage,
     parseConversation, parseDetail, parseDirectory, parsePromo, parsePromoPage, parseReceipt, parseReport,
     parseSupportPage, parseUserReport, str
@@ -57,6 +57,9 @@ export class AdminApiService {
             from,
             to
         }, parseReport);
+    }
+    onboardingReport(from: string, to: string): Observable<OnboardingExperimentReport> {
+        return this.get(`${this.learning}/onboarding/experiment`, { from, to }, parseOnboardingReport);
     }
     directory(query: string, status: string, after: string | null): Observable<DirectoryPage> {
         return this.get(`${this.identity}/directory`, {
