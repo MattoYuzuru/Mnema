@@ -41,7 +41,8 @@ Backend tests and the frontend contract spec both execute the fixture.
   the client's tour definitions and the server's registry are tested against the fixture, and the counters
   `mnema_onboarding_journey_total{action,step}` take their labels from it only. `branch` is `SAMPLE|COMMUNITY|OWN`,
   set by the first `STEP` into a branch step and cleared by `REPLAY`.
-- **Report.** The owner console reads aggregates only: for accounts that entered the cohort in `[from, to)` (by
+- **Report.** The owner console reads aggregates only, with the window of the console report (`from`/`to` are UTC dates,
+  `to` exclusive, 1–90 days, `to` not after tomorrow; otherwise 400): for accounts that entered the cohort in `[from, to)` (by
   `offeredAt`), per variant the group size, the activated accounts (a completed SCHEDULED session within 7 days of
   `offeredAt`) and the returned ones (completed SCHEDULED or PRACTICE sessions on two different local days within 14
   days). `smallSample` is true while a group has fewer than `minimumGroup` accounts. No account id leaves the server.

@@ -7,7 +7,7 @@
     "experiences": ["NEW", "FAMILIAR", "CONFIDENT"],
     "weeklyTarget": {"min": 1, "max": 7, "surveyOptions": [2, 3, 5, 7]},
     "experiment": {"key": "onboarding_v1", "holdoutVariant": "control"},
-    "report": {"minimumGroup": 100, "activationDays": 7, "returnDays": 14, "maxWindowDays": 92}
+    "report": {"minimumGroup": 100, "activationDays": 7, "returnDays": 14, "maxWindowDays": 90}
   },
   "steps": [
     {"key": "welcome", "branch": null},
@@ -123,8 +123,8 @@
   },
   "report": {
     "experiment": "onboarding_v1",
-    "from": "2026-10-01T00:00:00Z",
-    "to": "2026-11-01T00:00:00Z",
+    "from": "2026-10-01",
+    "to": "2026-10-31",
     "minimumGroup": 100,
     "smallSample": true,
     "groups": [
