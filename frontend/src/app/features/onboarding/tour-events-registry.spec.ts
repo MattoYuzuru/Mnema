@@ -57,7 +57,8 @@ describe('tour events', () => {
         expect(owner(TOUR_EVENTS.materialPublished)).toContain('item-editor-page');
         expect(owner(TOUR_EVENTS.materialPublished)).toContain('workshop-page');
         expect(owner(TOUR_EVENTS.exercisePublished)).toContain('exercise-authoring-page');
-        expect(owner(TOUR_EVENTS.studyStarted)).toContain('own-deck-detail-page');
+        // The session begins on the study page, not at the link that opens it.
+        expect(owner(TOUR_EVENTS.studyStarted)).toContain('study-session-page');
         expect(owner(TOUR_EVENTS.studyCompleted)).toContain('study-session-page');
     });
 });

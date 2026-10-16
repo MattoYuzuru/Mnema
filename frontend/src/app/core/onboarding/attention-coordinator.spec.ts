@@ -4,6 +4,7 @@ import { Router, provideRouter } from '@angular/router';
 
 import contract from '../../../../../contracts/onboarding/journey.json';
 import { spyObj } from '../../../testing/mocks';
+import { AuthService } from '../../auth.service';
 import { QuietZone } from '../notifications/quiet-zone';
 import { SURFACES, Surface, AttentionCoordinator } from './attention-coordinator';
 import { JourneyStore } from './journey.store';
@@ -18,15 +19,21 @@ describe('AttentionCoordinator', () => {
     const active = signal(false);
     const paused = signal(false);
     const journey = signal<Journey | null>(null);
+    const view = signal<object | null>(null);
+    const error = signal<'load' | 'command' | null>(null);
+    const authStatus = signal<'authenticated' | 'unauthenticated'>('unauthenticated');
 
     beforeEach(() => {
         active.set(false);
         paused.set(false);
         journey.set(null);
+        view.set(null);
+        error.set(null);
+        authStatus.set('unauthenticated');
         TestBed.configureTestingModule({
             providers: [provideRouter([{ path: '**', children: [] }]),
                 { provide: TourEngine, useValue: spyObj<TourEngine>({ active, paused }) },
-                { provide: JourneyStore, useValue: { journey } }]
+                { provide: JourneyStore, useValue: { journey, view, error } }, { provide: AuthService, useValue: { status: authStatus } }]
         });
         coordinator = TestBed.inject(AttentionCoordinator);
         quiet = TestBed.inject(QuietZone);
@@ -111,8 +118,34 @@ describe('AttentionCoordinator', () => {
         });
 
         it.each(['OFFERED', 'NOT_OFFERED', 'SKIPPED', 'COMPLETED'] as const)('is not held back by a %s journey', state => {
-            journey.set(journeyOf({ state }));
+            journey.set(journeyOf({ state, autoOffer: false }));
             expect(coordinator.canShow('promo')).toBe(true);
+        });
+
+        it('waits for the first entry while the welcome is still to be shown (an auto-offered journey that was not started)', () => {
+            journey.set(journeyOf({ state: 'OFFERED', autoOffer: true }));
+            expect(coordinator.canShow('promo')).toBe(false);
+            journey.set(journeyOf({ state: 'SKIPPED', autoOffer: true }));
+            expect(coordinator.canShow('promo')).toBe(true);
+        });
+
+        describe('for a signed-in learner', () => {
+            beforeEach(() => authStatus.set('authenticated'));
+
+            it('is not asked for before the journey has been read: the first entry may be about to open', () => {
+                expect(coordinator.canShow('promo')).toBe(false);
+                view.set({});
+                journey.set(journeyOf({ state: 'NOT_OFFERED', autoOffer: false }));
+                expect(coordinator.canShow('promo')).toBe(true);
+            });
+
+            it('is not held back by a journey that failed to read or is switched off', () => {
+                error.set('load');
+                expect(coordinator.canShow('promo')).toBe(true);
+                error.set(null);
+                view.set({ enabled: false, journey: null });
+                expect(coordinator.canShow('promo')).toBe(true);
+            });
         });
 
         it('is not asked for on the local day the journey finished, and is again the next day', () => {

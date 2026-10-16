@@ -86,7 +86,8 @@ export const PALETTE: readonly { readonly title: string; readonly tokens: readon
             { token: '--mn-star-paper', role: 'Бумажные звёзды' },
             { token: '--mn-scrim', role: 'Чернильная вуаль тура' },
             { token: '--mn-glow', role: 'Одно свечение главной кнопки ночи' },
-            { token: '--mn-path-hover', role: 'Лавандовая заливка: удержание, hover шеврона вехи' }
+            { token: '--mn-path-hover', role: 'Лавандовая заливка: удержание, hover шеврона вехи' },
+            { token: '--mn-night-wave', role: 'Волна нажатия на бумажных кнопках ночи' }
         ]
     }
 ];

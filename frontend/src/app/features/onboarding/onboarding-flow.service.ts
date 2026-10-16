@@ -1,12 +1,13 @@
 import { Injectable, Injector, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Router } from '@angular/router';
-import { catchError, firstValueFrom, of } from 'rxjs';
+import { toObservable } from '@angular/core/rxjs-interop';
+import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 import { ToastService } from '../../core/notifications/toast.service';
 import { AttentionCoordinator } from '../../core/onboarding/attention-coordinator';
 import { JourneyStore } from '../../core/onboarding/journey.store';
-import { Branch, Experience, StepKey } from '../../core/onboarding/onboarding.models';
+import { Branch, Experience, StepKey, isApplied } from '../../core/onboarding/onboarding.models';
 import { onboardingText } from '../../core/onboarding/onboarding-texts';
 import { TourEngine } from '../../core/onboarding/tour-engine.service';
 import { TourEventPayload, TourEvents } from '../../core/onboarding/tour-events';
@@ -35,6 +36,8 @@ export const MINIMUM_CATALOGUE = 4;
 /** How long a learner browses the catalogue before the hint at the search, and before the offer to make their own deck. */
 export const BROWSE_HINT_MS = 45_000;
 export const BROWSE_STUCK_MS = 120_000;
+/** How long the survey waits for the interests of the account before it goes on without that question. */
+export const INTERESTS_WAIT_MS = 3_000;
 /** The decks a replay of «Своя колода» offers to continue with. */
 const REPLAY_DECKS = 6;
 
@@ -152,7 +155,9 @@ export class OnboardingFlow {
         try {
             await this.prepare();
             const first = this.following('welcome');
-            if (await this.store.act('START', { stepKey: first }) === null) { this.close(); return; }
+            // Not taken (the server moved the journey, or could not be reached): the surface closes, and the host reopens it at the
+            // card the server says if there is one.
+            if (!isApplied(await this.store.act('START', { stepKey: first }))) { this.close(); return; }
             this.card.set(first);
         } finally { this.busy.set(false); }
     }
@@ -162,19 +167,22 @@ export class OnboardingFlow {
         if (this.busy() || this.card() !== 'welcome') return;
         this.busy.set(true);
         try {
-            const view = await this.store.act('SKIP');
+            const skipped = isApplied(await this.store.act('SKIP'));
             this.close();
-            if (view !== null) {
+            if (skipped) {
                 this.toasts.notify('onboarding-skipped', onboardingText('skip.toast'), 'INFO',
                     { label: onboardingText('skip.toast.link'), commands: [PATH_TARGET] });
             }
         } finally { this.busy.set(false); }
     }
 
-    /** The next card after the current one; the learner is never sent back to the welcome. */
-    advance(): void {
+    /**
+     * The next card after the current one; the learner is never sent back to the welcome. `from` is the card the move was asked on: an
+     * answer or a skip that arrives after the card has already moved on (a double click, a slow save) is ignored, not applied twice.
+     */
+    advance(from: FirstEntryCard | null = this.card()): void {
         const current = this.card();
-        if (current === null || current === 'replay.deck') return;
+        if (current === null || current === 'replay.deck' || from !== current) return;
         this.go(this.following(current), current);
     }
 
@@ -198,14 +206,28 @@ export class OnboardingFlow {
 
     async answerGoal(goal: LearningGoal | null): Promise<void> {
         if (this.busy()) return;
+        const from = this.card();
         this.busy.set(true);
-        try { if (await this.goal.answer(goal)) this.advance(); } finally { this.busy.set(false); }
+        try { if (await this.goal.answer(goal)) this.advance(from); } finally { this.busy.set(false); }
+    }
+
+    /** «Пропустить»: the question is left unanswered. Ignored while an answer is being saved, so one press never moves the survey twice. */
+    skip(): void {
+        if (this.busy()) return;
+        switch (this.card()) {
+            case 'survey.goal': void this.answerGoal(null); break;
+            case 'survey.interests': this.skipInterests(); break;
+            default: this.advance();
+        }
     }
 
     /** «Пропустить» on the interests card records the skip the way the old question did, so the Community does not ask again. */
     skipInterests(): void {
+        // A save that is still on its way owns the card: the skip waits for it (the picker's own button was pressed).
+        if (this.interests.busy()) return;
+        const from = this.card();
         this.interests.save([]);
-        this.advance();
+        this.advance(from);
     }
 
     async answerExperience(experience: Experience): Promise<void> {
@@ -218,11 +240,12 @@ export class OnboardingFlow {
 
     private async saveAnswer(changes: { experience?: Experience; weeklyTarget?: number }): Promise<void> {
         if (this.busy()) return;
+        const from = this.card();
         this.busy.set(true);
         try {
             // A failed save leaves the answer unsent and the survey going: the question may be asked again from the profile.
             await this.store.setPreferences(changes);
-            this.advance();
+            this.advance(from);
         } finally { this.busy.set(false); }
     }
 
@@ -246,9 +269,12 @@ export class OnboardingFlow {
     private async beginBranch(branch: Branch, from: StepKey): Promise<void> {
         this.busy.set(true);
         try {
-            if (await this.store.act('STEP', { stepKey: from, branch }) === null) { this.close(); return; }
+            const result = await this.store.act('STEP', { stepKey: from, branch });
+            // A command that was not delivered keeps the card for another try; an answer from the server (taken, or the journey is
+            // elsewhere) closes it, and only a move the server took starts the tour.
+            if (result.status === 'failed') return;
             this.close();
-            await this.startTour(branch, from);
+            if (isApplied(result)) await this.startTour(branch, from);
         } finally { this.busy.set(false); }
     }
 
@@ -263,8 +289,9 @@ export class OnboardingFlow {
     /** «Не нашли подходящую?» → «Создать свою»: the tour moves to the own-deck branch. */
     async switchToOwn(): Promise<void> {
         this.hints.stuck.set(false);
+        // The tour is replaced only when the server took the move: a refusal leaves the learner in the tour they are in.
+        if (!isApplied(await this.store.act('STEP', { stepKey: 'own.details', branch: 'OWN' }))) return;
         this.engine.stop();
-        if (await this.store.act('STEP', { stepKey: 'own.details', branch: 'OWN' }) === null) return;
         await this.startTour('OWN', 'own.details');
     }
 
@@ -275,9 +302,10 @@ export class OnboardingFlow {
         if (this.busy()) return;
         this.busy.set(true);
         try {
+            // REPLAY is not allowed from a journey in progress (the table): a tour in progress is paused first, then replayed.
+            if (this.store.journey()?.state === 'IN_PROGRESS' && !isApplied(await this.store.act('PAUSE'))) return;
+            if (!isApplied(await this.store.act('REPLAY', { stepKey: 'choose' }))) return;
             this.engine.stop();
-            const view = await this.store.act('REPLAY', { stepKey: 'choose' });
-            if (view === null) return;
             this.history.set([]);
             this.replaying.set(true);
             this.card.set('choose');
@@ -303,7 +331,7 @@ export class OnboardingFlow {
         if ((journey.state !== 'PAUSED' && journey.state !== 'IN_PROGRESS') || key === null || isFirstEntryKey(key)) return;
         const branch = journey.branch;
         if (branch === null) return;
-        if (journey.state === 'IN_PROGRESS' && await this.store.act('PAUSE', { stepKey: key }) === null) return;
+        if (journey.state === 'IN_PROGRESS' && !isApplied(await this.store.act('PAUSE', { stepKey: key }))) return;
         await this.ensureCapabilities();
         const definition = tourFor(branch, this.context);
         if (definition === null || this.engine.active()) return;
@@ -352,7 +380,15 @@ export class OnboardingFlow {
     /** The survey's stores and the branch choice's facts, read once the surface opens. Failures leave a question or an option out. */
     private async prepare(): Promise<void> {
         this.interests.ensure();
-        await Promise.all([this.goal.load(), this.ensureCapabilities(), this.loadCatalogue()]);
+        await Promise.all([this.goal.load(), this.ensureCapabilities(), this.loadCatalogue(), this.interestsReady()]);
+    }
+
+    /** The interests are read when the account is known; the survey decides whether to ask about them only after that, or after a wait. */
+    private async interestsReady(): Promise<void> {
+        if (this.interests.ready()) return;
+        try {
+            await firstValueFrom(toObservable(this.interests.ready, { injector: this.injector }).pipe(filter(ready => ready), timeout(INTERESTS_WAIT_MS)));
+        } catch { /* Without the interests the card is left out: the survey never waits on one question. */ }
     }
 
     private ensureCapabilities(): Promise<void> {

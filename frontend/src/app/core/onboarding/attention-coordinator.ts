@@ -1,6 +1,7 @@
 import { Injectable, Injector, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
+import { AuthService } from '../../auth.service';
 import { QuietZone } from '../notifications/quiet-zone';
 import { JourneyStore } from './journey.store';
 import { currentUrl, isStudyUrl } from './study-route';
@@ -18,8 +19,8 @@ export type Surface = typeof SURFACES[number];
  * they live (the quiet zone, the tour engine), so no owner can forget to say so. `canShow(surface)` is true when no
  * surface of a higher priority is on the screen; asking never shows anything.
  *
- * The promo window has two rules more: it is not asked for while the journey is `IN_PROGRESS` or `PAUSED` (the learner is in the
- * middle of getting to know the app) and not on the local day the journey finished.
+ * The promo window has more rules (`promoAllowedByJourney`): not before the journey is read, not while the first entry is waiting, not
+ * while the journey is `IN_PROGRESS` or `PAUSED`, and not on the local day the journey finished.
  */
 @Injectable({ providedIn: 'root' })
 export class AttentionCoordinator {
@@ -65,11 +66,18 @@ export class AttentionCoordinator {
         }
     }
 
-    /** No promo in the middle of the journey, and none on the day it ended. A journey that is not loaded (or off) never holds a promo back. */
+    /**
+     * No promo before the journey has been read for a signed-in learner (the first entry may be about to open: a popup that arrives
+     * first would sit under it), none while a first-entry card is waiting or the journey is `IN_PROGRESS` or `PAUSED`, and none on
+     * the local day it finished. A journey that failed to read (or is off) never holds a promo back.
+     */
     private promoAllowedByJourney(): boolean {
-        const journey = this.journey.journey();
+        const store = this.journey;
+        if (this.injector.get(AuthService).status() === 'authenticated' && store.view() === null && store.error() === null) return false;
+        const journey = store.journey();
         if (journey === null) return true;
         if (journey.state === 'IN_PROGRESS' || journey.state === 'PAUSED') return false;
+        if (journey.state === 'OFFERED' && journey.autoOffer) return false;
         return journey.finishedAt === null || !sameLocalDay(new Date(journey.finishedAt), new Date());
     }
 }

@@ -94,7 +94,7 @@
       }
 
       <nav class="actions hub-actions" aria-label="Действия с колодой">
-        <a class="button primary" mnTourAnchor="hub.start" [routerLink]="['/decks', deck.deckId, 'study']" (click)="startStudy()">Учить</a>
+        <a class="button primary" mnTourAnchor="hub.start" [routerLink]="['/decks', deck.deckId, 'study']">{{ studyLabel }}</a>
         <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Добавить материал</a>
         <a class="button secondary capture-link" [routerLink]="['/decks', deck.deckId, 'capture']" [attr.aria-label]="captureCount() ? 'На потом, заметок: ' + captureCount() : 'На потом'">На потом@if (captureCount(); as count) { <span class="capture-badge" aria-hidden="true">{{ count > 999 ? '999+' : count }}</span> }</a>
         @if (updateCheck()) { <a class="button quiet" [routerLink]="['/decks', deck.deckId, 'update']">{{ updateText.checkUpdates }}</a> }

@@ -32,6 +32,8 @@ const MODAL_RECHECK_MS = 1_000;
           (accepted)="flow.switchToOwn()" (dismissed)="hints.stuck.set(false)" />
       }
     `,
+    // The host is one of the tour's own surfaces: the offer of the community tour must stay live while a step makes the page inert.
+    host: { 'data-tour-surface': '' },
     styles: [`:host { display: contents; }`],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -56,19 +58,25 @@ export class OnboardingHostComponent {
             });
         });
 
-        // The first entry opens by itself for a journey that wants it, when nothing louder is up and no other modal dialog is open.
+        // The first entry opens by itself for a journey that wants it, when nothing louder is up and no other modal dialog is open. A
+        // surface that waits for another modal looks again every second, and each look asks everything again (the modal may have been
+        // followed by a tour or another dialog in the meantime).
         effect(() => {
             const wanted = this.flow.pendingCard();
             const open = this.flow.card() !== null;
-            const allowed = this.auth.status() === 'authenticated' && this.attention.canShow('first-entry');
+            const authenticated = this.auth.status() === 'authenticated';
+            this.attention.canShow('first-entry'); // read here so that the effect follows what the coordinator follows
             untracked(() => {
                 if (this.recheck !== null) { clearTimeout(this.recheck); this.recheck = null; }
-                if (open || wanted === null || !allowed) return;
-                if (this.otherModalOpen()) {
-                    this.recheck = setTimeout(() => { this.recheck = null; this.flow.open(wanted); }, MODAL_RECHECK_MS);
-                    return;
-                }
-                this.flow.open(wanted);
+                const attempt = (): void => {
+                    this.recheck = null;
+                    const card = this.flow.pendingCard();
+                    if (this.flow.card() !== null || card === null || this.auth.status() !== 'authenticated' || !this.attention.canShow('first-entry')) return;
+                    if (this.otherModalOpen()) { this.recheck = setTimeout(attempt, MODAL_RECHECK_MS); return; }
+                    this.flow.open(card);
+                };
+                if (open || wanted === null || !authenticated) return;
+                attempt();
             });
         });
 
@@ -90,6 +98,13 @@ export class OnboardingHostComponent {
         });
         effect(() => {
             if (this.flow.card() !== null && !this.store.enabled()) untracked(() => this.flow.close());
+        });
+        // The feature was switched off while the page was open (a later read says so): a tour in progress is taken down with it. Not before
+        // the first answer: a view that has not arrived says nothing, and a tour of another origin (the styleguide's) is not this journey's.
+        effect(() => {
+            const answered = this.store.view() !== null;
+            const enabled = this.store.enabled();
+            if (answered && !enabled && this.engine.active()) untracked(() => this.engine.stop());
         });
 
         // A journey paused (or left on a branch step) elsewhere shows the plaque once the page has found it.

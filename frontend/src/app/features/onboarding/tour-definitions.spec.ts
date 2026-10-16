@@ -5,7 +5,8 @@ import { TOUR_ANCHOR_KEYS } from '../../core/onboarding/tour-anchor-keys';
 import { tourDefinitionProblems } from '../../core/onboarding/tour-definition';
 import { plainText } from '../../core/onboarding/tour-rich-text';
 import { TourDefinition, TourStep } from '../../core/onboarding/tour.models';
-import { HUB_STUDY_LABEL, SAMPLE_TOUR, TOUR_EVENTS, TOUR_VERSION, TourContext, finaleKey, tourFor } from './tour-definitions';
+import { CREATE_DECK_LABEL, STUDY_DECK_LABEL } from '../own-decks/own-deck.models';
+import { HUB_STUDY_LABEL, QUOTED_UI_LABELS, SAMPLE_TOUR, TOUR_EVENTS, TOUR_VERSION, TourContext, finaleKey, tourFor } from './tour-definitions';
 
 const context = (overrides: Partial<{ experience: TourContext['experience']; aiAvailable: boolean; deck: string | null; member: string | null }> = {}): TourContext => {
     const { experience = 'NEW', aiAvailable = true, deck = 'deck-1', member = 'member-1' } = overrides;
@@ -20,6 +21,20 @@ describe('tour definitions, version 1', () => {
         expect(TOUR_VERSION).toBe(1);
         expect(tourFor('COMMUNITY', context())?.id).toBe('community-v1');
         expect(tourFor('OWN', context())?.id).toBe('own-v1');
+    });
+
+    it('names every control a gate waits for either in the approved words or as a quotation of the product\'s own button', () => {
+        const approved = new Set(Object.values(ONBOARDING_TEXTS).map(text => text.replace(/\u00a0/gu, ' ')));
+        expect(QUOTED_UI_LABELS).toEqual([STUDY_DECK_LABEL, CREATE_DECK_LABEL]);
+        expect(HUB_STUDY_LABEL).toBe('Учить');
+        expect(CREATE_DECK_LABEL).toBe('Создать колоду');
+        for (const branch of ['COMMUNITY', 'OWN'] as const) {
+            for (const step of tourFor(branch, context())!.steps) {
+                if (typeof step.gate === 'string' || step.gate.label === null) continue;
+                const label = step.gate.label.replace(/\u00a0/gu, ' ');
+                expect(approved.has(label) || QUOTED_UI_LABELS.includes(step.gate.label), `${step.key}: «${label}»`).toBe(true);
+            }
+        }
     });
 
     it('has no definition of the sample tour yet: that is OB-203, and nothing starts it', () => {

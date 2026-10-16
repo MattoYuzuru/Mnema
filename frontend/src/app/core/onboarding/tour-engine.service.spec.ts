@@ -1,9 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 
+import contract from '../../../../../contracts/onboarding/journey.json';
 import { spyObj } from '../../../testing/mocks';
 import { ToastService } from '../notifications/toast.service';
-import { ActionOptions, JourneyAction } from './onboarding.models';
+import { ActionOptions, JourneyAction, JourneyResult, OnboardingView } from './onboarding.models';
 import { ANCHOR_WAIT_MS, TOUR_PERSISTENCE, TourEngine, TourPersistence } from './tour-engine.service';
 import { TourAnchors } from './tour-anchors';
 import { TourEvents } from './tour-events';
@@ -481,11 +482,127 @@ describe('TourEngine', () => {
 
         it('hands the payload of an event to every listener, and the engine ignores it', () => {
             const seen: unknown[] = [];
-            const stop = events.listen((event, payload) => seen.push([event, payload]));
+            const stop = events.listen((event, payload) => { seen.push([event, payload]); });
             events.emit('deck.created', { deckId: 'd1' });
             stop();
             events.emit('deck.created', { deckId: 'd2' });
             expect(seen).toEqual([['deck.created', { deckId: 'd1' }]]);
+        });
+    });
+
+    describe('a tour that starts paused, and a tour that continues', () => {
+        const FIXED: TourDefinition = { id: 'fixed', branch: 'COMMUNITY', steps: [
+            step({ key: 'community.search', anchor: 'community.search', route: '/community', gate: { action: 'deck.opened', label: null } }),
+            step({ key: 'community.deck', anchor: 'community.deck' }),
+            step({ key: 'own.details', anchor: 'own.details', route: '/decks/new', gate: { action: 'deck.created', label: 'Создать колоду' } })
+        ] };
+
+        it('does not take the learner anywhere when it starts paused, even from a step with a fixed route', async () => {
+            const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+            engine.start(FIXED, 'community.search', { paused: true });
+            expect(engine.paused()).toBe(true);
+            expect(navigate).not.toHaveBeenCalled();
+            engine.start(FIXED, 'own.details', { paused: true });
+            expect(navigate).not.toHaveBeenCalled();
+            expect(calls).toEqual([]);
+        });
+
+        it('takes the learner to the place of the step when the plaque continues it', () => {
+            const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+            engine.start(FIXED, 'own.details', { paused: true });
+            engine.resume();
+            expect(navigate).toHaveBeenCalledTimes(1);
+            expect(navigate).toHaveBeenCalledWith('/decks/new');
+            expect(engine.paused()).toBe(false);
+        });
+
+        it('takes the learner to the place of the step a paused tour is continued at', () => {
+            const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+            engine.start(FIXED, 'community.search', { paused: true });
+            engine.resumeAt('own.details');
+            expect(navigate).toHaveBeenCalledWith('/decks/new');
+            expect(engine.step()?.key).toBe('own.details');
+            expect(calls).toEqual([['RESUME', { stepKey: 'own.details' }]]);
+        });
+
+        it('counts a request to pause only when the learner folded the tour, not when it started paused', () => {
+            engine.start(FIXED, 'community.search', { paused: true });
+            expect(engine.pauseRequest()).toBe(0);
+            engine.resume();
+            engine.pause();
+            expect(engine.pauseRequest()).toBe(1);
+        });
+    });
+
+    describe('events and the way back', () => {
+        it('tells the page whether a gate took the event, so exactly one side navigates', () => {
+            expect(events.emit('study.started')).toBe(false);
+            engine.start(TOUR, 'sample.study');
+            expect(events.emit('deck.created')).toBe(false);
+            expect(events.emit('study.started')).toBe(true);
+        });
+
+        it('offers no way back to a step before a gate that was passed by an action: it would be done a second time', () => {
+            const GATED: TourDefinition = { id: 'g', branch: 'OWN', steps: [
+                step({ key: 'own.details', anchor: 'a', gate: { action: 'deck.created', label: 'Создать колоду' } }),
+                step({ key: 'own.material', anchor: 'b', gate: { action: 'material.published', label: null } }),
+                step({ key: 'own.exercise', anchor: 'c' })
+            ] };
+            engine.start(GATED);
+            expect(engine.canGoBack()).toBe(false);
+            events.emit('deck.created', { deckId: 'd' });
+            expect(engine.step()?.key).toBe('own.material');
+            expect(engine.canGoBack()).toBe(false);
+            calls.length = 0;
+            engine.back();
+            expect(engine.step()?.key).toBe('own.material');
+            expect(calls).toEqual([]);
+            events.emit('material.published');
+            expect(engine.step()?.key).toBe('own.exercise');
+            expect(engine.canGoBack()).toBe(false);
+            engine.start(TOUR, 'sample.material');
+            expect(engine.canGoBack()).toBe(true);
+        });
+    });
+
+    describe('when the server refuses a command', () => {
+        const refusal = (journey: Partial<OnboardingView['journey'] & object>, enabled = true): JourneyResult =>
+            ({ status: 'refused', view: { ...(contract.views.offered as OnboardingView), enabled, journey: { ...(contract.views.paused.journey as object), ...journey } as never } });
+        const flush = async (): Promise<void> => { await Promise.resolve(); await Promise.resolve(); TestBed.tick(); };
+
+        it('follows the step the re-read journey is on instead of carrying on as if its own step was taken', async () => {
+            persistence.act.mockResolvedValueOnce(refusal({ state: 'IN_PROGRESS', stepKey: 'sample.study' }));
+            engine.start(TOUR);
+            engine.next();
+            await flush();
+            expect(engine.step()?.key).toBe('sample.study');
+            expect(engine.paused()).toBe(false);
+        });
+
+        it('folds into the plaque when the journey was paused somewhere else', async () => {
+            persistence.act.mockResolvedValueOnce(refusal({ state: 'PAUSED', stepKey: 'sample.material' }));
+            engine.start(TOUR);
+            engine.next();
+            await flush();
+            expect(engine.step()?.key).toBe('sample.material');
+            expect(engine.paused()).toBe(true);
+        });
+
+        it.each([['COMPLETED', true], ['SKIPPED', true], ['IN_PROGRESS', false]] as const)('stops for a journey that is %s (or a feature that went off)', async (state, enabled) => {
+            persistence.act.mockResolvedValueOnce(refusal({ state, stepKey: null }, enabled));
+            engine.start(TOUR);
+            engine.next();
+            await flush();
+            expect(engine.active()).toBe(false);
+        });
+
+        it('does not follow an answer that arrives after the tour was replaced', async () => {
+            persistence.act.mockResolvedValueOnce(refusal({ state: 'IN_PROGRESS', stepKey: 'sample.study' }));
+            engine.start(TOUR);
+            engine.next();
+            engine.start({ ...TOUR, id: 'other' });
+            await flush();
+            expect(engine.step()?.key).toBe('sample.hub');
         });
     });
 });

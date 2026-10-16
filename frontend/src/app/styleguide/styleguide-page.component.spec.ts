@@ -350,7 +350,7 @@ describe('StyleguidePageComponent', () => {
 
     it('lists the tour tokens in the palette, the hold time in the motion section and the tour among the components', () => {
         const palette = root.querySelector('#palette')!.textContent!;
-        for (const token of ['--mn-night', '--mn-on-night', '--mn-on-night-muted', '--mn-star-lavender', '--mn-star-paper', '--mn-scrim', '--mn-glow', '--mn-path-hover']) {
+        for (const token of ['--mn-night', '--mn-on-night', '--mn-on-night-muted', '--mn-star-lavender', '--mn-star-paper', '--mn-scrim', '--mn-glow', '--mn-path-hover', '--mn-night-wave']) {
             expect(palette).toContain(token);
         }
         expect(root.querySelector('#motion')!.textContent).toContain('--mn-tour-hold');

@@ -26,22 +26,24 @@ export type TourCardMode = 'normal' | 'missing' | 'preparing';
     template: `
       @if (inline()) {
         <!-- A specimen is drawn in the flow and is not an open dialog: an open dialog holds back toasts for the whole page. -->
-        <div class="tour-card inline" [class.sheet]="sheet()" role="group" [attr.aria-labelledby]="titleId" [attr.aria-describedby]="bodyId">
+        <div class="tour-card inline" [class.sheet]="sheet()" role="group" [attr.aria-labelledby]="titleId" [attr.aria-describedby]="counterId + ' ' + bodyId">
           <ng-container *ngTemplateOutlet="content" />
         </div>
       } @else {
-        <dialog #surface class="tour-card" role="dialog" [class.sheet]="sheet()" [attr.aria-labelledby]="titleId" [attr.aria-describedby]="bodyId"
+        <dialog #surface class="tour-card" role="dialog" [class.sheet]="sheet()" [attr.aria-labelledby]="titleId" [attr.aria-describedby]="counterId + ' ' + bodyId"
           [style.left.px]="floating() ? (at()?.left ?? null) : null" [style.top.px]="floating() ? (at()?.top ?? null) : null" (cancel)="onCancel($event)">
           <ng-container *ngTemplateOutlet="content" />
         </dialog>
       }
       <ng-template #content>
         <div class="tour-head">
-          <p class="eyebrow">{{ counter() }}</p>
+          <p class="eyebrow" [id]="counterId">{{ counter() }}</p>
           <div class="dots" aria-hidden="true">
             @for (dot of dots(); track $index) { <span [class.on]="dot"></span> }
           </div>
         </div>
+        <!-- Inside the card, so it is heard on a modal step too (the page outside a modal dialog is inert); it lives as long as the card does. -->
+        <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{{ counter() }}. {{ title() }}</div>
         <h2 #heading [id]="titleId" tabindex="-1">{{ title() }}</h2>
         <div [id]="bodyId" class="tour-body">
           @if (mode() === 'missing') {
@@ -119,6 +121,7 @@ export class TourCardComponent {
     private readonly id = nextCard++;
     protected readonly titleId = `mn-tour-card-${this.id}-title`;
     protected readonly bodyId = `mn-tour-card-${this.id}-body`;
+    protected readonly counterId = `mn-tour-card-${this.id}-counter`;
 
     protected readonly counter = computed(() => onboardingText('tour.counter', { n: this.position(), m: this.total() }));
     protected readonly dots = computed(() => Array.from({ length: this.total() }, (_, index) => index < this.position()));

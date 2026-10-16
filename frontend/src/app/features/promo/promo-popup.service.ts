@@ -47,6 +47,8 @@ export class PromoPopupService {
 
     constructor() {
         this.synchronize();
+        // The window is on the screen from here to its close: the coordinator knows, so nothing louder opens over it unasked.
+        effect(() => this.attention.report('promo', this.visible() !== null));
         effect(() => {
             this.auth.status();
             this.auth.user();

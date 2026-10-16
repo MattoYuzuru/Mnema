@@ -85,7 +85,7 @@ describe('the actions of the public deck view: copy, invitation, access request'
     describe('what the onboarding tour is told', () => {
         const heard = (): [string, unknown][] => {
             const seen: [string, unknown][] = [];
-            TestBed.inject(TourEvents).listen((event, payload) => seen.push([event, payload]));
+            TestBed.inject(TourEvents).listen((event, payload) => { seen.push([event, payload]); });
             return seen;
         };
 
@@ -115,6 +115,23 @@ describe('the actions of the public deck view: copy, invitation, access request'
             button('Добавить к себе').click();
             await settle();
             expect(seen.filter(([event]) => event === 'deck.copied')).toEqual([['deck.copied', { deckId: COPY_ID }]]);
+        });
+
+        it('opens the copy itself, unless a tour gate took the event and goes to the copy\'s hub on its own', async () => {
+            api.summary.mockReturnValue(of(PUBLIC));
+            copies.copy.mockReturnValue(of({ commandId: 'x', deckId: COPY_ID, preparing: true, existing: false }));
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+            await open(publicUrl);
+            button('Добавить к себе').click();
+            await settle();
+            expect(navigate).toHaveBeenCalledWith(['/decks', COPY_ID]);
+            navigate.mockClear();
+            TestBed.inject(TourEvents).listen(() => true);
+            await open(publicUrl);
+            button('Добавить к себе').click();
+            await settle();
+            expect(navigate).not.toHaveBeenCalled();
+            expect(button('Добавить к себе').disabled).toBe(false);
         });
     });
 

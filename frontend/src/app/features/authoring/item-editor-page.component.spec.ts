@@ -232,7 +232,7 @@ describe('ItemEditorPageComponent recovery', () => {
                 changes: [{ operation: 'save', memberKey: member, itemRevisionId: id('7'), itemVersion: '1', ordinal: 3 }] } }));
             const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
             const seen: [string, unknown][] = [];
-            TestBed.inject(TourEvents).listen((event, payload) => seen.push([event, payload]));
+            TestBed.inject(TourEvents).listen((event, payload) => { seen.push([event, payload]); });
             expect(component.replacing()).toBe(true);
             component.publish();
             // The onboarding tour is told that a material was published, with the deck and the material, after the draft is cleaned up.
@@ -241,6 +241,21 @@ describe('ItemEditorPageComponent recovery', () => {
             expect(call.slice(0, 6)).toEqual([deck.deckId, member, deck.rowVersion, deck.revisionId, blockedRevision, 3]);
             expect(call[8]).toEqual([]);
             expect(router.navigate).toHaveBeenCalledWith(['/decks', deck.deckId, 'materials', member], { queryParams: { ordinal: 3 } });
+        });
+
+        it('leaves the way to the next place to the tour when a gate took the event, and does not navigate itself', () => {
+            const { items, authoring, router } = configure(member, '3', null, blockedRevision);
+            items.read.mockReturnValue(throwError(gone));
+            authoring.listAllDrafts.mockReturnValue(of({ items: [draftFor()], nextCursor: null }));
+            authoring.readDraft.mockReturnValue(of(draftFor()));
+            authoring.deleteDraft.mockReturnValue(of(undefined));
+            items.save.mockReturnValue(of({ replayed: false, acknowledgement: { commandId: id('5'), deckId: deck.deckId, deckRevisionId: id('6'), deckVersion: '1', memberCount: 1,
+                changes: [{ operation: 'save', memberKey: member, itemRevisionId: id('7'), itemVersion: '1', ordinal: 3 }] } }));
+            const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
+            TestBed.inject(TourEvents).listen(() => true);
+            component.publish();
+            expect(items.save).toHaveBeenCalled();
+            expect(router.navigate).not.toHaveBeenCalled();
         });
 
         it('does not pretend: without the revision of the list a blocked material is a calm failure and no draft is made', () => {

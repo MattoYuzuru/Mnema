@@ -13,6 +13,7 @@ import { PageTransition } from '../../shared/page-transition.service';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { GenerationApiService } from './generation-api.service';
+import { TourAnchors } from '../../core/onboarding/tour-anchors';
 import { ANNOUNCE_GAP_MS, WorkshopPageComponent } from './workshop-page.component';
 import { WorkshopSessionStore } from './workshop-session.store';
 import {
@@ -102,6 +103,13 @@ describe('WorkshopPageComponent', () => {
             expect(dots()[0]!.getAttribute('aria-current')).toBe('step');
             expect(shown()).toBe('Материал 1 из 3, готов');
             expect(root().querySelector('a.back-link')?.textContent).toContain('«Японский N4»');
+        });
+
+        it('keeps the onboarding tour\'s material step alive here: the composer opens the Workshop, and the step must still find its place', async () => {
+            await open();
+            const section = root().querySelector('section.workshop')!;
+            expect(section.getAttribute('data-tour-anchor')).toBe('own.material');
+            expect(TestBed.inject(TourAnchors).lookup('own.material')).toBe(section);
         });
 
         it('starts on the first proposal even when earlier materials are done, and keeps the first of a batch that has none', async () => {
@@ -345,7 +353,7 @@ describe('WorkshopPageComponent', () => {
         it('approves the material on show and moves on to the next one that still waits, with focus on its title', async () => {
             await open(reviewing(artifactWith(third, 2, 'PUBLISHED')), '1');
             const seen: [string, unknown][] = [];
-            TestBed.inject(TourEvents).listen((event, payload) => seen.push([event, payload]));
+            TestBed.inject(TourEvents).listen((event, payload) => { seen.push([event, payload]); });
             document.body.append(root());
             api.approveArtifact.mockReturnValue(of(ackFor(ids.first)));
             api.getSession.mockReturnValue(of(parseSessionDetail(sessionWith([artifactWith(ids.first, 0, 'PUBLISHED', { rowVersion: '5' }), proposed(ids.second, 1), artifactWith(third, 2, 'PUBLISHED')], { state: 'REVIEW' }))));
@@ -356,7 +364,8 @@ describe('WorkshopPageComponent', () => {
                 { rowVersion: '8', revisionId: ids.deckRevision }, expect.any(String));
             expect(dots()[1]!.getAttribute('aria-current')).toBe('step');
             expect(toast.echo).toHaveBeenCalledWith('Материал одобрен');
-            expect(seen).toEqual([['material.published', { deckId: ids.deckId }]]);
+            // The tour is told which material was published (its member key), so the next step can open the exercise composer for it.
+            expect(seen).toEqual([['material.published', { deckId: ids.deckId, memberKey: '44444444-4444-4444-8444-444444444444' }]]);
             expect(document.activeElement).toBe(root().querySelector('app-proposal-view h2'));
             root().remove();
         });

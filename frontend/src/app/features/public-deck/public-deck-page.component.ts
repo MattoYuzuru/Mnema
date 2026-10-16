@@ -268,8 +268,9 @@ export class PublicDeckPageComponent {
             next: created => {
                 this.copyCommand = null;
                 // The tour's «Добавить к себе» step is done by the copy that worked, not by the click.
-                this.tour.emit('deck.copied', { deckId: created.deckId });
-                void this.router.navigate(['/decks', created.deckId]).finally(() => this.copying.set(false));
+                // A tour that took the event opens the copy's hub itself (the same place), so the page does not navigate a second time.
+                if (this.tour.emit('deck.copied', { deckId: created.deckId })) this.copying.set(false);
+                else void this.router.navigate(['/decks', created.deckId]).finally(() => this.copying.set(false));
             },
             error: (error: unknown) => {
                 const failure = forkFailureOf(error);

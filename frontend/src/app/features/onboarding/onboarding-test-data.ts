@@ -7,7 +7,7 @@ import contract from '../../../../../contracts/onboarding/journey.json';
 import { AuthService } from '../../auth.service';
 import { ToastService } from '../../core/notifications/toast.service';
 import { JourneyStore } from '../../core/onboarding/journey.store';
-import { ActionOptions, Journey, JourneyAction, OnboardingView, StepKey } from '../../core/onboarding/onboarding.models';
+import { ActionOptions, Journey, JourneyAction, JourneyResult, OnboardingView, StepKey } from '../../core/onboarding/onboarding.models';
 import { TOUR_PERSISTENCE, TourEngine } from '../../core/onboarding/tour-engine.service';
 import { TourEvents } from '../../core/onboarding/tour-events';
 import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
@@ -28,9 +28,25 @@ export function viewOf(journey: Partial<Journey> | null, overrides: Partial<Onbo
     };
 }
 
+interface TransitionRule {
+    readonly from: Readonly<Record<string, string>>;
+    readonly stepKey: 'required' | 'optional' | 'forbidden';
+    readonly branch: 'optional' | 'forbidden';
+    readonly sets?: readonly string[];
+    readonly clears?: readonly string[];
+}
+
+const TRANSITIONS = contract.transitions as unknown as Readonly<Record<JourneyAction, TransitionRule>>;
+const STEP_BRANCH = new Map<string, string | null>(contract.steps.map(step => [step.key, step.branch]));
+
+/** Why a command is not applied, so a spec can tell a rule from a failure: `transition` is the server's 409, `invalid` its 400. */
+export type Rejection = { readonly action: JourneyAction; readonly reason: 'transition' | 'invalid' | 'failure' };
+
 /**
- * A stand-in for `JourneyStore` that keeps the journey the way the server's transition table does, so a spec can follow a learner through
- * the commands and a «reload» (a new service over the same journey) sees what the commands left.
+ * A stand-in for `JourneyStore` that keeps the journey the way the server does (`contracts/onboarding/journey.json`): a command from a
+ * state the transition table does not list is refused with the current view (the 409), a step the registry does not know, a step of
+ * another branch, or a field the table forbids fails (the 400), and the version moves with every applied command. A spec can follow a
+ * learner through the commands, and a «reload» (a new service over the same journey) sees what the commands left.
  */
 export class FakeJourneyStore {
     readonly view = signal<OnboardingView | null>(null);
@@ -39,6 +55,7 @@ export class FakeJourneyStore {
     readonly loading = signal(false);
     readonly error = signal<'load' | 'command' | null>(null);
     readonly calls: [JourneyAction, ActionOptions | undefined][] = [];
+    readonly rejections: Rejection[] = [];
     readonly preferences: unknown[] = [];
     failNext = false;
 
@@ -49,32 +66,46 @@ export class FakeJourneyStore {
     load = vi.fn(() => Promise.resolve(this.view()));
     reset = vi.fn(() => this.view.set(null));
 
-    act = vi.fn((action: JourneyAction, options?: ActionOptions): Promise<OnboardingView | null> => {
+    act = vi.fn((action: JourneyAction, options?: ActionOptions): Promise<JourneyResult> => {
         this.calls.push([action, options]);
-        if (this.failNext) { this.failNext = false; return Promise.resolve(null); }
+        const current = this.view();
         const journey = this.journey();
-        if (journey === null) return Promise.resolve(null);
-        const patch: Partial<Journey> = {};
-        switch (action) {
-            case 'START': Object.assign(patch, { state: 'IN_PROGRESS', stepKey: options?.stepKey ?? null }); break;
-            case 'STEP': Object.assign(patch, { stepKey: options?.stepKey ?? null, branch: options?.branch ?? journey.branch }); break;
-            case 'PAUSE': Object.assign(patch, { state: 'PAUSED', stepKey: options?.stepKey ?? journey.stepKey }); break;
-            case 'RESUME': Object.assign(patch, { state: 'IN_PROGRESS', stepKey: options?.stepKey ?? journey.stepKey }); break;
-            case 'SKIP': Object.assign(patch, { state: 'SKIPPED' }); break;
-            case 'COMPLETE': Object.assign(patch, { state: 'COMPLETED', finishedAt: '2026-10-20T10:00:00Z' }); break;
-            case 'REPLAY': Object.assign(patch, { state: 'IN_PROGRESS', stepKey: options?.stepKey ?? null, branch: null }); break;
-            default: break;
-        }
-        this.view.set({ ...this.view()!, journey: { ...journey, ...patch, rowVersion: String(Number(journey.rowVersion) + 1) } });
-        return Promise.resolve(this.view());
+        if (current === null || journey === null) return Promise.resolve({ status: 'failed' });
+        if (this.failNext) { this.failNext = false; this.rejections.push({ action, reason: 'failure' }); return Promise.resolve({ status: 'failed' }); }
+        const rule = TRANSITIONS[action];
+        const to = rule.from[journey.state];
+        if (to === undefined) { this.rejections.push({ action, reason: 'transition' }); return Promise.resolve({ status: 'refused', view: current }); }
+        const stepKey = options?.stepKey;
+        const branch = options?.branch;
+        const effectiveBranch = branch ?? (action === 'REPLAY' ? null : journey.branch);
+        const known = stepKey === undefined || STEP_BRANCH.has(stepKey);
+        const matches = stepKey === undefined || !known || (STEP_BRANCH.get(stepKey) ?? effectiveBranch) === effectiveBranch;
+        const allowed = (rule.stepKey !== 'required' || stepKey !== undefined) && (rule.stepKey !== 'forbidden' || stepKey === undefined)
+            && (rule.branch !== 'forbidden' || branch === undefined);
+        if (!known || !matches || !allowed) { this.rejections.push({ action, reason: 'invalid' }); return Promise.resolve({ status: 'failed' }); }
+        const patch: { -readonly [K in keyof Journey]?: Journey[K] } = { state: to as Journey['state'], stepKey: stepKey ?? journey.stepKey };
+        if (branch !== undefined) patch.branch = branch;
+        if (rule.sets?.includes('finishedAt') === true) patch.finishedAt = '2026-10-20T10:00:00Z';
+        if (rule.clears?.includes('finishedAt') === true) patch.finishedAt = null;
+        if (action === 'REPLAY') Object.assign(patch, { branch: null, finishedAt: null, replayCount: journey.replayCount + 1, eligible: journey.state === 'NOT_OFFERED' ? false : journey.eligible });
+        if (action === 'SKIP' || action === 'COMPLETE' || action === 'UNDO_FINISH') patch.stepKey = action === 'UNDO_FINISH' ? journey.stepKey : null;
+        const next = { ...current, journey: { ...journey, ...patch, rowVersion: String(Number(journey.rowVersion) + 1) } };
+        this.view.set(next);
+        return Promise.resolve({ status: 'applied', view: next });
     });
 
-    setPreferences = vi.fn((changes: { experience?: Journey['experience']; weeklyTarget?: number | null }): Promise<OnboardingView | null> => {
+    setPreferences = vi.fn((changes: { experience?: Journey['experience']; weeklyTarget?: number | null }): Promise<JourneyResult> => {
         this.preferences.push(changes);
+        const current = this.view();
         const journey = this.journey();
-        if (journey === null || this.failNext) { this.failNext = false; return Promise.resolve(null); }
-        this.view.set({ ...this.view()!, journey: { ...journey, ...changes } as Journey });
-        return Promise.resolve(this.view());
+        if (current === null || journey === null || this.failNext) { this.failNext = false; return Promise.resolve({ status: 'failed' }); }
+        const target = changes.weeklyTarget;
+        if (typeof target === 'number' && (target < contract.constants.weeklyTarget.min || target > contract.constants.weeklyTarget.max)) {
+            return Promise.resolve({ status: 'failed' });
+        }
+        const next = { ...current, journey: { ...journey, ...changes, rowVersion: String(Number(journey.rowVersion) + 1) } as Journey };
+        this.view.set(next);
+        return Promise.resolve({ status: 'applied', view: next });
     });
 
     steps(): (StepKey | null)[] {
@@ -90,7 +121,7 @@ export interface Setup {
     engine: TourEngine;
     events: TourEvents;
     goal: { state: ReturnType<typeof signal<string>>; answered: ReturnType<typeof signal<boolean>>; load: ReturnType<typeof vi.fn>; answer: ReturnType<typeof vi.fn> };
-    interests: { onboarding: ReturnType<typeof signal<boolean>>; ensure: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn>; profile: ReturnType<typeof signal<unknown>>; busy: ReturnType<typeof signal<boolean>>; error: ReturnType<typeof signal<string>> };
+    interests: { onboarding: ReturnType<typeof signal<boolean>>; ensure: ReturnType<typeof vi.fn>; ready: ReturnType<typeof signal<boolean>>; save: ReturnType<typeof vi.fn>; profile: ReturnType<typeof signal<unknown>>; busy: ReturnType<typeof signal<boolean>>; error: ReturnType<typeof signal<string>> };
     toasts: { notify: ReturnType<typeof vi.fn> };
     community: { facets: ReturnType<typeof vi.fn> };
     capabilities: { read: ReturnType<typeof vi.fn> };
@@ -103,7 +134,7 @@ export function setup(options: { journey?: Parameters<typeof viewOf>[0]; view?: 
         state: signal('ready'), answered: signal(options.goalAnswered ?? false), load: vi.fn(() => Promise.resolve()),
         answer: vi.fn(() => Promise.resolve(true))
     };
-    const interests = { onboarding: signal(options.interestsOpen ?? true), ensure: vi.fn(), save: vi.fn(), profile: signal<unknown>(null), busy: signal(false), error: signal('') };
+    const interests = { onboarding: signal(options.interestsOpen ?? true), ensure: vi.fn(), ready: signal(true), save: vi.fn(), profile: signal<unknown>(null), busy: signal(false), error: signal('') };
     const toasts = { notify: vi.fn(), echo: vi.fn() };
     const community = { facets: vi.fn(() => options.listed === 'error' ? throwError(() => new Error('down')) : of({ listedCount: options.listed ?? 10 })) };
     const capabilities = { read: vi.fn(() => of(options.ai === true ? AI_ON : CAPABILITIES_UNAVAILABLE)) };

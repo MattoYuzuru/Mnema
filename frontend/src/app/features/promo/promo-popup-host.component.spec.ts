@@ -9,6 +9,7 @@ import { PromoApiService } from './promo-api.service';
 import { PromoPopupHostComponent } from './promo-popup-host.component';
 import { PromoPopupService } from './promo-popup.service';
 import { AuthService } from '../../auth.service';
+import { JourneyStore } from '../../core/onboarding/journey.store';
 
 @Component({ template: '<app-promo-popup-host />', imports: [PromoPopupHostComponent] })
 class HostPageComponent { }
@@ -28,7 +29,8 @@ describe('PromoPopupHostComponent', () => {
         TestBed.configureTestingModule({
             providers: [provideRouter([{ path: '', component: HostPageComponent }, { path: 'plans', component: BlankComponent }]),
                 { provide: PromoApiService, useValue: api },
-                { provide: AuthService, useValue: { status: signal('authenticated'), user: signal({ accountId: 'first-account' }) } }]
+                { provide: AuthService, useValue: { status: signal('authenticated'), user: signal({ accountId: 'first-account' }) } },
+                { provide: JourneyStore, useValue: { view: signal({ enabled: false, journey: null }), journey: signal(null), error: signal(null) } }]
         });
     });
     afterEach(() => { sessionStorage.clear(); localStorage.clear(); });

@@ -38,3 +38,25 @@ function closeOtherPopovers(target: Element, kept: readonly Element[]): void {
         popover.hidePopover();
     }
 }
+
+/** The elements that are the tour's own: the tour host and every surface that marks itself with `data-tour-surface` (the onboarding host). */
+export function tourSurfaces(document: Document): Element[] {
+    return Array.from(document.querySelectorAll('[data-tour-surface]'));
+}
+
+/** Another modal dialog (a complaint, a confirmation) is open, one that is not a surface of the tour. */
+export function otherDialogOpen(document: Document): boolean {
+    const surfaces = tourSurfaces(document);
+    return Array.from(document.querySelectorAll('dialog[open]')).some(dialog => !surfaces.some(surface => surface.contains(dialog)));
+}
+
+/** A popover (a menu) is open that is not part of the tour's own surfaces or the toast region. */
+export function otherPopoverOpen(document: Document): boolean {
+    const surfaces = tourSurfaces(document);
+    try {
+        return Array.from(document.querySelectorAll(':popover-open')).some(popover => !surfaces.some(surface => surface.contains(popover)) && popover.tagName !== 'APP-TOAST-REGION' && !popover.classList.contains('toast-region'));
+    } catch {
+        // A browser without the Popover API has none open.
+        return false;
+    }
+}

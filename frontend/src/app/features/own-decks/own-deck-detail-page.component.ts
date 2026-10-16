@@ -1,6 +1,5 @@
 import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
 import { TourEngine } from '../../core/onboarding/tour-engine.service';
-import { TourEvents } from '../../core/onboarding/tour-events';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, LOCALE_ID, afterNextRender, computed, effect, inject, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -12,7 +11,7 @@ import { Subscription } from 'rxjs';
 import { AuthoringApiService } from '../authoring/authoring-api.service';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/capabilities-api.service';
 
-import { DeckMetadata, DeckVisibility, OwnDeck, validateDeckMetadata } from './own-deck.models';
+import { DeckMetadata, DeckVisibility, OwnDeck, STUDY_DECK_LABEL, validateDeckMetadata } from './own-deck.models';
 import { PaperDialogComponent } from '../../shared/paper-dialog.component';
 import { GlyphComponent, GlyphName } from '../../shared/glyph.component';
 import { ACCESS_LEVEL_LABELS, AccessLevelComponent } from '../../shared/access-level.component';
@@ -186,8 +185,8 @@ export class OwnDeckDetailPageComponent {
     private readonly toasts = inject(ToastService);
     private readonly capabilities = inject(CapabilitiesApiService);
     private readonly router = inject(Router);
-    private readonly tour = inject(TourEvents);
     private readonly tourEngine = inject(TourEngine);
+    protected readonly studyLabel = STUDY_DECK_LABEL;
     private readonly injector = inject(Injector);
     private readonly destroyRef = inject(DestroyRef);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
@@ -207,8 +206,6 @@ export class OwnDeckDetailPageComponent {
     private lastPollAt = 0;
     private polledDeckId: string | null = null;
 
-    /** «Учить»: the tour that waits for the session is told that it begins (the page the link opens is the study session). */
-    startStudy(): void { this.tour.emit('study.started'); }
 
     constructor() {
         this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {

@@ -3,7 +3,7 @@ import { onboardingText } from '../../core/onboarding/onboarding-texts';
 import { TOUR_ANCHORS } from '../../core/onboarding/tour-anchor-keys';
 import { paragraphs } from '../../core/onboarding/tour-rich-text';
 import { TourDefinition, TourStep } from '../../core/onboarding/tour.models';
-import { CREATE_DECK_LABEL } from '../own-decks/own-deck.models';
+import { CREATE_DECK_LABEL, STUDY_DECK_LABEL } from '../own-decks/own-deck.models';
 
 /** The version of the tours below; the server stores the version a journey ran (`tourVersion`). */
 export const TOUR_VERSION = 1;
@@ -42,7 +42,13 @@ const FINALE: readonly TourStep[] = [
 ];
 
 /** The gate line quotes the hub's real button («Учить», own-deck-detail-page), not the approved `sample.4.action` wording, so the learner finds it. */
-export const HUB_STUDY_LABEL = 'Учить';
+export const HUB_STUDY_LABEL = STUDY_DECK_LABEL;
+
+/**
+ * Gate labels that quote a real button of the product instead of an approved onboarding string: the counterpart of
+ * `UNLISTED_TEXT_KEYS` for labels that are not texts of the prototype. They are not new copy; each is the constant its page renders.
+ */
+export const QUOTED_UI_LABELS: readonly string[] = [HUB_STUDY_LABEL, CREATE_DECK_LABEL];
 const STUDY_GATE = { action: TOUR_EVENTS.studyStarted, label: HUB_STUDY_LABEL, pauses: true } as const;
 
 const hub = (context: TourContext): string | null => {

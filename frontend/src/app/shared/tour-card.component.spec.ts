@@ -34,8 +34,18 @@ describe('TourCardComponent', () => {
             expect(dialog().getAttribute('role')).toBe('dialog');
             expect(dialog().getAttribute('aria-labelledby')).toBe(heading.id);
             expect(heading.textContent).toBe('Материал — то, что вы учите');
-            expect(dialog().getAttribute('aria-describedby')).toBe(host.querySelector('.tour-body')!.id);
-            expect(host.querySelector('.eyebrow')!.textContent).toBe('Шаг 2 из 4');
+            const counter = host.querySelector('.eyebrow')!;
+            expect(counter.textContent).toBe('Шаг 2 из 4');
+            // The counter is read with the body when the dialog opens (the page outside a modal is inert, so a live region there is silent).
+            expect(dialog().getAttribute('aria-describedby')).toBe(`${counter.id} ${host.querySelector('.tour-body')!.id}`);
+        });
+
+        it('announces «Шаг N из M» with the title from a live region inside the card, which stays live when the page behind is inert', () => {
+            render();
+            const region = host.querySelector<HTMLElement>('dialog [role=status]')!;
+            expect(region.getAttribute('aria-live')).toBe('polite');
+            expect(region.textContent!.trim()).toBe('Шаг 2 из 4. Материал — то, что вы учите');
+            expect(region.closest('dialog')).toBe(dialog());
         });
 
         it('gives every card its own ids', () => {

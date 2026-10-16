@@ -12,7 +12,7 @@ import { InterestStore } from '../community/interest-store.service';
 import { GOAL_COPY } from '../goal/goal-copy';
 import { LEARNING_GOALS, LearningGoal } from '../goal/goal.models';
 import { LearningGoalStore } from '../goal/learning-goal.store';
-import { OnboardingFlow } from './onboarding-flow.service';
+import { FirstEntryCard, OnboardingFlow } from './onboarding-flow.service';
 
 const EXPERIENCES: readonly Experience[] = ['NEW', 'FAMILIAR', 'CONFIDENT'];
 const DAYS: readonly number[] = [2, 3, 5, 7];
@@ -38,7 +38,7 @@ export function daysLabel(count: number): string {
     imports: [NightSkyComponent, SurveyCardComponent, SegmentedChoiceComponent, InterestPickerComponent, NgTemplateOutlet],
     template: `
       @if (flow.card(); as card) {
-        <dialog #surface class="first-entry" [attr.aria-label]="dialogLabel()" (cancel)="$event.preventDefault()">
+        <dialog #surface class="first-entry" closedby="none" [attr.aria-label]="dialogLabel()" (cancel)="$event.preventDefault()" (close)="reopen()">
           <app-night-sky layout="panel" seed="mnema-first-entry" [stars]="card === 'welcome'">
             @if (card === 'welcome') {
               <p class="eyebrow">{{ text('welcome.eyebrow') }}</p>
@@ -125,7 +125,7 @@ export function daysLabel(count: number): string {
           @if (flow.canGoBack()) { <button type="button" class="button quiet" (click)="flow.back()">{{ text('survey.back') }}</button> } @else { <span></span> }
         </div>
         <div class="forward">
-          <button type="button" class="button" (click)="skip()">{{ text('survey.skip') }}</button>
+          <button type="button" class="button" (click)="flow.skip()">{{ text('survey.skip') }}</button>
           @if (ready !== null) {
             <button type="button" class="button primary" [attr.aria-disabled]="ready === false || flow.busy() ? 'true' : null" (click)="ready === true && submit()">{{ nextLabel() }}</button>
           }
@@ -156,8 +156,9 @@ export class FirstEntryComponent {
         label: onboardingText(`survey.experience.${experience.toLowerCase() as 'new' | 'familiar' | 'confident'}`),
         hint: onboardingText(`survey.experience.${experience.toLowerCase() as 'new' | 'familiar' | 'confident'}.hint`)
     }));
+    /** The days hint is said once, under the group (the prototype's `.hint`), not repeated on every option. */
     protected readonly dayOptions: readonly SegmentedOption<string>[] = DAYS.map(count => ({
-        value: String(count), label: count === 7 ? onboardingText('survey.days.everyday') : daysLabel(count), hint: onboardingText('survey.days.hint')
+        value: String(count), label: count === 7 ? onboardingText('survey.days.everyday') : daysLabel(count)
     }));
 
     protected readonly goal = signal<LearningGoal | null>(null);
@@ -192,7 +193,8 @@ export class FirstEntryComponent {
         return card === 'survey.days' ? onboardingText('survey.done') : onboardingText('survey.next');
     });
     private readonly survey = viewChild(SurveyCardComponent);
-    private waitingForInterests = false;
+    /** The card whose interests save is on its way; the survey moves on from that card only. */
+    private waitingFrom: FirstEntryCard | null = null;
 
     constructor() {
         // The dialog is open exactly while there is a card; a modal dialog makes the page behind inert and keeps Tab inside.
@@ -211,9 +213,10 @@ export class FirstEntryComponent {
         effect(() => {
             const busy = this.interests.busy();
             untracked(() => {
-                if (!this.waitingForInterests || busy) return;
-                this.waitingForInterests = false;
-                if (this.interests.error() === '') this.flow.advance();
+                const from = this.waitingFrom;
+                if (from === null || busy) return;
+                this.waitingFrom = null;
+                if (this.interests.error() === '') this.flow.advance(from);
             });
         });
         inject(DestroyRef).onDestroy(() => { if (this.surface()?.nativeElement.open) this.surface()?.nativeElement.close(); });
@@ -232,17 +235,17 @@ export class FirstEntryComponent {
     protected readonly skipInterests = (): void => this.flow.skipInterests();
 
     protected saveInterests(ids: readonly string[]): void {
-        this.waitingForInterests = true;
+        this.waitingFrom = this.flow.card();
         this.interests.save(ids);
     }
 
-    /** «Пропустить»: the question is left unanswered (the goal and the interests record that it was skipped). */
-    protected skip(): void {
-        switch (this.flow.card()) {
-            case 'survey.goal': void this.flow.answerGoal(null); break;
-            case 'survey.interests': this.flow.skipInterests(); break;
-            default: this.flow.advance();
-        }
+    /**
+     * The surface is not dismissed by the browser: `closedby="none"` is the declarative form, and this is the fallback for browsers
+     * that still honour a second Escape through the close watcher (the first one is cancelled, the second closes without asking).
+     */
+    protected reopen(): void {
+        const dialog = this.surface()?.nativeElement;
+        if (dialog !== undefined && this.flow.card() !== null && !dialog.open) dialog.showModal();
     }
 
     protected startBranch(): void {

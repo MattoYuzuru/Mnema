@@ -7,6 +7,7 @@ import {
     ActionOptions,
     JourneyAction,
     JourneyCommand,
+    JourneyResult,
     OnboardingProtocolError,
     OnboardingRead,
     OnboardingView,
@@ -26,7 +27,8 @@ export type JourneyError = 'load' | 'command';
  *
  * Commands run one at a time, each with the row version current when it is sent. A lost answer is retried with the **same**
  * command id (the server replays the stored response), so a step is never recorded twice. A stale version (412), a refused
- * transition or a switched-off feature (409) re-reads the view and resolves with it: the screen follows the server.
+ * transition or a switched-off feature (409) re-reads the view and resolves `refused` with it: the screen follows the server, and a
+ * caller never mistakes a refusal for success. A sign-out (`reset`) makes every answer still on its way void: it is not stored.
  */
 @Injectable({ providedIn: 'root' })
 export class JourneyStore {
@@ -43,6 +45,8 @@ export class JourneyStore {
     readonly error = signal<JourneyError | null>(null);
 
     private etag: string | null = null;
+    /** Bumped by every reset: an answer to a request that began before it belongs to the previous account and is dropped. */
+    private epoch = 0;
     private inflight: Promise<OnboardingView | null> | null = null;
     private tail: Promise<unknown> = Promise.resolve();
 
@@ -56,8 +60,8 @@ export class JourneyStore {
         return this.fetch(options.refresh === true ? this.etag : null);
     }
 
-    /** One tour action. Resolves with the view the server answered with, or `null` when it could not be done (see {@link error}). */
-    act(action: JourneyAction, options: ActionOptions = {}): Promise<OnboardingView | null> {
+    /** One tour action: `applied` with the new view, `refused` with the server's current one, or `failed` (see {@link error}). */
+    act(action: JourneyAction, options: ActionOptions = {}): Promise<JourneyResult> {
         return this.send(rowVersion => ({
             commandId: newCommandId(), rowVersion, action,
             ...(options.branch === undefined ? {} : { branch: options.branch }),
@@ -66,7 +70,7 @@ export class JourneyStore {
     }
 
     /** The onboarding answers of the survey; `null` clears one. */
-    setPreferences(changes: PreferenceChanges): Promise<OnboardingView | null> {
+    setPreferences(changes: PreferenceChanges): Promise<JourneyResult> {
         return this.send(rowVersion => ({
             commandId: newCommandId(), rowVersion,
             ...(changes.experience === undefined ? {} : { experience: changes.experience }),
@@ -76,6 +80,7 @@ export class JourneyStore {
 
     /** Signing out: the next account starts with no view and no validator. */
     reset(): void {
+        this.epoch++;
         this.state.set(null);
         this.etag = null;
         this.error.set(null);
@@ -85,18 +90,19 @@ export class JourneyStore {
 
     private fetch(etag: string | null): Promise<OnboardingView | null> {
         this.loading.set(true);
+        const epoch = this.epoch;
         const request = (async (): Promise<OnboardingView | null> => {
             try {
                 const result = await firstValueFrom(this.api.read(etag));
+                if (epoch !== this.epoch) return null;
                 if (result.kind === 'view') this.accept(result);
                 else this.error.set(null);
             } catch {
-                this.error.set('load');
+                if (epoch === this.epoch) this.error.set('load');
             } finally {
-                this.inflight = null;
-                this.loading.set(false);
+                if (epoch === this.epoch) { this.inflight = null; this.loading.set(false); }
             }
-            return this.state();
+            return epoch === this.epoch ? this.state() : null;
         })();
         this.inflight = request;
         return request;
@@ -109,25 +115,33 @@ export class JourneyStore {
     }
 
     private send<C extends JourneyCommand | PreferencesCommand>(build: (rowVersion: string) => C, call: (command: C) => Observable<OnboardingRead>,
-        validate: (command: C) => unknown): Promise<OnboardingView | null> {
-        const run = async (): Promise<OnboardingView | null> => {
+        validate: (command: C) => unknown): Promise<JourneyResult> {
+        const failed: JourneyResult = { status: 'failed' };
+        const run = async (): Promise<JourneyResult> => {
+            const epoch = this.epoch;
             const view = await this.load();
             const journey = view?.journey ?? null;
-            if (view === null || !view.enabled || journey === null) return null;
+            if (view === null || !view.enabled || journey === null || epoch !== this.epoch) return failed;
             const command = build(journey.rowVersion);
             // A defect on our side is refused before any request and is not an unknown outcome to retry.
             validate(command);
             for (let attempt = 0; ; attempt++) {
                 try {
                     const read = await firstValueFrom(call(command));
+                    // The account signed out while the answer was on its way: it is not this learner's any more.
+                    if (epoch !== this.epoch) return failed;
                     this.accept(read);
-                    return read.view;
+                    return { status: 'applied', view: read.view };
                 } catch (error) {
-                    if (staleOrRefused(error)) return this.reread();
+                    if (epoch !== this.epoch) return failed;
+                    if (staleOrRefused(error)) {
+                        const current = await this.reread();
+                        return current === null || epoch !== this.epoch ? failed : { status: 'refused', view: current };
+                    }
                     const delay = COMMAND_RETRY_DELAYS_MS[attempt];
                     if (!outcomeUnknown(error) || delay === undefined) {
                         this.error.set('command');
-                        return null;
+                        return failed;
                     }
                     await new Promise<void>(resolve => setTimeout(resolve, delay));
                 }
@@ -135,7 +149,7 @@ export class JourneyStore {
         };
         const result = this.tail.then(run, run);
         this.tail = result.catch(() => undefined);
-        return result.catch(() => { this.error.set('command'); return null; });
+        return result.catch((): JourneyResult => { this.error.set('command'); return failed; });
     }
 
     /** The view after a conflict: asked again without a validator, because the held one is known to be stale. */

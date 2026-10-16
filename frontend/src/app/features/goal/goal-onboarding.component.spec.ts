@@ -125,6 +125,9 @@ describe('the goal question and the first-entry survey', () => {
             ['skipped', true, { state: 'SKIPPED', eligible: true, autoOffer: false }, true],
             ['completed', true, { state: 'COMPLETED', eligible: true, autoOffer: false }, true],
             ['the holdout: eligible, offered, not auto-offered', true, { state: 'OFFERED', eligible: true, autoOffer: false }, false],
+            ['the holdout after a replay: the replay has no survey, so the inline question stays', true, { state: 'IN_PROGRESS', eligible: true, autoOffer: false, replayCount: 1 }, false],
+            ['the holdout whose replay ended', true, { state: 'COMPLETED', eligible: true, autoOffer: false, replayCount: 2 }, false],
+            ['an account that was offered the survey and then replayed (the survey asked the goal the first time)', true, { state: 'IN_PROGRESS', eligible: true, autoOffer: true, replayCount: 1 }, true],
             ['an account before the release (not eligible, no row)', true, { state: 'NOT_OFFERED', eligible: false, autoOffer: false }, false],
             ['an account that started the tour from the profile (not eligible, in progress)', true, { state: 'IN_PROGRESS', eligible: false, autoOffer: false }, false],
             ['onboarding switched off, whatever the journey', false, { state: 'IN_PROGRESS', eligible: true, autoOffer: true }, false]

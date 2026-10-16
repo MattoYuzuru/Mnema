@@ -79,6 +79,24 @@ describe('FirstEntryComponent', () => {
             expect(dialog()!.open).toBe(true);
         });
 
+        it('is not dismissed by the browser at all, and is shown again when a second Escape closes it through the close watcher', async () => {
+            expect(dialog()!.getAttribute('closedby')).toBe('none');
+            const surface = dialog()!;
+            surface.close();
+            surface.dispatchEvent(new Event('close'));
+            await settle();
+            expect(flow.card()).toBe('welcome');
+            expect(dialog()!.open).toBe(true);
+        });
+
+        it('stays closed once the surface has no card to show', async () => {
+            const surface = dialog()!;
+            flow.close();
+            surface.dispatchEvent(new Event('close'));
+            await settle();
+            expect(dialog()).toBeNull();
+        });
+
         it('starts the survey at the first question', async () => {
             await click('Познакомиться — 2 минуты');
             expect(s.store.calls[0]).toEqual(['START', { stepKey: 'survey.goal' }]);
@@ -204,6 +222,13 @@ describe('FirstEntryComponent', () => {
             await click('Пропустить');
             expect(s.store.preferences).toEqual([]);
             expect(plain(root.querySelector('.eyebrow')!.textContent)).toBe('Вопрос 4 из 4');
+        });
+
+        it('says the days hint once, under the group, and not again on every option', async () => {
+            await click('Пропустить');
+            await choose('3 дня');
+            const hints = [...root.querySelectorAll('.hint')].map(item => plain(item.textContent)).filter(text => text.startsWith('Это цель'));
+            expect(hints).toHaveLength(1);
         });
 
         it('asks about the days with 2, 3 and 5 as plurals, 7 as «Каждый день», and ends with «Готово»', async () => {

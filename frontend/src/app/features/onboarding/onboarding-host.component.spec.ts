@@ -88,6 +88,40 @@ describe('OnboardingHostComponent', () => {
             expect(root.querySelector('dialog')).not.toBeNull();
         });
 
+        it('keeps looking while the other modal stays, and asks everything again each time: a journey that was settled meanwhile is not opened', async () => {
+            vi.useFakeTimers();
+            const other = document.createElement('dialog');
+            other.className = 'other-modal';
+            document.body.append(other);
+            other.setAttribute('open', '');
+            await render();
+            await vi.advanceTimersByTimeAsync(2_500);
+            expect(root.querySelector('dialog.first-entry')).toBeNull();
+            // The offer was answered elsewhere while the modal was open: the next look finds nothing to open.
+            s.store.view.set({ ...s.store.view()!, journey: { ...s.store.view()!.journey!, state: 'SKIPPED' } });
+            other.removeAttribute('open');
+            await vi.advanceTimersByTimeAsync(1_000);
+            await settle();
+            expect(s.flow.card()).toBeNull();
+        });
+
+        it('does not open over a tour that came up while it waited for another modal', async () => {
+            vi.useFakeTimers();
+            const other = document.createElement('dialog');
+            other.className = 'other-modal';
+            document.body.append(other);
+            other.setAttribute('open', '');
+            await render();
+            TestBed.inject(AttentionCoordinator).report('system-error', true);
+            other.removeAttribute('open');
+            await vi.advanceTimersByTimeAsync(1_000);
+            await settle();
+            expect(s.flow.card()).toBeNull();
+            TestBed.inject(AttentionCoordinator).report('system-error', false);
+            await settle();
+            expect(s.flow.card()).toBe('welcome');
+        });
+
         it('does not open while a tour is on the screen', async () => {
             await render({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false } }, async ready => { await ready.flow.startTour('COMMUNITY'); });
             expect(s.engine.active()).toBe(true);
@@ -124,6 +158,16 @@ describe('OnboardingHostComponent', () => {
         });
     });
 
+    describe('onboarding switched off while the page is open', () => {
+        it('takes a tour in progress down with it, and not before the first answer', async () => {
+            await render({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false } }, async ready => { await ready.flow.startTour('COMMUNITY'); });
+            expect(s.engine.active()).toBe(true);
+            s.store.view.set({ ...s.store.view()!, enabled: false, journey: null });
+            await settle();
+            expect(s.engine.active()).toBe(false);
+        });
+    });
+
     describe('a journey paused somewhere else', () => {
         it('shows the plaque once the page has the journey, and does not jump into the tour', async () => {
             await render({ journey: { state: 'PAUSED', stepKey: 'own.material', branch: 'OWN', autoOffer: false }, ai: true });
@@ -136,6 +180,9 @@ describe('OnboardingHostComponent', () => {
     describe('the offer to make one\'s own deck', () => {
         const stuck = async (): Promise<void> => {
             await render({ journey: { state: 'IN_PROGRESS', stepKey: 'community.search', branch: 'COMMUNITY', autoOffer: false } });
+            // A reload finds the journey in progress and folds it into the plaque (paused on the server); the learner continues it.
+            s.engine.stop();
+            await s.store.act('RESUME');
             await s.flow.startTour('COMMUNITY');
             await settle();
             TestBed.inject(TourHints).stuck.set(true);
@@ -158,6 +205,14 @@ describe('OnboardingHostComponent', () => {
             await settle();
             expect(s.engine.definition()?.id).toBe('own-v1');
             expect(root.querySelector('app-tour-nudge')).toBeNull();
+        });
+
+        it('leaves the community tour where it is when the server refuses the move', async () => {
+            await stuck();
+            await s.store.act('PAUSE');
+            await s.flow.switchToOwn();
+            expect(s.store.rejections.at(-1)).toEqual({ action: 'STEP', reason: 'transition' });
+            expect(s.engine.definition()?.id).toBe('community-v1');
         });
 
         it('goes away with «Назад» and leaves the tour where it is', async () => {

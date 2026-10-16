@@ -5,16 +5,15 @@ import { ChangeDetectionStrategy, Component, ElementRef, afterRenderEffect, comp
 import { TourCardComponent } from '../../shared/tour-card.component';
 import { TourPauseComponent } from '../../shared/tour-pause.component';
 import { TourScrimComponent } from '../../shared/tour-scrim.component';
-import { onboardingText } from './onboarding-texts';
 import { currentUrl, isStudyUrl } from './study-route';
 import { Box, CardPlacement, Point, Size, cutoutBox, isBottomSheet, makeRoomDelta, placeCard, revealDelta, sameBox } from './tour-geometry';
 import { TourEngine } from './tour-engine.service';
-import { inertOutside } from './tour-inert';
+import { inertOutside, otherDialogOpen, otherPopoverOpen, tourSurfaces } from './tour-inert';
 import { TourStep, isActionGate } from './tour.models';
 
 /**
- * Draws the tour for the engine's state, once, in the app shell: the veil with the cut-out, the step card and the pause plaque, and a
- * `aria-live="polite"` region that announces «Шаг N из M» and the title on every step. It keeps the cut-out and the card in step with
+ * Draws the tour for the engine's state, once, in the app shell: the veil with the cut-out, the step card (which announces «Шаг N из M»
+ * and the title from a live region inside itself, so a modal step is heard too) and the pause plaque. It keeps the cut-out and the card in step with
  * the target (`ResizeObserver`, resize, scroll, coalesced into one `requestAnimationFrame`), scrolls an off-screen target into view
  * (above the bottom sheet on a phone), moves focus to the card heading on a step and to «Продолжить знакомство» on a pause, and makes
  * the rest of the page `inert` while a step waits for an action on its target. Escape pauses; a click on the veil does nothing.
@@ -22,18 +21,17 @@ import { TourStep, isActionGate } from './tour.models';
 @Component({
     selector: 'app-tour-host',
     imports: [TourScrimComponent, TourCardComponent, TourPauseComponent],
-    host: { '(document:keydown.escape)': 'onEscape($event)' },
+    host: { 'data-tour-surface': '', '(document:keydown.escape)': 'onEscape($event)' },
     template: `
       @if (shown(); as step) {
         <app-tour-scrim [viewport]="viewport()" [hole]="hole()" [radius]="radius()" />
         <app-tour-card [position]="engine.index() + 1" [total]="engine.total()" [title]="step.title" [body]="step.body" [gate]="step.gate"
-          [mode]="mode()" [canBack]="engine.index() > 0" [modal]="modal()" [sheet]="sheet()" [at]="at()"
+          [mode]="mode()" [canBack]="engine.canGoBack()" [modal]="modal()" [sheet]="sheet()" [at]="at()"
           (back)="engine.back()" (next)="engine.next()" (finish)="engine.finish()" (pauseRequest)="engine.pause()" />
       }
       @if (engine.active() && engine.paused() && !studying()) {
         <app-tour-pause (resumed)="engine.resume()" />
       }
-      <div class="visually-hidden" aria-live="polite" aria-atomic="true">{{ announcement() }}</div>
     `,
     styles: [`:host { display: contents; }`],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -51,23 +49,19 @@ export class TourHostComponent {
     protected readonly sheet = signal(false);
     protected readonly radius = signal(2);
 
-    /** The current step while the tour is on the screen (not paused). */
+    private readonly url = currentUrl(inject(Router));
+    /** A study session is nothing for the tour to draw on: no veil, no card, no plaque. They come back with the page the learner returns to. */
+    protected readonly studying = computed(() => isStudyUrl(this.url()));
+    /** The current step while the tour is on the screen (not paused, not in a study session, not drawn by another component). */
     protected readonly shown = computed(() => {
         const step = this.engine.step();
-        return this.engine.active() && !this.engine.paused() && step?.external !== true ? step : null;
+        return this.engine.active() && !this.engine.paused() && !this.studying() && step?.external !== true ? step : null;
     });
-    /** A study session leaves the plaque out: it comes back with the page the learner returns to. */
-    protected readonly studying = computed(() => isStudyUrl(this.url()));
-    private readonly url = currentUrl(inject(Router));
     protected readonly mode = computed(() => this.engine.preparing() ? 'preparing' as const : this.engine.phase() === 'missing' ? 'missing' as const : 'normal' as const);
     /** An informational step, and any step whose target is not usable yet, is modal; only a step that waits for the target is not. */
     protected readonly modal = computed(() => {
         const step = this.shown();
         return step === null || this.mode() !== 'normal' || this.engine.phase() !== 'ready' || !isActionGate(step.gate);
-    });
-    protected readonly announcement = computed(() => {
-        const step = this.shown();
-        return step === null ? '' : `${onboardingText('tour.counter', { n: this.engine.index() + 1, m: this.engine.total() })}. ${step.title}`;
     });
 
     constructor() {
@@ -92,7 +86,14 @@ export class TourHostComponent {
             const step = this.shown();
             const target = this.engine.target();
             if (step === null || target === null || this.engine.phase() !== 'ready' || this.mode() !== 'normal' || !isActionGate(step.gate)) return;
-            onCleanup(inertOutside(target, [this.element.nativeElement, this.document.querySelector('app-toast-region')]));
+            // The tour's own surfaces stay live: the card, the offer of the community tour, the toasts.
+            const restore = inertOutside(target, [...tourSurfaces(this.document), this.document.querySelector('app-toast-region')]);
+            // Another modal dialog opened over the page (a complaint) would be inert with it: the tour steps aside instead of trapping it.
+            const view = this.document.defaultView;
+            const observer = view !== null && typeof view.MutationObserver === 'function'
+                ? new view.MutationObserver(() => { if (otherDialogOpen(this.document)) this.engine.pause(); }) : null;
+            observer?.observe(this.document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['open'] });
+            onCleanup(() => { observer?.disconnect(); restore(); });
         });
 
         // A new step (or a resume) moves focus to the card heading; a pause moves it to the way back in.
@@ -100,8 +101,26 @@ export class TourHostComponent {
             this.engine.focusRequest();
             if (this.shown() !== null) this.card()?.focusHeading();
         });
+        // The plaque takes the focus when the learner (or a gate) paused the tour, not when a tour starts already folded on page load.
+        let focusedPause = 0;
         afterRenderEffect(() => {
-            if (this.engine.paused()) this.pausePlaque()?.focusResume();
+            const request = this.engine.pauseRequest();
+            const plaque = this.pausePlaque();
+            if (!this.engine.paused() || plaque === undefined || request === focusedPause) return;
+            focusedPause = request;
+            plaque.focusResume();
+        });
+        // When the tour ends from under the focus (the card with its hold button, the congratulation), the focus goes to the page heading.
+        let endedSeen: unknown = null;
+        afterRenderEffect(() => {
+            const end = this.engine.lastEnd();
+            if (end === endedSeen) return;
+            endedSeen = end;
+            if (end === null || end.reason === 'stopped') return;
+            untracked(() => {
+                const active = this.document.activeElement;
+                if (active === null || active === this.document.body) this.document.querySelector<HTMLElement>('#main-content h1')?.focus();
+            });
         });
     }
 
@@ -184,8 +203,17 @@ export class TourHostComponent {
         });
     }
 
+    /**
+     * Escape pauses the tour only when it is the tour's: focus is in one of its surfaces, on the target of the step or on the page itself,
+     * and no other dialog or menu is open (Escape closes that one first), and nobody has handled the key already.
+     */
     protected onEscape(event: Event): void {
         if (!this.engine.active() || this.engine.paused() || event.defaultPrevented) return;
+        const origin = event.target;
+        const body = this.document.body;
+        const inside = origin === body || origin === this.document.documentElement || (origin instanceof Node
+            && (tourSurfaces(this.document).some(surface => surface.contains(origin)) || this.engine.target()?.contains(origin) === true));
+        if (!inside || otherDialogOpen(this.document) || otherPopoverOpen(this.document)) return;
         event.preventDefault();
         this.engine.pause();
     }

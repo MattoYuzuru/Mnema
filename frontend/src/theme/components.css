@@ -259,7 +259,7 @@ app-night-sky .content > .muted { margin: 0; color: var(--mn-on-night-muted); }
 app-night-sky .content > :is(.lead, .muted) a { color: var(--mn-on-night); font-weight: 650; }
 app-night-sky .content > .actions :focus-visible, app-night-sky .content > :is(.lead, .muted) a:focus-visible { outline: 3px solid var(--mn-star-lavender); outline-offset: 3px; }
 app-night-sky .content > .actions { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: center; inline-size: 100%; }
-app-night-sky .content > .actions .button { flex: 1 1 15rem; max-inline-size: 19rem; border-color: var(--mn-on-night); color: var(--mn-on-night); --mn-wave-fill: rgb(251 248 239 / 14%); }
+app-night-sky .content > .actions .button { flex: 1 1 15rem; max-inline-size: 19rem; border-color: var(--mn-on-night); color: var(--mn-on-night); --mn-wave-fill: var(--mn-night-wave); }
 app-night-sky .content > .actions .button.primary { color: var(--mn-ink); background: var(--mn-on-night); box-shadow: 0 0 1.75rem .25rem var(--mn-glow); --mn-wave-fill: var(--mn-path-hover); }
 app-night-sky .content > .actions .button.quiet { border-color: transparent; }
 @media (forced-colors: active) {

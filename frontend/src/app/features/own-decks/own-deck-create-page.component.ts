@@ -66,8 +66,9 @@ export class OwnDeckCreatePageComponent {
                 if (mutation.deck.deckId !== this.navigatedDeckId) {
                     this.navigatedDeckId = mutation.deck.deckId;
                     // The tour's «Создать колоду» step is done by the deck that was made.
-                    this.tour.emit('deck.created', { deckId: mutation.deck.deckId });
-                    void this.router.navigate(['/decks', mutation.deck.deckId]);
+                    // When the tour took the event it goes on to the next place itself; two navigations at once would cancel each other.
+                    const taken = this.tour.emit('deck.created', { deckId: mutation.deck.deckId });
+                    if (!taken) void this.router.navigate(['/decks', mutation.deck.deckId]);
                 }
                 return;
             }

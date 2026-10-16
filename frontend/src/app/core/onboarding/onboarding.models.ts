@@ -125,6 +125,24 @@ export interface OnboardingRead {
 
 export type OnboardingReadResult = ({ readonly kind: 'view' } & OnboardingRead) | { readonly kind: 'not-modified' };
 
+/**
+ * What became of a command. `applied`: the server did it, `view` is the state after it. `refused`: the server answered 409, 412 or 428
+ * (a transition the table does not allow, a stale version, the feature off) and `view` is the state it holds now, so the caller
+ * follows the server and does not act as if it had worked. `failed`: no answer that could be used (network, a defect, no journey).
+ */
+export type JourneyResult =
+    | { readonly status: 'applied'; readonly view: OnboardingView }
+    | { readonly status: 'refused'; readonly view: OnboardingView }
+    | { readonly status: 'failed' };
+
+export function isApplied(result: unknown): result is Extract<JourneyResult, { status: 'applied' }> {
+    return typeof result === 'object' && result !== null && (result as { status?: unknown }).status === 'applied';
+}
+
+export function isRefused(result: unknown): result is Extract<JourneyResult, { status: 'refused' }> {
+    return typeof result === 'object' && result !== null && (result as { status?: unknown }).status === 'refused';
+}
+
 export class OnboardingProtocolError extends Error {
     constructor(message: string) {
         super(message);

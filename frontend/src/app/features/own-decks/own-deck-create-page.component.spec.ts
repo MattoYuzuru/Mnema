@@ -103,7 +103,7 @@ describe('OwnDeckCreatePageComponent', () => {
 
         it('says that the deck was made, with its id, once it is confirmed, and only then', async () => {
             const seen: [string, unknown][] = [];
-            TestBed.inject(TourEvents).listen((event, payload) => seen.push([event, payload]));
+            TestBed.inject(TourEvents).listen((event, payload) => { seen.push([event, payload]); });
             const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
             mutation.set({ phase: 'pending', pending: { operation: 'create', command: { commandId: 'c', metadata: { title: 'Т', description: '' } } } as never });
             fixture.detectChanges();
@@ -114,6 +114,16 @@ describe('OwnDeckCreatePageComponent', () => {
             await fixture.whenStable();
             expect(seen).toEqual([['deck.created', { deckId: deck.deckId }]]);
             expect(navigate).toHaveBeenCalledWith(['/decks', deck.deckId]);
+        });
+
+        it('leaves the way to the next place to the tour when a gate took the event: one navigation, not two that cancel each other', async () => {
+            TestBed.inject(TourEvents).listen(() => true);
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+            const deck = { deckId: '11111111-1111-4111-8111-111111111111' } as OwnDeck;
+            mutation.set({ phase: 'completed', operation: 'create', deck, confirmation: 'fresh' });
+            fixture.detectChanges();
+            await fixture.whenStable();
+            expect(navigate).not.toHaveBeenCalled();
         });
     });
 });

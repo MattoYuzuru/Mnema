@@ -7,7 +7,8 @@ let nextNudge = 0;
 /**
  * An offer the tour makes in its own words, without the veil: «Не нашли подходящую? — Создать свою». A named region with a heading,
  * one primary action and «Назад» (stay where you are). It never takes the focus by itself and is never modal: the learner goes on
- * with the page. `inline` draws it in the flow (the styleguide specimen); otherwise it stands at the lower edge of the window.
+ * with the page. `inline` draws it in the flow (the styleguide specimen); otherwise it stands at the lower edge of the window. The
+ * onboarding host draws it and is a tour surface (`data-tour-surface`), so it stays live while the page behind the tour is inert.
  */
 @Component({
     selector: 'app-tour-nudge',

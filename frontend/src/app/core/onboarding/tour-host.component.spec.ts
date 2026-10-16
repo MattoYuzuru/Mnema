@@ -71,7 +71,8 @@ describe('TourHostComponent', () => {
     const card = (): HTMLDialogElement | null => root.querySelector('app-tour-host dialog');
     const heading = (): HTMLElement => root.querySelector('app-tour-host h2')!;
     const live = (): string => root.querySelector('app-tour-host [aria-live="polite"]:not(.slider p)')?.textContent?.trim() ?? '';
-    const liveRegion = (): HTMLElement => root.querySelector<HTMLElement>('app-tour-host > div.visually-hidden')!;
+    /** The card's own announcement: the region outside a modal dialog would be inert and silent. */
+    const announced = (): string => root.querySelector('app-tour-host [role=status]')?.textContent?.trim() ?? '';
     const inert = (): string[] => [...root.querySelectorAll('[inert]')].map(element => element.id || element.tagName.toLowerCase()).sort();
     const press = (key: string, target: EventTarget = document.body): KeyboardEvent => {
         const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
@@ -80,12 +81,11 @@ describe('TourHostComponent', () => {
     };
 
     describe('while no tour runs', () => {
-        it('draws only its live region, empty', () => {
+        it('draws nothing', () => {
             expect(card()).toBeNull();
             expect(root.querySelector('app-tour-scrim')).toBeNull();
             expect(root.querySelector('app-tour-pause')).toBeNull();
-            expect(liveRegion().getAttribute('aria-live')).toBe('polite');
-            expect(liveRegion().textContent).toBe('');
+            expect(announced()).toBe('');
         });
 
         it('ignores Escape', () => {
@@ -102,7 +102,7 @@ describe('TourHostComponent', () => {
             expect(card()).not.toBeNull();
             expect(card()!.getAttribute('role')).toBe('dialog');
             expect(heading().textContent).toBe('Заголовок sample.hub');
-            expect(liveRegion().textContent).toBe('Шаг 1 из 3. Заголовок sample.hub');
+            expect(announced()).toBe('Шаг 1 из 3. Заголовок sample.hub');
             expect(document.activeElement).toBe(heading());
         });
 
@@ -111,7 +111,7 @@ describe('TourHostComponent', () => {
             await settle();
             (root.querySelector('.steps .button.primary') as HTMLButtonElement).click();
             await settle();
-            expect(liveRegion().textContent).toBe('Шаг 2 из 3. Заголовок sample.material');
+            expect(announced()).toBe('Шаг 2 из 3. Заголовок sample.material');
             expect(document.activeElement).toBe(heading());
             expect(heading().textContent).toBe('Заголовок sample.material');
         });
@@ -187,6 +187,23 @@ describe('TourHostComponent', () => {
             expect(inert()).toEqual(['aside', 'header', 'masthead', 'material']);
         });
 
+        it('steps aside when another modal dialog opens over the page, instead of leaving it inert and out of reach', async () => {
+            await toGate();
+            expect(root.querySelector('#aside')!.hasAttribute('inert')).toBe(true);
+            const complaint = document.createElement('dialog');
+            const button = document.createElement('button');
+            complaint.append(button);
+            root.querySelector('#aside')!.append(complaint);
+            // A modal dialog on the page: opened after the page was made inert.
+            complaint.setAttribute('open', '');
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await settle();
+            expect(engine.paused()).toBe(true);
+            expect(inert()).toEqual([]);
+            expect(calls.at(-1)).toEqual(['PAUSE', { stepKey: 'sample.study' }]);
+            complaint.remove();
+        });
+
         it('gives the page back when the learner goes back to an informational step', async () => {
             await toGate();
             engine.back();
@@ -214,7 +231,7 @@ describe('TourHostComponent', () => {
             const plaque = root.querySelector('app-tour-pause')!;
             expect(plaque.querySelector('[role=region]')!.getAttribute('aria-label')).toBe('Знакомство на паузе');
             expect(document.activeElement).toBe(plaque.querySelector('button'));
-            expect(liveRegion().textContent).toBe('');
+            expect(announced()).toBe('');
             press('Escape');
             expect(calls).toEqual([['PAUSE', { stepKey: 'sample.hub' }]]);
         });
@@ -242,8 +259,42 @@ describe('TourHostComponent', () => {
             expect(root.querySelector('app-tour-pause')).toBeNull();
             expect(heading().textContent).toBe('Заголовок sample.material');
             expect(document.activeElement).toBe(heading());
-            expect(liveRegion().textContent).toBe('Шаг 2 из 3. Заголовок sample.material');
+            expect(announced()).toBe('Шаг 2 из 3. Заголовок sample.material');
             expect(calls.map(([action]) => action)).toEqual(['STEP', 'PAUSE', 'RESUME']);
+        });
+
+        it('leaves Escape to whoever else has it: focus elsewhere on the page, a handled key, another dialog or an open menu', async () => {
+            engine.start(TOUR);
+            await settle();
+            // Focus is on a control that is neither the tour's nor the target of the step.
+            const other = root.querySelector<HTMLElement>('#other')!;
+            expect(press('Escape', other).defaultPrevented).toBe(false);
+            expect(engine.paused()).toBe(false);
+            // A key somebody handled already.
+            const handled = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+            handled.preventDefault();
+            heading().dispatchEvent(handled);
+            expect(engine.paused()).toBe(false);
+            // Another dialog is open: Escape closes that one first.
+            const dialog = document.createElement('dialog');
+            dialog.setAttribute('open', '');
+            root.append(dialog);
+            expect(press('Escape', heading()).defaultPrevented).toBe(false);
+            expect(engine.paused()).toBe(false);
+            dialog.remove();
+            // And it is the tour's again once nothing else is open.
+            expect(press('Escape', heading()).defaultPrevented).toBe(true);
+            expect(engine.paused()).toBe(true);
+        });
+
+        it('pauses from the page itself and from the target of the step', async () => {
+            engine.start(TOUR, 'sample.study');
+            await settle();
+            expect(press('Escape', root.querySelector<HTMLElement>('#start')!).defaultPrevented).toBe(true);
+            expect(engine.paused()).toBe(true);
+            engine.resume();
+            await settle();
+            expect(press('Escape', document.body).defaultPrevented).toBe(true);
         });
 
         it('first disarms an armed finish button and does not pause', async () => {
@@ -257,6 +308,48 @@ describe('TourHostComponent', () => {
             await settle();
             expect(hold.getAttribute('aria-pressed')).toBe('false');
             expect(engine.paused()).toBe(false);
+        });
+    });
+
+    describe('focus', () => {
+        it('does not take the focus to the plaque when a tour starts folded on page load, only after the learner paused it', async () => {
+            const field = document.createElement('input');
+            root.append(field);
+            field.focus();
+            engine.start(TOUR, 'sample.material', { paused: true });
+            await settle();
+            const plaque = root.querySelector('app-tour-pause')!;
+            expect(plaque).not.toBeNull();
+            expect(document.activeElement).toBe(field);
+            (plaque.querySelector('button') as HTMLButtonElement).click();
+            await settle();
+            engine.pause();
+            await settle();
+            expect(document.activeElement).toBe(root.querySelector('app-tour-pause button'));
+            field.remove();
+        });
+
+        it('hands the focus to the page heading when the tour is finished from under it', async () => {
+            vi.useFakeTimers();
+            const main = document.createElement('main');
+            main.id = 'main-content';
+            main.innerHTML = '<h1 tabindex="-1">Мои колоды</h1>';
+            document.body.append(main);
+            try {
+                engine.start(TOUR);
+                await settle();
+                const hold = root.querySelector('.hold-button') as HTMLButtonElement;
+                hold.focus();
+                hold.click();
+                hold.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 3, clientY: 3, bubbles: true }));
+                await vi.advanceTimersByTimeAsync(2000);
+                await settle();
+                expect(engine.lastEnd()?.reason).toBe('finished');
+                expect(document.activeElement).toBe(main.querySelector('h1'));
+            } finally {
+                main.remove();
+                vi.useRealTimers();
+            }
         });
     });
 
@@ -320,7 +413,7 @@ describe('TourHostComponent', () => {
             await settle();
             expect(card()).toBeNull();
             expect(root.querySelector('app-tour-scrim')).toBeNull();
-            expect(liveRegion().textContent).toBe('');
+            expect(announced()).toBe('');
             expect(engine.total()).toBe(1);
         });
 

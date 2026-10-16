@@ -375,6 +375,8 @@ export class StudySessionPageComponent {
 
     private acceptStarted(session: StudySession): void {
         this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: null });
+        // The tour waiting for the first session is told when the server has actually opened one, not when the link was pressed.
+        this.tour.emit('study.started');
         if (session.status === 'PREPARING') this.poll(session.sessionId);
         else this.apply(session, false);
     }

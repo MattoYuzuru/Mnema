@@ -431,7 +431,9 @@ export class ItemEditorPageComponent {
     private finishNavigation(navigation: { readonly deckId: string; readonly memberKey: string; readonly ordinal: number }): void {
         this.pendingNavigation = null;
         // The tour's «material» step is done by a material that was published, whichever way it was written.
-        this.tour.emit('material.published', { deckId: navigation.deckId, memberKey: navigation.memberKey });
+        // A tour that took the event goes to the next step's place itself: two navigations at once would cancel each other.
+        const taken = this.tour.emit('material.published', { deckId: navigation.deckId, memberKey: navigation.memberKey });
+        if (taken) return;
         void this.router.navigate(['/decks', navigation.deckId, 'materials', navigation.memberKey], {
             queryParams: { ordinal: navigation.ordinal }
         });

@@ -682,8 +682,7 @@ export class ExerciseAuthoringPageComponent {
                 next: () => {
                     this.pending = null; this.dirty.set(false); this.phase.set('saved');
                     this.toast.echo('Упражнение сохранено в колоду');
-                    this.tour.emit('exercise.published', { deckId: deck.deckId });
-                    void this.router.navigate(['/decks', deck.deckId, 'workshop', edit.sessionId]);
+                    if (!this.tour.emit('exercise.published', { deckId: deck.deckId })) void this.router.navigate(['/decks', deck.deckId, 'workshop', edit.sessionId]);
                 },
                 error: (error: unknown) => this.proposalFailed(error, edit, deck, pending, retried)
             });
@@ -784,7 +783,8 @@ export class ExerciseAuthoringPageComponent {
         const deck = this.deck();
         if (deck === null) return;
         // The tour's «exercise» step is done by an exercise that was saved into the deck.
-        this.tour.emit('exercise.published', { deckId: deck.deckId });
+        // A tour that took the event goes to the next step's place itself: two navigations at once would cancel each other.
+        if (this.tour.emit('exercise.published', { deckId: deck.deckId })) return;
         void this.router.navigate(['/decks', deck.deckId, 'exercises', result.acknowledgement.exerciseId, 'edit'],
             { queryParams: { saved: 1 } });
     }

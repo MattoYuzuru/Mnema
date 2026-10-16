@@ -305,6 +305,25 @@ describe('OnboardingFlow', () => {
             expect(s.engine.active()).toBe(false);
         });
 
+        it('pauses a journey that is in progress before it replays it, because the server does not replay from there', async () => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'own.material', branch: 'OWN', autoOffer: false } });
+            await s.flow.replay();
+            expect(s.store.calls.map(([action]) => action)).toEqual(['PAUSE', 'REPLAY']);
+            expect(s.store.rejections).toEqual([]);
+            expect(s.store.journey()?.replayCount).toBe(1);
+            expect(s.flow.card()).toBe('choose');
+        });
+
+        it('starts nothing when the pause that must come first was refused: the tour the learner is in stays', async () => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'own.material', branch: 'OWN', autoOffer: false } });
+            await s.flow.startTour('OWN', 'own.material');
+            s.store.failNext = true;
+            await s.flow.replay();
+            expect(s.store.calls.map(([action]) => action)).toEqual(['PAUSE']);
+            expect(s.flow.card()).toBeNull();
+            expect(s.engine.active()).toBe(true);
+        });
+
         it('starts «Своя колода» right away for an account without decks', async () => {
             const { flow, engine, store } = await replayed();
             await flow.chooseBranch('OWN');
@@ -517,6 +536,105 @@ describe('OnboardingFlow', () => {
             await flow.startTour('COMMUNITY');
             await flow.resumeIfPaused('a');
             expect(engine.definition()?.id).toBe('community-v1');
+        });
+    });
+
+    describe('when the server answers with its own journey instead of taking the command', () => {
+        it('closes the welcome and starts nothing when START is refused because the journey moved on elsewhere', async () => {
+            const s = setup();
+            s.flow.open('welcome');
+            await s.store.act('SKIP');
+            s.store.calls.length = 0;
+            await s.flow.start();
+            expect(s.store.rejections.at(-1)).toEqual({ action: 'START', reason: 'transition' });
+            expect(s.flow.card()).toBeNull();
+            expect(s.engine.active()).toBe(false);
+        });
+
+        it('does not say the survey was skipped when SKIP is refused', async () => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.goal', autoOffer: true } });
+            s.flow.open('welcome');
+            await s.flow.skipAll();
+            expect(s.store.rejections.at(-1)).toEqual({ action: 'SKIP', reason: 'transition' });
+            expect(s.toasts.notify).not.toHaveBeenCalled();
+        });
+
+        it('starts no tour when the choice of a branch is refused (the journey is not in progress any more)', async () => {
+            const s = setup({ journey: { state: 'PAUSED', stepKey: 'choose', autoOffer: false } });
+            s.flow.open('choose');
+            await s.flow.chooseBranch('OWN');
+            expect(s.store.rejections.at(-1)).toEqual({ action: 'STEP', reason: 'transition' });
+            expect(s.engine.active()).toBe(false);
+            // The server's journey is the truth: the surface goes, and the host reopens it at whatever card the journey is on.
+            expect(s.flow.card()).toBeNull();
+        });
+
+        it('keeps the card for another try when the choice never reached the server', async () => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false } });
+            s.flow.open('choose');
+            s.store.failNext = true;
+            await s.flow.chooseBranch('OWN');
+            expect(s.flow.card()).toBe('choose');
+            expect(s.engine.active()).toBe(false);
+        });
+
+        it('keeps the community tour when the move to «Своя колода» is refused', async () => {
+            const s = setup({ journey: { state: 'PAUSED', stepKey: 'community.search', branch: 'COMMUNITY', autoOffer: false } });
+            await s.flow.startTour('COMMUNITY');
+            await s.flow.switchToOwn();
+            expect(s.engine.definition()?.id).toBe('community-v1');
+        });
+
+        it('does not start a replay when REPLAY is refused', async () => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'own.material', branch: 'OWN', autoOffer: false } });
+            vi.spyOn(s.store, 'act').mockImplementation(() => Promise.resolve({ status: 'refused', view: s.store.view()! }));
+            await s.flow.replay();
+            expect(s.flow.card()).toBeNull();
+        });
+
+        it('moves the survey on from the card an answer was given on only once, whatever happens meanwhile', async () => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.experience', autoOffer: true } });
+            s.flow.open('survey.experience');
+            const first = s.flow.answerExperience('NEW');
+            const second = s.flow.answerExperience('FAMILIAR');
+            s.flow.skip();
+            await Promise.all([first, second]);
+            expect(s.store.preferences).toEqual([{ experience: 'NEW' }]);
+            expect(s.flow.card()).toBe('survey.days');
+        });
+    });
+
+    describe('«Пропустить»', () => {
+        it('records the goal as skipped, leaves the interests as complete, and just goes on for any other card', async () => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.goal', autoOffer: true } });
+            s.flow.open('survey.goal');
+            s.flow.skip();
+            await Promise.resolve();
+            expect(s.goal.answer).toHaveBeenCalledWith(null);
+            await vi.waitFor(() => expect(s.flow.card()).toBe('survey.interests'));
+            s.flow.skip();
+            expect(s.interests.save).toHaveBeenCalledWith([]);
+            expect(s.flow.card()).toBe('survey.experience');
+            s.flow.skip();
+            expect(s.flow.card()).toBe('survey.days');
+        });
+
+        it('does nothing while an answer is being saved, so one press never moves the survey twice', async () => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.experience', autoOffer: true } });
+            s.flow.open('survey.experience');
+            const answering = s.flow.answerExperience('NEW');
+            s.flow.skip();
+            await answering;
+            expect(s.flow.card()).toBe('survey.days');
+        });
+
+        it('waits for a save of the interests that is still on its way instead of skipping them over it', async () => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'survey.interests', autoOffer: true } });
+            s.flow.open('survey.interests');
+            s.interests.busy.set(true);
+            s.flow.skipInterests();
+            expect(s.interests.save).not.toHaveBeenCalled();
+            expect(s.flow.card()).toBe('survey.interests');
         });
     });
 

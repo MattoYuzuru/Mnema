@@ -113,7 +113,7 @@ describe('night surface and tour tokens (src/theme/tokens.css)', () => {
 
     it('lists its tokens and its pairs in the styleguide', () => {
         const listed = new Set(PALETTE.flatMap(group => group.tokens.map(entry => entry.token)));
-        for (const name of ['--mn-night', '--mn-on-night', '--mn-on-night-muted', '--mn-star-lavender', '--mn-star-paper', '--mn-scrim', '--mn-glow', '--mn-path-hover']) {
+        for (const name of ['--mn-night', '--mn-on-night', '--mn-on-night-muted', '--mn-star-lavender', '--mn-star-paper', '--mn-scrim', '--mn-glow', '--mn-path-hover', '--mn-night-wave']) {
             expect(listed.has(name), name).toBe(true);
         }
         const pairs = SEMANTIC_PAIRS.map(pair => `${pair.foreground} on ${pair.background}`);

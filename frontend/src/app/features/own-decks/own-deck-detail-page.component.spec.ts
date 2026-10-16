@@ -977,13 +977,13 @@ describe('OwnDeckDetailPageComponent', () => {
         const study = () => [...root().querySelectorAll<HTMLAnchorElement>('a')].find(link => link.textContent?.trim() === 'Учить')!;
         const states = forksFixture.fork as unknown as Record<'preparing' | 'ready', DeckFork>;
 
-        it('marks «Учить» as the place the tour points at and says that the session begins when it is pressed', () => {
+        it('marks «Учить» as the place the tour points at, and does not claim the session has begun when the link is pressed (the study page says so)', () => {
             const seen: string[] = [];
-            TestBed.inject(TourEvents).listen(event => seen.push(event));
+            TestBed.inject(TourEvents).listen(event => { seen.push(event); });
             expect(study().getAttribute('data-tour-anchor')).toBe('hub.start');
             study().addEventListener('click', event => event.preventDefault());
             study().click();
-            expect(seen).toEqual(['study.started']);
+            expect(seen).toEqual([]);
         });
 
         it('tells a running tour that the copy is still being prepared, and that it is ready, instead of letting it time out', async () => {

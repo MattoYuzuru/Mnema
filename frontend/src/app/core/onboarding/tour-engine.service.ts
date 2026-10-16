@@ -3,7 +3,7 @@ import { Router } from '@angular/router';
 
 import { ToastService } from '../notifications/toast.service';
 import { JourneyStore } from './journey.store';
-import { ActionOptions, JourneyAction, STEP_BRANCH } from './onboarding.models';
+import { ActionOptions, JourneyAction, OnboardingView, STEP_BRANCH, isRefused } from './onboarding.models';
 import { onboardingText } from './onboarding-texts';
 import { TourAnchors } from './tour-anchors';
 import { TourEvents } from './tour-events';
@@ -25,7 +25,7 @@ export type TourPhase = 'locating' | 'ready' | 'missing';
 export interface TourStartOptions {
     /** Where progress is recorded instead of the default (a demonstration or a test). */
     readonly persistence?: TourPersistence;
-    /** Start folded into the pause plaque, recording nothing: the journey is already paused (another device paused it). */
+    /** Start folded into the pause plaque, recording nothing and going nowhere: the journey is already paused (another device paused it). */
     readonly paused?: boolean;
 }
 
@@ -58,6 +58,7 @@ export class TourEngine {
     private readonly phaseState = signal<TourPhase>('locating');
     private readonly focusCounter = signal(0);
     private readonly endState = signal<TourEnd | null>(null);
+    private readonly pauseCounter = signal(0);
 
     readonly definition = computed(() => this.run()?.definition ?? null);
     /** A tour is in progress (paused or not). */
@@ -78,6 +79,14 @@ export class TourEngine {
     });
     /** Changes whenever focus should return to the card heading: a new step, or the tour resumed. */
     readonly focusRequest = this.focusCounter.asReadonly();
+    /** Counts the pauses the learner (or a gate) asked for: the plaque takes the focus then, and not when a tour starts already folded. */
+    readonly pauseRequest = this.pauseCounter.asReadonly();
+    /** «Назад» is not offered before a step whose action was done: going back would ask for it again (a second deck, a second copy). */
+    readonly canGoBack = computed(() => {
+        const steps = this.definition()?.steps ?? [];
+        const index = this.position();
+        return index > 0 && !isActionGate(steps[index - 1].gate);
+    });
     /** How the last run ended; a page reads it to show what follows (the congratulation after `completed`). */
     readonly lastEnd = this.endState.asReadonly();
 
@@ -104,7 +113,8 @@ export class TourEngine {
         this.endState.set(null);
         this.position.set(Math.max(0, found));
         this.run.set({ definition, persistence: options.persistence ?? this.injector.get(TOUR_PERSISTENCE) });
-        this.enterStep();
+        // A tour that starts paused goes nowhere: the learner is wherever they are (even in a study session) until they continue.
+        this.enterStep(options.paused !== true);
         if (options.paused === true) this.pausedState.set(true);
     }
 
@@ -116,7 +126,7 @@ export class TourEngine {
     }
 
     back(): void {
-        if (this.run() === null || this.pausedState() || this.position() === 0) return;
+        if (this.run() === null || this.pausedState() || !this.canGoBack()) return;
         this.goTo(this.position() - 1);
     }
 
@@ -126,6 +136,7 @@ export class TourEngine {
         const step = this.step();
         if (run === null || step === null || this.pausedState()) return;
         this.pausedState.set(true);
+        this.pauseCounter.update(count => count + 1);
         this.record(run, 'PAUSE', { stepKey: step.key });
     }
 
@@ -136,6 +147,8 @@ export class TourEngine {
         this.pausedState.set(false);
         this.record(run, 'RESUME', { stepKey: step.key });
         this.focusCounter.update(count => count + 1);
+        // The plaque brings the learner back to the place of the step, wherever the pause left them.
+        this.navigateTo(step);
         if (this.gateMetWhilePaused) {
             this.gateMetWhilePaused = false;
             this.next();
@@ -183,7 +196,12 @@ export class TourEngine {
         this.enterStep();
     }
 
-    private enterStep(): void {
+    private navigateTo(step: TourStep): void {
+        const route = typeof step.route === 'function' ? step.route() : step.route;
+        if (route !== undefined && route !== null && this.router.url !== route) this.router.navigateByUrl(route).catch(() => undefined);
+    }
+
+    private enterStep(navigate = true): void {
         const step = this.step();
         this.clearWait();
         this.stopGate?.();
@@ -193,15 +211,16 @@ export class TourEngine {
         this.pausedState.set(false);
         this.focusCounter.update(count => count + 1);
         if (step === null) return;
-        const route = typeof step.route === 'function' ? step.route() : step.route;
-        if (route !== undefined && route !== null && this.router.url !== route) this.router.navigateByUrl(route).catch(() => undefined);
+        if (navigate) this.navigateTo(step);
         if (isActionGate(step.gate)) {
             const { action, pauses } = step.gate;
             this.stopGate = this.events.listen(event => {
-                if (event !== action) return;
+                if (event !== action) return false;
                 if (pauses === true) this.pause();
                 else if (this.pausedState()) this.gateMetWhilePaused = true;
                 else this.next();
+                // The page that published the event leaves the next place to the tour (it goes there itself).
+                return true;
             });
         }
     }
@@ -217,7 +236,24 @@ export class TourEngine {
     }
 
     private record(run: Run, action: JourneyAction, options: ActionOptions): void {
-        Promise.resolve(run.persistence.act(action, options)).catch(() => undefined);
+        Promise.resolve(run.persistence.act(action, options)).then(result => {
+            if (isRefused(result) && this.run() === run) this.follow(result.view);
+        }).catch(() => undefined);
+    }
+
+    /**
+     * The server refused a command and said where the journey really is (another tab moved it, the feature went off): the tour goes
+     * there, recording nothing, instead of carrying on as if its step had been taken.
+     */
+    private follow(view: OnboardingView): void {
+        const run = this.run();
+        const journey = view.journey;
+        if (run === null) return;
+        if (!view.enabled || journey === null || (journey.state !== 'IN_PROGRESS' && journey.state !== 'PAUSED')) { this.stop(); return; }
+        const index = journey.stepKey === null ? -1 : run.definition.steps.findIndex(step => step.key === journey.stepKey);
+        if (index >= 0 && index !== this.position()) { this.position.set(index); this.enterStep(); }
+        if (journey.state === 'PAUSED') this.pausedState.set(true);
+        else if (this.pausedState()) { this.pausedState.set(false); this.focusCounter.update(count => count + 1); }
     }
 
     private reconcile(step: TourStep | null, target: HTMLElement | null, paused: boolean, preparing: boolean): void {
