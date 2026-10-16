@@ -18,9 +18,11 @@ user input from then on (a Study answer carries `answerSource: SPEECH`, contract
   Russia) or `ABROAD` (Gemini through the egress gateway; the voice leaves Russia: a recording is personal data, so only the account's identity is withheld, the audio itself is not de-identified). `PUT /api/speech-consent
   {version, processing}` records it (idempotent; a stale `version`/`processing` is `409 SPEECH_CONSENT_OUTDATED`). The required
   version changes when the active route's processing region changes, so a move to a foreign route asks again. The admitted region is stored with each input and re-checked when it is transcribed; the router never uses a route entry outside the consented region (ABROAD covers RU, not the reverse).
-  `DELETE /api/speech-consent` withdraws it. `version` is a string (`speech-2026-10-2`); `PUT` answers `200` with the `GET` body, `DELETE`
+  `DELETE /api/speech-consent` withdraws it. `version` is a string (`speech-2026-10-3`); `PUT` answers `200` with the `GET` body, `DELETE`
   answers `204` (also when nothing was accepted). The UI shows the disclosure on the first microphone press. The client records the consent under the version of the disclosure it showed (a constant it shares with `learning.speech.consent-version`), never under whatever the
   server requires, so a server whose text has moved on answers `409 SPEECH_CONSENT_OUTDATED` and nothing is recorded for a text the person did not read.
+  The compact first-use dialog keeps the recipient, foreign processing, original-audio disclosure, deletion at Mnema and withdrawal visible;
+  context/retention/accounting details are expandable. A current consent is remembered across recordings; it is not bundled with acceptance of other documents.
 
 ## Endpoints
 

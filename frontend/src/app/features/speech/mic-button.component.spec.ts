@@ -190,6 +190,32 @@ describe('MicButtonComponent', () => {
         expect(text).not.toContain('помним только');
         expect(text).toContain('отозвать в профиле');
         expect(text).not.toContain('на наших серверах в России');
+        const summary = root().querySelector('.mic-consent-summary')!.textContent!;
+        expect(summary).toContain('Google LLC (США)');
+        expect(summary).toContain('в Финляндии');
+        expect(summary).toContain('запись не обезличена');
+        expect(summary).toContain('для распознавания речи');
+        expect(summary).toContain('Разрешение запоминается');
+        expect(summary).toContain('отозвать в профиле');
+        const details = root().querySelector('details')!;
+        expect(details.open).toBe(false);
+        expect(details.querySelector('summary')!.textContent).toBe('Что передаётся и хранится');
+        expect(details.textContent).toContain('Текст хранится до 15 минут');
+        expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    });
+
+    it('does not ask again for a current consent on the next recording', async () => {
+        speech.checkConsent.mockResolvedValueOnce({ ok: false, consent: consent(false) }).mockResolvedValue({ ok: true });
+        button('Начать запись').click();
+        await flush();
+        button('Согласен').click();
+        await flush();
+        button('Остановить запись').click();
+        await flush();
+        await record();
+        expect(speech.accept).toHaveBeenCalledTimes(1);
+        expect(speech.transcribe).toHaveBeenCalledTimes(2);
+        expect(root().querySelector('dialog')!.hasAttribute('open')).toBe(false);
     });
 
     it('«Не сейчас» and Esc close the disclosure without recording or saving anything', async () => {
