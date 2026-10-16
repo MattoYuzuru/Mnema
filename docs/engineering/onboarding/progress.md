@@ -30,16 +30,16 @@ artifact:
 
 | ID | Статус | Commit | Evidence / handoff | Заметки |
 |---|---|---|---|---|
-| OB-001 | blocked: утверждение владельца | 0801bcb7, 386bc99f | `design/prototype/onboarding/`, [тексты](../evidence/onboarding/ob-prep/texts-for-approval.md), [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) | Прототип и тексты готовы; AC 3 отмечен |
-| OB-002 | blocked: утверждение владельца и юриста | e8969264, 386bc99f | [черновик 1.7](../evidence/onboarding/ob-prep/ob-002-policy-draft.md) | Политика ПДн, юрист |
-| OB-003 | blocked: утверждение планов владельцем | e8969264 (сводка) | [планы и digest](../evidence/onboarding/ob-prep/deck-plans.md); файлы в MnemaDeckStudio `runs/base-*` | 9 новых + 2 английских; без расходов |
+| OB-001 | local complete, delivery pending | 0801bcb7, 386bc99f | `design/prototype/onboarding/`, [тексты](../evidence/onboarding/ob-prep/texts-for-approval.md), [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) | Утверждено владельцем 2026-10-16; PR #554 |
+| OB-002 | in progress | e8969264, 386bc99f | [раздел 1.7](../evidence/onboarding/ob-prep/ob-002-policy-draft.md) | Текст утверждён 2026-10-16; дата вступления — в PR включения флагов |
+| OB-003 | blocked: сборка по отдельному поручению владельца | — | [планы и digest](../evidence/onboarding/ob-prep/deck-plans.md); MnemaDeckStudio `runs/base-*` | Планы утверждены 2026-10-16; 10 колод; канон согласован |
 | OB-101 | not started | — | — | |
 | OB-102 | not started | — | — | |
 | OB-103 | not started | — | — | |
 | OB-104 | not started | — | — | |
 | OB-105 | not started | — | — | |
 | OB-201 | not started | — | — | |
-| OB-202 | blocked: утверждение плана владельцем | e8969264 (сводка) | [план](../evidence/onboarding/ob-prep/deck-plans.md#ob-202-учебная-колода-как-устроена-память); `runs/onboarding-memory-sample` | Шаблон «Как устроена память»; сборка — S2 после OB-201 |
+| OB-202 | blocked: OB-201 (сборка в S2) | — | [план](../evidence/onboarding/ob-prep/deck-plans.md#ob-202-учебная-колода-как-устроена-память); `runs/onboarding-memory-sample` | План утверждён 2026-10-16 |
 | OB-203 | not started | — | — | |
 | OB-204 | not started | — | — | |
 | OB-301 | not started | — | — | |
@@ -55,7 +55,7 @@ artifact:
 
 | Дата | Сессия | Агент / модель | База → HEAD | Итог | Handoff |
 |---|---|---|---|---|---|
-| 2026-10-15/16 | S0 | Claude Opus 5.5 (lead), 2 × Opus 5.5 research, Opus 5.5 review | 42e35d0f → 0efe11d1 (+ handoff) | OB-001/002/003/202 подготовлены, ждут владельца | [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) |
+| 2026-10-15/16 | S0 | Claude Opus 5.5 (lead), 2 × Opus 5.5 research, Opus 5.5 review | 42e35d0f → 0efe11d1 (+ handoff) | OB-001/002/003/202 подготовлены; 2026-10-16 утверждены владельцем, корейский перепланирован | [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) |
 
 Handoff-файлы кладутся в `docs/engineering/evidence/onboarding/<epic>/handoff-session-<N>.md` ветки
 реализации и перечисляются здесь.
