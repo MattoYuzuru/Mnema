@@ -39,7 +39,8 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
             `${prefix}/community/interests`, `${prefix}/community/interests:reset`, `${prefix}/community/events`,
             `${prefix}/community/exposures`, `${prefix}/community/recommendations`,
             // The onboarding journey (contracts/onboarding): the view and its two commands.
-            `${prefix}/onboarding`, `${prefix}/onboarding/journey`, `${prefix}/onboarding/preferences`];
+            `${prefix}/onboarding`, `${prefix}/onboarding/journey`, `${prefix}/onboarding/preferences`,
+            `${prefix}/onboarding/sample-deck`];
         const adminRoute = [`${prefix}/admin/console/access`, `${prefix}/admin/console/report`, `${prefix}/admin/console/audit`, `${prefix}/admin/promo-codes`, `${prefix}/admin/support/tickets`,
             `${prefix}/admin/complaints`, `${prefix}/admin/complaints/journal`, `${prefix}/admin/onboarding/experiment`].includes(url.pathname)
             // The complaint queue of the owner console (Share/15): one complaint, its unit picker and the two decisions (`:decide`, `:unhide`).
