@@ -316,6 +316,66 @@ def vulnerability_records(report: Any, image: str) -> list[dict[str, str]]:
     return records
 
 
+def classify_blocking(
+    records: list[dict[str, str]], exceptions: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, str]], set[tuple[str, str]]]:
+    """Split HIGH/CRITICAL findings into excepted and unexcepted ones; lower severities never block."""
+    used_scopes: set[tuple[str, str]] = set()
+    applied: list[dict[str, Any]] = []
+    unexcepted: list[dict[str, str]] = []
+    for record in records:
+        if record["severity"] not in BLOCKING_SEVERITIES:
+            continue
+        match = next(
+            (
+                item
+                for item in exceptions
+                if item["finding"] == record["finding"] and record["package"] in item["packages"]
+            ),
+            None,
+        )
+        if match is None:
+            unexcepted.append(record)
+            continue
+        used_scopes.add((record["finding"], record["package"]))
+        applied.append(
+            {
+                "finding": record["finding"],
+                "package": record["package"],
+                "severity": record["severity"],
+                "owner": match["owner"],
+                "rationale": match["rationale"],
+                "created": match["created"],
+                "expires": match["expires"],
+            }
+        )
+    return applied, unexcepted, used_scopes
+
+
+def blocking_summary(unexcepted: list[dict[str, str]]) -> str:
+    return ", ".join(f"{item['severity']}:{item['finding']}:{item['package']}" for item in unexcepted[:20])
+
+
+def preflight(args: argparse.Namespace) -> None:
+    """Pull-request gate on a locally built, unpublished image: same blocking rule and exceptions as a release.
+
+    An exception names an exact release digest, which a pull-request build never has, so here it applies to any
+    image of its service. The release itself still requires the exact digest and reports unused scopes.
+    """
+    if args.service not in VPS_SERVICES:
+        raise EvidenceFailure("unsupported service")
+    today = parse_day(args.now, "now") if args.now else datetime.now(UTC).date()
+    validate_trivy_ignore(args.trivy_ignore)
+    exceptions = [
+        item for item in load_exceptions(args.exceptions, today)
+        if validate_image(item["image"]).group("service") == args.service
+    ]
+    records = vulnerability_records(load_json(args.report), args.image)
+    _, unexcepted, _ = classify_blocking(records, exceptions)
+    if unexcepted:
+        raise EvidenceFailure(f"blocking vulnerabilities without a valid exception: {blocking_summary(unexcepted)}")
+
+
 def evaluate(args: argparse.Namespace) -> None:
     if args.service not in VPS_SERVICES:
         raise EvidenceFailure("unsupported service")
@@ -336,36 +396,7 @@ def evaluate(args: argparse.Namespace) -> None:
     records = vulnerability_records(load_json(args.report), args.image)
 
     relevant_exceptions = [item for item in exceptions if item["image"] == args.image]
-    used_scopes: set[tuple[str, str]] = set()
-    applied: list[dict[str, Any]] = []
-    unexcepted: list[dict[str, str]] = []
-    for record in records:
-        if record["severity"] not in BLOCKING_SEVERITIES:
-            continue
-        match = next(
-            (
-                item
-                for item in relevant_exceptions
-                if item["finding"] == record["finding"] and record["package"] in item["packages"]
-            ),
-            None,
-        )
-        if match is None:
-            unexcepted.append(record)
-            continue
-        scope = (record["finding"], record["package"])
-        used_scopes.add(scope)
-        applied.append(
-            {
-                "finding": record["finding"],
-                "package": record["package"],
-                "severity": record["severity"],
-                "owner": match["owner"],
-                "rationale": match["rationale"],
-                "created": match["created"],
-                "expires": match["expires"],
-            }
-        )
+    applied, unexcepted, used_scopes = classify_blocking(records, relevant_exceptions)
     declared_scopes = {
         (item["finding"], package)
         for item in relevant_exceptions
@@ -375,10 +406,7 @@ def evaluate(args: argparse.Namespace) -> None:
     if unused:
         raise EvidenceFailure(f"release has unused exception scopes for {args.service}: {unused}")
     if unexcepted:
-        summary = ", ".join(
-            f"{item['severity']}:{item['finding']}:{item['package']}" for item in unexcepted[:20]
-        )
-        raise EvidenceFailure(f"blocking vulnerabilities without a valid exception: {summary}")
+        raise EvidenceFailure(f"blocking vulnerabilities without a valid exception: {blocking_summary(unexcepted)}")
 
     counts = Counter(record["severity"] for record in records)
     evidence = {
@@ -753,6 +781,15 @@ def parser() -> argparse.ArgumentParser:
     evaluate_parser.add_argument("--output", required=True, type=Path)
     evaluate_parser.add_argument("--now")
     evaluate_parser.set_defaults(handler=evaluate)
+
+    preflight_parser = commands.add_parser("preflight", help="gate a locally built pull-request image scan")
+    preflight_parser.add_argument("--service", required=True)
+    preflight_parser.add_argument("--image", required=True, help="local image reference the report scanned")
+    preflight_parser.add_argument("--report", required=True, type=Path)
+    preflight_parser.add_argument("--exceptions", required=True, type=Path)
+    preflight_parser.add_argument("--trivy-ignore", required=True, type=Path)
+    preflight_parser.add_argument("--now")
+    preflight_parser.set_defaults(handler=preflight)
 
     aggregate_parser = commands.add_parser("aggregate", help="bind all image evidence to one release")
     aggregate_parser.add_argument("--evidence-dir", required=True, type=Path)

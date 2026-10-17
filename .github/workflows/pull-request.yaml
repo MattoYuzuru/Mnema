@@ -121,9 +121,83 @@ jobs:
             --volume "$PWD/scripts/require_no_skips.py:/opt/require_no_skips.py:ro" --entrypoint python3 \
             mnema-media-worker:verified /opt/require_no_skips.py tests.test_worker
 
+  release-images:
+    # The release Dockerfiles from their real contexts, scanned with the release blocking rule, before merge.
+    # Nothing is pushed or attested here; Main CI build-and-push repeats the scan on the exact release digests.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: identity-account
+            context: ./backend
+            target: identity-account-runtime
+          - name: learning
+            context: ./backend
+            target: learning-runtime
+          - name: postgres
+            context: ./deploy/production
+            target: ""
+          - name: media-worker
+            context: ./backend/media-worker
+            target: ""
+          - name: frontend
+            context: ./frontend
+            target: ""
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Route Docker Hub pulls through mirror.gcr.io
+        uses: ./.github/actions/docker-hub-mirror
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+
+      - name: Build ${{ matrix.name }} without publishing
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          target: ${{ matrix.target }}
+          push: false
+          load: true
+          tags: mnema-preflight/${{ matrix.name }}:pr
+          # Read-only reuse of the trusted main release cache; a pull request never writes a release scope.
+          cache-from: type=gha,scope=release-${{ matrix.name }}
+
+      - name: Scan the unpublished image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: mnema-preflight/${{ matrix.name }}:pr
+          scanners: vuln
+          format: json
+          output: ${{ runner.temp }}/preflight-trivy.json
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: "false"
+          exit-code: "0"
+          timeout: 10m
+          version: v0.70.0
+          cache: true
+          trivyignores: security/trivy-release-ignore
+
+      - name: Apply the release vulnerability policy
+        env:
+          SERVICE: ${{ matrix.name }}
+          IMAGE: mnema-preflight/${{ matrix.name }}:pr
+        run: python3 scripts/verify_release_security_evidence.py preflight --image "$IMAGE" --service "$SERVICE" --report "$RUNNER_TEMP/preflight-trivy.json" --exceptions security/release-image-exceptions.json --trivy-ignore security/trivy-release-ignore
+
   backend-quality:
     if: ${{ always() }}
-    needs: [backend-tests, backend-security, backend-runtime]
+    needs: [backend-tests, backend-security, backend-runtime, release-images]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -197,6 +271,8 @@ jobs:
           python3 scripts/verify_artifact_security_policy.py
           python3 scripts/verify_production_image_pins.py
           python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v
+          # The remaining script suites; tests/test_verify_checks.py fails when a new suite is owned by no job.
+          python3 -m unittest scripts.tests.test_ai_ops_metrics_snapshot scripts.tests.test_ai_worker_topology scripts.tests.test_local_full_stack_media scripts.tests.test_ranker_evaluation scripts.tests.test_require_no_skips -v
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -268,7 +344,7 @@ jobs:
 
   frontend-quality:
     if: ${{ always() }}
-    needs: [frontend-checks, frontend-tests]
+    needs: [frontend-checks, frontend-tests, release-images]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
