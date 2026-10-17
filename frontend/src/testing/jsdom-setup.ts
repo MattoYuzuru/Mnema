@@ -20,11 +20,24 @@ for (const name of ['scrollBy', 'scrollTo'] as const) {
     Object.defineProperty(window, name, { value: (): void => {}, configurable: true, writable: true });
 }
 
+// The dialog focusing steps (HTML «dialog focusing steps», «focus delegate»): an `autofocus` descendant, else the first focusable
+// one in tree order, else nothing. jsdom's own `focus()` decides what is focusable (it refuses disabled controls and anything under
+// `display: none`), so a candidate that does not take the focus is skipped.
+const FOCUS_CANDIDATES = 'a[href], area[href], button, input, select, textarea, iframe, summary, [tabindex], [contenteditable]';
+function openDialog(dialog: HTMLDialogElement): void {
+    if (dialog.hasAttribute('open')) return;
+    dialog.setAttribute('open', '');
+    const autofocus = dialog.querySelector<HTMLElement>('[autofocus]');
+    for (const candidate of autofocus === null ? dialog.querySelectorAll<HTMLElement>(FOCUS_CANDIDATES) : [autofocus]) {
+        candidate.focus();
+        if (document.activeElement === candidate) return;
+    }
+}
 define(HTMLDialogElement.prototype, 'showModal', function showModal(this: HTMLDialogElement): void {
-    this.setAttribute('open', '');
+    openDialog(this);
 });
 define(HTMLDialogElement.prototype, 'show', function show(this: HTMLDialogElement): void {
-    this.setAttribute('open', '');
+    openDialog(this);
 });
 define(HTMLDialogElement.prototype, 'close', function close(this: HTMLDialogElement, returnValue?: string): void {
     if (returnValue !== undefined) {
@@ -35,6 +48,13 @@ define(HTMLDialogElement.prototype, 'close', function close(this: HTMLDialogElem
         this.dispatchEvent(new Event('close'));
     }
 });
+
+// jsdom's UA stylesheet hides `[popover]:not(:popover-open)`, but jsdom has neither the Popover API nor `:popover-open`, so a
+// popover could never be shown and nothing in it could take focus (jsdom refuses focus under `display: none`). Draw it in
+// flow instead, as a browser without the Popover API does; `popover-shim.ts` hides it again while its API reports it closed.
+const popoverStyle = document.createElement('style');
+popoverStyle.textContent = '[popover]:not(:popover-open):not(dialog[open]) { display: block; }';
+document.head.append(popoverStyle);
 
 define(document, 'elementFromPoint', function elementFromPoint(): Element | null {
     return null;

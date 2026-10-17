@@ -224,7 +224,7 @@ describe('StyleguidePageComponent', () => {
         } finally {
             for (const token of ['--mn-ink', '--mn-sheet', '--mn-body', '--mn-paper']) style.removeProperty(token);
         }
-    }, 30_000); // renders the whole styleguide a second time: a few seconds alone, 13 s on a loaded CI runner (Main CI 39062185414)
+    });
 
     it('previews reduced motion with the sidebar switch', () => {
         const rootElement = root.querySelector<HTMLElement>('.sg-root')!;

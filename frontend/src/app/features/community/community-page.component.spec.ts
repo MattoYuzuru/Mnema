@@ -272,7 +272,10 @@ describe('CommunityPageComponent', () => {
             await settle();
             expect(one('app-deck-shelf')).toBeNull();
             expect(document.activeElement).toBe(one('h1'));
-            // A filter chosen in the list keeps the focus where the reader put it.
+            // A filter chosen in the list keeps the focus where the reader put it. jsdom has no container queries, so the
+            // panel is drawn as on a narrow screen: closed (`display: none`) until the reader opens «Фильтры».
+            one<HTMLButtonElement>('app-catalog-filters button.disclosure')!.click();
+            await settle();
             const box = all<HTMLLabelElement>('app-catalog-filters .check-row').find(row => row.textContent?.trim() === 'Живая')!.querySelector('input')!;
             box.focus();
             check('Живая');
