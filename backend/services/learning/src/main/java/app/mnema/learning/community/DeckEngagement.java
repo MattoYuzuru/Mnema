@@ -14,7 +14,8 @@ import java.util.UUID;
  * transaction ({@code MANDATORY}).
  *
  * <p>The source's owner is never counted (a statement that would write one writes nothing), a copy of a copy counts only for its direct source ({@code deck_fork.upstream_deck_id}), and
- * a retry changes nothing. TODO(account-deletion task #409; owner: Learning's account-purge epic): the purge of an account must delete its rows here
+ * a retry changes nothing. A source that is not an ordinary deck ({@code deck.purpose} other than {@code USER}: the onboarding sample template) is never counted, and so a sample copy
+ * adds nothing, whoever copies or studies it (OB-201; the condition is in the two statements below and nowhere else). TODO(account-deletion task #409; owner: Learning's account-purge epic): the purge of an account must delete its rows here
  * ({@code WHERE account_id = :account}, served by {@code deck_engagement_account}); the source's metrics then lose that person, which is the intended effect.
  */
 @Repository
@@ -38,7 +39,7 @@ public class DeckEngagement {
         return jdbc.sql("""
                 INSERT INTO app_learning.deck_engagement(deck_id, account_id, kind, first_at, last_at, trust, new_account)
                 SELECT d.deck_id, :account, 'FORK', statement_timestamp(), statement_timestamp(), :trust, :fresh
-                  FROM app_learning.deck d WHERE d.deck_id = :source AND d.owner_id <> :account
+                  FROM app_learning.deck d WHERE d.deck_id = :source AND d.owner_id <> :account AND d.purpose = 'USER'
                 ON CONFLICT (deck_id, account_id, kind) DO UPDATE SET trust = EXCLUDED.trust, new_account = EXCLUDED.new_account
                     WHERE app_learning.deck_engagement.trust IS NULL AND EXCLUDED.trust IS NOT NULL
                 """).param("source", source).param("account", account).param("trust", signals.trusted() == null ? null : signals.trusted() ? 1.0f : UNTRUSTED_WEIGHT, java.sql.Types.REAL)
@@ -64,7 +65,7 @@ public class DeckEngagement {
                            AND s.mode = 'SCHEDULED' AND s.status = 'COMPLETE' AND s.completed_at IS NOT NULL
                         OFFSET 0) d
                  CROSS JOIN LATERAL (SELECT f.upstream_deck_id FROM app_learning.deck_fork f WHERE f.deck_id = d.deck_id AND f.released_at IS NULL OFFSET 0) c
-                 WHERE EXISTS (SELECT 1 FROM app_learning.deck u WHERE u.deck_id = c.upstream_deck_id AND u.owner_id <> d.account_id)
+                 WHERE EXISTS (SELECT 1 FROM app_learning.deck u WHERE u.deck_id = c.upstream_deck_id AND u.owner_id <> d.account_id AND u.purpose = 'USER')
                 ON CONFLICT (deck_id, account_id, kind) DO UPDATE SET
                     last_at = GREATEST(e.last_at, EXCLUDED.last_at),
                     study_days = e.study_days + CASE WHEN EXCLUDED.last_study_date > e.last_study_date THEN 1 ELSE 0 END,

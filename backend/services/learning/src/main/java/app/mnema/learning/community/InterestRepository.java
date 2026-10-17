@@ -84,7 +84,7 @@ class InterestRepository {
         if (bump) bump(account);
     }
 
-    /** Live direct copies including detached ones; metadata is only from the current public source, never private copy text. */
+    /** Live direct copies including detached ones; metadata is only from the current public source, never private copy text. A copy that is not an ordinary deck (the onboarding sample deck) is not an interest. */
     List<String> copyTopics(Profile profile) {
         return jdbc.sql("""
                 SELECT p.topic_id
@@ -98,7 +98,8 @@ class InterestRepository {
                 AND EXISTS (SELECT 1
                 FROM app_learning.deck d
                 WHERE d.deck_id=f.deck_id
-                AND d.deleted_at IS NULL)
+                AND d.deleted_at IS NULL
+                AND d.purpose='USER')
                 """)
                 .param("a", profile.account()).param("bootstrap", profile.bootstrap()).param("since", Timestamp.from(profile.since())).query(String.class).list();
     }

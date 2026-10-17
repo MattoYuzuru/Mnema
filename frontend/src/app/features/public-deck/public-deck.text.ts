@@ -1,3 +1,4 @@
+import { sampleShareRefusedText } from '../../core/onboarding/sample-deck';
 import { PublicDeckFailure } from './public-deck.models';
 
 /** A calm sentence for a public read that failed, naming what could not be loaded («материалы», «упражнения»). */
@@ -46,6 +47,8 @@ export const PUBLIC_ACTION_TEXT = {
     copyPreparing: 'Копия ещё готовится.',
     copyNotFound: 'Сейчас добавить колоду к себе нельзя. Попробуйте позже.',
     copyOwn: 'Это ваша колода: добавлять её к себе не нужно.',
+    /** The deck is a sample deck: the approved sentence of the onboarding, said wherever sharing one is refused. */
+    copySample: sampleShareRefusedText(),
     copyLimit: (limit: number | null): string => `${limit === null ? 'Одновременно можно готовить ограниченное число копий.' : `Одновременно можно готовить не больше ${limit} копий.`} Дождитесь, пока часть будет готова, и повторите.`,
     copyBusy: 'Сейчас много читателей. Повторите через секунду.',
     copyQueueBusy: 'Сейчас готовится много копий. Повторите через минуту.',

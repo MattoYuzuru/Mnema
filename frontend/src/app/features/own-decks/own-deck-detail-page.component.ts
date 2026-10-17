@@ -1,3 +1,7 @@
+import { JourneyStore } from '../../core/onboarding/journey.store';
+import { isSampleDeck } from '../../core/onboarding/sample-deck';
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
+import { TourEngine } from '../../core/onboarding/tour-engine.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, LOCALE_ID, afterNextRender, computed, effect, inject, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -9,8 +13,9 @@ import { Subscription } from 'rxjs';
 import { AuthoringApiService } from '../authoring/authoring-api.service';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/capabilities-api.service';
 
-import { DeckMetadata, DeckVisibility, OwnDeck, validateDeckMetadata } from './own-deck.models';
+import { DeckMetadata, DeckVisibility, OwnDeck, STUDY_DECK_LABEL, validateDeckMetadata } from './own-deck.models';
 import { PaperDialogComponent } from '../../shared/paper-dialog.component';
+import { SamplePlaqueComponent } from '../../shared/sample-plaque.component';
 import { GlyphComponent, GlyphName } from '../../shared/glyph.component';
 import { ACCESS_LEVEL_LABELS, AccessLevelComponent } from '../../shared/access-level.component';
 import { ActionMenuComponent, ActionMenuItem } from '../../shared/action-menu.component';
@@ -52,7 +57,7 @@ import {
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
         PaperDialogComponent, GlyphComponent, DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent, DeckModerationComponent,
-        CopyOriginComponent, CopyStatusComponent, ToggletipComponent, UnavailableNoteComponent, UpdateBadgeComponent, UpdateNewsComponent],
+        CopyOriginComponent, CopyStatusComponent, ToggletipComponent, UnavailableNoteComponent, UpdateBadgeComponent, UpdateNewsComponent, TourAnchorDirective, SamplePlaqueComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',
@@ -92,6 +97,8 @@ export class OwnDeckDetailPageComponent {
     readonly shareLevel = computed(() => this.publishedLevel() ?? this.store.detailState().deck?.visibility ?? 'private');
     readonly shareGlyph = computed<GlyphName>(() => this.shareLevel() === 'link' ? 'link' : this.shareLevel() === 'public' ? 'colonnade' : 'lock');
     readonly shareLabel = computed(() => `Поделиться. Доступ: ${ACCESS_LEVEL_LABELS[this.shareLevel()]}`);
+    /** This is the account's sample deck («Учебная»): marked as such, and with nothing to share or open to others. */
+    readonly sample = computed(() => isSampleDeck(this.journey.view(), this.store.detailState().deck?.deckId ?? null));
     /** The copy state of this deck (`null` for an ordinary deck, and while the first read is on its way). */
     readonly fork = computed(() => this.store.detailState().deck?.fork ?? null);
     /** `preparing` or `failed` while the copy is not ready: the hub then shows the state instead of the content. */
@@ -183,6 +190,9 @@ export class OwnDeckDetailPageComponent {
     private readonly toasts = inject(ToastService);
     private readonly capabilities = inject(CapabilitiesApiService);
     private readonly router = inject(Router);
+    private readonly tourEngine = inject(TourEngine);
+    private readonly journey = inject(JourneyStore);
+    protected readonly studyLabel = STUDY_DECK_LABEL;
     private readonly injector = inject(Injector);
     private readonly destroyRef = inject(DestroyRef);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
@@ -201,6 +211,7 @@ export class OwnDeckDetailPageComponent {
     private pollAttempt = 0;
     private lastPollAt = 0;
     private polledDeckId: string | null = null;
+
 
     constructor() {
         this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
@@ -258,6 +269,12 @@ export class OwnDeckDetailPageComponent {
             const deck = this.store.detailState().deck;
             untracked(() => this.announceCopyState(deck));
         });
+        // The tour that points at «Учить» says «Готовим колоду…» while the copy is being prepared, instead of timing out into its text variant.
+        effect(() => {
+            const preparing = this.copyState() === 'preparing';
+            untracked(() => { if (this.tourEngine.active() || !preparing) this.tourEngine.setPreparing(preparing); });
+        });
+        this.destroyRef.onDestroy(() => this.tourEngine.setPreparing(false));
         effect(() => {
             // While the copy is being prepared the page asks again at a bounded backoff; a ready, failed or ordinary deck needs nothing.
             const copyState = this.copyState();
@@ -270,7 +287,7 @@ export class OwnDeckDetailPageComponent {
             // Уведомление «Запрошен доступ» открывает окно, когда колода и настройки появились.
             const block = this.publication();
             const deckId = this.store.detailState().deck?.deckId ?? null;
-            if (block === undefined || deckId === null || this.fragment() !== 'access' || this.followedAccess === deckId) return;
+            if (block === undefined || deckId === null || this.fragment() !== 'access' || this.followedAccess === deckId || this.sample()) return;
             this.followedAccess = deckId;
             untracked(() => afterNextRender(() => this.sharingDialog()?.open(this.shareButton()?.nativeElement), { injector: this.injector }));
         });

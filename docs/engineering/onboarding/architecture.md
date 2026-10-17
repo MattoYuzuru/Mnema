@@ -83,6 +83,8 @@ CREATE TABLE onboarding_journey (
   offered_at      timestamptz NOT NULL,
   finished_at     timestamptz NULL,
   replay_count    smallint    NOT NULL DEFAULT 0,
+  weeks_met       smallint    NOT NULL DEFAULT 0,  -- §7, OB-401
+  last_met_week   date        NULL,                -- понедельник последней засчитанной недели
   row_version     bigint      NOT NULL DEFAULT 0,
   updated_at      timestamptz NOT NULL
 );
@@ -286,3 +288,54 @@ upsert только на первых событиях (после `achieved_at`
 (control = без автопредложения тура, «Путь» доступен всем) через существующий ExperimentService;
 `EXPOSURE` при решении показать «Начало пути», `CONVERSION` — активация (первое SCHEDULED-занятие
 за 7 дней) считается на сервере по `account_milestone`. Отчёт — агрегаты в кабинете владельца.
+
+## 12. Уточнено реализацией (S1, OB-E1, 2026-10-16)
+
+Канон поведения не менялся; ниже — что реализация S1 зафиксировала точнее, чем §3–§4, §8 и §11. Контракт —
+[`contracts/onboarding`](../../../contracts/onboarding/README.md).
+
+- **Схема (V72).** К DDL §3 добавлена `cohort` (`TOUR` / `CONTROL` / `UNASSIGNED` / NULL): группа holdout
+  замораживается при создании строки по eligibility; `UNASSIGNED` — эксперимент выключен или нет секрета (тур есть,
+  в отчёт не входит); NULL — строка создана перепрохождением (`REPLAY`) вне когорты. CHECK связывает `finished_at`
+  с состояниями `SKIPPED`/`COMPLETED`. `account_milestone` и `deck.purpose` — не в V72 (S2/S3).
+- **Состояние на проводе.** Нет строки = `NOT_OFFERED` (`rowVersion "0"`). `eligible` — строка создана по eligibility,
+  `autoOffer` — клиент сам открывает «Начало пути» (`OFFERED`, не `CONTROL`). При выключенном флаге `journey: null`,
+  команды 409 `ONBOARDING_UNAVAILABLE`, БД не читается. Переходы — таблица `journey.json.transitions`; `UNDO_FINISH`
+  возвращает `SKIPPED → OFFERED`, `COMPLETED → PAUSED`; `REPLAY` из `NOT_OFFERED` создаёт строку с версией 1.
+- **Eligibility.** «Впервые увиден после релиза» реализовано как: время БД ≥ `eligible-from`, Identity помечает
+  аккаунт новым (`mnema_new_account`, младше 48 ч; нет claim — не новый) и нет живых колод. Отдельной таблицы
+  «первого появления» нет.
+- **Шаги.** Закрытый реестр `stepKey` в контракте (20 ключей версии 1); backend и frontend сверяют его тестами;
+  метрика `mnema_onboarding_journey_total{action,step}` берёт метки только из реестра.
+- **Эксперимент.** Ключ `onboarding_v1` (подчёркивание — формат ключей ExperimentSettings), `control:15,tour:85`,
+  `client=false`: вариант не уходит в `GET /api/plans`, клиентские события не считаются; EXPOSURE считает сервер после
+  коммита создания строки. `CONVERSION`-счётчика нет: активация и возврат считаются в отчёте
+  `GET /api/admin/onboarding/experiment` (окно консоли, 1–90 дней) по `study_session`, а не по `account_milestone`
+  (появится в S3). Кабинет — `/manage/onboarding`, предупреждение при группе < 100.
+- **Квитанции команд.** Каждая команда тура хранит вид (~0,5 КБ) в `command_receipt`: 10–20 КБ на аккаунт,
+  2–4 ГБ при 200k аккаунтов (§10 это не учитывал). Retention sweep, как у событий каталога, — follow-up.
+- **Frontend.** Вуаль — SVG-путь с even-odd вырезом (не `<mask>`): вырез не перехватывает нажатия, цель кликабельна
+  без подъёма z-index. Анкоры — `mnTourAnchor` с ключами из `tour-anchor-keys.ts`; удержание завершения —
+  параметры общего `app-hold-to-delete-button` (`holdMs`, `armedGlyph`, `armedName`, `tone`, `steppedFill`), без копии.
+
+## 13. Уточнено реализацией (S2, OB-E2, 2026-10-17)
+
+- **Пометка шаблона.** Команды «сделать шаблоном» нет: источник истины — `learning.onboarding.sample-deck.template-id`,
+  Learning при старте (каждая роль, идемпотентно) ставит этой колоде `purpose=SAMPLE_TEMPLATE`; колода, созданная после
+  старта, помечается при следующем перезапуске. `purpose` неизменяем, кроме этого перехода (`deck_head_guard`, V73).
+- **Шаблон публикуется на `LINK`, не приватно.** Чтение источника копии (`ForkReadModel`) идёт по коду публикации, поэтому
+  только опубликованный по ссылке шаблон доставляет копиям «Есть обновление» (CD-5). `LINK` не попадает в каталог и поиск;
+  после пометки владелец шаблона может публиковать новые ревизии только на `LINK`.
+- **Создание копии** — `ForkService.copyTemplate` (та же запись, что у обычной копии, с лимитами аккаунта, без проверки
+  доступа гостя и без `FORK_OWN_DECK`), под advisory-lock аккаунта; частичный unique index — страховка. Повтор `commandId`
+  возвращает тот же код (201/200) с `Idempotency-Replayed`.
+- **Запреты** — `DeckPurposeGuard` после проверки владения (чужой по-прежнему получает непрозрачный 404): публикация и
+  уровень доступа, выдача доступа, приглашения, одобрение запросов, копия по коду. Инвентарный тест перечисляет все
+  изменяющие маршруты `library`/`fork` и падает на неклассифицированном.
+- **Исключения** — одно условие `deck.purpose = 'USER'` на исходной колоде в `DeckEngagement`, `CatalogOutbox`,
+  `CatalogEvents`, `InterestRepository.copyTopics`. Учебная колода не лишает аккаунт права на тур (`hasLiveDeck`).
+- **Бесплатные проверки** — 0-кредитный `DEBIT` с операцией `ONBOARDING_SAMPLE_CHECK` (без бакетов) в той же транзакции,
+  что и платный учёт; голосовой ответ с ИИ-оценкой расходует две бесплатные (распознавание не связано с попыткой).
+  `GET /api/usage` не меняется: клиент читает `sampleDeck.freeChecksLeft`; кабинет показывает операцию в отчёте.
+- **Редакция на local stack** — отдельный локальный аккаунт (учётные данные в state dir стека, 0600); в production
+  аккаунт редакции и установка — отдельное поручение.

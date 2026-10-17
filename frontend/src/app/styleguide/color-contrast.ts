@@ -14,6 +14,19 @@ export function parseCssColor(value: string): Rgb | null {
     return functional ? [Number(functional[1]), Number(functional[2]), Number(functional[3])] : null;
 }
 
+/** The alpha of `rgb(r g b / 74%)`, `rgba(r, g, b, .5)` and `rgb(r g b / .5)`; 1 for a colour without one. */
+export function cssAlpha(value: string): number {
+    const match = /\/\s*([\d.]+)(%?)\s*\)|,\s*([\d.]+)(%?)\s*\)$/.exec(value.trim());
+    if (!match) return 1;
+    const amount = Number(match[1] ?? match[3]);
+    return (match[1] !== undefined ? match[2] : match[4]) === '%' ? amount / 100 : amount;
+}
+
+/** `foreground` at `alpha` over `background`, as the colour the eye sees (the page under the tour's veil). */
+export function blend(foreground: Rgb, alpha: number, background: Rgb): Rgb {
+    return foreground.map((part, index) => Math.round(part * alpha + background[index] * (1 - alpha))) as unknown as Rgb;
+}
+
 function channel(value: number): number {
     const share = value / 255;
     return share <= 0.03928 ? share / 12.92 : ((share + 0.055) / 1.055) ** 2.4;

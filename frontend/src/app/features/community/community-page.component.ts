@@ -30,6 +30,10 @@ import { InterestStore } from './interest-store.service';
 import { RecommendationsApiService, CardAttribution } from './recommendations-api.service';
 import { RecommendationPage } from './recommendations.models';
 import { CatalogTelemetry } from './catalog-telemetry.service';
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
+import { onboardingText } from '../../core/onboarding/onboarding-texts';
+import { TourHints } from '../../core/onboarding/tour-hints';
+import { PlaceHintComponent } from '../../shared/place-hint.component';
 import { CommunityPager } from './community-pager';
 import { CommunityCard, CommunityFacets, CommunityShelves } from './community.models';
 import {
@@ -69,7 +73,7 @@ interface ShelfView {
  */
 @Component({
     selector: 'app-community-page',
-    imports: [InterestSettingsComponent, RouterLink, BookSearchComponent, CatalogFiltersComponent, CommunityEmptyComponent, ComplaintDialogComponent, DeckGridComponent, DeckShelfComponent],
+    imports: [InterestSettingsComponent, RouterLink, TourAnchorDirective, PlaceHintComponent, BookSearchComponent, CatalogFiltersComponent, CommunityEmptyComponent, ComplaintDialogComponent, DeckGridComponent, DeckShelfComponent],
     templateUrl: './community-page.component.html',
     styleUrl: './community-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -80,6 +84,9 @@ export class CommunityPageComponent {
     private readonly api = inject(CommunityApiService);
     private readonly auth = inject(AuthService);
     protected readonly interests = inject(InterestStore);
+    /** The community tour's hint at the search after a minute of browsing without opening a deck. */
+    protected readonly hints = inject(TourHints);
+    protected readonly browseHint = onboardingText('community.browse.hint');
     protected readonly observing = computed(() => this.interests.events() && this.telemetry.accepting());
     private readonly recommendations = inject(RecommendationsApiService);
     private readonly telemetry = inject(CatalogTelemetry);

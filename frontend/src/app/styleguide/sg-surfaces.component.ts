@@ -36,6 +36,7 @@ import { ShareLinkFieldComponent } from '../shared/share-link-field.component';
 import { SHARE_MENU_ITEM, ShareLinkService } from '../shared/share-link.service';
 import { AuthorChipComponent } from '../shared/author-chip.component';
 import { NewBadgeComponent } from '../shared/new-badge.component';
+import { SamplePlaqueComponent } from '../shared/sample-plaque.component';
 import { PublicFooterComponent } from '../shared/public-footer.component';
 import { MailContactComponent } from '../shared/mail-contact.component';
 import { SupportContactComponent } from '../shared/support-contact.component';
@@ -94,7 +95,7 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
     imports: [PaperDialogComponent, SgSpecimenComponent, AccessScreenComponent, AuthorChipComponent, ActionMenuComponent, PublicDeckCardComponent, ShareButtonComponent, ShareLinkFieldComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
         NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent, AutoLoadComponent,
         AccessLevelComponent, PublicationBlockComponent, AccessPanelComponent, ComplaintDialogComponent, ModerationNoticeComponent, UnavailableNoteComponent,
-        CopyMarkComponent, CopyOriginComponent, CopyStatusComponent],
+        CopyMarkComponent, CopyOriginComponent, CopyStatusComponent, SamplePlaqueComponent],
     providers: [{ provide: PublicationApiService, useClass: DemoPublicationApi }, { provide: ItemApiService, useClass: DemoItemApi },
         { provide: AccessApiService, useClass: DemoAccessApi }, { provide: AuthorCardsService, useClass: DemoAuthorCards },
         { provide: ComplaintApiService, useClass: DemoComplaintApi }],

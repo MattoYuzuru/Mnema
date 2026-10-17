@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -52,12 +53,13 @@ public class CatalogOutbox {
     public void publicationChanged(UUID deck, UUID revision, DeckVisibility visibility) {
         UuidPolicy.requireEntityId(deck, "deckId");
         UuidPolicy.requireEntityId(revision, "revisionId");
-        UUID event = jdbc.sql("""
+        // A deck that is not an ordinary one (deck.purpose, OB-201: the sample template, whose owner publishes revisions of it) is never projected into the catalogue: no row, no job.
+        Optional<UUID> event = jdbc.sql("""
                 INSERT INTO app_learning.deck_publication_event(deck_id, published_revision_id, visibility, occurred_at)
-                VALUES (:deck, :revision, :visibility, statement_timestamp())
+                SELECT d.deck_id, :revision, :visibility, statement_timestamp() FROM app_learning.deck d WHERE d.deck_id = :deck AND d.purpose = 'USER'
                 RETURNING event_id
-                """).param("deck", deck).param("revision", revision).param("visibility", visibility.name()).query(UUID.class).single();
-        jobs.enqueue(PROJECT_QUEUE, deck + ":" + event, null, payload(deck));
+                """).param("deck", deck).param("revision", revision).param("visibility", visibility.name()).query(UUID.class).optional();
+        event.ifPresent(id -> jobs.enqueue(PROJECT_QUEUE, deck + ":" + id, null, payload(deck)));
     }
 
     /**

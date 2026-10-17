@@ -1,4 +1,4 @@
-<section class="exercise-page" aria-labelledby="exercise-title">
+<section class="exercise-page" aria-labelledby="exercise-title" mnTourAnchor="own.exercise">
   @if (deck(); as currentDeck) {
     @if (proposalEdit(); as edit) {
       <a class="back-link" data-back-workshop [routerLink]="['/decks', currentDeck.deckId, 'workshop', edit.sessionId]">← К мастерской</a>
@@ -165,7 +165,7 @@
 
     @if (page(); as currentPage) {
       @if (currentPage.exercises.length > 0) {
-        <section id="existing-exercises" class="existing" aria-labelledby="existing-title">
+        <section id="existing-exercises" class="existing" aria-labelledby="existing-title" mnTourAnchor="material.exercises">
           <h2 id="existing-title" tabindex="-1">Упражнения этого материала · {{ currentPage.total }}</h2>
           @if (listMessage(); as note) { <p class="notice" role="status">{{ note }}</p> }
           <ul #exerciseRows>

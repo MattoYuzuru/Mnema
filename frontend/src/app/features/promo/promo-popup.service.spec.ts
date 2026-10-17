@@ -5,6 +5,9 @@ import { NEVER, Subject, of, throwError } from 'rxjs';
 
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { QuietZone } from '../../core/notifications/quiet-zone';
+import { AttentionCoordinator } from '../../core/onboarding/attention-coordinator';
+import { JourneyStore } from '../../core/onboarding/journey.store';
+import { Journey } from '../../core/onboarding/onboarding.models';
 import { PromoApiService } from './promo-api.service';
 import { POPUP_PREFERENCE_KEY, POPUP_SESSION_KEY, PromoPopupService } from './promo-popup.service';
 import { PromoCampaign } from './promo.models';
@@ -17,17 +20,23 @@ describe('PromoPopupService', () => {
     let service: PromoPopupService;
     const status = signal<AuthStatus>('authenticated');
     const user = signal<{ accountId: string } | null>({ accountId: 'first-account' });
+    /** What the learner's onboarding journey says; the view is `null` until it is read. */
+    const journeyView = signal<object | null>({ enabled: false, journey: null });
+    const journey = signal<Journey | null>(null);
 
     beforeEach(() => {
         sessionStorage.clear();
         localStorage.clear();
         status.set('authenticated');
         user.set({ accountId: 'first-account' });
+        journeyView.set({ enabled: false, journey: null });
+        journey.set(null);
         api = spyObj<PromoApiService>({ popup: vi.fn().mockName('popup'), popupEvent: vi.fn().mockName('popupEvent') });
         api.popup.mockReturnValue(of(CAMPAIGN));
         api.popupEvent.mockReturnValue(of(true));
         TestBed.configureTestingModule({ providers: [provideRouter([{ path: 'plans', children: [] }]), { provide: PromoApiService, useValue: api },
-            { provide: AuthService, useValue: { status, user } }] });
+            { provide: AuthService, useValue: { status, user } },
+            { provide: JourneyStore, useValue: { view: journeyView, journey, error: signal(null) } }] });
         service = TestBed.inject(PromoPopupService);
     });
     afterEach(() => { sessionStorage.clear(); localStorage.clear(); });
@@ -270,5 +279,66 @@ describe('PromoPopupService', () => {
         await reloaded.request();
         expect(api.popup).toHaveBeenCalledOnce();
         expect(localStorage.getItem(POPUP_PREFERENCE_KEY + 'first-account')).toBeNull();
+    });
+
+    describe('with the onboarding', () => {
+        it('waits for the journey of a signed-in learner: an answer is not asked for before onboarding has been read, the session keeps its chance', async () => {
+            journeyView.set(null);
+            await service.request();
+            expect(api.popup).not.toHaveBeenCalled();
+            expect(sessionStorage.getItem(POPUP_SESSION_KEY)).toBeNull();
+            journeyView.set({ enabled: true });
+            journey.set({ state: 'NOT_OFFERED', autoOffer: false } as Journey);
+            await service.request();
+            expect(service.campaign()).toEqual(CAMPAIGN);
+        });
+
+        it('drops a popup answer that arrives before the journey was read (the first entry may be about to open) and shows nothing', async () => {
+            const answer = new Subject<PromoCampaign | null>();
+            api.popup.mockReturnValue(answer);
+            const request = service.request();
+            journeyView.set(null);
+            answer.next(CAMPAIGN);
+            answer.complete();
+            await request;
+            expect(service.campaign()).toBeNull();
+            expect(sessionStorage.getItem(POPUP_SESSION_KEY)).toBeNull();
+        });
+
+        it('is not asked for while the welcome of an auto-offered journey is waiting, and tells the coordinator when it is on the screen', async () => {
+            journeyView.set({ enabled: true });
+            journey.set({ state: 'OFFERED', autoOffer: true } as Journey);
+            await service.request();
+            expect(api.popup).not.toHaveBeenCalled();
+            journey.set({ state: 'SKIPPED', autoOffer: true, finishedAt: null } as Journey);
+            await service.request();
+            TestBed.tick();
+            expect(TestBed.inject(AttentionCoordinator).visible()).toContain('promo');
+            service.dismiss();
+            TestBed.tick();
+            expect(TestBed.inject(AttentionCoordinator).visible()).not.toContain('promo');
+        });
+
+        it('is not asked for while the coordinator says another surface speaks, and keeps the session\'s chance', async () => {
+            const attention = TestBed.inject(AttentionCoordinator);
+            attention.report('first-entry', true);
+            await service.request();
+            expect(api.popup).not.toHaveBeenCalled();
+            expect(sessionStorage.getItem(POPUP_SESSION_KEY)).toBeNull();
+            attention.report('first-entry', false);
+            await service.request();
+            expect(service.campaign()).toEqual(CAMPAIGN);
+        });
+
+        it('drops the answer that arrives after the first entry came up meanwhile, and shows nothing', async () => {
+            const answer = new Subject<PromoCampaign | null>();
+            api.popup.mockReturnValue(answer);
+            const request = service.request();
+            TestBed.inject(AttentionCoordinator).report('first-entry', true);
+            answer.next(CAMPAIGN);
+            answer.complete();
+            await request;
+            expect(service.campaign()).toBeNull();
+        });
     });
 });

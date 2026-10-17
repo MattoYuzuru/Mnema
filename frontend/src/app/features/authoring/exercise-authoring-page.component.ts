@@ -1,3 +1,5 @@
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { HttpErrorResponse } from '@angular/common/http';
 import { DOCUMENT } from '@angular/common';
 import {
@@ -125,7 +127,7 @@ function stepOwns(step: StepId, key: string): boolean {
 
 @Component({
     selector: 'app-exercise-authoring-page',
-    imports: [RouterLink, MnemaSelectComponent, HoldToDeleteButtonComponent, NewBadgeComponent, UnavailableNoteComponent, MechanicPickerComponent, ExercisePreviewHostComponent,
+    imports: [RouterLink, TourAnchorDirective, MnemaSelectComponent, HoldToDeleteButtonComponent, NewBadgeComponent, UnavailableNoteComponent, MechanicPickerComponent, ExercisePreviewHostComponent,
         ExerciseSlotEditorComponent, FreeResponseEditorComponent, ClozeEditorComponent, ChoiceEditorComponent, MatchEditorComponent,
         OrderEditorComponent, CategoryGroupsEditorComponent, CategorizeItemsEditorComponent, AskMnemaComponent, AutoLoadComponent],
     templateUrl: './exercise-authoring-page.component.html',
@@ -263,6 +265,7 @@ export class ExerciseAuthoringPageComponent {
     private readonly capabilityApi = inject(CapabilitiesApiService);
     private readonly generation = inject(GenerationApiService);
     private readonly toast = inject(ToastService);
+    private readonly tour = inject(TourEvents);
     private readonly destroyRef = inject(DestroyRef);
     private pending: PendingWrite | null = null;
     private moreEpoch = 0;
@@ -679,7 +682,7 @@ export class ExerciseAuthoringPageComponent {
                 next: () => {
                     this.pending = null; this.dirty.set(false); this.phase.set('saved');
                     this.toast.echo('Упражнение сохранено в колоду');
-                    void this.router.navigate(['/decks', deck.deckId, 'workshop', edit.sessionId]);
+                    if (!this.tour.emit('exercise.published', { deckId: deck.deckId })) void this.router.navigate(['/decks', deck.deckId, 'workshop', edit.sessionId]);
                 },
                 error: (error: unknown) => this.proposalFailed(error, edit, deck, pending, retried)
             });
@@ -779,6 +782,9 @@ export class ExerciseAuthoringPageComponent {
         this.message.set('Упражнение сохранено.');
         const deck = this.deck();
         if (deck === null) return;
+        // The tour's «exercise» step is done by an exercise that was saved into the deck.
+        // A tour that took the event goes to the next step's place itself: two navigations at once would cancel each other.
+        if (this.tour.emit('exercise.published', { deckId: deck.deckId })) return;
         void this.router.navigate(['/decks', deck.deckId, 'exercises', result.acknowledgement.exerciseId, 'edit'],
             { queryParams: { saved: 1 } });
     }

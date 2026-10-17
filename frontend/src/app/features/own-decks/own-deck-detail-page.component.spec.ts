@@ -8,6 +8,12 @@ import hubFixture from '../../../../../contracts/decks/hub.json';
 import forksFixture from '../../../../../contracts/decks/forks.json';
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { ToastService } from '../../core/notifications/toast.service';
+import onboardingFixture from '../../../../../contracts/onboarding/journey.json';
+import { JourneyStore } from '../../core/onboarding/journey.store';
+import { OnboardingView } from '../../core/onboarding/onboarding.models';
+import { TourEngine } from '../../core/onboarding/tour-engine.service';
+import { TourEvents } from '../../core/onboarding/tour-events';
+import { paragraphs } from '../../core/onboarding/tour-rich-text';
 import { OwnDeck } from './own-deck.models';
 import { DeckDetailState, DeckMutationState, OwnDecksStore } from './own-decks.store';
 import { OwnDeckDetailPageComponent } from './own-deck-detail-page.component';
@@ -49,11 +55,13 @@ describe('OwnDeckDetailPageComponent', () => {
     const detail = signal<DeckDetailState>({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
     const mutation = signal<DeckMutationState>({ phase: 'idle' });
     const fragment = new BehaviorSubject<string | null>(null);
+    const journeyView = signal<OnboardingView | null>(null);
 
     beforeEach(async () => {
         detail.set({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
         mutation.set({ phase: 'idle' });
         fragment.next(null);
+        journeyView.set(null);
         store = spyObj<OwnDecksStore>({
             openDeck: vi.fn().mockName("OwnDecksStore.openDeck"),
             retryDetail: vi.fn().mockName("OwnDecksStore.retryDetail"),
@@ -111,6 +119,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 { provide: ModerationApiService, useValue: moderation },
                 { provide: ForkApiService, useValue: forkApi },
                 { provide: ToastService, useValue: toasts },
+                { provide: JourneyStore, useValue: { view: journeyView.asReadonly() } },
                 { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })), fragment } }
             ]
         }).overrideComponent(OwnDeckDetailPageComponent, {
@@ -966,6 +975,102 @@ describe('OwnDeckDetailPageComponent', () => {
                 }
                 expect(store.refreshDetail).not.toHaveBeenCalled();
             });
+        });
+    });
+
+    describe('for the onboarding tour', () => {
+        const root = () => fixture.nativeElement as HTMLElement;
+        const study = () => [...root().querySelectorAll<HTMLAnchorElement>('a')].find(link => link.textContent?.trim() === 'Учить')!;
+        const states = forksFixture.fork as unknown as Record<'preparing' | 'ready', DeckFork>;
+
+        it('marks «Учить» as the place the tour points at, and does not claim the session has begun when the link is pressed (the study page says so)', () => {
+            const seen: string[] = [];
+            TestBed.inject(TourEvents).listen(event => { seen.push(event); });
+            expect(study().getAttribute('data-tour-anchor')).toBe('hub.start');
+            study().addEventListener('click', event => event.preventDefault());
+            study().click();
+            expect(seen).toEqual([]);
+        });
+
+        it('tells a running tour that the copy is still being prepared, and that it is ready, instead of letting it time out', async () => {
+            const engine = TestBed.inject(TourEngine);
+            engine.start({ id: 't', branch: 'COMMUNITY', steps: [{ key: 'community.study', anchor: 'hub.start', title: 'Т', body: paragraphs('Текст'), gate: 'next' }] });
+            detail.set({ phase: 'ready', deckId: deck.deckId, failure: null, deck: { ...deck, fork: states.preparing } });
+            fixture.detectChanges();
+            TestBed.tick();
+            expect(engine.preparing()).toBe(true);
+            detail.set({ phase: 'ready', deckId: deck.deckId, failure: null, deck: { ...deck, fork: states.ready } });
+            fixture.detectChanges();
+            TestBed.tick();
+            expect(engine.preparing()).toBe(false);
+            engine.stop();
+        });
+
+        it('lets go of the preparing note when the page is left', () => {
+            const engine = TestBed.inject(TourEngine);
+            engine.start({ id: 't', branch: 'COMMUNITY', steps: [{ key: 'community.study', anchor: 'hub.start', title: 'Т', body: paragraphs('Текст'), gate: 'next' }] });
+            engine.setPreparing(true);
+            fixture.destroy();
+            expect(engine.preparing()).toBe(false);
+            engine.stop();
+        });
+    });
+    describe('the sample deck of the onboarding', () => {
+        const root = (): HTMLElement => fixture.nativeElement as HTMLElement;
+        const actions = (): (string | null | undefined)[] => [...root().querySelectorAll('nav.hub-actions > a, nav.hub-actions > button')].map(element => element.getAttribute('aria-label') ?? element.textContent?.trim());
+        const sampleView = (deckId: string | null): OnboardingView =>
+            ({ ...(onboardingFixture.views.sampleReady as OnboardingView), sampleDeck: { available: true, deckId, updateAvailable: false, freeChecksLeft: 2 } });
+        async function show(): Promise<void> { fixture.detectChanges(); await fixture.whenStable(); TestBed.tick(); fixture.detectChanges(); }
+
+        it('marks the hub of the account\'s sample copy with the stamp and the plaque, and offers nothing to share', async () => {
+            journeyView.set(sampleView(deck.deckId));
+            await show();
+            const plaque = root().querySelector('.hub-heading app-sample-plaque')!;
+            expect(plaque.querySelector('.stamp')!.textContent).toBe('Учебная');
+            expect(plaque.textContent).toContain('Учебная колода: образец, к которому можно возвращаться');
+            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Изменить']);
+            expect(root().querySelector('[aria-haspopup="dialog"]')).toBeNull();
+            expect(root().querySelector('app-paper-dialog, app-publication-block, app-access-panel')).toBeNull();
+            expect(root().innerHTML).not.toContain('Поделиться');
+        });
+
+        it('leaves the title above the plaque and the deck\'s own actions working', async () => {
+            journeyView.set(sampleView(deck.deckId));
+            await show();
+            const header = root().querySelector('.hub-heading')!;
+            expect(header.querySelector('h1')!.compareDocumentPosition(header.querySelector('app-sample-plaque')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+            expect(root().querySelector('[data-tour-anchor="hub.start"]')).not.toBeNull();
+            expect(root().querySelector('[data-tour-anchor="hub.header"]')).toBe(header);
+        });
+
+        it('does not open the sharing dialog for a notification\'s #access fragment', async () => {
+            journeyView.set(sampleView(deck.deckId));
+            fragment.next('access');
+            await show();
+            expect(root().querySelector('app-paper-dialog')).toBeNull();
+        });
+
+        it.each([
+            ['another deck is the sample copy', sampleView('99999999-9999-4999-8999-999999999999')],
+            ['the account has no sample copy', sampleView(null)],
+            ['the onboarding view has not arrived', null]
+        ])('draws an ordinary hub, with sharing, when %s', async (_name, view) => {
+            journeyView.set(view);
+            await show();
+            expect(root().querySelector('app-sample-plaque')).toBeNull();
+            expect(actions()).toContain('Поделиться. Доступ: Приватная');
+            expect(root().querySelector('app-paper-dialog')).not.toBeNull();
+        });
+
+        it('follows the view: the plaque appears when the view names this deck, and goes with it', async () => {
+            await show();
+            expect(root().querySelector('app-sample-plaque')).toBeNull();
+            journeyView.set(sampleView(deck.deckId));
+            await show();
+            expect(root().querySelector('app-sample-plaque')).not.toBeNull();
+            journeyView.set(sampleView(null));
+            await show();
+            expect(root().querySelector('app-sample-plaque')).toBeNull();
         });
     });
 });

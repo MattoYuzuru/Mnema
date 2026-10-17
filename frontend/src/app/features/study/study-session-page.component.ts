@@ -1,3 +1,6 @@
+import { JourneyStore } from '../../core/onboarding/journey.store';
+import { isSampleDeck, sampleCheckHint } from '../../core/onboarding/sample-deck';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -28,6 +31,7 @@ import {
     ReplaySource,
     ScheduledStudyPreset,
     SelfCheckAttempt,
+    StudyPresentation,
     StudyResponse,
     StudySession,
     StudyStartIntent,
@@ -116,6 +120,17 @@ export class StudySessionPageComponent {
         return pair => this.api.checkPair(this.deckId, session.sessionId, presentation.presentationId,
             presentation.nonce, pair.leftId, pair.rightId).pipe(map(result => result.correct));
     });
+    /**
+     * In the sample deck, before an attempt an AI will check (an explanation graded by the AI, or an answer given by voice): how many free
+     * checks are left, or that they are spent and the next one uses the learner's own budget. Nothing in any other deck.
+     */
+    readonly sampleCheckHint = computed(() => {
+        const presentation = this.current();
+        if (presentation === null || !this.aiChecked(presentation)) return null;
+        // A spoken answer to an explanation costs two checks (the transcription and the grade): with one left, a free voice answer is not promised.
+        if (this.spokenExplanation(presentation) && this.journey.view()?.sampleDeck.freeChecksLeft === 1) return null;
+        return sampleCheckHint(this.journey.view(), this.deckId);
+    });
     readonly position = computed(() => {
         const current = this.current();
         const session = this.session();
@@ -129,6 +144,8 @@ export class StudySessionPageComponent {
     private readonly recovery = inject(StudyRecoveryService);
     private readonly quietZone = inject(QuietZone);
     private readonly promoPopup = inject(PromoPopupService);
+    private readonly tour = inject(TourEvents);
+    private readonly journey = inject(JourneyStore);
     readonly flow = inject(StudyAssessmentFlow);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
@@ -150,7 +167,13 @@ export class StudySessionPageComponent {
             const phase = this.phase();
             this.quietZone.set(TASK_OPEN.includes(phase));
             // Ask only after the completion phase has released the quiet zone, including an immediately answered request.
-            if (phase === 'complete') untracked(() => void this.promoPopup.request());
+            if (phase === 'complete') {
+                untracked(() => {
+                    // The tour that paused for the session goes on at its finale; it is told first, so the promo window finds the tour on the screen.
+                    this.tour.emit('study.completed');
+                    void this.promoPopup.request();
+                });
+            }
         });
         // The grader may hand the learner to self-check while the waiting card is on screen.
         effect(() => {
@@ -367,6 +390,8 @@ export class StudySessionPageComponent {
 
     private acceptStarted(session: StudySession): void {
         this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: null });
+        // The tour waiting for the first session is told when the server has actually opened one, not when the link was pressed.
+        this.tour.emit('study.started');
         if (session.status === 'PREPARING') this.poll(session.sessionId);
         else this.apply(session, false);
     }
@@ -556,7 +581,21 @@ export class StudySessionPageComponent {
         this.focusAfterRender('#assessing-title');
     }
 
+    /** An explanation graded by the AI that can also be answered by voice, with a microphone to do it. */
+    private spokenExplanation(presentation: StudyPresentation): boolean {
+        return presentation.evaluator.id === 'ai-semantic' && presentation.type === 'FREE_RESPONSE'
+            && presentation.content.responseInput === 'TEXT_OR_SPEECH' && this.speechAvailable();
+    }
+
+    /** The attempt costs an AI check: the grade of an explanation, or the transcription of a spoken answer. */
+    private aiChecked(presentation: StudyPresentation): boolean {
+        if (presentation.evaluator.id === 'ai-semantic') return true;
+        return presentation.type === 'FREE_RESPONSE' && presentation.content.responseInput === 'TEXT_OR_SPEECH' && this.speechAvailable();
+    }
+
     private showOutcome(sessionId: string, outcome: AttemptOutcome): void {
+        // A check may have used one of the free ones of the sample deck: the count the next card shows is the server's, not ours.
+        if (isSampleDeck(this.journey.view(), this.deckId) && isFreeResponseFeedback(outcome.feedback)) void this.journey.load({ refresh: true });
         this.pending.set(null);
         this.assessmentStartedAt = null;
         this.recovery.save({ deckId: this.deckId, sessionId, pending: null });

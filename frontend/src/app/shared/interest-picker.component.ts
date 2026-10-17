@@ -8,7 +8,7 @@ let nextPicker = 0;
     selector: 'app-interest-picker',
     template: `
       <fieldset [disabled]="busy()" [attr.aria-describedby]="hintId">
-        <legend tabindex="-1">Что вы хотите изучать в Мнеме?</legend>
+        <legend tabindex="-1" [class.visually-hidden]="legendHidden()">Что вы хотите изучать в Мнеме?</legend>
         <p class="hint intro" [id]="hintId">Найдите то, что вам интересно: начните с направления, затем выберите темы. Мы подберём колоды, а интересы можно будет изменить в профиле.</p>
         @if (selectedTopics().length > 0) {
           <div class="chosen">
@@ -64,6 +64,8 @@ export class InterestPickerComponent {
     readonly selected = input.required<readonly string[]>();
     readonly busy = input(false);
     readonly skippable = input(false);
+    /** The card around the picker already asks the question in its own heading: the legend still names the group but is not drawn twice. */
+    readonly legendHidden = input(false);
     readonly changed = output<readonly string[]>();
     readonly save = output<readonly string[]>();
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);

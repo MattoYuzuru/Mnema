@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { TourEngine } from '../onboarding/tour-engine.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { BehaviorSubject, NEVER, of } from 'rxjs';
@@ -106,6 +107,21 @@ describe('AppShellComponent', () => {
 
         expect(document.activeElement?.textContent).toBe('Мои колоды');
         expect(auth.logout).not.toHaveBeenCalled();
+    });
+
+    it('leaves the focus to the card of a running tour step after a page is activated, and takes it to the page heading otherwise', async () => {
+        const engine = TestBed.inject(TourEngine);
+        engine.start({ id: 'x', branch: null, steps: [{ key: 'finale.ai', anchor: 'hub.start', title: 'Т', body: { kind: 'paragraphs', paragraphs: [] }, gate: 'next' }] });
+        (document.activeElement as HTMLElement | null)?.blur();
+        const requested = engine.focusRequest();
+        fixture.componentInstance.focusPageHeading();
+        await Promise.resolve();
+        expect(document.activeElement?.textContent).not.toBe('Мои колоды');
+        expect(engine.focusRequest()).toBe(requested + 1);
+        engine.pause();
+        fixture.componentInstance.focusPageHeading();
+        await Promise.resolve();
+        expect(document.activeElement?.textContent).toBe('Мои колоды');
     });
 
     it('suppresses learner prompts, public footer and notification polling in the owner console', async () => {

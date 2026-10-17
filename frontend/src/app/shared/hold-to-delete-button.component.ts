@@ -1,28 +1,45 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, effect, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, output, signal } from '@angular/core';
 
-const HOLD_MS = 3_000;
+import { GlyphComponent, GlyphName } from './glyph.component';
+
+/** Deleting takes three seconds of holding; a variant can ask for another duration with `holdMs`. */
+export const DEFAULT_HOLD_MS = 3_000;
+const STEPS = 4;
+const TICK_MS = 25;
 let nextHoldId = 0;
 
 /**
- * A separate activation followed by a continuous hold prevents accidental destructive taps. The optional
+ * The shared hold gesture. A separate activation followed by a continuous hold prevents accidental destructive taps. The optional
  * `consequence` states what will disappear: it is the button's accessible description at all times and is shown as
  * text under the button while it is armed, so the learner reads it before holding. Escape is consumed only while the
  * button is armed or held, otherwise it bubbles (a surrounding selection can use it to clear itself).
+ *
+ * Two uses share one behaviour. The deletion (the defaults): three seconds, a countdown label «Удерживайте N с» while armed, the
+ * danger colour. The early finish of the onboarding tour (`holdMs` 2000, `armedGlyph="finger-hold"`, `armedName`, `tone="ink"`):
+ * once armed the label is replaced by a glyph with no extra text and the armed accessible name carries the instruction. With a
+ * glyph there is no countdown, so under reduced motion (or `steppedFill`) the fill advances in four discrete steps without animation.
  */
 @Component({
     selector: 'app-hold-to-delete-button',
+    imports: [GlyphComponent],
     host: { '(document:pointerdown)': 'cancelOutside($event)' },
     template: `
-      <button type="button" class="hold-button" [class.holding]="holding()" [disabled]="disabled() && !focusable()" [attr.aria-disabled]="disabled() && focusable() ? 'true' : null" [attr.aria-pressed]="armed()"
+      <button type="button" class="hold-button" [class.holding]="holding()" [class.has-glyph]="armedGlyph() !== null" [class.tone-ink]="tone() === 'ink'"
+        [class.is-stepped]="stepped()" [disabled]="disabled() && !focusable()" [attr.aria-disabled]="disabled() && focusable() ? 'true' : null" [attr.aria-pressed]="armed()"
+        [attr.aria-label]="armed() && armedName() ? armedName() : null"
         [attr.aria-describedby]="consequence() ? consequenceId : null"
-        [style.--hold-x.px]="waveX()" [style.--hold-y.px]="waveY()" [style.--hold-size.px]="waveSize()"
+        [style.--hold-x.px]="waveX()" [style.--hold-y.px]="waveY()" [style.--hold-size.px]="waveSize()" [style.--hold-step.%]="step() * 100 / steps"
         (click)="onClick()" (pointerdown)="onPointerDown($event)" (pointerup)="stopHold()"
         (pointercancel)="stopHold()" (pointerleave)="stopHold()" (keydown)="onKeyDown($event)"
         (keyup)="onKeyUp($event)" (blur)="cancel()">
         <span class="hold-wave" aria-hidden="true"></span>
         <span class="label-reserve" aria-hidden="true">{{ label() }}</span>
-        <span class="label-reserve" aria-hidden="true">Удерживайте 3 с</span>
-        <span class="hold-label">{{ armed() ? 'Удерживайте ' + remaining() + ' с' : label() }}</span>
+        @if (armedGlyph() === null) { <span class="label-reserve" aria-hidden="true">Удерживайте {{ holdSeconds() }} с</span> }
+        @if (armed() && armedGlyph(); as glyph) {
+          <app-glyph class="hold-glyph" [name]="glyph" />
+        } @else {
+          <span class="hold-label">{{ armed() ? 'Удерживайте ' + remaining() + ' с' : label() }}</span>
+        }
       </button>
       @if (consequence()) { <span class="consequence" [id]="consequenceId" [hidden]="!armed()">{{ consequence() }}</span> }
     `,
@@ -36,13 +53,31 @@ export class HoldToDeleteButtonComponent {
     readonly focusable = input(false);
     /** What the deletion removes, in words; empty when the label already says it. */
     readonly consequence = input('');
+    /** How long the button must be held, in milliseconds. */
+    readonly holdMs = input(DEFAULT_HOLD_MS);
+    /** A glyph that replaces the label (and the countdown) while armed; `null` keeps the countdown label. */
+    readonly armedGlyph = input<GlyphName | null>(null);
+    /** The accessible name while armed, e.g. the instruction to hold; empty keeps the visible label as the name. */
+    readonly armedName = input('');
+    /** `danger` for irreversible deletion; `ink` for a gesture that is not destructive (the tour's early finish). */
+    readonly tone = input<'danger' | 'ink'>('danger');
+    /** Fill in four steps without animation regardless of the system setting (the styleguide's «Спокойное движение» preview). */
+    readonly steppedFill = input(false);
     readonly confirmed = output<void>();
     readonly armed = signal(false);
     readonly holding = signal(false);
     readonly waveX = signal(0);
     readonly waveY = signal(0);
     readonly waveSize = signal(0);
-    readonly remaining = signal(3);
+    /** Milliseconds held so far in the current attempt. */
+    readonly elapsed = signal(0);
+    readonly steps = STEPS;
+    readonly holdSeconds = computed(() => Math.ceil(this.holdMs() / 1_000));
+    readonly remaining = computed(() => Math.max(1, Math.ceil((this.holdMs() - this.elapsed()) / 1_000)));
+    /** Discrete progress 0..4: what a calm fill shows. */
+    readonly step = computed(() => Math.min(STEPS, Math.floor(this.elapsed() / this.holdMs() * STEPS)));
+    private readonly reducedMotion = signal(false);
+    readonly stepped = computed(() => this.armedGlyph() !== null && (this.steppedFill() || this.reducedMotion()));
     protected readonly consequenceId = `mn-hold-consequence-${nextHoldId++}`;
 
     private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -54,7 +89,16 @@ export class HoldToDeleteButtonComponent {
     private suppressTrailingClick = false;
     private readonly disabledEffect = effect(() => { if (this.disabled()) this.cancel(); });
 
-    constructor() { this.destroyRef.onDestroy(() => this.clearTimer()); }
+    constructor() {
+        const motion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+        if (motion !== null) {
+            this.reducedMotion.set(motion.matches);
+            const changed = (event: MediaQueryListEvent): void => this.reducedMotion.set(event.matches);
+            motion.addEventListener('change', changed);
+            this.destroyRef.onDestroy(() => motion.removeEventListener('change', changed));
+        }
+        this.destroyRef.onDestroy(() => this.clearTimer());
+    }
 
     cancelOutside(event: PointerEvent): void {
         if (this.armed() && event.target instanceof Node && !this.element.nativeElement.contains(event.target)) this.cancel();
@@ -97,7 +141,7 @@ export class HoldToDeleteButtonComponent {
         if (this.timer === null) return;
         this.clearTimer();
         this.waveSize.set(0);
-        this.remaining.set(3);
+        this.elapsed.set(0);
         this.source = null;
         this.holding.set(false);
     }
@@ -117,12 +161,13 @@ export class HoldToDeleteButtonComponent {
         this.startedAt = Date.now();
         this.source = source;
         this.holding.set(true);
+        const duration = this.holdMs();
         this.timer = setInterval(() => {
-            const elapsed = Math.min(HOLD_MS, Date.now() - this.startedAt);
-            this.waveSize.set(this.radius * elapsed / HOLD_MS);
-            this.remaining.set(Math.max(1, Math.ceil((HOLD_MS - elapsed) / 1_000)));
-            if (elapsed === HOLD_MS) this.finish();
-        }, 25);
+            const elapsed = Math.min(duration, Date.now() - this.startedAt);
+            this.elapsed.set(elapsed);
+            this.waveSize.set(this.radius * elapsed / duration);
+            if (elapsed === duration) this.finish();
+        }, TICK_MS);
     }
 
     private finish(): void {
@@ -131,6 +176,7 @@ export class HoldToDeleteButtonComponent {
         this.holding.set(false);
         this.armed.set(false);
         this.waveSize.set(0);
+        this.elapsed.set(0);
         this.suppressTrailingClick = true;
         this.confirmed.emit();
     }
