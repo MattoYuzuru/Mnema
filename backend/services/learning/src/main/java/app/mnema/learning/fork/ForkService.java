@@ -194,9 +194,10 @@ public class ForkService {
      * is inserted with {@code purpose = SAMPLE}. It runs in the caller's transaction (the receipt of {@code SampleDeckService}) under the account's copy lock, freezes the template's
      * publication like the ordinary copy and keeps its limits (the account's window and caps, the global cap of unfinished copies). It writes no engagement, catalogue event or interest signal
      * ({@link DeckEngagement}, {@link CatalogEvents}, {@link InterestService} refuse a source that is not an ordinary deck). The caller has already looked for the account's live sample deck;
-     * a live copy of the template found here (it is the same copy) is returned as it is.
+     * a live sample copy of the template found here (it is the same copy) is returned as it is, while a live ordinary copy of it (made by the public route before the deck was marked)
+     * is refused like an unready template.
      *
-     * @return the copy, or empty when the template is not ready (missing, deleted, not marked, not published or not at LINK)
+     * @return the copy, or empty when the template is not ready (missing, deleted, not marked, not published or not at LINK) or the account holds an ordinary live copy of it
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public Optional<TemplateCopy> copyTemplate(UUID actor, UUID template, UUID commandId, AccountSignals signals) {
@@ -208,7 +209,10 @@ public class ForkService {
         if (found.isEmpty()) return Optional.empty();
         ForkRepository.Template source = found.orElseThrow();
         Optional<ForkRepository.Live> live = repository.live(actor, source.deckId());
-        if (live.isPresent()) return Optional.of(new TemplateCopy(live.get().deckId(), false));
+        if (live.isPresent()) {
+            // A live copy made by the ordinary route before the deck was marked is the account's own deck, not its sample deck: answering it would hand the client a deck it never sees as the sample.
+            return repository.isSample(live.get().deckId()) ? Optional.of(new TemplateCopy(live.get().deckId(), false)) : Optional.empty();
+        }
         UUID deck = write(actor, commandId, source.deckId(), source.scopeId(), source.code(), source.publishedRevisionId(), signals, DeckPurpose.SAMPLE);
         return Optional.of(new TemplateCopy(deck, true));
     }

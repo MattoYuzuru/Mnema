@@ -45,13 +45,23 @@ class SampleDeckRepository {
 
     /**
      * Marks the template: the one transition {@code USER} to {@code SAMPLE_TEMPLATE} of a live deck (the head guard of V73 allows exactly this change and no other change of
-     * {@code purpose}). Idempotent; a deck already marked, deleted, missing or a sample copy is left as it is.
+     * {@code purpose}). Idempotent; a deck already marked, deleted, missing, a sample copy, or shared at {@code PUBLIC} or {@code INVITE} level (its owner lowers it first) is left as it is.
      *
      * @return whether this call marked it
      */
     boolean mark(UUID template) {
-        return jdbc.sql("UPDATE app_learning.deck SET purpose = 'SAMPLE_TEMPLATE' WHERE deck_id = :deck AND purpose = 'USER' AND deleted_at IS NULL")
-                .param("deck", template).update() == 1;
+        return jdbc.sql("""
+                UPDATE app_learning.deck d SET purpose = 'SAMPLE_TEMPLATE' WHERE d.deck_id = :deck AND d.purpose = 'USER' AND d.deleted_at IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM app_learning.deck_publication p WHERE p.deck_id = d.deck_id AND p.visibility IN ('PUBLIC', 'INVITE'))
+                """).param("deck", template).update() == 1;
+    }
+
+    /** How many live copies of the template made by the public route (ordinary decks of their owners) exist; a count, no account. */
+    long liveOrdinaryCopies(UUID template) {
+        return jdbc.sql("""
+                SELECT count(*) FROM app_learning.deck_fork f JOIN app_learning.deck c ON c.deck_id = f.deck_id
+                 WHERE f.upstream_deck_id = :deck AND f.released_at IS NULL AND c.deleted_at IS NULL AND c.purpose = 'USER'
+                """).param("deck", template).query(Long.class).single();
     }
 
     /** The configured template as it is now, for the startup log; empty when there is no such deck. */

@@ -2729,7 +2729,7 @@ contract: [`contracts/onboarding`](../../../contracts/onboarding/README.md) (`PO
 
 - **Settings (`SampleDeckSettings`).** `learning.onboarding.sample-deck.enabled` (variable `LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED`, default `false`; the local stack turns it on),
   `learning.onboarding.sample-deck.template-id` (variable `LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID`, a UUID or empty; anything else stops startup) and
-  `learning.onboarding.sample-deck.free-ai-checks` (default 3, 0-10, 0 switches the sponsorship off). Off or no template: `POST` is `409 SAMPLE_DECK_UNAVAILABLE` (checked
+  `learning.onboarding.sample-deck.free-ai-checks` (default 3, **0-3** as the contract says, anything else stops startup; 0 switches the sponsorship off). Off or no template: `POST` is `409 SAMPLE_DECK_UNAVAILABLE` (checked
   before the body is read, after `ONBOARDING_UNAVAILABLE`) and the view says `available=false`; a copy the account already has keeps working. Creation does not need the community
   switches (`learning.community.forks.enabled`, `public-routes.enabled`): the copy is a system path, not the public route.
 - **Schema.** `deck.purpose` (`USER` default, `SAMPLE_TEMPLATE`, `SAMPLE`; CHECK), partial unique index `deck_one_live_sample (owner_id) WHERE purpose='SAMPLE' AND deleted_at IS NULL`,
@@ -2739,7 +2739,7 @@ contract: [`contracts/onboarding`](../../../contracts/onboarding/README.md) (`PO
 - **The template and its marking.** The editorial account builds the deck with the ordinary authoring API and publishes it at **`LINK`** (the only level a copy reads updates through
   without a grant: `ForkReadModel` resolves the source by the code the copy stored; the catalogue lists only `PUBLIC`, so `LINK` keeps it out of the catalogue and the search). The
   operator puts its id into `template-id`; when the application is ready (`SampleTemplateMarker`, every runtime role, idempotent, a database failure never stops startup) one
-  statement sets `purpose='SAMPLE_TEMPLATE'` if the deck exists, is not deleted and is still `USER` (the owner's `row_version` does not move). A missing, deleted, unpublished or non-`LINK`
+  statement sets `purpose='SAMPLE_TEMPLATE'` if the deck exists, is not deleted, is still `USER` and its publication is absent, private or `LINK` (the owner's `row_version` does not move). A deck shared at `PUBLIC` or `INVITE` level is left unmarked with an ERROR (`sample_template_shared_level`, template id only) and the sample stays unavailable until its owner lowers it to `LINK` through the ordinary command and the application restarts. The marker also logs `sample_template_user_copies count=N` (a count, no account): accounts that copied the deck by the public route before it was marked hold an ordinary copy, which `copyTemplate` does not accept as their sample deck (`409 SAMPLE_DECK_UNAVAILABLE`, no receipt) until they delete it. A missing, deleted, unpublished or non-`LINK`
   template is logged with the id (configuration, not personal data) and stays unavailable; a deck already marked or a `SAMPLE` copy is never re-marked. A deck created after startup is
   marked by the next restart (the id is deploy configuration, so the deck exists at deploy). `available` in the view and the copy both require: marked, live, not hidden by moderation,
   published revision, visibility `LINK` (`ForkRepository.template`, one statement for both). The id of an old template that is no longer configured keeps its purpose; unmark it by hand
@@ -2784,3 +2784,15 @@ contract: [`contracts/onboarding`](../../../contracts/onboarding/README.md) (`PO
 - **Tests.** `SampleDeckHttpIntegrationTest` (201/200, replay, parallel requests, deletion, not-ready template, marking, the head guard, update badge, media, ETag), `SharingInventoryIntegrationTest`,
   `SampleDeckExclusionsIntegrationTest`, `DeckPurposeGuardIntegrationTest`, `SampleCheckAssessmentIntegrationTest` and the two sample tests of `SpeechInputIntegrationTest` (free checks), the flag-off
   cases of `OnboardingDisabledHttpIntegrationTest` / `OnboardingExperimentOffHttpIntegrationTest`, `OnboardingContractTest` (fixture equality of the views, constants, command, settings).
+
+### Accepted behaviours and runbook notes (review of OB-201/203)
+
+- A spoken answer to an `ai-semantic` exercise uses **two** free checks, its transcript and its grade: the speech input is not linked to the attempt.
+- The free decision of a speech admission is a read (`SampleChecks.covers`) and the count is taken when the transcript is stored, so a few parallel inputs of one account (bounded by the
+  speech rate limit) can be admitted as free and settle as paid, and the other way round; the ordinary overshoot handling of the speech worker applies. It never grants more than `free-ai-checks`.
+- Free checks keep working with the switches off (`sample-deck.enabled=false`, even `onboarding.enabled=false`): the switches stop NEW sample decks only. Rollback of the sponsorship is `free-ai-checks=0`.
+- The system copy deliberately ignores `learning.community.forks.enabled` and `public-routes.enabled`: onboarding is independent of the community launch (the materialization job has its own switch).
+- Deleting the template deck (or hiding it, or lowering it from `LINK`) ends updates for ALL copies: they read "источник недоступен". Runbook: edit and republish the template, never delete it; a
+  replacement is a new deck with a new id and does not update existing copies.
+- Account purge of sample decks, `ONBOARDING_SAMPLE_CHECK` ledger rows and `sample-deck.create` receipts is deferred to #409 (see the TODOs above).
+- V73's two indexes are built without `CONCURRENTLY` (they read `deck` and `usage_ledger_entry` once under the migration's lock); acceptable while the tables are small, so revisit before a large production table.

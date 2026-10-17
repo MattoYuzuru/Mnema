@@ -63,6 +63,11 @@ class SampleDeckExclusionsIntegrationTest extends SampleDeckIntegrationTest {
         return session;
     }
 
+    /** The level goes down without touching the catalogue, as a deck that was listed before it became the template would be (the marker refuses a PUBLIC deck). */
+    private void lower(UUID deck) {
+        jdbc.sql("UPDATE app_learning.deck_publication SET visibility = 'LINK', row_version = row_version + 1 WHERE deck_id = :d").param("d", deck).update();
+    }
+
     private long engagementOf(UUID source) {
         return count("SELECT count(*) FROM app_learning.deck_engagement WHERE deck_id = :p0", source);
     }
@@ -83,10 +88,10 @@ class SampleDeckExclusionsIntegrationTest extends SampleDeckIntegrationTest {
         awaitListed(ordinary.deck());
         assertThat(count("SELECT count(*) FROM app_learning.public_deck WHERE deck_id = :p0 AND topic_id IS NOT NULL", leaked.deck())).isOne();
 
-        // the listed deck becomes the template and is lowered to LINK; the catalogue still holds its old row
+        // the listed deck is lowered to LINK and becomes the template; the catalogue still holds its old row
+        lower(leaked.deck());
         SampleDeckTestConfiguration.template(context, leaked.deck());
         assertThat(purpose(leaked.deck())).isEqualTo("SAMPLE_TEMPLATE");
-        jdbc.sql("UPDATE app_learning.deck_publication SET visibility = 'LINK', row_version = row_version + 1 WHERE deck_id = :d").param("d", leaked.deck()).update();
 
         UUID account = UUID.randomUUID();
         HttpIdentityFixture.signals(account, true, false);
@@ -120,6 +125,7 @@ class SampleDeckExclusionsIntegrationTest extends SampleDeckIntegrationTest {
         awaitListed(leaked.deck());
         Source ordinary = worlds.source("PUBLIC", 12, 2);
         awaitListed(ordinary.deck());
+        lower(leaked.deck());
         SampleDeckTestConfiguration.template(context, leaked.deck());
         UUID account = UUID.randomUUID();
         UUID revision = worlds.publishedRevision(leaked.deck());

@@ -27,6 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * so a new sharing path cannot silently skip {@code DeckPurposeGuard}. Each refused command is then executed against both kinds of deck.
  */
 class SharingInventoryIntegrationTest extends SampleDeckIntegrationTest {
+    @org.springframework.beans.factory.annotation.Autowired private app.mnema.learning.library.DeckModeration moderation;
+
     /** The commands that widen who can read or take a deck: they must be refused for a sample deck and for the template. */
     private static final Set<String> WIDENING = Set.of(
             "PUT /decks/{deckId}/publication",
@@ -199,7 +201,7 @@ class SharingInventoryIntegrationTest extends SampleDeckIntegrationTest {
     @Test
     void anInvitationOfADeckThatBecameTheTemplateOpensNothing() {
         // an ordinary deck shared by invitation, whose owner then becomes the editorial account: the invitation link it handed out must not open it
-        Source invited = worlds.source("INVITE", 12, 1);
+        Source invited = worlds.source("LINK", 12, 1);
         ObjectNode created = (ObjectNode) json(worlds.send("POST", "/decks/" + invited.deck() + "/invites", invited.author(), NO_LIMITS, null));
         String token = created.path("token").stringValue(null);
         UUID guest = UUID.randomUUID();
@@ -209,6 +211,22 @@ class SharingInventoryIntegrationTest extends SampleDeckIntegrationTest {
         HttpResponse<String> refused = worlds.send("POST", "/invites:redeem", guest, redeem, null);
         assertThat(refused.statusCode()).as("the answer of every token that opens nothing").isEqualTo(404);
         assertThat(count("SELECT count(*) FROM app_learning.deck_access_grant WHERE deck_id = :p0", invited.deck())).isZero();
+    }
+
+    @Test
+    void aTemplateHiddenByModerationAnswersTheOpaque404AndNotTheSharingRefusal() {
+        Decks world = decks();
+        UUID requester = UUID.randomUUID();
+        String path = "/public/decks/" + world.code() + "/access-requests";
+        problem(worlds.send("POST", path, requester, null, null), 409, "SAMPLE_DECK_NOT_SHAREABLE");
+        Boolean hidden404 = new org.springframework.transaction.support.TransactionTemplate(transactions)
+                .execute(status -> moderation.hide(world.template(), java.time.Instant.now()));
+        assertThat(hidden404).isTrue();
+        // hidden: everybody but the owner gets the answer of an unknown code, whatever the deck is for
+        HttpResponse<String> hidden = worlds.send("POST", path, requester, null, null);
+        assertThat(hidden.statusCode()).as(hidden.body()).isEqualTo(404);
+        assertThat(json(hidden).path("code").stringValue(null)).isEqualTo("RESOURCE_NOT_FOUND");
+        assertThat(worlds.send("POST", "/public/decks/ZZZZZZZZZZ/access-requests", requester, null, null).statusCode()).isEqualTo(404);
     }
 
     @Test

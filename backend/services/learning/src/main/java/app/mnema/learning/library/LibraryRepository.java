@@ -89,11 +89,11 @@ class LibraryRepository {
                 .query((row, ignored) -> DeckPurpose.valueOf(row.getString("purpose"))).optional();
     }
 
-    /** The purpose of the live deck behind a public code (one unique-index probe, then the deck key); empty when the code opens no deck. */
+    /** The purpose of the live deck behind a public code (one unique-index probe, then the deck key); empty when the code opens no deck for anybody but the owner (a deck hidden by moderation answers like an unknown code). */
     Optional<DeckPurpose> purposeOfCode(String code) {
         return jdbc.sql("""
                 SELECT d.purpose FROM app_learning.deck_publication p JOIN app_learning.deck d ON d.deck_id = p.deck_id AND d.deleted_at IS NULL
-                 WHERE p.public_code = :code
+                 WHERE p.public_code = :code AND NOT p.hidden_by_moderation
                 """).param("code", code).query((row, ignored) -> DeckPurpose.valueOf(row.getString("purpose"))).optional();
     }
 

@@ -72,6 +72,11 @@ class ForkRepository {
                 .query((row, ignored) -> new Live(row.getObject("deck_id", UUID.class), row.getBoolean("preparing"))).optional();
     }
 
+    /** Whether {@code deck} is a sample deck ({@code purpose = SAMPLE}). */
+    boolean isSample(UUID deck) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.deck WHERE deck_id = :deck AND purpose = 'SAMPLE')").param("deck", deck).query(Boolean.class).single();
+    }
+
     /** How many live copies of the account are not ready yet (the cap; bounded by the partial index). */
     int unfinished(UUID owner) {
         return jdbc.sql("""

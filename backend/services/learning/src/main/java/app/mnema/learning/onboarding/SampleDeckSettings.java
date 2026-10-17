@@ -14,7 +14,7 @@ import java.util.UUID;
  *       {@code 409 SAMPLE_DECK_UNAVAILABLE} and the view says {@code available=false}; a copy the account already has keeps working.</li>
  *   <li>{@code learning.onboarding.sample-deck.template-id}: the editorial deck that is copied (a UUID, or empty for none). Marked {@code SAMPLE_TEMPLATE} at startup
  *       ({@link SampleTemplateMarker}). A value that is not a UUID stops startup: a typo must not silently switch the branch off.</li>
- *   <li>{@code learning.onboarding.sample-deck.free-ai-checks} (default 3, 0 to 10): the AI answer checks an account gets for free in its sample deck. 0 switches the
+ *   <li>{@code learning.onboarding.sample-deck.free-ai-checks} (default 3, 0 to 3): the AI answer checks an account gets for free in its sample deck. 0 switches the
  *       sponsorship off. Counted per account, never per copy.</li>
  * </ul>
  *
@@ -22,8 +22,8 @@ import java.util.UUID;
  */
 @Component
 public class SampleDeckSettings {
-    /** The most free checks an account can be given. */
-    public static final int MAX_FREE_CHECKS = 10;
+    /** The most free checks an account can be given: the contract says 0 to 3 and the client text assumes at most three. */
+    public static final int MAX_FREE_CHECKS = 3;
 
     private final boolean enabled;
     private final UUID templateId;

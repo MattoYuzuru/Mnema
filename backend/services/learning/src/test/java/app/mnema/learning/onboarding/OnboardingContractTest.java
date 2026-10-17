@@ -123,15 +123,21 @@ class OnboardingContractTest {
     @Test
     void theSampleDeckSettingsAreValidatedAtStartup() {
         assertThat(new SampleDeckSettings(true, " 33333333-3333-4333-8333-333333333333 ", 0).templateId()).contains(UUID.fromString("33333333-3333-4333-8333-333333333333"));
-        assertThat(new SampleDeckSettings(true, "", 10).templateId()).isEmpty();
-        assertThat(new SampleDeckSettings(true, "", 10).configured()).isFalse();
+        assertThat(new SampleDeckSettings(true, "", 3).templateId()).isEmpty();
+        assertThat(new SampleDeckSettings(true, "", 3).configured()).isFalse();
         assertThat(new SampleDeckSettings(false, "33333333-3333-4333-8333-333333333333", 3).configured()).isFalse();
         assertThat(new SampleDeckSettings(true, "33333333-3333-4333-8333-333333333333", 3).configured()).isTrue();
         for (String bad : new String[] {"nope", "33333333-3333-4333-8333", "00000000-0000-0000-0000-000000000000", "{33333333-3333-4333-8333-333333333333}"}) {
             assertThatThrownBy(() -> new SampleDeckSettings(true, bad, 3)).as(bad).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("template-id");
         }
         assertThatThrownBy(() -> new SampleDeckSettings(true, "", -1)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("free-ai-checks");
-        assertThatThrownBy(() -> new SampleDeckSettings(true, "", 11)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("free-ai-checks");
+        // the contract says 0 to 3 and the client text assumes at most three
+        for (int tooMany : new int[] {4, 10, 11}) {
+            assertThatThrownBy(() -> new SampleDeckSettings(true, "", tooMany)).as(String.valueOf(tooMany)).isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("free-ai-checks");
+        }
+        assertThat(new SampleDeckSettings(true, "", 3).freeAiChecks()).isEqualTo(3);
+        assertThat(SampleDeckSettings.MAX_FREE_CHECKS).isEqualTo(3);
     }
 
     private static List<String> members(JsonNode node) {

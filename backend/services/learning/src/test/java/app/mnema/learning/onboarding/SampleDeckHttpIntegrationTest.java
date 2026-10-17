@@ -246,7 +246,7 @@ class SampleDeckHttpIntegrationTest extends SampleDeckIntegrationTest {
         for (String level : new String[] {"INVITE", "PUBLIC"}) {
             Source other = worlds.source(level, 12, 1);
             SampleDeckTestConfiguration.template(context, other.deck());
-            assertThat(purpose(other.deck())).isEqualTo("SAMPLE_TEMPLATE");
+            assertThat(purpose(other.deck())).as("the marker leaves a deck at this level alone").isEqualTo("USER");
             problem(post(account), 409, "SAMPLE_DECK_UNAVAILABLE");
             assertThat(sampleDeck(account).path("available").booleanValue(true)).as(level).isFalse();
         }
@@ -380,6 +380,69 @@ class SampleDeckHttpIntegrationTest extends SampleDeckIntegrationTest {
         HttpIdentityFixture.signals(other, false, true);
         worlds.shared.deck(other, "Своя");
         assertThat(json(onboarding(other, NONE)).path("journey").path("state").stringValue(null)).isEqualTo("NOT_OFFERED");
+    }
+
+    @Test
+    void aLiveOrdinaryCopyOfTheTemplateMadeBeforeMarkingIsNotTheSampleDeck() {
+        Source template = worlds.source("LINK", 12, 2);
+        UUID account = UUID.randomUUID();
+        UUID ordinary = worlds.forked(account, template.code());
+        assertThat(purpose(ordinary)).isEqualTo("USER");
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(SampleTemplateMarker.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> log = new ch.qos.logback.core.read.ListAppender<>();
+        log.start();
+        logger.addAppender(log);
+        try {
+            SampleDeckTestConfiguration.template(context, template.deck());
+        } finally {
+            logger.detachAppender(log);
+        }
+        assertThat(log.list).extracting(event -> event.getFormattedMessage()).anySatisfy(message -> assertThat(message)
+                .contains("sample_template_user_copies").contains("count=1").doesNotContain(account.toString()).doesNotContain(ordinary.toString()));
+
+        // the copy the account holds is not a sample deck: refused, no receipt, and the view does not name it
+        problem(post(account), 409, "SAMPLE_DECK_UNAVAILABLE");
+        assertThat(count("SELECT count(*) FROM app_learning.command_receipt WHERE actor_id = :p0 AND command_scope = 'onboarding'", account)).isZero();
+        assertThat(liveSamples(account)).isZero();
+        assertThat(sampleDeck(account).path("deckId").isNull()).isTrue();
+        // another account is served as ever
+        assertThat(post(UUID.randomUUID()).statusCode()).isEqualTo(201);
+        // once the ordinary copy is deleted the account can have its sample deck
+        worlds.awaitReady(account, ordinary);
+        delete(account, ordinary);
+        HttpResponse<String> created = post(account);
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        assertThat(purpose(UUID.fromString(json(created).path("sampleDeck").path("deckId").stringValue(null)))).isEqualTo("SAMPLE");
+    }
+
+    @Test
+    void aDeckSharedAtPublicOrInviteLevelIsNotMarkedUntilItIsLoweredToLink() {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(SampleTemplateMarker.class);
+        for (String level : new String[] {"PUBLIC", "INVITE"}) {
+            Source shared = worlds.source(level, 12, 2);
+            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> log = new ch.qos.logback.core.read.ListAppender<>();
+            log.start();
+            logger.addAppender(log);
+            try {
+                SampleDeckTestConfiguration.template(context, shared.deck());
+            } finally {
+                logger.detachAppender(log);
+            }
+            assertThat(purpose(shared.deck())).as(level).isEqualTo("USER");
+            assertThat(log.list).as(level).anySatisfy(event -> {
+                assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.ERROR);
+                assertThat(event.getFormattedMessage()).contains(shared.deck().toString());
+            });
+            UUID account = UUID.randomUUID();
+            problem(post(account), 409, "SAMPLE_DECK_UNAVAILABLE");
+            assertThat(sampleDeck(account).path("available").booleanValue(true)).isFalse();
+
+            // the editor lowers it through the ordinary command (the deck is still an ordinary one); the next start marks it
+            worlds.level(shared.author(), shared.deck(), "LINK");
+            SampleDeckTestConfiguration.template(context, shared.deck());
+            assertThat(purpose(shared.deck())).as(level + " lowered").isEqualTo("SAMPLE_TEMPLATE");
+            assertThat(post(account).statusCode()).isEqualTo(201);
+        }
     }
 
     // ---- views of the command responses ----
