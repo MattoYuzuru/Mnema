@@ -53,7 +53,7 @@ Backend tests and the frontend contract spec both execute the fixture.
   `offeredAt`) and the returned ones (completed SCHEDULED or PRACTICE sessions on two different local days within 14
   days). `smallSample` is true while a group has fewer than `minimumGroup` accounts. No account id leaves the server.
 - `POST /sample-deck` also answers the copy limits of the ordinary copy: 429 `RATE_LIMITED` (the account's copy window), 422
-  `RESOURCE_LIMIT_EXCEEDED` (deck caps) and 503 `FORKS_BUSY` (materialization queue), each with its usual meaning.
+  `RESOURCE_LIMIT_EXCEEDED` (too many copies of the account still preparing) and 503 `FORKS_BUSY` (materialization queue), each with its usual meaning.
 - Failure codes: `INVALID_REQUEST` (400), `AUTHENTICATION_REQUIRED` (401), `ACCESS_DENIED` (403, report without the admin
   scope), `ONBOARDING_TRANSITION` and `ONBOARDING_UNAVAILABLE` and `IDEMPOTENCY_CONFLICT` (409), `VERSION_CONFLICT` (412),
   `PRECONDITION_REQUIRED` (428).
