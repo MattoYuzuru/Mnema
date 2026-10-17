@@ -15,10 +15,14 @@
 .mic-usage { margin: 0; color: var(--mn-muted); font-size: .85rem; }
 .mic-status { margin: 0; color: var(--mn-body); font-size: .9rem; overflow-wrap: anywhere; }
 .mic-status:empty { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
-.mic-dialog { inline-size: min(32rem, calc(100vw - 2rem)); max-inline-size: 100%; border: 2px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: 1.25rem; background: var(--mn-sheet); color: var(--mn-body); font: 1rem/1.5 var(--mn-font-body, system-ui, sans-serif); }
+.mic-dialog { inline-size: min(32rem, calc(100vw - 2rem)); max-inline-size: 100%; max-block-size: calc(100dvh - 2rem); overflow-y: auto; border: 2px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: 1.25rem; background: var(--mn-sheet); color: var(--mn-body); font: 1rem/1.5 var(--mn-font-body, system-ui, sans-serif); }
 .mic-dialog::backdrop { background: rgb(40 19 120 / 24%); }
 .mic-dialog h2 { margin: 0 0 .75rem; color: var(--mn-ink); font: 500 1.35rem/1.2 var(--mn-font-display, Georgia, serif); }
 .mic-terms { display: grid; gap: .5rem; margin: 0 0 1rem; padding-inline-start: 1.1rem; }
+.mic-consent-summary { display: grid; gap: .5rem; margin-block-end: .75rem; }
+.mic-consent-summary p { margin: 0; }
+.mic-consent-details { margin-block-end: .75rem; }
+.mic-consent-details summary { min-block-size: var(--mn-touch-min, 2.75rem); padding-block: .5rem; color: var(--mn-ink); cursor: pointer; }
 .mic-dialog-actions { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
-:where(button):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+:where(button, summary):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
 @media (forced-colors: active) { .mic-button, .mic-dialog { border-color: CanvasText; } .mic-dot { forced-color-adjust: none; background: Highlight; } }

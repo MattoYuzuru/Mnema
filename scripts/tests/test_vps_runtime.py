@@ -59,9 +59,9 @@ class RuntimeTest(unittest.TestCase):
             self.assertEqual(learning[name], 'private-fixture-' + name)
             for other in ('identity-account', 'frontend', 'postgres'):
                 self.assertNotIn(name, services[other].get('environment', {}))
-        for capability in ('AI_GENERATION', 'AI_ASSESSMENT', 'TEXT_TO_SPEECH', 'IMAGE_SEARCH', 'WEB_SEARCH'):
+        for capability in ('AI_GENERATION', 'AI_ASSESSMENT', 'TEXT_TO_SPEECH', 'SPEECH_TO_TEXT', 'IMAGE_SEARCH', 'WEB_SEARCH'):
             self.assertEqual(learning['LEARNING_FEATURES_' + capability + '_ENABLED'], 'true')
-        for capability in ('SPEECH_TO_TEXT', 'IMAGE_GENERATION', 'VIDEO_GENERATION'):
+        for capability in ('IMAGE_GENERATION', 'VIDEO_GENERATION'):
             self.assertEqual(learning['LEARNING_FEATURES_' + capability + '_ENABLED'], 'false')
         self.assertEqual(learning['MNEMA_RUNTIME_ROLES'], 'all')
 

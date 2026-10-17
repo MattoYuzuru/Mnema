@@ -277,9 +277,9 @@ export async function runWorkshopVoice(ctx, h) {
     await until(async () => (await micFacts(COMPOSER)).dialog?.open === true, 'the first press did not open the consent dialog', 8_000);
     const dialog = (await micFacts(COMPOSER)).dialog;
     need(dialog.modal === true && dialog.label === 'Голосовой ввод', `the disclosure is ${JSON.stringify({ modal: dialog.modal, label: dialog.label })}`);
-    const where = consentTerms.processing === 'RU' ? 'Речь распознаётся на наших серверах в России.' : 'зарубежный сервис распознавания';
+    const where = consentTerms.processing === 'RU' ? 'Речь распознаётся на наших серверах в России.' : 'Распознавание за рубежом';
     need(dialog.text.includes(where), `the disclosure does not say where the voice is processed («${where}»): «${dialog.text}»`);
-    need(dialog.text.includes('Запись удаляется сразу после распознавания'), 'the disclosure does not say the recording is deleted');
+    need(dialog.text.includes('У нас запись удаляется сразу после распознавания'), 'the disclosure does not say the recording is deleted');
     need(dialog.text.includes('не дольше минуты'), 'the disclosure does not say how long the recording is');
     need(dialog.buttons.join() === 'Согласен,Не сейчас', `the disclosure buttons are ${JSON.stringify(dialog.buttons)}`);
     need(dialog.focusInside, 'focus did not move into the disclosure');
