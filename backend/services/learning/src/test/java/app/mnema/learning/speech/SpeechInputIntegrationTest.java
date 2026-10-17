@@ -72,6 +72,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
     @Autowired private SpeechHints hints;
     @Autowired private JdbcClient jdbc;
     @Autowired private UsageLedger ledger;
+    @Autowired private app.mnema.learning.onboarding.SampleChecks sampleChecks;
     @Autowired private PlatformTransactionManager transactions;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
@@ -462,6 +463,74 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         assertThat(hints.of(owner, null)).isEmpty();
     }
 
+    private UUID deckOf(UUID owner, StudyFixtures fixtures) {
+        UUID deck = UUID.fromString(decks.create(owner, new DeckCommand(UUID.randomUUID(), "Колода", "Описание")).acknowledgement().path("deck").path("deckId").stringValue(null));
+        fixtures.addMaterial(owner, deck, "Планировщик", "Статистика");
+        return deck;
+    }
+
+    private long freeChecks(UUID owner) {
+        return jdbc.sql("SELECT count(*) FROM app_learning.usage_ledger_entry WHERE owner_id=:owner AND operation='ONBOARDING_SAMPLE_CHECK'").param("owner", owner)
+                .query(Long.class).single();
+    }
+
+    @Test
+    void aSpokenAnswerInTheSampleDeckIsOneOfTheFreeChecksAndEveryOtherInputIsMetered() throws Exception {
+        UUID owner = UUID.randomUUID();
+        consent(owner);
+        StudyFixtures fixtures = new StudyFixtures(decks, items, exercises, studySessions, media, jdbc);
+        UUID sample = deckOf(owner, fixtures);
+        UUID ordinary = deckOf(owner, fixtures);
+        app.mnema.learning.support.SampleDeckFixtures.markSample(jdbc, transactions, sample);
+
+        // not a spoken study answer, or not in the sample deck: metered as ever
+        assertThat(finished(owner, accepted(owner, input("COMPOSER", UUID.randomUUID(), 5_000, AUDIO).queryParam("deckId", sample.toString()))).path("state").stringValue(null)).isEqualTo("DONE");
+        assertThat(sttSeconds(owner)).isEqualTo(5);
+        assertThat(finished(owner, accepted(owner, input("STUDY_ANSWER", UUID.randomUUID(), 5_000, AUDIO).queryParam("deckId", ordinary.toString()))).path("state").stringValue(null)).isEqualTo("DONE");
+        assertThat(sttSeconds(owner)).isEqualTo(10);
+        assertThat(finished(owner, accepted(owner, input("STUDY_ANSWER", UUID.randomUUID(), 5_000, AUDIO))).path("state").stringValue(null)).as("no deck at all").isEqualTo("DONE");
+        assertThat(sttSeconds(owner)).isEqualTo(15);
+        assertThat(freeChecks(owner)).isZero();
+
+        // the first three spoken answers in the sample deck cost the plan nothing
+        for (int index = 1; index <= 3; index++) {
+            JsonNode done = finished(owner, accepted(owner, input("STUDY_ANSWER", UUID.randomUUID(), 5_000, AUDIO).queryParam("deckId", sample.toString())));
+            assertThat(done.path("state").stringValue(null)).isEqualTo("DONE");
+            assertThat(done.path("text").stringValue(null)).isEqualTo("Тестовый устный ответ.");
+            assertThat(freeChecks(owner)).isEqualTo(index);
+            assertThat(sttSeconds(owner)).as("the plan's bucket after free answer " + index).isEqualTo(15);
+        }
+        // the fourth is metered like any other
+        assertThat(finished(owner, accepted(owner, input("STUDY_ANSWER", UUID.randomUUID(), 5_000, AUDIO).queryParam("deckId", sample.toString()))).path("state").stringValue(null)).isEqualTo("DONE");
+        assertThat(freeChecks(owner)).isEqualTo(3);
+        assertThat(sttSeconds(owner)).isEqualTo(20);
+        assertThat(sampleChecks.left(owner)).isZero();
+    }
+
+    @Test
+    void aFreeSpokenAnswerNeedsNoRoomInThePlansBucketButAnOrdinaryOneDoes() throws Exception {
+        UUID owner = UUID.randomUUID();
+        consent(owner);
+        StudyFixtures fixtures = new StudyFixtures(decks, items, exercises, studySessions, media, jdbc);
+        UUID sample = deckOf(owner, fixtures);
+        app.mnema.learning.support.SampleDeckFixtures.markSample(jdbc, transactions, sample);
+        // PLUS may transcribe 30 minutes a day (1800 s): 1790 are counted, a 20 s clip does not fit the plan
+        new TransactionTemplate(transactions).executeWithoutResult(status -> ledger.consume(owner, Bucket.STT, 1_790, "stt:test:" + owner, null));
+        assertThat(send(owner, input("COMPOSER", UUID.randomUUID(), 20_000, AUDIO).queryParam("deckId", sample.toString())).getStatus()).isEqualTo(409);
+
+        for (int index = 0; index < 3; index++) {
+            JsonNode done = finished(owner, accepted(owner, input("STUDY_ANSWER", UUID.randomUUID(), 20_000, AUDIO).queryParam("deckId", sample.toString())));
+            assertThat(done.path("state").stringValue(null)).isEqualTo("DONE");
+        }
+        assertThat(sttSeconds(owner)).as("nothing was added to the plan").isEqualTo(1_790);
+        assertThat(freeChecks(owner)).isEqualTo(3);
+        // the free checks are used up: the same clip is now an ordinary one, refused by the plan before anything is stored
+        MockHttpServletResponse over = send(owner, input("STUDY_ANSWER", UUID.randomUUID(), 20_000, AUDIO).queryParam("deckId", sample.toString()));
+        assertThat(over.getStatus()).isEqualTo(409);
+        assertThat(json(over).path("code").stringValue(null)).isEqualTo("USAGE_LIMIT_REACHED");
+        assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.speech_input WHERE owner_id=:owner").param("owner", owner).query(Integer.class).single()).isEqualTo(3);
+    }
+
     @Test
     void theHintsAreCleanedDeduplicatedBoundedAndFreeOfPersonalLookingTerms() {
         java.util.List<String> titles = java.util.List.of("  Токио  ", "токио", "Рамен\u0000\n суши", "mail me at a@b.example", "https://example.org/x", "call +79001234567",
@@ -627,7 +696,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
     }
 
     private SpeechInputWorker workerOf(Provider provider) {
-        return new SpeechInputWorker(repository, hints, consents, provider, userKeys, ledger, aiProperties,
+        return new SpeechInputWorker(repository, hints, consents, provider, userKeys, ledger, sampleChecks, aiProperties,
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), transactions);
     }
 

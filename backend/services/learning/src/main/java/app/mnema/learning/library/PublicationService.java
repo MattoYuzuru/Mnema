@@ -67,15 +67,19 @@ public class PublicationService {
     private final SecureRandom random;
     private final AutoUpdateFanout fanout;
     private final CatalogOutbox outbox;
+    private final DeckPurposeGuard purposes;
 
     @Autowired
     PublicationService(PublicationRepository repository, PublishedMediaRepository publishedMedia, TopicDirectory topics, CommandReceiptService receipts,
-                       PlatformTransactionManager transactions, MeterRegistry meters, AutoUpdateFanout fanout, CatalogOutbox outbox) {
-        this(repository, publishedMedia, topics, receipts, transactions, meters, new SecureRandom(), fanout, outbox);
+                       PlatformTransactionManager transactions, MeterRegistry meters, AutoUpdateFanout fanout, CatalogOutbox outbox,
+                       DeckPurposeGuard purposes) {
+        this(repository, publishedMedia, topics, receipts, transactions, meters, new SecureRandom(), fanout, outbox, purposes);
     }
 
     PublicationService(PublicationRepository repository, PublishedMediaRepository publishedMedia, TopicDirectory topics, CommandReceiptService receipts,
-                       PlatformTransactionManager transactions, MeterRegistry meters, SecureRandom random, AutoUpdateFanout fanout, CatalogOutbox outbox) {
+                       PlatformTransactionManager transactions, MeterRegistry meters, SecureRandom random, AutoUpdateFanout fanout, CatalogOutbox outbox,
+                       DeckPurposeGuard purposes) {
+        this.purposes = purposes;
         this.fanout = fanout;
         this.outbox = outbox;
         this.repository = repository;
@@ -130,6 +134,8 @@ public class PublicationService {
     private WriteResult saveOnce(UUID owner, UUID deck, long wireVersion, PublicationCommand command, boolean profileReady) {
         // Receipt callbacks are not run on replay: the current ACL is checked outside them.
         repository.head(owner, deck, false).orElseThrow(ResourceNotFoundException::new);
+        // After the ownership check (a stranger still gets the 404): a sample copy is never published, the template only at LINK (its owner publishes new revisions of it).
+        purposes.requirePublication(deck, command.visibility());
         CommandIdentity identity = new CommandIdentity(command.commandId(), owner, SCOPE, "publication.save");
         ObjectNode envelope = command.envelope(deck, wireVersion);
         Optional<JsonNode> replay = receipts.replay(identity, envelope);

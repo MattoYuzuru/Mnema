@@ -25,8 +25,21 @@
     --mn-focus: #281378;
     --mn-hint: #7651a6;
     --mn-selection: rgb(142 108 192 / 24%);
+
+    /* Night surface and spotlight tour (onboarding): welcome, congratulations and the veil of the guided tour. */
+    --mn-night: #160c45;
+    --mn-on-night: #fbf8ef;
+    --mn-on-night-muted: #cfc6ea;
+    --mn-star-lavender: #b9a6ec;
+    --mn-star-paper: #f4f0e5;
+    --mn-scrim: rgb(22 12 69 / 74%);
+    --mn-glow: rgb(185 166 236 / 45%);
+    --mn-path-hover: #e6dcf6;
+    --mn-night-wave: rgb(251 248 239 / 14%);
+
     --mn-wave-duration: .65s;
     --mn-list-wave-duration: .95s;
+    --mn-tour-hold: 2s;
     --mn-workspace-width: 62rem;
 
     --mn-font-display: "Mnema Cormorant", Georgia, "Times New Roman", serif;

@@ -66,6 +66,7 @@ Mnema/
 │   ├── features/generation/             AI composer, Workshop, edits and planner
 │   ├── features/usage, plans, promo/     budget, paywall and promo UI
 │   ├── features/goal, experiment/       onboarding copy and server-assigned variants
+│   ├── core/onboarding, features/onboarding/  journey store, tour engine, first entry and tours
 │   ├── styleguide/                      development-only shared UI catalogue
 │   └── core/, shared/                   shell, authentication and shared UI
 ├── contracts/                           shared content/authoring/Study fixtures;
@@ -258,6 +259,7 @@ protected squash; merge alone is not live verification.
 | `billing` | Checkout call from `/plans`, trusted T-Bank redirect, return page `/plans/payment/:orderId` that only reads the server order; [billing contract](../../contracts/billing/README.md) |
 | `public-deck`, `own-decks/{publication,access,fork,moderation}`, `public-profile` | Community decks epic 1: read-only `/d/:code[/:slug]` (guests included), publication/access blocks of the hub, copy state, moderation notice, consent switch in the profile; [product](../product/community-decks.md), [styleguide](../frontend/styleguide.md), [decks contracts](../../contracts/decks/README.md), [moderation](../../contracts/moderation/README.md) |
 | `community`, `shared/{book-search,catalog-filters,deck-shelf,deck-grid,community-empty}`, `shared/community-launch.ts` | Community decks epic 3: the public `/community` page (guests included; the address is the state: `q` and the filters), strict parsers and API of [`contracts/community/catalog.json`](../../contracts/community/README.md), shelves, results with auto-load, header entry and own-decks link behind the launch flag `COMMUNITY_LAUNCHED` (`false` until the epic's enabling PR flips it together with `learning.community.catalog.enabled`); [product](../product/community-decks.md), [styleguide](../frontend/styleguide.md) |
+| `core/onboarding`, `features/onboarding`, `shared/{tour-card,tour-scrim,tour-pause,night-sky}` | Onboarding OB-E1: `JourneyStore` and API of [`contracts/onboarding`](../../contracts/onboarding/README.md), the spotlight `TourEngine` on native `<dialog>`/`inert` (anchors by stable `mnTourAnchor` keys, gates by `TourEvents`), «Начало пути», survey, tour definitions, `AttentionCoordinator`; [proposal](onboarding/proposal.md), [architecture §8](onboarding/architecture.md#8-frontend), [styleguide](../frontend/styleguide.md) |
 | `goal`, `ai-info` | Once-asked learning goal (`LearningGoalStore`, `goal-copy.ts`) and public `/ai`; the goal changes copy/recommendations and never reaches a provider |
 
 - `/plans` is authenticated; `/ai` is public. The goal prompt is allowlisted only on

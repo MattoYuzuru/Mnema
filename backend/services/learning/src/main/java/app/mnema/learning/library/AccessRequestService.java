@@ -67,6 +67,7 @@ public class AccessRequestService {
     private final DeckAccess access;
     private final AccessRepository repository;
     private final LibraryRepository library;
+    private final DeckPurposeGuard purposes;
     private final NotificationPublisher notifications;
     private final AccessMetrics metrics;
     private final Clock clock;
@@ -85,6 +86,7 @@ public class AccessRequestService {
         this.access = access;
         this.repository = repository;
         this.library = library;
+        this.purposes = new DeckPurposeGuard(library);
         this.notifications = notifications;
         this.metrics = metrics;
         this.clock = clock;
@@ -124,6 +126,7 @@ public class AccessRequestService {
 
     /** @return whether a request was written (false: a silent repeat) */
     private boolean sendOnce(UUID account, String code) {
+        purposes.requireShareableByCode(code);
         Resolution resolution = access.resolve(Viewer.account(account, null), code);
         if (resolution.granted()) throw new InvalidRequestException();
         if (resolution.denial() != Denial.INVITE_ONLY) throw new ResourceNotFoundException();
@@ -204,6 +207,7 @@ public class AccessRequestService {
         try {
             Decision decision = transaction.execute(status -> {
                 requireOwned(owner, deck);
+                purposes.requireShareable(deck);
                 // lock order: the deck's grants, then the request row, then the grant (the same as redeem, grant by login and revoke)
                 repository.lockGrants(deck);
                 Request request = repository.lockRequest(deck, requester).orElseThrow(ResourceNotFoundException::new);

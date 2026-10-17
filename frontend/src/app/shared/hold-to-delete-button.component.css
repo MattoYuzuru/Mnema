@@ -8,5 +8,11 @@
 .hold-label, .label-reserve { position: relative; grid-area: 1 / 1; }
 .consequence { inline-size: 0; min-inline-size: 100%; color: var(--mn-danger); font: 600 .85rem/1.4 var(--mn-font-body, system-ui, sans-serif); overflow-wrap: anywhere; }
 .label-reserve { visibility: hidden; pointer-events: none; }
-@media (prefers-reduced-motion: reduce) { .hold-button { transition: none; } .hold-wave { display: none; } .hold-button.holding { color: var(--mn-danger); } }
-@media (forced-colors: active) { .hold-button { border-color: CanvasText; } .hold-wave { background: Highlight; } }
+.hold-glyph { --mn-glyph-size: 1.75rem; position: relative; grid-area: 1 / 1; margin-block: -.5rem; /* the larger glyph must not grow the button when it replaces the label */ }
+/* The ink tone: a gesture that is not destructive (the tour's early finish). */
+.hold-button.tone-ink[aria-pressed='true'], .hold-button.tone-ink.holding { border-color: var(--mn-ink); color: var(--mn-ink); }
+.hold-button.tone-ink .hold-wave { background: var(--mn-path-hover); }
+/* With a glyph there is no countdown: a calm fill shows the progress in four steps and never animates. */
+.hold-button.is-stepped .hold-wave { clip-path: none; inline-size: var(--hold-step, 0%); transition: none; }
+@media (prefers-reduced-motion: reduce) { .hold-button { transition: none; } .hold-wave { display: none; } .hold-button.holding { color: var(--mn-danger); } .hold-button.has-glyph .hold-wave { display: block; } .hold-button.tone-ink.holding { color: var(--mn-ink); } }
+@media (forced-colors: active) { .hold-button { border-color: CanvasText; } .hold-wave, .hold-button.tone-ink .hold-wave { background: Highlight; } }

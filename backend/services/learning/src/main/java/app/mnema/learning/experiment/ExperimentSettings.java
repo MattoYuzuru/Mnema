@@ -13,7 +13,8 @@ import java.util.regex.Pattern;
 
 /**
  * The experiments of {@code learning.experiments.<key>.variants=control:50,other:50} (weights add up to 100) and {@code .enabled}. A disabled
- * experiment gives nobody a variant. At most 20 enabled experiments fit the plans wire contract. Invalid definitions fail at startup:
+ * experiment gives nobody a variant. {@code .client=false} makes an enabled experiment server-only: the server assigns and counts it, but its variant is never sent to a
+ * client and a client cannot add events to it. At most 20 enabled experiments fit the plans wire contract. Invalid definitions fail at startup:
  * an experiment whose split is wrong would skew a result silently.
  */
 @Component
@@ -24,8 +25,8 @@ final class ExperimentSettings {
     private static final Pattern VARIANT = Pattern.compile("[a-z][a-z0-9_]{0,31}");
     static final String CONTROL = "control";
 
-    /** One enabled experiment: its variants with their weights, in bucket order. */
-    record Experiment(String key, List<Variant> variants) { }
+    /** One enabled experiment: its variants with their weights, in bucket order; {@code client} false makes it server-only (never on the wire, no client events). */
+    record Experiment(String key, List<Variant> variants, boolean client) { }
 
     record Variant(String name, int weight) { }
 
@@ -33,6 +34,11 @@ final class ExperimentSettings {
     public static final class Definition {
         private String variants = "";
         private boolean enabled;
+        private boolean client = true;
+
+        public boolean isClient() { return client; }
+
+        public void setClient(boolean client) { this.client = client; }
 
         public String getVariants() { return variants; }
 
@@ -54,7 +60,7 @@ final class ExperimentSettings {
                 if (enabled.size() >= MAX_ENABLED_EXPERIMENTS) {
                     throw new IllegalArgumentException("Invalid experiment settings: too many enabled experiments (maximum 20)");
                 }
-                enabled.put(key, new Experiment(key, parse(definition.getVariants())));
+                enabled.put(key, new Experiment(key, parse(definition.getVariants()), definition.isClient()));
             }
         });
     }
@@ -87,5 +93,11 @@ final class ExperimentSettings {
 
     boolean isEnabled(String key) {
         return enabled.containsKey(key);
+    }
+
+    /** Whether the experiment is enabled and visible to clients (its variant on the wire, client events counted). */
+    boolean isClient(String key) {
+        Experiment experiment = enabled.get(key);
+        return experiment != null && experiment.client();
     }
 }

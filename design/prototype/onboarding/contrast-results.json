@@ -1,0 +1,113 @@
+{
+ "dimmedPaper": "#50476f",
+ "rows": [
+  {
+   "kind": "text",
+   "name": "on-night / night",
+   "fg": "#fbf8ef",
+   "bg": "#160c45",
+   "ratio": 16.86,
+   "min": 4.5,
+   "pass": true
+  },
+  {
+   "kind": "text",
+   "name": "on-night-muted / night",
+   "fg": "#cfc6ea",
+   "bg": "#160c45",
+   "ratio": 11.02,
+   "min": 4.5,
+   "pass": true
+  },
+  {
+   "kind": "text",
+   "name": "star-lavender eyebrow / night",
+   "fg": "#b9a6ec",
+   "bg": "#160c45",
+   "ratio": 8.3,
+   "min": 4.5,
+   "pass": true
+  },
+  {
+   "kind": "text",
+   "name": "ink / on-night (primary button on night)",
+   "fg": "#281378",
+   "bg": "#fbf8ef",
+   "ratio": 13.6,
+   "min": 4.5,
+   "pass": true
+  },
+  {
+   "kind": "text",
+   "name": "ink / path-hover (chevron, hover row)",
+   "fg": "#281378",
+   "bg": "#e6dcf6",
+   "ratio": 10.95,
+   "min": 4.5,
+   "pass": true
+  },
+  {
+   "kind": "text",
+   "name": "body / path-hover",
+   "fg": "#342e44",
+   "bg": "#e6dcf6",
+   "ratio": 9.83,
+   "min": 4.5,
+   "pass": true
+  },
+  {
+   "kind": "text",
+   "name": "muted / sheet (tour card hint)",
+   "fg": "#625c70",
+   "bg": "#fbf8ef",
+   "ratio": 6.02,
+   "min": 4.5,
+   "pass": true
+  },
+  {
+   "kind": "text",
+   "name": "ink / sheet (tour card key words)",
+   "fg": "#281378",
+   "bg": "#fbf8ef",
+   "ratio": 13.6,
+   "min": 4.5,
+   "pass": true
+  },
+  {
+   "kind": "non-text",
+   "name": "star-lavender ring / dimmed paper (cutout)",
+   "fg": "#b9a6ec",
+   "bg": "#50476f",
+   "ratio": 3.94,
+   "min": 3,
+   "pass": true
+  },
+  {
+   "kind": "non-text",
+   "name": "ink progress / soft track",
+   "fg": "#281378",
+   "bg": "#e8e1ed",
+   "ratio": 11.29,
+   "min": 3,
+   "pass": true
+  },
+  {
+   "kind": "non-text",
+   "name": "muted todo glyph / paper",
+   "fg": "#625c70",
+   "bg": "#f4f0e5",
+   "ratio": 5.62,
+   "min": 3,
+   "pass": true
+  },
+  {
+   "kind": "non-text",
+   "name": "star-lavender glow edge / night (decorative)",
+   "fg": "#b9a6ec",
+   "bg": "#160c45",
+   "ratio": 8.3,
+   "min": 3,
+   "pass": true
+  }
+ ]
+}

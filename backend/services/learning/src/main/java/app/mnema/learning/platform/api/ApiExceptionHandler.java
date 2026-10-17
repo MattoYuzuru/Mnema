@@ -15,6 +15,10 @@ import app.mnema.learning.library.DeckInviteOnlyException;
 import app.mnema.learning.library.PublicationRequiredException;
 import app.mnema.learning.library.PublicationRequirementsException;
 import app.mnema.learning.library.PublicReadBusyException;
+import app.mnema.learning.library.SampleDeckNotShareableException;
+import app.mnema.learning.onboarding.OnboardingTransitionException;
+import app.mnema.learning.onboarding.OnboardingUnavailableException;
+import app.mnema.learning.onboarding.SampleDeckUnavailableException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.media.MediaStorageUnavailableException;
 import app.mnema.learning.media.MediaUploadConflictException;
@@ -285,6 +289,26 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(DisputeNotAllowedException.class)
     ResponseEntity<Object> handleDisputeNotAllowed(DisputeNotAllowedException exception, HttpServletRequest request) {
         return response(ApiErrorCode.DISPUTE_NOT_ALLOWED, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(OnboardingTransitionException.class)
+    ResponseEntity<Object> handleOnboardingTransition(OnboardingTransitionException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.ONBOARDING_TRANSITION, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(OnboardingUnavailableException.class)
+    ResponseEntity<Object> handleOnboardingUnavailable(OnboardingUnavailableException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.ONBOARDING_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(SampleDeckUnavailableException.class)
+    ResponseEntity<Object> handleSampleDeckUnavailable(SampleDeckUnavailableException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.SAMPLE_DECK_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(SampleDeckNotShareableException.class)
+    ResponseEntity<Object> handleSampleDeckNotShareable(SampleDeckNotShareableException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.SAMPLE_DECK_NOT_SHAREABLE, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(IdempotencyConflictException.class)

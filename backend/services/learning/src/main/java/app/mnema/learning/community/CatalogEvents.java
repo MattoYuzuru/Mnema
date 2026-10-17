@@ -38,7 +38,9 @@ public class CatalogEvents {
     }
 
     private Optional<Source> source(String predicate, UUID account, Object value) {
-        return jdbc.sql("SELECT p.deck_id,p.published_revision_id,p.topic_id,p.target_language FROM app_learning.public_deck p WHERE p.listed AND p.owner_id<>:a AND " + predicate)
+        // A deck that is not an ordinary one (deck.purpose, OB-201: the sample template) is not a source of any event or interest signal, whatever the catalogue holds.
+        return jdbc.sql("SELECT p.deck_id,p.published_revision_id,p.topic_id,p.target_language FROM app_learning.public_deck p WHERE p.listed AND p.owner_id<>:a AND "
+                + "NOT EXISTS (SELECT 1 FROM app_learning.deck sd WHERE sd.deck_id=p.deck_id AND sd.purpose<>'USER') AND " + predicate)
                 .param("a", account).param("v", value).query((r, ignored) -> new Source(r.getObject("deck_id", UUID.class), r.getObject("published_revision_id", UUID.class),
                         r.getString("topic_id"), r.getString("target_language"))).optional();
     }

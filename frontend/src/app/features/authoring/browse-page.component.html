@@ -36,7 +36,7 @@
         <p class="hint" role="status">Не удалось подтвердить порядок материалов. <button class="button quiet" type="button" (click)="load()">Обновить</button></p>
       }
       <app-reading-frame [previous]="previousLink()" [next]="nextLink()">
-        <article class="paper-surface"><app-native-media-surface [document]="currentItem.document" /></article>
+        <article class="paper-surface" mnTourAnchor="material.read"><app-native-media-surface [document]="currentItem.document" /></article>
       </app-reading-frame>
     }
   }

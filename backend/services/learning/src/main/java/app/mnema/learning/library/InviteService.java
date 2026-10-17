@@ -59,6 +59,7 @@ public class InviteService {
 
     private final AccessRepository access;
     private final LibraryRepository library;
+    private final DeckPurposeGuard purposes;
     private final AccessMetrics metrics;
     private final Clock clock;
     private final SecureRandom random;
@@ -74,6 +75,7 @@ public class InviteService {
                   SecureRandom random) {
         this.access = access;
         this.library = library;
+        this.purposes = new DeckPurposeGuard(library);
         this.metrics = metrics;
         this.clock = clock;
         this.random = random;
@@ -99,6 +101,7 @@ public class InviteService {
         String token = InviteTokens.generate(random);
         return transaction.execute(status -> {
             requireOwned(owner, deck);
+            purposes.requireShareable(deck);
             access.lock("deck.invites", deck);
             Publication publication = library.publication(owner, deck).orElseThrow(PublicationRequiredException::new);
             if (publication.visibility() == DeckVisibility.PRIVATE || publication.publishedRevisionId() == null) throw new PublicationRequiredException();
@@ -170,6 +173,8 @@ public class InviteService {
 
     private Redeemed redeemOnce(UUID account, byte[] hash) {
         RedeemTarget target = access.lockInviteByHash(hash).orElseThrow(ResourceNotFoundException::new);
+        // A sample deck or the template is never shared: its token opens nothing, and the answer is the one of every token that does not open a deck.
+        if (!purposes.purposeOf(target.deckId()).shareable()) throw new ResourceNotFoundException();
         Instant now = clock.instant();
         // A deck that cannot be opened (private, never published) has no link to hand out, whoever asks.
         if (!target.published() || target.visibility() == DeckVisibility.PRIVATE || target.publicCode() == null) throw new ResourceNotFoundException();

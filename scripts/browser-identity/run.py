@@ -2,6 +2,7 @@
 """Disposable real HTTPS browser Identity composition; no installed test dependencies."""
 import argparse
 import base64
+import datetime
 import hashlib
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -85,8 +86,18 @@ def recs_switches():
     return {"LEARNING_COMMUNITY_EVENTS_ENABLED": "true", "LEARNING_COMMUNITY_FOR_YOU_ENABLED": "true"}
 
 
+def onboarding_switches(now=None):
+    """`--onboarding` only (OB-E1): the first-entry journey ships off. The ordinary Learning of this disposable run gets the flag and a release instant before the
+    run, so every account the scenario registers is eligible (an account is new for 48 hours, owns no deck, and the clock is past `eligible-from`). The experiment
+    `onboarding_v1` stays off, so nobody is held out and everybody gets the tour. Nothing here reaches another process or the retained local stack."""
+    instant = (now or datetime.datetime.now(datetime.timezone.utc)) - datetime.timedelta(minutes=5)
+    return {"LEARNING_ONBOARDING_ENABLED": "true", "LEARNING_ONBOARDING_ELIGIBLE_FROM": instant.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
 def catalogue_fixture_enabled(args):
-    return getattr(args, "catalog", False) or getattr(args, "recs", False)
+    """The catalogue composition (the community switches, the catalogue switch, a short rank schedule, the fixture endpoints): `--catalog`, `--recs` and `--onboarding`
+    (whose branch choice reads the catalogue's listed count)."""
+    return getattr(args, "catalog", False) or getattr(args, "recs", False) or getattr(args, "onboarding", False)
 
 
 def chrome_arguments(chrome, profile, spki, mechanics, microphone=False):
@@ -585,6 +596,9 @@ class Fixture(BASE.Fixture):
                     environment.update(catalog_switches())
                 if getattr(self.args, "recs", False):
                     environment.update(recs_switches())
+                if getattr(self.args, "onboarding", False):
+                    # The survey's second question is the interest picker of «Для вас» (epic 4, open in production): without its switches the card is not asked.
+                    environment.update({**recs_switches(), **onboarding_switches()})
             if generation and self.args.assessment:
                 # Stub-only fault fixture: let one capped call reach the unchanged 20 s delivery deadline. The real route's 8 s
                 # attempt cap/defaults stay unchanged; this override cannot reach the ordinary or promo instance or any live provider.
@@ -654,7 +668,7 @@ class Fixture(BASE.Fixture):
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
-                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "onlyPromo": self.args.only_promo, "catalog": getattr(self.args, "catalog", False), "recs": getattr(self.args, "recs", False), "learningOrigin": f"http://127.0.0.1:{self.learning_port}", "community": getattr(self.args, "community", False), "communityScenario": getattr(self.args, "community_scenario", False), "updates": getattr(self.args, "updates", False), "cdpTimeoutMs": cdp_timeout_ms(),
+                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "onlyPromo": self.args.only_promo, "catalog": getattr(self.args, "catalog", False), "recs": getattr(self.args, "recs", False), "onboarding": getattr(self.args, "onboarding", False), "learningOrigin": f"http://127.0.0.1:{self.learning_port}", "community": getattr(self.args, "community", False), "communityScenario": getattr(self.args, "community_scenario", False), "updates": getattr(self.args, "updates", False), "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -669,7 +683,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs", "admin.mjs", "community.mjs", "updates.mjs", "catalog.mjs", "catalog-seed.mjs", "recs.mjs", "admin_support_fixture.py")}}
+                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs", "admin.mjs", "community.mjs", "updates.mjs", "catalog.mjs", "catalog-seed.mjs", "recs.mjs", "onboarding.mjs", "admin_support_fixture.py")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -772,6 +786,14 @@ def check_catalog_arguments(parser, args):
                      "--assessment, --only-promo or --admin")
 
 
+def check_onboarding_arguments(parser, args):
+    """`--onboarding` signs up accounts of its own (a fresh account is what meets the tour) and runs no other scenario's flow, so it shares no run with one."""
+    if getattr(args, "onboarding", False) and (args.catalog or getattr(args, "recs", False) or args.community or args.updates or args.generation or args.assessment
+                                              or args.only_promo or args.admin or args.authoring or args.media or args.mechanics):
+        parser.error("--onboarding is exclusive: it cannot be combined with --community, --updates, --catalog, --recs, --authoring, --media, --mechanics, "
+                     "--generation, --assessment, --only-promo or --admin")
+
+
 def check_recs_arguments(parser, args):
     if getattr(args, "recs", False) and (args.catalog or args.community or args.updates or args.generation or args.assessment
                                          or args.only_promo or args.admin or args.authoring or args.media or args.mechanics):
@@ -849,6 +871,11 @@ def main():
                              "cannot be combined with --community, --updates, --generation, --assessment, --only-promo or --admin")
     parser.add_argument("--recs", action="store_true",
                         help="recommendations end to end (#422): own disposable catalogue, interest onboarding, For you, telemetry, reset, mobile and accessibility")
+    parser.add_argument("--onboarding", action="store_true",
+                        help="the onboarding tour end to end (OB-E1): «Начало пути», the survey, the own-deck and community branches, pause and resume on a second "
+                             "device, the hold to finish, the skip, the replay, and an accessibility check, on desktop, 390 and 320 px; the disposable Learning gets "
+                             "learning.onboarding.enabled and an eligible-from instant before the run (the experiment stays off); the catalogue composition of --catalog; "
+                             "exclusive: it signs up accounts of its own and cannot be combined with any other scenario flag")
     parser.add_argument("--admin", action="store_true", help="owner console against real services and a disposable real bot bridge")
     parser.add_argument("--admin-bot-source", type=Path, help="bot checkout containing mnema_bot.admin_server (required with --admin)")
     parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
@@ -887,10 +914,11 @@ def main():
         parser.error("--only-ask, --only-edits, --only-plan, --only-plans, --only-promo, --only-images, --only-speech, --only-voice and --only-research are separate development aids: choose one")
     check_catalog_arguments(parser, args)
     check_recs_arguments(parser, args)
+    check_onboarding_arguments(parser, args)
     # `--updates` runs on the same composition as `--community` (the ordinary Learning with the community kill switches on): from here on `community`
     # means that composition, `community_scenario` the scenario of the `--community` flag.
     args.community_scenario = args.community
-    args.community = args.community or args.updates or args.catalog or args.recs
+    args.community = args.community or args.updates or args.catalog or args.recs or args.onboarding
     if args.community and (args.generation or args.assessment or args.only_promo or args.admin):
         parser.error("--community and --updates run on the ordinary Learning instance: they cannot be combined with --generation, --assessment, --only-promo or --admin")
     if args.admin:

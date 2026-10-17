@@ -70,6 +70,7 @@ export function ownerRoutes(adminHost: boolean): Routes {
                 { path: 'complaints/journal', loadComponent: () => import('./features/admin/admin-complaint-journal-page.component').then(module => module.AdminComplaintJournalPageComponent) },
                 { path: 'complaints/:complaintId', canDeactivate: [lazyCanLeaveAdminComplaint], loadComponent: () => import('./features/admin/admin-complaint-detail-page.component').then(module => module.AdminComplaintDetailPageComponent) },
                 { path: 'community', canDeactivate: [lazyCanLeaveAdminCommunity], loadComponent: () => import('./features/admin/admin-community-page.component').then(module => module.AdminCommunityPageComponent) },
+                { path: 'onboarding', loadComponent: () => import('./features/admin/admin-onboarding-page.component').then(module => module.AdminOnboardingPageComponent) },
                 { path: 'audit', loadComponent: () => import('./features/admin/admin-audit-page.component').then(module => module.AdminAuditPageComponent) }
             ] }
     ] : [{ path: 'manage/events', canActivate: [authGuard], canDeactivate: [lazyCanLeaveEventEditor], data: { standalone: true },

@@ -1,0 +1,170 @@
+<section class="sg-section" id="tour" aria-labelledby="tour-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="tour-title">Знакомство</h2>
+  <p class="sg-lede">Элементы тура-знакомства: карточка шага, чернильная вуаль с вырезом, ночная поверхность, пауза и завершение удержанием.
+    Движок — <code>core/onboarding</code> (<code>TourEngine</code>, <code>mnTourAnchor</code>); здесь все состояния и живой тур над макетом хаба колоды. Esc сворачивает тур в паузу, клик по вуали ничего не делает.</p>
+
+  <app-sg-specimen title="Карточка шага: информационный шаг" selector="<app-tour-card>"
+    when="Шаг, который только объясняет место на экране. Нативный &lt;dialog&gt;: в живом туре его открывает showModal(), страница позади неактивна. «Шаг N из M» и точки всегда видны, Esc ставит тур на паузу, «Дальше» и «Назад» ведут по шагам, «Завершить знакомство» — удержанием."
+    [tokens]="['--mn-sheet', '--mn-ink', '--mn-rule', '--mn-muted']"
+    usage='<app-tour-card [position]="2" [total]="4" title="Материал" [body]="body" gate="next" (next)="engine.next()" (back)="engine.back()" (finish)="engine.finish()" (pauseRequest)="engine.pause()" />'>
+    <app-tour-card [position]="1" [total]="4" title="Это ваша учебная колода" [body]="infoBody" gate="next" [canBack]="false" [inline]="true" [calm]="calm()" />
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Карточка шага: шаг с действием" selector="<app-tour-card [gate]=action>"
+    when="Шаг, который закрывается действием на цели: «Добавить к себе», «Начать занятие». «Дальше» нет, подсказка называет кнопку. Карточка открывается show(), остальная страница inert, кроме цели и карточки; шаг закрывает событие, которое публикует компонент цели через TourEvents, а не клик по DOM."
+    [tokens]="['--mn-sheet', '--mn-ink']">
+    <app-tour-card [position]="4" [total]="4" title="Пройдите первое занятие" [body]="gateBody" [gate]="gate" [inline]="true" [calm]="calm()" />
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Карточка шага: мини-слайдер" selector="<app-tour-card [body]=slides>"
+    when="Два-три пояснения одного места внутри шага: это не новые шаги и не меняют «Шаг N из M». Стрелки названы словами, смена слайда озвучивается."
+    [tokens]="['--mn-paper', '--mn-rule']">
+    <app-tour-card [position]="2" [total]="4" title="Материал — то, что вы учите" [body]="slidesBody" gate="next" [inline]="true" [calm]="calm()" />
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Карточка шага: нет места на экране и подготовка" selector="<app-tour-card mode>"
+    when="Если цель шага не появилась за 4 секунды, карточка заменяет текст и даёт идти дальше («Дальше» есть даже у шага с действием). Пока приложение готовит страницу (копия колоды), карточка говорит об этом и «Дальше» не показывает."
+    [tokens]="['--mn-sheet', '--mn-ink']">
+    <div class="sg-tour-pair">
+      <app-tour-card [position]="3" [total]="4" title="Добавьте колоду к себе" [body]="infoBody" mode="missing" [inline]="true" [calm]="calm()" />
+      <app-tour-card [position]="4" [total]="4" title="Пройдите первое занятие" [body]="gateBody" [gate]="gate" mode="preparing" [inline]="true" [calm]="calm()" />
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Нижний лист на телефоне" selector="<app-tour-card [sheet]>"
+    when="Шире 37,5 rem карточка плавает рядом с целью (JS пробует сторону цели, противоположную, затем другую ось); до 37,5 rem это лист у нижнего края, а цель прокручивается выше листа."
+    [tokens]="['--mn-page-gutter']">
+    <div class="sg-narrow">
+      <app-tour-card [position]="2" [total]="4" title="Материал — то, что вы учите" [body]="slidesBody" gate="next" [sheet]="true" [inline]="true" [calm]="calm()" />
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Вуаль с вырезом" selector="<app-tour-scrim>"
+    when="Затемнение страницы на время шага: вырез обводит цель с отступом и скруглением по --mn-radius, вокруг — лавандовая рамка. Вуаль — один SVG-путь, закрашенный по правилу even-odd: вырез не закрашен, поэтому цель принимает нажатия, а клик по вуали ничего не делает. В forced-colors вуаль не нужна: вокруг цели рамка Highlight."
+    [tokens]="['--mn-scrim', '--mn-star-lavender', '--mn-radius']">
+    <div class="sg-veil-stage" [style.width.px]="stage.width" [style.height.px]="stage.height">
+      <div class="sg-veil-page" aria-hidden="true">
+        <p class="sg-veil-title">Мои колоды</p>
+        <p class="hint">Страница под вуалью</p>
+        <button type="button" class="button primary sg-veil-target" tabindex="-1">Новая колода</button>
+      </div>
+      <app-tour-scrim [viewport]="stage" [hole]="hole" [contained]="true" />
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Ночная поверхность" selector="<app-night-sky>"
+    when="Фон приветствия и поздравлений: чернильная ночь, на ней проецируемое содержимое. Звёзды (мотив созвездия колоды, лавандовые и бумажные) — только у приветствия и поздравления; опрос и выбор пути используют тот же фон без звёзд. Мерцание конечное: три цикла по 3,6 с и покой, при уменьшенном движении звёзды неподвижны; в forced-colors фон Canvas без звёзд. Звёзды декоративны, aria-hidden."
+    [tokens]="['--mn-night', '--mn-on-night', '--mn-on-night-muted', '--mn-star-lavender', '--mn-star-paper', '--mn-glow']"
+    usage='<app-night-sky layout="screen"><p class="eyebrow">Начало пути</p><h1>Заголовок</h1><div class="actions">…</div></app-night-sky>'>
+    <div class="sg-night-pair">
+      <app-night-sky layout="panel" seed="styleguide-welcome">
+        <p class="eyebrow">Начало пути</p>
+        <h2>Mnema помогает надолго запомнить то, что вы учите</h2>
+        <p class="lead">Покажем, как это работает. Это займёт две минуты.</p>
+        <p class="muted">Вторичный текст на ночи.</p>
+        <div class="actions">
+          <button type="button" class="button primary">Познакомиться — 2 минуты</button>
+          <button type="button" class="button quiet">Мне это знакомо — сразу к делу</button>
+        </div>
+      </app-night-sky>
+      <app-night-sky layout="panel" [stars]="false">
+        <p class="eyebrow">Вопрос 1 из 4</p>
+        <h2>Без звёзд</h2>
+        <p class="lead">Опрос и выбор пути.</p>
+      </app-night-sky>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Карточка опроса на ночи" selector="<app-survey-card>"
+    when="Вопрос опроса «Начала пути» и выбор пути: бумажная карточка на ночной поверхности без звёзд. У вопроса есть «Вопрос N из 4» и полоса role=progressbar (пройдено вопросов); вопрос, на который ответ уже есть, пропускается и оставляет в нумерации пропуск. «Пропустить» есть на каждой карточке, ответы не видны другим и ИИ не передаются. Заголовок принимает фокус при открытии."
+    [tokens]="['--mn-night', '--mn-sheet', '--mn-star-lavender', '--mn-ink']"
+    usage='<app-survey-card title="Учились ли вы по карточкам раньше?" [question]="3"><app-segmented-choice … /><div actions>…</div><p note class="hint">…</p></app-survey-card>'>
+    <app-night-sky layout="panel" [stars]="false">
+      <app-survey-card [title]="experienceText.title" [question]="3">
+        <app-segmented-choice [legend]="experienceText.title" [legendHidden]="true" [options]="experienceText.options" [(value)]="experience" name="sg-survey-experience" />
+        <ng-container ngProjectAs="[actions]">
+          <button type="button" class="button quiet">{{ surveyBack }}</button>
+          <div class="sg-survey-forward"><button type="button" class="button">{{ surveySkip }}</button><button type="button" class="button primary">{{ surveyNext }}</button></div>
+        </ng-container>
+        <p note class="hint">{{ surveyPrivacy }}</p>
+      </app-survey-card>
+    </app-night-sky>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Подсказка на месте" selector="<app-place-hint>"
+    when="Короткая фраза у того, о чём она, без вуали: подсказка у поиска Сообщества после 45 секунд без открытия колоды. Это note: не берёт фокус, ничего не двигает и уходит вместе с хозяином."
+    [tokens]="['--mn-ink', '--mn-sheet']"
+    usage='<app-place-hint>Не знаете, что выбрать? Начните с темы из вашего списка.</app-place-hint>'>
+    <app-place-hint>{{ browseHint }}</app-place-hint>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Предложение тура" selector="<app-tour-nudge>"
+    when="Предложение, которое тур делает своими словами и без вуали: «Не нашли подходящую?» через 2 минуты в каталоге с одним действием («Создать свою», переход в ветку «Своя колода») и «Назад». Не модальное, фокус не забирает сразу (только при появлении тура)."
+    [tokens]="['--mn-sheet', '--mn-ink', '--mn-rule']"
+    usage='<app-tour-nudge title="…" body="…" action="Создать свою" (accepted)="…" (dismissed)="…" />'>
+    <app-tour-nudge [title]="stuck.title" [body]="stuck.body" [action]="stuck.action" [inline]="true" />
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Пауза" selector="<app-tour-pause>"
+    when="Esc во время тура сворачивает его: вуали и карточки нет, внизу плашка «Знакомство на паузе», фокус на «Продолжить знакомство». Прогресс не теряется, продолжение возвращает на тот же шаг."
+    [tokens]="['--mn-sheet', '--mn-ink']">
+    <app-tour-pause [inline]="true" />
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Завершение удержанием" selector="<app-hold-to-delete-button holdMs=2000 armedGlyph=finger-hold>"
+    when="Досрочно закончить знакомство можно только удержанием, как удалить необратимое: первое нажатие взводит кнопку, вместо подписи появляется знак «палец удерживает» без дополнительного текста, удержание 2 с завершает, отпускание раньше ничего не делает. Esc, уход фокуса и нажатие вне кнопки снимают взвод. Доступное имя взведённой кнопки — «Удерживайте 2 секунды, чтобы завершить знакомство». При уменьшенном движении заливка идёт четырьмя ступенями без анимации."
+    [tokens]="['--mn-tour-hold', '--mn-path-hover', '--mn-ink']"
+    usage='<app-hold-to-delete-button [label]="finishLabel" [holdMs]="holdMs" armedGlyph="finger-hold" [armedName]="finishArmedName" tone="ink" (confirmed)="engine.finish()" />'>
+    <div class="sg-hold-states">
+      <figure>
+        <app-hold-to-delete-button [label]="finishLabel" [holdMs]="holdMs" armedGlyph="finger-hold" [armedName]="finishArmedName" tone="ink" [steppedFill]="calm()" (confirmed)="finished.set(true)" />
+        <figcaption>1. Обычная: подпись. Это живая кнопка: нажмите, затем удерживайте.</figcaption>
+      </figure>
+      <figure>
+        <app-hold-to-delete-button #armed [label]="finishLabel" [holdMs]="holdMs" armedGlyph="finger-hold" [armedName]="finishArmedName" tone="ink" [steppedFill]="calm()" />
+        <figcaption>2. Взведена: знак вместо подписи, без текста.</figcaption>
+      </figure>
+      <figure>
+        <app-hold-to-delete-button #holding [label]="finishLabel" [holdMs]="holdMs" armedGlyph="finger-hold" [armedName]="finishArmedName" tone="ink" [steppedFill]="calm()" />
+        <figcaption>3. Удержание: заливка волной от точки нажатия.</figcaption>
+      </figure>
+      <figure>
+        <app-hold-to-delete-button #calmHolding [label]="finishLabel" [holdMs]="holdMs" armedGlyph="finger-hold" [armedName]="finishArmedName" tone="ink" [steppedFill]="true" />
+        <figcaption>4. Уменьшенное движение: четыре ступени без анимации (здесь вторая из четырёх).</figcaption>
+      </figure>
+    </div>
+    <div class="actions">
+      <button type="button" class="button" (click)="showHoldStates()">Показать состояния</button>
+    </div>
+    <p class="hint" role="status">{{ finished() ? 'Удержание завершено: в туре здесь вызывается завершение знакомства.' : 'Нажмите первую кнопку, затем удерживайте её 2 секунды.' }}</p>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Живой тур" selector="TourEngine.start(definition)"
+    when="Тур над макетом хаба колоды: информационные шаги с «Дальше», шаг с мини-слайдером и шаг с действием («Начать занятие» публикует study.started через TourEvents). Прогресс пишется в журнал ниже, а не на сервер. Esc — пауза, «Завершить знакомство» — удержанием."
+    [tokens]="['--mn-scrim', '--mn-star-lavender', '--mn-tour-hold']"
+    usage="engine.start(definition, undefined, { persistence })">
+    <div class="actions">
+      <button type="button" class="button primary" (click)="startDemo()">Запустить демонстрацию</button>
+      <button type="button" class="button" (click)="engine.stop()">Остановить</button>
+    </div>
+    <div class="sg-mock-hub">
+      <header mnTourAnchor="hub.header">
+        <h4>Испанский язык: базовые глаголы</h4>
+        <p class="hint">Учебная колода. 3 материала, 6 упражнений.</p>
+      </header>
+      <section mnTourAnchor="hub.material" aria-label="Материалы макета">
+        <ul class="sg-mock-list">
+          <li>Глаголы движения</li>
+          <li>Прошедшее время</li>
+          <li>Неправильные глаголы</li>
+        </ul>
+      </section>
+      <section mnTourAnchor="hub.exercises" aria-label="Упражнения макета">
+        <p>Упражнения: ответ, пропуск, выбор, объяснение</p>
+      </section>
+      <button type="button" class="button primary" mnTourAnchor="hub.start" (click)="startStudy()">Начать занятие</button>
+    </div>
+    <p class="hint" role="status">Журнал: @if (journal().length === 0) { пока пусто } @else { {{ journal().join(' → ') }} }</p>
+  </app-sg-specimen>
+</section>

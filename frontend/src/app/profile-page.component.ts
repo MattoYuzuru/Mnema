@@ -1,3 +1,4 @@
+import { ReplayTourComponent } from './features/onboarding/replay-tour.component';
 import { ChangeDetectionStrategy, Component, DestroyRef, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -23,7 +24,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
 
 @Component({
     selector: 'app-profile-page',
-    imports: [InterestSettingsComponent, ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent,
+    imports: [ReplayTourComponent, InterestSettingsComponent, ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent,
         PublicProfileSettingsComponent],
     template: `
       <section class="profile-page" aria-labelledby="profile-title">
@@ -89,6 +90,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
               <app-public-profile-settings [profile]="account" [avatarUrl]="avatarUrl()" />
             </section>
             <app-interest-settings />
+            <div class="replay"><app-replay-tour /></div>
             <section id="ai-budget" class="sheet" aria-labelledby="ai-budget-heading">
               <h2 id="ai-budget-heading" tabindex="-1">ИИ-бюджет</h2>
               <app-usage-budget />

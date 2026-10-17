@@ -19,6 +19,11 @@ wire shapes; the current mechanics and fields are in
 [`contracts/study`](../../../contracts/study/README.md#exercise-mechanics-266). Screenshots
 of the former two-column exercise editor are likewise historical.
 
+## Onboarding
+
+- [Подготовка S0: прототип, тексты, политика, планы колод](./onboarding/ob-prep/handoff-session-0.md) — OB-001/002/003/202
+  на утверждении владельца; прототип в `design/prototype/onboarding/`.
+
 ## Community decks
 
 - [Эпик 2: обновления копий](./community-decks/epic-2/README.md) — evidence задач эпика #420: PR, коммиты, миграции V59–V65, релизы, ревью, браузерная проверка и критерии эпика.

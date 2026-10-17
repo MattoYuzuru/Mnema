@@ -10,65 +10,68 @@
       <button type="button" class="button quiet" (click)="retry()">Проверить ещё раз</button>
     </div>
   } @else {
-    <app-book-search class="book" mode="open" [(value)]="bookText" (searched)="search($event)" />
+    <div class="catalogue" mnTourAnchor="community.search">
+      <app-book-search class="book" mode="open" [(value)]="bookText" (searched)="search($event)" />
+      @if (hints.browse()) { <app-place-hint class="browse-hint">{{ browseHint }}</app-place-hint> }
 
-    @if (filtersShown()) {
-      <app-catalog-filters class="filters" [value]="draft()" [topics]="topics()" [languages]="languages()" [searching]="searching()" [forYou]="interests.forYou()"
-        (changed)="filtersChanged($event)" />
-    }
-
-    <!-- The region is in the DOM, empty, before its first text: a region that appears with its text is not announced reliably. -->
-    <p class="status" role="status">{{ status() === 'loading' ? 'Загружаем колоды…' : '' }}</p>
-    <p class="status stale" role="status">{{ staleNote() }}</p>
-
-    <app-interest-settings [onboarding]="true" />
-
-    @switch (status()) {
-      @case ('rate-limited') {
-        <div class="notice error" role="alert">
-          <p>{{ waiting() }}</p>
-          <button type="button" class="button secondary" (click)="retry()">Повторить</button>
-        </div>
+      @if (filtersShown()) {
+        <app-catalog-filters class="filters" [value]="draft()" [topics]="topics()" [languages]="languages()" [searching]="searching()" [forYou]="interests.forYou()"
+          (changed)="filtersChanged($event)" />
       }
-      @case ('busy') {
-        <div class="notice error" role="alert">
-          <p>Сейчас много читателей. Повторите через секунду.</p>
-          <button type="button" class="button secondary" (click)="retry()">Повторить</button>
-        </div>
-      }
-      @case ('error') {
-        <div class="notice error" role="alert">
-          <p>Не удалось загрузить колоды. Проверьте соединение и повторите.</p>
-          <button type="button" class="button secondary" (click)="retry()">Повторить</button>
-        </div>
-      }
-      @default {
-        @if (showShelves()) {
-          @if (status() === 'ready') {
-            @if (catalogueEmpty()) {
-              <app-community-empty [signedIn]="signedIn()" />
-            } @else {
-              <div class="shelves">
-                @if (recommendationCards().length >= 4 && interests.forYou()) {
-                  <app-deck-shelf title="Для вас" [subtitle]="explanation() ? 'Потому что вы учите: ' + explanation() : null" [decks]="recommendationCards()"
-                    [moreLink]="moreLink" [moreQueryParams]="{sort:'for-you'}" [deckLink]="deckLink" [menuFor]="menuFor"
-                    [observe]="observing()" (visible)="cardVisible($event, 'for-you')" (opened)="cardOpened($event, 'for-you')" (action)="actionChosen($event)" />
-                }
-                @for (shelf of shelfViews(); track shelf.key) {
-                  <app-deck-shelf [title]="shelf.title" [decks]="shelf.decks" [moreLink]="shelf.more === null ? null : moreLink" [moreQueryParams]="shelf.more"
-                    [deckLink]="deckLink" [menuFor]="menuFor" [observe]="observing()" (visible)="cardVisible($event, shelf.key)" (opened)="cardOpened($event, shelf.key)" (action)="actionChosen($event)" />
-                }
-              </div>
+
+      <!-- The region is in the DOM, empty, before its first text: a region that appears with its text is not announced reliably. -->
+      <p class="status" role="status">{{ status() === 'loading' ? 'Загружаем колоды…' : '' }}</p>
+      <p class="status stale" role="status">{{ staleNote() }}</p>
+
+      <app-interest-settings [onboarding]="true" />
+
+      @switch (status()) {
+        @case ('rate-limited') {
+          <div class="notice error" role="alert">
+            <p>{{ waiting() }}</p>
+            <button type="button" class="button secondary" (click)="retry()">Повторить</button>
+          </div>
+        }
+        @case ('busy') {
+          <div class="notice error" role="alert">
+            <p>Сейчас много читателей. Повторите через секунду.</p>
+            <button type="button" class="button secondary" (click)="retry()">Повторить</button>
+          </div>
+        }
+        @case ('error') {
+          <div class="notice error" role="alert">
+            <p>Не удалось загрузить колоды. Проверьте соединение и повторите.</p>
+            <button type="button" class="button secondary" (click)="retry()">Повторить</button>
+          </div>
+        }
+        @default {
+          @if (showShelves()) {
+            @if (status() === 'ready') {
+              @if (catalogueEmpty()) {
+                <app-community-empty [signedIn]="signedIn()" />
+              } @else {
+                <div class="shelves">
+                  @if (recommendationCards().length >= 4 && interests.forYou()) {
+                    <app-deck-shelf title="Для вас" [subtitle]="explanation() ? 'Потому что вы учите: ' + explanation() : null" [decks]="recommendationCards()"
+                      [moreLink]="moreLink" [moreQueryParams]="{sort:'for-you'}" [deckLink]="deckLink" [menuFor]="menuFor"
+                      [observe]="observing()" (visible)="cardVisible($event, 'for-you')" (opened)="cardOpened($event, 'for-you')" (action)="actionChosen($event)" />
+                  }
+                  @for (shelf of shelfViews(); track shelf.key) {
+                    <app-deck-shelf [title]="shelf.title" [decks]="shelf.decks" [moreLink]="shelf.more === null ? null : moreLink" [moreQueryParams]="shelf.more"
+                      [deckLink]="deckLink" [menuFor]="menuFor" [observe]="observing()" (visible)="cardVisible($event, shelf.key)" (opened)="cardOpened($event, shelf.key)" (action)="actionChosen($event)" />
+                  }
+                </div>
+              }
             }
+          } @else {
+            @if (gridExplanation(); as topic) { <p class="hint" data-testid="recommendation-explanation">Потому что вы учите: {{ topic }}</p> }
+            <app-deck-grid [decks]="rowCards()" [results]="results()" [headingLevel]="2" [deckLink]="deckLink" [menuFor]="menuFor"
+              [continuation]="pager.cursor()" [loading]="pager.loadingMore()" [error]="moreError()" [enabled]="pager.phase() === 'ready'"
+              [context]="pager.context()" [observe]="observing()" (visible)="cardVisible($event)" (opened)="cardOpened($event)" (loadNext)="pager.next()" (action)="actionChosen($event)" />
           }
-        } @else {
-          @if (gridExplanation(); as topic) { <p class="hint" data-testid="recommendation-explanation">Потому что вы учите: {{ topic }}</p> }
-          <app-deck-grid [decks]="rowCards()" [results]="results()" [headingLevel]="2" [deckLink]="deckLink" [menuFor]="menuFor"
-            [continuation]="pager.cursor()" [loading]="pager.loadingMore()" [error]="moreError()" [enabled]="pager.phase() === 'ready'"
-            [context]="pager.context()" [observe]="observing()" (visible)="cardVisible($event)" (opened)="cardOpened($event)" (loadNext)="pager.next()" (action)="actionChosen($event)" />
         }
       }
-    }
+    </div>
   }
 
   @if (complaint(); as target) {

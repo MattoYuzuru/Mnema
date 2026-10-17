@@ -1,0 +1,500 @@
+{
+  "tourVersion": 1,
+  "constants": {
+    "states": [
+      "NOT_OFFERED",
+      "OFFERED",
+      "IN_PROGRESS",
+      "PAUSED",
+      "SKIPPED",
+      "COMPLETED"
+    ],
+    "actions": [
+      "START",
+      "STEP",
+      "PAUSE",
+      "RESUME",
+      "SKIP",
+      "COMPLETE",
+      "UNDO_FINISH",
+      "REPLAY"
+    ],
+    "branches": [
+      "SAMPLE",
+      "COMMUNITY",
+      "OWN"
+    ],
+    "experiences": [
+      "NEW",
+      "FAMILIAR",
+      "CONFIDENT"
+    ],
+    "weeklyTarget": {
+      "min": 1,
+      "max": 7,
+      "surveyOptions": [
+        2,
+        3,
+        5,
+        7
+      ]
+    },
+    "experiment": {
+      "key": "onboarding_v1",
+      "holdoutVariant": "control"
+    },
+    "report": {
+      "minimumGroup": 100,
+      "activationDays": 7,
+      "returnDays": 14,
+      "maxWindowDays": 90
+    },
+    "sampleDeck": {
+      "freeAiChecks": 3,
+      "usageOperation": "ONBOARDING_SAMPLE_CHECK"
+    }
+  },
+  "steps": [
+    {
+      "key": "welcome",
+      "branch": null
+    },
+    {
+      "key": "survey.goal",
+      "branch": null
+    },
+    {
+      "key": "survey.interests",
+      "branch": null
+    },
+    {
+      "key": "survey.experience",
+      "branch": null
+    },
+    {
+      "key": "survey.days",
+      "branch": null
+    },
+    {
+      "key": "choose",
+      "branch": null
+    },
+    {
+      "key": "sample.hub",
+      "branch": "SAMPLE"
+    },
+    {
+      "key": "sample.material",
+      "branch": "SAMPLE"
+    },
+    {
+      "key": "sample.exercises",
+      "branch": "SAMPLE"
+    },
+    {
+      "key": "sample.study",
+      "branch": "SAMPLE"
+    },
+    {
+      "key": "community.search",
+      "branch": "COMMUNITY"
+    },
+    {
+      "key": "community.deck",
+      "branch": "COMMUNITY"
+    },
+    {
+      "key": "community.add",
+      "branch": "COMMUNITY"
+    },
+    {
+      "key": "community.study",
+      "branch": "COMMUNITY"
+    },
+    {
+      "key": "own.details",
+      "branch": "OWN"
+    },
+    {
+      "key": "own.material",
+      "branch": "OWN"
+    },
+    {
+      "key": "own.exercise",
+      "branch": "OWN"
+    },
+    {
+      "key": "own.study",
+      "branch": "OWN"
+    },
+    {
+      "key": "finale.ai",
+      "branch": null
+    },
+    {
+      "key": "finale.done",
+      "branch": null
+    }
+  ],
+  "transitions": {
+    "note": "from-state → to-state per action; a pair that is absent is 409 ONBOARDING_TRANSITION. stepKey: required | optional | forbidden. branch is accepted only where listed",
+    "START": {
+      "from": {
+        "OFFERED": "IN_PROGRESS"
+      },
+      "stepKey": "required",
+      "branch": "forbidden"
+    },
+    "STEP": {
+      "from": {
+        "IN_PROGRESS": "IN_PROGRESS"
+      },
+      "stepKey": "required",
+      "branch": "optional"
+    },
+    "PAUSE": {
+      "from": {
+        "IN_PROGRESS": "PAUSED"
+      },
+      "stepKey": "optional",
+      "branch": "forbidden"
+    },
+    "RESUME": {
+      "from": {
+        "PAUSED": "IN_PROGRESS"
+      },
+      "stepKey": "optional",
+      "branch": "optional"
+    },
+    "SKIP": {
+      "from": {
+        "OFFERED": "SKIPPED"
+      },
+      "stepKey": "forbidden",
+      "branch": "forbidden",
+      "sets": [
+        "finishedAt"
+      ]
+    },
+    "COMPLETE": {
+      "from": {
+        "IN_PROGRESS": "COMPLETED",
+        "PAUSED": "COMPLETED"
+      },
+      "stepKey": "forbidden",
+      "branch": "forbidden",
+      "sets": [
+        "finishedAt"
+      ]
+    },
+    "UNDO_FINISH": {
+      "from": {
+        "SKIPPED": "OFFERED",
+        "COMPLETED": "PAUSED"
+      },
+      "stepKey": "forbidden",
+      "branch": "forbidden",
+      "clears": [
+        "finishedAt"
+      ]
+    },
+    "REPLAY": {
+      "from": {
+        "NOT_OFFERED": "IN_PROGRESS",
+        "OFFERED": "IN_PROGRESS",
+        "PAUSED": "IN_PROGRESS",
+        "SKIPPED": "IN_PROGRESS",
+        "COMPLETED": "IN_PROGRESS"
+      },
+      "stepKey": "required",
+      "branch": "forbidden",
+      "sets": [
+        "replayCount + 1",
+        "tourVersion = current"
+      ],
+      "clears": [
+        "branch",
+        "finishedAt"
+      ],
+      "note": "from NOT_OFFERED the row is created outside the cohort (eligible=false, replayCount 1)"
+    }
+  },
+  "views": {
+    "offered": {
+      "enabled": true,
+      "journey": {
+        "state": "OFFERED",
+        "eligible": true,
+        "autoOffer": true,
+        "tourVersion": 1,
+        "branch": null,
+        "stepKey": null,
+        "experience": null,
+        "weeklyTarget": null,
+        "offeredAt": "2026-10-20T09:00:00Z",
+        "finishedAt": null,
+        "replayCount": 0,
+        "rowVersion": "0"
+      },
+      "milestones": [],
+      "path": null,
+      "rhythm": null,
+      "sampleDeck": {
+        "available": false,
+        "deckId": null,
+        "updateAvailable": false,
+        "freeChecksLeft": 3
+      }
+    },
+    "holdout": {
+      "enabled": true,
+      "journey": {
+        "state": "OFFERED",
+        "eligible": true,
+        "autoOffer": false,
+        "tourVersion": 1,
+        "branch": null,
+        "stepKey": null,
+        "experience": null,
+        "weeklyTarget": null,
+        "offeredAt": "2026-10-20T09:00:00Z",
+        "finishedAt": null,
+        "replayCount": 0,
+        "rowVersion": "0"
+      },
+      "milestones": [],
+      "path": null,
+      "rhythm": null,
+      "sampleDeck": {
+        "available": false,
+        "deckId": null,
+        "updateAvailable": false,
+        "freeChecksLeft": 3
+      }
+    },
+    "notOffered": {
+      "enabled": true,
+      "journey": {
+        "state": "NOT_OFFERED",
+        "eligible": false,
+        "autoOffer": false,
+        "tourVersion": 1,
+        "branch": null,
+        "stepKey": null,
+        "experience": null,
+        "weeklyTarget": null,
+        "offeredAt": null,
+        "finishedAt": null,
+        "replayCount": 0,
+        "rowVersion": "0"
+      },
+      "milestones": [],
+      "path": null,
+      "rhythm": null,
+      "sampleDeck": {
+        "available": false,
+        "deckId": null,
+        "updateAvailable": false,
+        "freeChecksLeft": 3
+      }
+    },
+    "paused": {
+      "enabled": true,
+      "journey": {
+        "state": "PAUSED",
+        "eligible": true,
+        "autoOffer": false,
+        "tourVersion": 1,
+        "branch": "OWN",
+        "stepKey": "own.material",
+        "experience": "NEW",
+        "weeklyTarget": 3,
+        "offeredAt": "2026-10-20T09:00:00Z",
+        "finishedAt": null,
+        "replayCount": 0,
+        "rowVersion": "7"
+      },
+      "milestones": [],
+      "path": null,
+      "rhythm": null,
+      "sampleDeck": {
+        "available": false,
+        "deckId": null,
+        "updateAvailable": false,
+        "freeChecksLeft": 3
+      }
+    },
+    "disabled": {
+      "enabled": false,
+      "journey": null,
+      "milestones": [],
+      "path": null,
+      "rhythm": null,
+      "sampleDeck": {
+        "available": false,
+        "deckId": null,
+        "updateAvailable": false,
+        "freeChecksLeft": 3
+      }
+    },
+    "sampleReady": {
+      "enabled": true,
+      "journey": {
+        "state": "IN_PROGRESS",
+        "eligible": true,
+        "autoOffer": false,
+        "tourVersion": 1,
+        "branch": "SAMPLE",
+        "stepKey": "sample.hub",
+        "experience": null,
+        "weeklyTarget": null,
+        "offeredAt": "2026-10-20T09:00:00Z",
+        "finishedAt": null,
+        "replayCount": 0,
+        "rowVersion": "6"
+      },
+      "milestones": [],
+      "path": null,
+      "rhythm": null,
+      "sampleDeck": {
+        "available": true,
+        "deckId": "33333333-3333-4333-8333-333333333333",
+        "updateAvailable": false,
+        "freeChecksLeft": 2
+      }
+    }
+  },
+  "commands": {
+    "start": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789ab",
+      "rowVersion": "0",
+      "action": "START",
+      "stepKey": "survey.goal"
+    },
+    "chooseBranch": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789ac",
+      "rowVersion": "5",
+      "action": "STEP",
+      "branch": "OWN",
+      "stepKey": "own.details"
+    },
+    "pause": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789ad",
+      "rowVersion": "6",
+      "action": "PAUSE"
+    },
+    "replay": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789ae",
+      "rowVersion": "0",
+      "action": "REPLAY",
+      "stepKey": "choose"
+    },
+    "preferences": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789af",
+      "rowVersion": "3",
+      "experience": "FAMILIAR",
+      "weeklyTarget": 5
+    },
+    "sampleDeck": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789c0"
+    }
+  },
+  "invalid": {
+    "unknownStep": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b0",
+      "rowVersion": "1",
+      "action": "STEP",
+      "stepKey": "tour.unknown"
+    },
+    "branchMismatch": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b1",
+      "rowVersion": "1",
+      "action": "STEP",
+      "branch": "OWN",
+      "stepKey": "community.add"
+    },
+    "branchOnStart": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b2",
+      "rowVersion": "0",
+      "action": "START",
+      "branch": "OWN",
+      "stepKey": "survey.goal"
+    },
+    "stepOnSkip": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b3",
+      "rowVersion": "0",
+      "action": "SKIP",
+      "stepKey": "welcome"
+    },
+    "emptyPreferences": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b4",
+      "rowVersion": "0"
+    },
+    "weeklyTargetOutOfRange": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b5",
+      "rowVersion": "0",
+      "weeklyTarget": 8
+    },
+    "unknownField": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b6",
+      "rowVersion": "0",
+      "action": "PAUSE",
+      "note": "x"
+    }
+  },
+  "report": {
+    "experiment": "onboarding_v1",
+    "from": "2026-10-01",
+    "to": "2026-10-31",
+    "minimumGroup": 100,
+    "smallSample": true,
+    "groups": [
+      {
+        "variant": "control",
+        "accounts": 12,
+        "activated": 4,
+        "returned": 3
+      },
+      {
+        "variant": "tour",
+        "accounts": 71,
+        "activated": 30,
+        "returned": 22
+      }
+    ]
+  },
+  "problems": {
+    "transition": {
+      "type": "urn:mnema:problem:onboarding-transition",
+      "title": "Journey transition not allowed",
+      "status": 409,
+      "detail": "The tour cannot take this action in its current state.",
+      "instance": "/api/onboarding/journey",
+      "code": "ONBOARDING_TRANSITION"
+    },
+    "unavailable": {
+      "type": "urn:mnema:problem:onboarding-unavailable",
+      "title": "Onboarding unavailable",
+      "status": 409,
+      "detail": "The onboarding tour is turned off.",
+      "instance": "/api/onboarding/journey",
+      "code": "ONBOARDING_UNAVAILABLE"
+    },
+    "sampleUnavailable": {
+      "type": "urn:mnema:problem:sample-deck-unavailable",
+      "title": "Sample deck unavailable",
+      "status": 409,
+      "detail": "The sample deck is not available right now.",
+      "instance": "/api/onboarding/sample-deck",
+      "code": "SAMPLE_DECK_UNAVAILABLE"
+    },
+    "sampleNotShareable": {
+      "type": "urn:mnema:problem:sample-deck-not-shareable",
+      "title": "Sample deck not shareable",
+      "status": 409,
+      "detail": "A sample deck cannot be published, shared or copied.",
+      "instance": "/api/decks/33333333-3333-4333-8333-333333333333/publication",
+      "code": "SAMPLE_DECK_NOT_SHAREABLE"
+    }
+  }
+}

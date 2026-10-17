@@ -48,7 +48,7 @@ describe('StyleguidePageComponent', () => {
     it('renders the real app components and classes', () => {
         for (const selector of [
             'app-hold-to-delete-button', 'app-segmented-choice', 'app-toggletip', 'app-usage-meter', 'app-mnema-select', 'app-choice-list',
-            'app-batch-pager', 'app-tag-input', 'app-order-row button[data-action=up][aria-disabled=true]', 'app-order-row .field-error', 'app-access-level', 'app-copy-mark', 'app-copy-origin', 'app-copy-status section.notice.error', 'app-copy-status section.notice:not(.error)', 'app-publication-block', '.checklist > .checklist-item[data-state=failed]', 'app-access-screen section.access h4', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-update-badge', 'app-update-summary', 'app-count-tabs [role=tablist]', 'app-compare-columns', 'app-compared-document', 'app-word-diff ins', 'app-word-diff del', 'app-update-unit-row', 'app-telegram-glyph', 'app-mail-glyph', 'app-glyph[data-glyph=colonnade]', 'app-action-menu [role=menu][popover]', 'app-share-button button', 'app-public-deck-card article', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'app-unavailable-note .title', 'app-moderation-notice section.notice.warning h2', 'button.generate-cta', 'button.button.primary',
+            'app-batch-pager', 'app-tag-input', 'app-order-row button[data-action=up][aria-disabled=true]', 'app-order-row .field-error', 'app-access-level', 'app-copy-mark', 'app-copy-origin', 'app-copy-status section.notice.error', 'app-copy-status section.notice:not(.error)', 'app-publication-block', '.checklist > .checklist-item[data-state=failed]', 'app-access-screen section.access h4', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-sample-plaque .stamp', 'app-native-document-renderer', 'app-update-badge', 'app-update-summary', 'app-count-tabs [role=tablist]', 'app-compare-columns', 'app-compared-document', 'app-word-diff ins', 'app-word-diff del', 'app-update-unit-row', 'app-telegram-glyph', 'app-mail-glyph', 'app-glyph[data-glyph=colonnade]', 'app-action-menu [role=menu][popover]', 'app-share-button button', 'app-public-deck-card article', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'app-unavailable-note .title', 'app-moderation-notice section.notice.warning h2', 'button.generate-cta', 'button.button.primary',
             '.check-field > .check-row', '.settings-row.is-switch', '.toggle-button[aria-pressed]', 'fieldset.check-group > legend', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
         ]) {
             expect(root.querySelector(selector), selector).not.toBeNull();
@@ -224,7 +224,7 @@ describe('StyleguidePageComponent', () => {
         } finally {
             for (const token of ['--mn-ink', '--mn-sheet', '--mn-body', '--mn-paper']) style.removeProperty(token);
         }
-    });
+    }, 30_000); // renders the whole styleguide a second time: a few seconds alone, 13 s on a loaded CI runner (Main CI 39062185414)
 
     it('previews reduced motion with the sidebar switch', () => {
         const rootElement = root.querySelector<HTMLElement>('.sg-root')!;
@@ -346,5 +346,17 @@ describe('StyleguidePageComponent', () => {
         await wait();
         expect(failure).toHaveBeenCalledWith('Колода больше недоступна');
         expect(root.querySelector('app-complaint-dialog')).toBeNull();
+    });
+
+    it('lists the tour tokens in the palette, the hold time in the motion section and the tour among the components', () => {
+        const palette = root.querySelector('#palette')!.textContent!;
+        for (const token of ['--mn-night', '--mn-on-night', '--mn-on-night-muted', '--mn-star-lavender', '--mn-star-paper', '--mn-scrim', '--mn-glow', '--mn-path-hover', '--mn-night-wave']) {
+            expect(palette).toContain(token);
+        }
+        expect(root.querySelector('#motion')!.textContent).toContain('--mn-tour-hold');
+        const semantic = root.querySelector('#semantic')!.textContent!;
+        expect(semantic).toContain('Текст на ночи');
+        expect(semantic).toContain('Заливка удержания');
+        expect(root.querySelector('section#tour app-tour-card')).not.toBeNull();
     });
 });

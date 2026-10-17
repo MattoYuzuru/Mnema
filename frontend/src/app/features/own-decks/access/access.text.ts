@@ -2,6 +2,7 @@ import type { AccessIdentity } from './access-identities';
 import { AccessFailure, DeckInvite, GRANTS_LIMIT, InviteStatus } from './access.models';
 import type { PublicationLevel } from '../publication/publication.models';
 import { plural } from '../../../core/notifications/notification-presenter';
+import { isSampleNotShareable, sampleShareRefusedText } from '../../../core/onboarding/sample-deck';
 
 /** The words of the «Доступ» panel (docs/product/community-decks.md; plain language, no long dashes). */
 export const ACCESS_TEXT = {
@@ -166,6 +167,7 @@ export function inviteUsesText(invite: DeckInvite): string {
 export function accessProblemText(failure: Pick<AccessFailure, 'status'> & Partial<AccessFailure> | null): string {
     if (failure === null || failure.status === 0) return ACCESS_TEXT.network;
     if (failure.status === 404) return ACCESS_TEXT.gone;
+    if (isSampleNotShareable(failure.status, failure.code ?? null)) return sampleShareRefusedText();
     if (failure.status === 422 && failure.limit === GRANTS_LIMIT) return ACCESS_TEXT.grantsFull;
     return ACCESS_TEXT.unknown;
 }

@@ -754,3 +754,14 @@ New: `UPDATE_REVERT_STALE` (409, with `unitId` when known). Used: `INVALID_REQUE
 Поиск текущей позиции использует существующую серверную проекцию `currentOrdinal`, без обещания O(log N).
 Frontend принимает переходы только при совпадении ревизии, версии и позиции с показанным материалом.
 Ошибка навигации не скрывает документ; смена порядка требует обновления чтения.
+
+## Sample decks (OB-201, [onboarding](../onboarding/README.md))
+
+A deck has a server-side `purpose` (`USER`, `SAMPLE_TEMPLATE`, `SAMPLE`); it is not on the deck wire. A `SAMPLE` deck (an account's «Моя первая колода», made by
+`POST /api/onboarding/sample-deck`) and the `SAMPLE_TEMPLATE` it is copied from are never published, shared or copied by a user: **409 `SAMPLE_DECK_NOT_SHAREABLE`**
+(title «Sample deck not shareable», detail «A sample deck cannot be published, shared or copied.») from `PUT /api/decks/{deckId}/publication` (any level, with or without `publish`;
+the template's owner may publish new revisions at `LINK`, and nothing else), `POST /api/decks/{deckId}/invites`, `POST /api/decks/{deckId}/grants`,
+`POST /api/decks/{deckId}/access-requests/{requesterId}:approve`, `POST /api/public/decks/{code}/access-requests` (by the template's code) and `POST /api/decks/forks` (by the template's
+code; its owner still gets `FORK_OWN_DECK`). A deck that is not the caller's is the opaque 404 first, as ever, so the purpose of a stranger's deck is never told. `POST /api/invites:redeem`
+for an invitation of such a deck is the 404 of every token that opens nothing. The commands that only take access away (revoke, reject, withdraw) stay open. The owner of a sample copy keeps
+`fork:retry`, `fork:detach`, `fork:auto-update` and `DELETE`; an update of the template reaches the copy as the ordinary `fork.updateAvailable`.
