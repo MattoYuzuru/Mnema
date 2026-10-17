@@ -175,6 +175,15 @@ export class TourEngine {
     }
 
     /**
+     * The place of the current step became known after the step was entered (a route that waited for something the learner has not made, or
+     * the app has not found yet): takes the learner there. A paused tour goes nowhere until it is continued, and then goes there itself.
+     */
+    refreshPlace(): void {
+        const step = this.step();
+        if (this.run() !== null && step !== null && !this.pausedState()) this.navigateTo(step);
+    }
+
+    /**
      * Asks for the focus to return to the card heading: a page that was activated under a running step (the step's route) must not leave
      * the focus on its own heading, because the card is what the learner is being told about.
      */

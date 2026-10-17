@@ -37,6 +37,13 @@ describe('OnboardingApiService', () => {
             await expect(again).resolves.toEqual({ kind: 'not-modified' });
         });
 
+        it('parses the disabled view, whose sample deck still has all three free checks (0..3 is the whole range)', async () => {
+            expect(contract.views.disabled.sampleDeck.freeChecksLeft).toBe(3);
+            const result = firstValueFrom(api.read());
+            http.expectOne('/api/onboarding').flush(contract.views.disabled, { headers: privateHeaders() });
+            await expect(result).resolves.toMatchObject({ kind: 'view', view: { enabled: false, sampleDeck: { freeChecksLeft: 3 } } });
+        });
+
         it('keeps the ETag with the view', async () => {
             const result = firstValueFrom(api.read());
             http.expectOne('/api/onboarding').flush(view, { headers: privateHeaders() });

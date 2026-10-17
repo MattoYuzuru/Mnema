@@ -401,6 +401,55 @@ describe('OnboardingFlow', () => {
             expect(route(s)).toBe(`/decks/${SAMPLE_DECK_ID}/materials/first-material`);
         });
 
+        it('takes the learner to the material when it becomes known after «Дальше» was pressed on the hub', async () => {
+            const s = atChoice();
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+            s.items.list.mockReturnValueOnce(throwError(() => new Error('preparing')));
+            await s.flow.chooseBranch('SAMPLE');
+            await settle();
+            navigate.mockClear();
+            s.engine.next();
+            expect(s.engine.step()?.key).toBe('sample.material');
+            // The route was evaluated on entry, before the material was known: the learner is still on the hub.
+            expect(navigate).toHaveBeenCalledWith(`/decks/${SAMPLE_DECK_ID}`);
+            navigate.mockClear();
+            await settle();
+            expect(navigate).toHaveBeenCalledTimes(1);
+            expect(navigate).toHaveBeenCalledWith(`/decks/${SAMPLE_DECK_ID}/materials/first-material`);
+        });
+
+        it('does not move a paused tour when the material becomes known: the plaque\'s «Продолжить» takes the learner there', async () => {
+            const s = atChoice();
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+            s.items.list.mockReturnValueOnce(throwError(() => new Error('preparing')));
+            await s.flow.chooseBranch('SAMPLE');
+            await settle();
+            s.engine.next();
+            s.engine.pause();
+            navigate.mockClear();
+            await settle();
+            expect(navigate).not.toHaveBeenCalled();
+            s.engine.resume();
+            expect(navigate).toHaveBeenCalledWith(`/decks/${SAMPLE_DECK_ID}/materials/first-material`);
+        });
+
+        it('offers the sample, and opens the copy the account already has, even when the sample is no longer available for new copies', async () => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false }, listed: 10,
+                view: { sampleDeck: { available: false, deckId: SAMPLE_DECK_ID, updateAvailable: false, freeChecksLeft: 1 } } });
+            s.flow.open('choose');
+            await vi.waitFor(() => expect(s.flow.branches()).toEqual(['SAMPLE', 'COMMUNITY', 'OWN']));
+            await s.flow.chooseBranch('SAMPLE');
+            expect(s.flow.currentDeck()).toBe(SAMPLE_DECK_ID);
+            expect(s.engine.definition()?.id).toBe('sample-v1');
+            expect(s.store.calls).toEqual([['STEP', { stepKey: 'sample.hub', branch: 'SAMPLE' }]]);
+        });
+
+        it('hides the sample when it is neither available nor already made', async () => {
+            const s = setup({ listed: 10, view: { sampleDeck: { available: false, deckId: null, updateAvailable: false, freeChecksLeft: 3 } } });
+            s.flow.open('welcome');
+            await vi.waitFor(() => expect(s.flow.branches()).toEqual(['COMMUNITY', 'OWN']));
+        });
+
         it('keeps only the hub and «Учить» for a learner who knows flashcards', async () => {
             const s = atChoice({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false, experience: 'CONFIDENT' } });
             await s.flow.chooseBranch('SAMPLE');

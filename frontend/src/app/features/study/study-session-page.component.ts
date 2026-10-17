@@ -126,7 +126,10 @@ export class StudySessionPageComponent {
      */
     readonly sampleCheckHint = computed(() => {
         const presentation = this.current();
-        return presentation === null || !this.aiChecked(presentation) ? null : sampleCheckHint(this.journey.view(), this.deckId);
+        if (presentation === null || !this.aiChecked(presentation)) return null;
+        // A spoken answer to an explanation costs two checks (the transcription and the grade): with one left, a free voice answer is not promised.
+        if (this.spokenExplanation(presentation) && this.journey.view()?.sampleDeck.freeChecksLeft === 1) return null;
+        return sampleCheckHint(this.journey.view(), this.deckId);
     });
     readonly position = computed(() => {
         const current = this.current();
@@ -576,6 +579,12 @@ export class StudySessionPageComponent {
             error => this.assessmentLost(error), elapsed);
         this.phase.set('assessing');
         this.focusAfterRender('#assessing-title');
+    }
+
+    /** An explanation graded by the AI that can also be answered by voice, with a microphone to do it. */
+    private spokenExplanation(presentation: StudyPresentation): boolean {
+        return presentation.evaluator.id === 'ai-semantic' && presentation.type === 'FREE_RESPONSE'
+            && presentation.content.responseInput === 'TEXT_OR_SPEECH' && this.speechAvailable();
     }
 
     /** The attempt costs an AI check: the grade of an explanation, or the transcription of a spoken answer. */

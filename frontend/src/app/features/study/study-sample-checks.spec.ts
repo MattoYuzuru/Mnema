@@ -104,6 +104,45 @@ describe('StudySessionPageComponent, the sample deck\'s free AI checks', () => {
         expect(hint()).toContain('Осталось: 2.');
     });
 
+    describe('an explanation that can also be answered by voice (ai-semantic and TEXT_OR_SPEECH)', () => {
+        const both = (): StudyPresentation => { const value = explanation(); (value as { content: { responseInput: string } }).content.responseInput = 'TEXT_OR_SPEECH'; return value; };
+        const withMicrophone = (): void => { capabilities = { ...CAPABILITIES_UNAVAILABLE, speechToText: { available: true, reason: null } }; };
+
+        it('does not promise a free voice answer when one free check is left: a voice answer uses two', () => {
+            withMicrophone();
+            view.set(sampleView(deck.deckId, 1));
+            open(both());
+            expect(hint()).toBeNull();
+        });
+
+        it.each([[2, 'Осталось: 2.'], [3, 'Осталось: 3.']])('still says how many are left when %i are (a voice answer fits)', (left, tail) => {
+            withMicrophone();
+            view.set(sampleView(deck.deckId, left));
+            open(both());
+            expect(hint()).toContain(tail);
+        });
+
+        it('still says they are spent when none is left: the next check, typed or spoken, uses the budget', () => {
+            withMicrophone();
+            view.set(sampleView(deck.deckId, 0));
+            open(both());
+            expect(hint()).toContain('закончились');
+        });
+
+        it('says the last free check is left when there is no microphone to answer by voice', () => {
+            view.set(sampleView(deck.deckId, 1));
+            open(both());
+            expect(hint()).toContain('Осталось: 1.');
+        });
+
+        it('keeps saying it for a typed-only explanation with one check left', () => {
+            withMicrophone();
+            view.set(sampleView(deck.deckId, 1));
+            open(explanation());
+            expect(hint()).toContain('Осталось: 1.');
+        });
+    });
+
     it('says nothing before a spoken answer when there is no microphone to use', () => {
         open(spoken());
         expect(hint()).toBeNull();

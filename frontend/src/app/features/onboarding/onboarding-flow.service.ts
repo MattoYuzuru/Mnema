@@ -110,7 +110,9 @@ export class OnboardingFlow {
     /** What the branch choice offers; a hidden option is simply not in the list. */
     readonly branches = computed<readonly Branch[]>(() => {
         const options: Branch[] = [];
-        if (this.store.view()?.sampleDeck.available === true) options.push('SAMPLE');
+        // The sample is offered while a copy can be made, and to a learner who has one already (the server answers with it, and the tour opens it).
+        const sample = this.store.view()?.sampleDeck;
+        if (sample !== undefined && (sample.available || sample.deckId !== null)) options.push('SAMPLE');
         if (this.launched && (this.catalogueListed() ?? 0) >= MINIMUM_CATALOGUE) options.push('COMMUNITY');
         options.push('OWN');
         return options;
@@ -456,7 +458,12 @@ export class OnboardingFlow {
             try {
                 const page = await firstValueFrom(this.injector.get(ItemApiService).list(deckId, { limit: 20 }));
                 const first = page.items.find(item => !item.unavailable);
-                if (first !== undefined && this.deck() === deckId && this.member() === null) this.member.set(first.memberKey);
+                if (first !== undefined && this.deck() === deckId && this.member() === null) {
+                    this.member.set(first.memberKey);
+                    // «Дальше» may have been pressed before the material was known: the step is on the hub, and its place is now elsewhere.
+                    const step = this.engine.step();
+                    if (step?.key === 'sample.material' || step?.key === 'sample.exercises') this.engine.refreshPlace();
+                }
             } catch { /* A copy that is still being prepared has no list: the next change of step or of readiness asks again. */ }
             finally { this.memberLookup = null; }
         })();
