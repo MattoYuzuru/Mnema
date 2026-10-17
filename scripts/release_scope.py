@@ -19,15 +19,17 @@ RUNTIME_PREFIXES = ("backend/", "frontend/", "contracts/", "deploy/production/",
 # - backend/Dockerfile copies only the Gradle build and services/, then runs the two bootJar tasks (no test sources);
 # - backend/media-worker/Dockerfile copies only the mnema_media_worker package;
 # - frontend ships the Angular build output; tsconfig.app.json compiles from src/main.ts, never *.spec.ts;
-# - Markdown is documentation unless it is a packaged resource (backend src/main, frontend src/ assets).
+# - Markdown is documentation unless it is a packaged resource (backend src/main, the media-worker package,
+#   frontend src/); angular.json copies src/assets verbatim, so nothing under it is excluded.
 NON_RUNTIME = tuple(re.compile(pattern) for pattern in (
     r"backend/services/[^/]+/src/test/.+",
     r"backend/test-support/.+",
     r"backend/(?:test-durations\.tsv|test-opt-ins\.json|coverage-baseline\.json)",
     r"backend/scripts/.+",
     r"backend/media-worker/tests/.+",
-    r"frontend/src/(?:.+/)?[^/]+\.spec\.ts",
-    r"(?!.*/src/main/)(?!frontend/src/)(?:backend|frontend|deploy/production)/.+\.md",
+    r"(?!frontend/src/assets/)frontend/src/(?:.+/)?[^/]+\.spec\.ts",
+    r"(?!.*/src/main/)(?!frontend/src/)(?!backend/media-worker/mnema_media_worker/)"
+    r"(?:backend|frontend|deploy/production)/.+\.md",
 ))
 RUNTIME_FILES = frozenset({
     ".github/workflows/deploy.yaml",
@@ -118,12 +120,38 @@ def _git(*args: str) -> tuple[int, str]:
     return result.returncode, result.stdout
 
 
+def changed_runtime(base: str, head: str, git: Callable[..., tuple[int, str]]) -> tuple[bool, str]:
+    """Pull-request form: does base...head touch a release-image input? Unknown history means yes."""
+    code, output = git("diff", "--name-only", "--no-renames", f"{base}...{head}")
+    if code != 0:
+        return True, "diff against the pull-request base failed"
+    changed = runtime_changes(output.splitlines())
+    if changed:
+        return True, f"{len(changed)} runtime path(s): " + ", ".join(changed[:5]) + (", ..." if len(changed) > 5 else "")
+    return False, "no release-image input changed; the image build and scan are not needed"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--changed", nargs=2, metavar=("BASE", "HEAD"),
+                        help="pull-request mode: report runtime=true|false for BASE...HEAD instead of deciding a release")
     parser.add_argument("--event", default=os.environ.get("GITHUB_EVENT_NAME", ""))
     parser.add_argument("--sha", default=os.environ.get("GITHUB_SHA", ""))
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
     args = parser.parse_args()
+    if args.changed:
+        try:
+            runtime, reason = changed_runtime(*args.changed, _git)
+        except subprocess.SubprocessError:
+            runtime, reason = True, "diff against the pull-request base failed"
+        print(f"runtime={str(runtime).lower()} ({reason})")
+        for variable, text in (("GITHUB_OUTPUT", f"runtime={str(runtime).lower()}\n"),
+                               ("GITHUB_STEP_SUMMARY", f"### Release images\n\nRuntime inputs changed: "
+                                                       f"**{str(runtime).lower()}** - {reason}.\n")):
+            if os.environ.get(variable):
+                with Path(os.environ[variable]).open("a", encoding="utf-8") as handle:
+                    handle.write(text)
+        return 0
     if not SHA.fullmatch(args.sha) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repository):
         print("::error::release scope needs a full commit SHA and repository", file=sys.stderr)
         return 2

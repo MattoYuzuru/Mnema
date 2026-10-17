@@ -75,7 +75,8 @@ class ReleaseScopeTest(unittest.TestCase):
                  'frontend/src/assets/brand/README.md', 'frontend/src/app/testing/fixtures.ts',
                  'frontend/src/app/app.spec.ts.orig', 'frontend/tsconfig.app.json', 'frontend/vitest.config.mts',
                  'backend/services/learning/src/testFixtures/x.java', 'backend/media-worker/mnema_media_worker/process.py',
-                 'backend/build.gradle.kts', 'contracts/decks/README.md']
+                 'backend/build.gradle.kts', 'contracts/decks/README.md',
+                 'backend/media-worker/mnema_media_worker/NOTES.md', 'frontend/src/assets/demo/x.spec.ts']
         for path in paths:
             with self.subTest(path=path):
                 deploy, reason = SCOPE.decide('push', HEAD, history(), git(diff=(0, 'docs/a.md\n' + path + '\n')))
@@ -204,6 +205,16 @@ class ReleaseScopeHistoryTest(unittest.TestCase):
         self.setUp()
         deleted = self.commit({}, delete=['backend/services/learning/src/main/java/App.java'])
         self.assertTrue(self.decide(deleted)[0])
+
+    def test_pull_request_mode_reports_image_inputs_and_fails_closed(self):
+        base = self.deployed
+        docs = self.commit({'docs/d.md': 'd', 'backend/services/learning/src/test/java/T.java': 't'})
+        self.assertFalse(SCOPE.changed_runtime(base, docs, self.git)[0])
+        runtime = self.commit({'frontend/src/app/app.ts': 'x'})
+        changed, reason = SCOPE.changed_runtime(base, runtime, self.git)
+        self.assertTrue(changed)
+        self.assertIn('frontend/src/app/app.ts', reason)
+        self.assertTrue(SCOPE.changed_runtime('f' * 40, runtime, self.git)[0])     # unknown base
 
     def test_a_deployed_commit_outside_the_history_releases(self):
         head = self.commit({'docs/c.md': 'c'})
