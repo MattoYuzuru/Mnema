@@ -73,7 +73,7 @@ describe('appRoutes', () => {
     it('guards a lazy owner shell and protects transactional children before leaving', () => {
         const manage = ownerRoutes(true).find(route => route.path === 'manage')!;
         expect(manage.canActivate).toEqual([authGuard]); expect(manage.loadComponent).toBeDefined();
-        expect(manage.children?.map(child => child.path)).toEqual(['', 'users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints', 'complaints/journal', 'complaints/:complaintId', 'community', 'audit']);
+        expect(manage.children?.map(child => child.path)).toEqual(['', 'users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints', 'complaints/journal', 'complaints/:complaintId', 'community', 'onboarding', 'audit']);
         for (const path of ['users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints/:complaintId', 'community']) expect(manage.children?.find(child => child.path === path)?.canDeactivate).toHaveLength(1);
     });
 

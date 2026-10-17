@@ -43,6 +43,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
     private static JsonNode nativeDocument;
     private static JsonNode richDocument;
     private static JsonNode codeDocument;
+    private static JsonNode navigationFixture;
 
     @Autowired private ItemService service;
     @Autowired private DeckService decks;
@@ -58,6 +59,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         while (!Files.exists(root.resolve("contracts/content/native-v1/valid/mixed.json"))) root = root.getParent();
         nativeDocument = JSON.readTree(Files.readString(root.resolve("contracts/content/native-v1/valid/mixed.json")));
         richDocument = JSON.readTree(Files.readString(root.resolve("contracts/content/native-v1/valid/rich.json")));
+        navigationFixture = JSON.readTree(Files.readString(root.resolve("contracts/decks/hub.json"))).path("navigation").path("first");
         codeDocument = JSON.readTree(Files.readString(root.resolve("contracts/content/native-v1/valid/code.json")));
     }
 
@@ -71,6 +73,47 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(service.list(actor, deck, "20", null).path("items").get(0).path("title"))
                 .isEqualTo(first.path("title"));
         assertThat(previews(deck)).isEqualTo(1);
+    }
+
+    @Test
+    void navigationReadsCurrentNeighboursAndHidesMissingBoundariesWithOwnerIsolation() {
+        UUID actor = UUID.randomUUID(); UUID deck = createDeck(actor);
+        ArrayNode creates = JSON.createArrayNode(); List<UUID> members = new ArrayList<>();
+        for (int index = 0; index < 3; index++) {
+            UUID member = UUID.randomUUID(); members.add(member);
+            creates.add(change("create", member, null, null, nativeDocument, null));
+        }
+        var created = service.publish(actor, deck, 0, bulk(UUID.randomUUID(), decks.read(actor, deck), creates));
+        JsonNode first = service.navigation(actor, deck, members.getFirst());
+        java.util.Set<String> actualKeys = new java.util.HashSet<>(); first.propertyNames().forEach(actualKeys::add);
+        java.util.Set<String> expectedKeys = new java.util.HashSet<>(); navigationFixture.propertyNames().forEach(expectedKeys::add);
+        assertThat(actualKeys).isEqualTo(expectedKeys);
+        assertThat(first.path("previousMemberKey").isNull()).isTrue();
+        assertThat(first.path("nextMemberKey").asString()).isEqualTo(members.get(1).toString());
+        JsonNode middle = service.navigation(actor, deck, members.get(1));
+        assertThat(middle.path("ordinal").asInt()).isEqualTo(1);
+        assertThat(middle.path("total").asInt()).isEqualTo(3);
+        assertThat(middle.path("deckVersion").asString()).isEqualTo("1");
+        assertThat(middle.path("previousMemberKey").asString()).isEqualTo(members.getFirst().toString());
+        assertThat(middle.path("nextMemberKey").asString()).isEqualTo(members.getLast().toString());
+        assertThat(service.navigation(actor, deck, members.getLast()).path("nextMemberKey").isNull()).isTrue();
+        assertThatThrownBy(() -> service.navigation(UUID.randomUUID(), deck, members.get(1)))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.navigation(actor, deck, UUID.randomUUID()))
+                .isInstanceOf(ResourceNotFoundException.class);
+        UUID revision = UUID.fromString(created.acknowledgement().path("changes").get(1).path("itemRevisionId").asString());
+        service.publish(actor, deck, 1, bulk(UUID.randomUUID(), decks.read(actor, deck),
+                JSON.createArrayNode().add(change("reorder", members.get(1), revision, 1, null, 0))));
+        JsonNode moved = service.navigation(actor, deck, members.get(1));
+        assertThat(moved.path("previousMemberKey").isNull()).isTrue();
+        assertThat(moved.path("nextMemberKey").asString()).isEqualTo(members.getFirst().toString());
+        assertThat(moved.path("deckVersion").asString()).isEqualTo("2");
+        UUID singleDeck = createDeck(actor);
+        var single = service.publish(actor, singleDeck, 0, create(UUID.randomUUID(), decks.read(actor, singleDeck), nativeDocument, null));
+        UUID only = UUID.fromString(single.acknowledgement().path("changes").get(0).path("memberKey").asString());
+        JsonNode alone = service.navigation(actor, singleDeck, only);
+        assertThat(alone.path("previousMemberKey").isNull()).isTrue();
+        assertThat(alone.path("nextMemberKey").isNull()).isTrue();
     }
 
     @Test

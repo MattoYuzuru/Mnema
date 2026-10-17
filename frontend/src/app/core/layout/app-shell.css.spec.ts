@@ -1,6 +1,6 @@
 /**
  * jsdom evaluates no media query and has no layout, so the masthead's reflow contract is pinned on the stylesheet source: the four nav
- * links, the book entry, the bell and «Выйти» must never force the page wider. How it looks from 320 px to wide is checked in a real browser.
+ * links, the account identity, the bell and «Выйти» must never force the page wider. How it looks from 320 px to wide is checked in a real browser.
  */
 interface NodeFs { readFileSync(path: string, encoding: 'utf8'): string }
 
@@ -8,7 +8,7 @@ describe('masthead stylesheet contract', () => {
     let css = '';
     const rule = (selector: string): string => {
         const escaped = selector.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-        const found = new RegExp(`(?:^|\\n)${escaped} \\{([^}]*)\\}`, 'u').exec(css);
+        const found = new RegExp(`(?:^|(?<!,)\\n)${escaped} \\{([^}]*)\\}`, 'u').exec(css);
         expect(found, selector).not.toBeNull();
         return found![1];
     };
@@ -23,7 +23,8 @@ describe('masthead stylesheet contract', () => {
         const nav = rule('.primary-nav');
         expect(nav).toContain('flex-wrap: wrap');
         expect(nav).toContain('min-inline-size: 0');
-        expect(css).toMatch(/\.session \{ justify-content: flex-end; flex-wrap: wrap; min-inline-size: 0; \}/u);
+        expect(rule('.session')).toContain('min-inline-size: 0');
+        expect(rule('.identity')).toContain('text-overflow: ellipsis');
     });
 
     it('keeps the nav links on one line each, so wrapping moves a whole link', () => {
@@ -39,6 +40,6 @@ describe('masthead stylesheet contract', () => {
     });
 
     it('has a three-column masthead for wide screens whose side columns can shrink to the brand and the session', () => {
-        expect(css).toMatch(/grid-template-columns: minmax\(11rem, 1fr\) auto minmax\(11rem, 1fr\)/u);
+        expect(css).toMatch(/grid-template-columns: auto minmax\(0, 1fr\) minmax\(0, auto\)/u);
     });
 });

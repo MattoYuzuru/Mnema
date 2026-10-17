@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mnema — прототип онбординга (OB-001)</title>
+  <link rel="stylesheet" href="onboarding.css">
+</head>
+<body>
+  <div class="proto-rail" role="region" aria-label="Управление прототипом (не часть продукта)">
+    <span>Прототип онбординга · OB-001</span>
+    <label>Экран <select id="screen"></select></label>
+    <label><input type="checkbox" id="calm"> Спокойное движение</label>
+    <label><input type="checkbox" id="catalog"> В каталоге ≥ 4 колод</label>
+  </div>
+  <div id="app"></div>
+  <div id="layer"></div>
+  <section id="toasts" class="toast-region" aria-label="Уведомления"></section>
+  <div id="toast-status" class="visually-hidden" role="status"></div>
+  <div id="tour-live" class="visually-hidden" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

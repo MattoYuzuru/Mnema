@@ -5,6 +5,7 @@ import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 import { RecommendationsApiService } from './recommendations-api.service';
 import { parseInterestProfile } from './recommendations.models';
 import { signal } from '@angular/core';
+import { TourHints } from '../../core/onboarding/tour-hints';
 import { TestBed } from '@angular/core/testing';
 import { Title } from '@angular/platform-browser';
 import { Router, provideRouter } from '@angular/router';
@@ -118,6 +119,35 @@ describe('CommunityPageComponent', () => {
         radio.dispatchEvent(new Event('change'));
     }
 
+    describe('for the onboarding tour', () => {
+        it('marks the search, the filters and the shelves as the one place the tour points at', async () => {
+            await open();
+            const region = one<HTMLElement>('[data-tour-anchor="community.search"]')!;
+            expect(region.querySelector('app-book-search')).not.toBeNull();
+            expect(region.querySelectorAll('app-deck-shelf, app-deck-grid').length).toBeGreaterThan(0);
+        });
+
+        it('says the hint at the search only when the tour asks for it, in the approved words, and never takes the focus', async () => {
+            await open();
+            expect(one('app-place-hint')).toBeNull();
+            TestBed.inject(TourHints).browse.set(true);
+            await settle();
+            const hint = one<HTMLElement>('app-place-hint')!;
+            expect(hint.getAttribute('role')).toBe('note');
+            expect(hint.textContent).toBe('Не знаете, что выбрать? Начните с темы из вашего списка.');
+            expect(one('[data-tour-anchor="community.search"]')!.contains(hint)).toBe(true);
+            TestBed.inject(TourHints).browse.set(false);
+            await settle();
+            expect(one('app-place-hint')).toBeNull();
+        });
+
+        it('has no anchor while the catalogue is closed: there is nothing to point at', async () => {
+            api.facets.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+            await open();
+            expect(one('[data-tour-anchor="community.search"]')?.querySelector('app-book-search') ?? null).toBeNull();
+        });
+    });
+
     describe('personal shelves and sorting', () => {
         let personal: { profile: ReturnType<typeof vi.fn>; change: ReturnType<typeof vi.fn>; recommendations: ReturnType<typeof vi.fn>; event: ReturnType<typeof vi.fn>; exposures: ReturnType<typeof vi.fn> };
         beforeEach(() => {
@@ -131,7 +161,7 @@ describe('CommunityPageComponent', () => {
         });
         it('keeps the default shelves, adds every recommendation including places 11/12 and explains its topic', async () => {
             await open();
-            expect(root().textContent).toContain('Что хотите изучать?');
+            expect(root().textContent).toContain('Что вы хотите изучать в Мнеме?');
             expect(all<HTMLElement>('app-deck-shelf h2').map(h => h.textContent)[0]).toBe('Для вас');
             const shelf = all<HTMLElement>('app-deck-shelf')[0];
             expect(shelf.querySelectorAll('app-public-deck-card')).toHaveLength(12);
@@ -215,7 +245,7 @@ describe('CommunityPageComponent', () => {
             expect(api.shelves).toHaveBeenCalledTimes(1);
             expect(api.facets).toHaveBeenCalledTimes(1);
             expect(api.decks).not.toHaveBeenCalled();
-            expect(one('h1')?.textContent).toBe('Сообщество');
+            expect(one('h1')?.textContent).toBe('Колоды от сообщества');
             expect(one('h1')?.getAttribute('tabindex')).toBe('-1');
             expect(one('app-book-search[data-mode=open] search[aria-label="Поиск колод"]')).not.toBeNull();
             expect(one('app-catalog-filters')).not.toBeNull();

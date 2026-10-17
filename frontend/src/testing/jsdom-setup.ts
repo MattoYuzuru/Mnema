@@ -15,6 +15,11 @@ function define(target: object, name: string, value: unknown): void {
 
 define(Element.prototype, 'scrollIntoView', function scrollIntoView(): void {});
 
+// jsdom has no scrolling and logs «Not implemented» for these; a spec that cares about the scroll position spies on them.
+for (const name of ['scrollBy', 'scrollTo'] as const) {
+    Object.defineProperty(window, name, { value: (): void => {}, configurable: true, writable: true });
+}
+
 define(HTMLDialogElement.prototype, 'showModal', function showModal(this: HTMLDialogElement): void {
     this.setAttribute('open', '');
 });

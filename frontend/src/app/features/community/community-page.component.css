@@ -10,7 +10,7 @@
     min-inline-size: 0;
 }
 
-.heading { padding-block-end: 1.25rem; border-block-end: 1px solid var(--mn-ink); }
+.heading { min-inline-size: 0; }
 h1 {
     margin: 0;
     color: var(--mn-ink);
@@ -31,6 +31,6 @@ h1:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 .notice { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; max-inline-size: 40rem; }
 .notice p { margin: 0; flex: 1 1 14rem; overflow-wrap: anywhere; }
 
-@media (forced-colors: active) {
-    .heading { border-color: CanvasText; }
-}
+/* The region the community tour points at: the search, the filters and the shelves, with the page's own rhythm between them. */
+.catalogue { display: grid; gap: clamp(1.25rem, 3vw, 2rem); min-inline-size: 0; }
+.browse-hint { justify-self: start; }

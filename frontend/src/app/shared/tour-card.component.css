@@ -1,0 +1,32 @@
+:host { display: contents; }
+.tour-card { box-sizing: border-box; position: fixed; z-index: 1001; inset: auto; margin: 0; inline-size: min(24rem, calc(100vw - 2 * var(--mn-page-gutter))); max-inline-size: none; max-block-size: calc(100dvh - 2rem); overflow: auto;
+    gap: .8rem; border: 1px solid var(--mn-rule); border-block-start: 3px solid var(--mn-ink); padding: 1.1rem 1.2rem 1rem; color: var(--mn-body); background: var(--mn-sheet); }
+.tour-card[open] { display: grid; }
+/* The ink veil is the dimming; a modal step adds no second layer. */
+.tour-card::backdrop { background: transparent; }
+/* A phone: the card is a bottom sheet over the page. The tour host decides (`sheet`), from the same breakpoint as the layout. */
+.tour-card.sheet { inset: auto 0 0 0; inline-size: 100%; max-block-size: 60dvh; border-inline: 0; border-block-end: 0; padding-block-end: calc(1rem + env(safe-area-inset-bottom, 0px)); }
+.tour-card.inline { display: grid; position: static; inline-size: auto; max-inline-size: 24rem; max-block-size: none; }
+h2 { margin: 0; color: var(--mn-ink); font: 600 1.6rem/1.1 var(--mn-font-display); }
+/* The heading receives programmatic focus when the step changes; it is not a control (the same rule as the route heading). */
+h2:focus-visible { outline: none; }
+p { margin: 0; }
+.eyebrow { margin: 0; }
+.tour-body { display: grid; gap: .6rem; min-inline-size: 0; }
+.key { color: var(--mn-ink); font-weight: 700; }
+.gate { display: flex; gap: .5rem; align-items: center; color: var(--mn-ink); font-weight: 600; }
+.tour-head { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.dots { display: flex; gap: .35rem; }
+.dots span { inline-size: .5rem; block-size: .5rem; border: 1px solid var(--mn-ink); border-radius: 50%; }
+.dots span.on { background: var(--mn-ink); }
+.tour-nav { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; align-items: center; border-block-start: 1px solid var(--mn-rule); padding-block-start: .75rem; }
+.steps { display: flex; flex-wrap: wrap; gap: .5rem; }
+app-hold-to-delete-button { margin-inline-start: auto; }
+.slider { display: grid; gap: .5rem; border: 1px solid var(--mn-rule); padding: .75rem; background: var(--mn-paper); }
+.slider-controls { display: flex; justify-content: space-between; align-items: center; }
+.slider-controls .button { min-inline-size: var(--mn-touch-min); padding-inline: .5rem; }
+@media (forced-colors: active) {
+    .tour-card { border: 2px solid CanvasText; }
+    .key { text-decoration: underline; }
+    .dots span.on { background: CanvasText; }
+}

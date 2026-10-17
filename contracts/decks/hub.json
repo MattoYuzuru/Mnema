@@ -158,13 +158,6 @@
         "oldestOpenCreatedAt": null
       }
     },
-    "widgetActions": {
-      "coverage": "withoutExercises > 0: show those materials (item list sort=exerciseCount); start exercise generation with AI for the selection",
-      "states": "DUE > 0: start a scheduled study session; otherwise NOT_STARTED > 0: start a scheduled session with new materials",
-      "dueByDay": "entry 0 > 0: start a scheduled session now; otherwise the first non-empty day names when the next session is worth starting",
-      "exercisesByMechanic": "a mechanic with 0 while others are used: add an exercise of that mechanic (the exercise editor) or generate one",
-      "captures": "open > 0: open the deck's unprocessed capture notes; create materials from them with AI"
-    },
     "notFound": {
       "type": "urn:mnema:problem:resource-not-found",
       "title": "Resource not found",
@@ -172,6 +165,19 @@
       "detail": "The requested resource does not exist.",
       "instance": "/api/decks/11111111-1111-4111-8111-111111111111/insights",
       "code": "RESOURCE_NOT_FOUND"
+    },
+    "presentation": {
+      "figures": [
+        "exercisesByMechanic",
+        "coverage",
+        "states",
+        "dueByDay",
+        "captures"
+      ],
+      "desktopColumns": 3,
+      "mechanicsColumnSpan": 2,
+      "tables": false,
+      "actions": false
     }
   },
   "items": {
@@ -403,6 +409,48 @@
       "partial": "Удалено 100 материалов. 1 не тронут: колода изменилась в другой вкладке. Обновите список.",
       "staleDeck": "Колода изменилась в другой вкладке. Ничего не удалено. Обновите список.",
       "holdToDeleteConsequence": "Удалит 7 материалов и 15 упражнений. История занятий сохранится."
+    }
+  },
+  "navigation": {
+    "first": {
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "memberKey": "22222222-2222-4222-8222-222222222222",
+      "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "deckVersion": "3",
+      "ordinal": 0,
+      "total": 2,
+      "previousMemberKey": null,
+      "nextMemberKey": "33333333-3333-4333-8333-333333333333"
+    },
+    "middle": {
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "memberKey": "22222222-2222-4222-8222-222222222222",
+      "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "deckVersion": "3",
+      "ordinal": 1,
+      "total": 3,
+      "previousMemberKey": "44444444-4444-4444-8444-444444444444",
+      "nextMemberKey": "33333333-3333-4333-8333-333333333333"
+    },
+    "last": {
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "memberKey": "22222222-2222-4222-8222-222222222222",
+      "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "deckVersion": "3",
+      "ordinal": 1,
+      "total": 2,
+      "previousMemberKey": "33333333-3333-4333-8333-333333333333",
+      "nextMemberKey": null
+    },
+    "singleton": {
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "memberKey": "22222222-2222-4222-8222-222222222222",
+      "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "deckVersion": "3",
+      "ordinal": 0,
+      "total": 1,
+      "previousMemberKey": null,
+      "nextMemberKey": null
     }
   }
 }

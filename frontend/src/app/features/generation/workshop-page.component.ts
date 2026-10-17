@@ -1,3 +1,5 @@
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import {
     ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild
 } from '@angular/core';
@@ -35,7 +37,7 @@ const UNREVIEWED: readonly ArtifactState[] = ['QUEUED', 'GENERATING', 'PROPOSED'
  */
 @Component({
     selector: 'app-workshop-page',
-    imports: [RouterLink, BatchPagerComponent, ProposalViewComponent, HoldToDeleteButtonComponent, ExerciseBatchReviewComponent, ReviseItemResultComponent,
+    imports: [RouterLink, TourAnchorDirective, BatchPagerComponent, ProposalViewComponent, HoldToDeleteButtonComponent, ExerciseBatchReviewComponent, ReviseItemResultComponent,
         ReviseExerciseResultComponent, WorkshopPlanComponent],
     providers: [WorkshopSessionStore],
     templateUrl: './workshop-page.component.html',
@@ -61,6 +63,7 @@ export class WorkshopPageComponent {
     private readonly router = inject(Router);
     private readonly transition = inject(PageTransition);
     private readonly toast = inject(ToastService);
+    private readonly tour = inject(TourEvents);
     private readonly capabilitiesApi = inject(CapabilitiesApiService);
     private readonly injector = inject(Injector);
     private readonly document = inject(DOCUMENT);
@@ -251,7 +254,17 @@ export class WorkshopPageComponent {
         const current = this.current();
         if (current === null) return;
         const approved = await this.store.approve(current.artifactId);
-        if (approved) this.advanceFrom(current.artifactId);
+        if (approved) {
+            // The tour's «material» step is done by a material that was approved into the deck.
+            this.tour.emit('material.published', this.publishedPayload());
+            this.advanceFrom(current.artifactId);
+        }
+    }
+
+    /** What the onboarding tour is told about an approval: the deck, and the material just published when the server named it. */
+    private publishedPayload(): Readonly<Record<string, string>> {
+        const member = this.store.lastMaterial();
+        return member === null ? { deckId: this.deckId() } : { deckId: this.deckId(), memberKey: member };
     }
 
     async reject(): Promise<void> {
@@ -310,7 +323,7 @@ export class WorkshopPageComponent {
     /** The confirming button is gone afterwards: focus goes to the title of the material on show, as after «Одобрить и далее». */
     async approveAll(): Promise<void> {
         this.confirmingAll.set(false);
-        await this.store.approveAll();
+        if (await this.store.approveAll() > 0) this.tour.emit('material.published', this.publishedPayload());
         afterNextRender(() => this.proposal()?.focusHeading(), { injector: this.injector });
     }
 

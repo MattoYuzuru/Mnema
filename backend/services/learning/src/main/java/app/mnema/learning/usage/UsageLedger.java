@@ -390,7 +390,49 @@ public class UsageLedger {
         return new Consumption(false);
     }
 
+    /**
+     * Counts one sponsored operation (Mnema pays, the user's plan is untouched): appends a ledger {@code DEBIT} of 0 credits tagged with {@code operation}, once per
+     * {@code idempotencyKey}, while the account has used fewer than {@code limit} of them. Joins the caller's transaction like {@link #consume}, so it commits or rolls back with
+     * the grade or transcript it covers. No bucket, counter or notification is touched.
+     *
+     * @param limit how many the account may have in all (per account, for ever); 0 sponsors nothing
+     * @return {@code true} when this call or an earlier call with the same key counted the operation (the caller must NOT also consume the plan's bucket), {@code false} when the
+     *         account has used its {@code limit} (the caller consumes the bucket as for any other check)
+     * @throws IllegalArgumentException the key was used for a different owner or operation
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean consumeSponsored(UUID owner, SponsoredOperation operation, long limit, String idempotencyKey, String reference) {
+        UuidPolicy.requireEntityId(owner, "owner");
+        Objects.requireNonNull(operation, "operation");
+        validateKey(idempotencyKey);
+        if (reference != null) validateKey(reference);
+        if (limit < 1) return false;
+        repository.lockSponsored(owner, operation);
+        Optional<UsageRepository.LedgerRow> existing = repository.ledgerByKey(idempotencyKey);
+        if (existing.isPresent()) {
+            var row = existing.get();
+            if (!owner.equals(row.ownerId()) || !operation.name().equals(row.operation()) || !row.kind().equals("DEBIT")) {
+                throw new IllegalArgumentException("Idempotency key reused for a different consumption");
+            }
+            return true;
+        }
+        if (repository.sponsoredCount(owner, operation) >= limit) return false;
+        Instant now = clock.now();
+        boolean appended = repository.insertLedger(new LedgerEntry(UUID.randomUUID(), owner, "DEBIT", 0, null, operation.name(),
+                rateCard.version(), calendar.period(now).id(), idempotencyKey, null, reference, null, null, now));
+        if (!appended) throw new IllegalStateException("Sponsored consumption key raced under the account lock");
+        return true;
+    }
+
     // --------------------------------------------------------------- read-only
+
+    /** How many entries of a sponsored operation the account has used. A plain read. */
+    @Transactional(readOnly = true)
+    public long sponsoredUsed(UUID owner, SponsoredOperation operation) {
+        UuidPolicy.requireEntityId(owner, "owner");
+        Objects.requireNonNull(operation, "operation");
+        return repository.sponsoredCount(owner, operation);
+    }
 
     /**
      * Whether {@code amount} of a fair-use bucket or count cap still fits every window of the owner's allowance now. A plain

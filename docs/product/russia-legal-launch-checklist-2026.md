@@ -4,7 +4,7 @@ artifact:
   type: launch-checklist
   title: "Mnema legal and payment launch status"
   status: proposed
-  updated_at: "2026-10-09"
+  updated_at: "2026-10-15"
   owners: ["project-owner"]
 ---
 
@@ -14,7 +14,19 @@ Owner-reported state on 2026-10-08; sensitive filing evidence stays outside GitH
 This checklist records launch dependencies, not legal advice or a substitute for
 review of the actual recipients, contracts and data flows.
 
-## Current status
+## AI admission update — 2026-10-15
+
+The owner reported receiving the required RKN confirmations and explicitly confirmed the
+quality review in the AI launch chat. Policy and terms **1.7** disclose text generation,
+assessment, Google TTS and licensed image-search recipients, plus the conditional voice flow.
+The original-audio ABROAD STT decision remains open in the [AI product contract](ai-layer-2026-10.md#6-legal-и-human-gates),
+so that capability stays off. Operational switches and individual voice consent remain;
+image/video generation are unavailable and Yandex web-search credentials are still missing.
+This update supersedes the historical AI-disabled/policy-version statements below;
+production rollout evidence belongs in the [AI runbook](../operations/ai-runbook.md).
+It does not open payments or change the accepted plans.
+
+## Historical launch status (2026-10-08)
 
 - The owner is an **ИП на НПД**. Status on 2026-10-08, according to the owner: the
   main personal-data operator notification is **confirmed**, and the

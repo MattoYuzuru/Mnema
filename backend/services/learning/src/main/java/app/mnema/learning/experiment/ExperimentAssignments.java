@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -28,28 +29,41 @@ public class ExperimentAssignments {
         this.secret = secret.isBlank() ? null : secret.getBytes(StandardCharsets.UTF_8);
     }
 
-    /** The variant of every enabled experiment for {@code account}, ordered by key. */
+    /** The variant of every enabled client-visible experiment for {@code account}, ordered by key; a server-only experiment is never listed. */
     public Map<String, String> variants(UUID account) {
         Map<String, String> variants = new TreeMap<>();
-        settings.enabled().keySet().forEach(key -> variants.put(key, variant(account, key)));
+        settings.enabled().values().stream().filter(ExperimentSettings.Experiment::client).forEach(experiment -> variants.put(experiment.key(), variant(account, experiment.key())));
         return variants;
     }
 
     /** @return the variant of {@code account} in {@code key}, {@code control} for an unknown or disabled experiment or a missing secret */
     public String variant(UUID account, String key) {
+        return assigned(account, key).orElse(ExperimentSettings.CONTROL);
+    }
+
+    /**
+     * @return the variant of {@code account} in {@code key}, or empty when the experiment is unknown or disabled or the secret is missing: a caller that
+     * must not turn "nobody is bucketed" into "everybody is held out" (a holdout) asks this instead of {@link #variant}
+     */
+    public Optional<String> assigned(UUID account, String key) {
         ExperimentSettings.Experiment experiment = settings.enabled().get(key);
-        if (experiment == null || secret == null) return ExperimentSettings.CONTROL;
+        if (experiment == null || secret == null) return Optional.empty();
         int bucket = bucket(account, key);
         int upper = 0;
         for (ExperimentSettings.Variant variant : experiment.variants()) {
             upper += variant.weight();
-            if (bucket < upper) return variant.name();
+            if (bucket < upper) return Optional.of(variant.name());
         }
-        return ExperimentSettings.CONTROL;
+        return Optional.of(ExperimentSettings.CONTROL);
     }
 
     boolean known(String key) {
         return settings.isEnabled(key);
+    }
+
+    /** Whether a client may count events against {@code key}: enabled and not server-only. */
+    boolean clientVisible(String key) {
+        return settings.isClient(key);
     }
 
     private int bucket(UUID account, String key) {

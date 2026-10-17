@@ -12,7 +12,7 @@
     <p class="notice compact" role="status">Черновик восстановлен из этой вкладки.</p>
   }
 
-  <form class="metadata-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+  <form class="metadata-form" mnTourAnchor="own.details" [formGroup]="form" (ngSubmit)="submit()" novalidate>
     <div class="field">
       <label for="create-title">Название <span aria-hidden="true">*</span></label>
       <textarea class="title-field" id="create-title" rows="2" formControlName="title" maxlength="400" (input)="syncDraft()"
@@ -79,7 +79,7 @@
     <div class="form-actions">
       <a class="button quiet" routerLink="/decks">Отмена</a>
       <button class="button primary" type="submit" [disabled]="!canStartNewMutation(mutation)">
-        {{ mutation.phase === 'pending' ? 'Создаём…' : 'Создать колоду' }}
+        {{ mutation.phase === 'pending' ? 'Создаём…' : createLabel }}
       </button>
     </div>
   </form>

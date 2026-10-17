@@ -10,6 +10,7 @@ import { OwnDeck } from './own-deck.models';
 import { DeckListState, OwnDecksStore } from './own-decks.store';
 import { OwnDecksListPageComponent } from './own-decks-list-page.component';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
+import { AttentionCoordinator } from '../../core/onboarding/attention-coordinator';
 import { PromoPopupService } from '../promo/promo-popup.service';
 import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 import { CommunityApiService } from '../community/community-api.service';
@@ -24,12 +25,15 @@ describe('OwnDecksListPageComponent', () => {
     let fixture: ComponentFixture<OwnDecksListPageComponent>;
     let store: SpyObj<OwnDecksStore>;
     let promoPopup: SpyObj<PromoPopupService>;
+    /** What the attention coordinator says about the promo window: false while the journey is still being read. */
+    const promoAllowed = signal(true);
     const state = signal<DeckListState>({
         phase: 'ready', items: [metadataFixture.detail as unknown as OwnDeck], nextCursor: null,
         operation: null, failure: null
     });
 
     beforeEach(async () => {
+        promoAllowed.set(true);
         state.set({
             phase: 'ready', items: [metadataFixture.detail as unknown as OwnDeck], nextCursor: null,
             operation: null, failure: null
@@ -44,7 +48,8 @@ describe('OwnDecksListPageComponent', () => {
         promoPopup = spyObj<PromoPopupService>({ request: vi.fn().mockName('PromoPopupService.request').mockResolvedValue(undefined) });
         await TestBed.configureTestingModule({
             imports: [OwnDecksListPageComponent],
-            providers: [provideRouter([]), { provide: PromoPopupService, useValue: promoPopup }]
+            providers: [provideRouter([]), { provide: PromoPopupService, useValue: promoPopup },
+                { provide: AttentionCoordinator, useValue: { canShow: () => promoAllowed() } }]
         }).overrideComponent(OwnDecksListPageComponent, {
             set: { providers: [{ provide: OwnDecksStore, useValue: store }] }
         }).compileComponents();
@@ -134,6 +139,25 @@ describe('OwnDecksListPageComponent', () => {
         expect(promoPopup.request).toHaveBeenCalledTimes(1);
     });
 
+    it('asks again when the journey has been read and the coordinator lets the promo through, so a visit that loaded the list first keeps its chance', async () => {
+        TestBed.resetTestingModule();
+        promoAllowed.set(false);
+        promoPopup.request.mockClear();
+        await TestBed.configureTestingModule({
+            imports: [OwnDecksListPageComponent],
+            providers: [provideRouter([]), { provide: PromoPopupService, useValue: promoPopup },
+                { provide: AttentionCoordinator, useValue: { canShow: () => promoAllowed() } }]
+        }).overrideComponent(OwnDecksListPageComponent, { set: { providers: [{ provide: OwnDecksStore, useValue: store }] } }).compileComponents();
+        fixture = TestBed.createComponent(OwnDecksListPageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(promoPopup.request).not.toHaveBeenCalled();
+        promoAllowed.set(true);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(promoPopup.request).toHaveBeenCalledTimes(1);
+    });
+
     it('keeps loaded rows visible when loading another page fails', () => {
         state.set({
             ...state(), phase: 'error', operation: 'next', nextCursor: 'opaque',
@@ -183,6 +207,7 @@ describe('OwnDecksListPageComponent link to the community', () => {
             providers: [
                 provideRouter([]),
                 { provide: PromoPopupService, useValue: { request: vi.fn().mockResolvedValue(undefined) } },
+                { provide: AttentionCoordinator, useValue: { canShow: () => true } },
                 { provide: COMMUNITY_LAUNCH, useValue: launched },
                 { provide: CommunityApiService, useValue: { facets } }
             ]

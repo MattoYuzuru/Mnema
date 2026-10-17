@@ -30,7 +30,8 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
             { id: 'feedback', label: 'Обратная связь' },
             { id: 'cards', label: 'Карточки и области' },
             { id: 'update', label: 'Обновление копии' },
-            { id: 'community', label: 'Сообщество' }
+            { id: 'community', label: 'Сообщество' },
+            { id: 'tour', label: 'Знакомство' }
         ]
     },
     { title: 'Сборка', sections: [{ id: 'screen', label: 'Пример экрана' }] }
@@ -74,6 +75,20 @@ export const PALETTE: readonly { readonly title: string; readonly tokens: readon
             { token: '--mn-danger', role: 'Ошибка, необратимое действие' },
             { token: '--mn-caution', role: 'Внимание, конфликт версий' }
         ]
+    },
+    {
+        title: 'Ночь и тур',
+        tokens: [
+            { token: '--mn-night', role: 'Ночная поверхность: приветствие, поздравление' },
+            { token: '--mn-on-night', role: 'Текст на ночи; бумажная кнопка ночи' },
+            { token: '--mn-on-night-muted', role: 'Вторичный текст на ночи' },
+            { token: '--mn-star-lavender', role: 'Звёзды, рубрика на ночи, рамка выреза' },
+            { token: '--mn-star-paper', role: 'Бумажные звёзды' },
+            { token: '--mn-scrim', role: 'Чернильная вуаль тура' },
+            { token: '--mn-glow', role: 'Одно свечение главной кнопки ночи' },
+            { token: '--mn-path-hover', role: 'Лавандовая заливка: удержание, hover шеврона вехи' },
+            { token: '--mn-night-wave', role: 'Волна нажатия на бумажных кнопках ночи' }
+        ]
     }
 ];
 
@@ -89,7 +104,12 @@ export const SEMANTIC_PAIRS: readonly SemanticRow[] = [
     { role: 'Ошибка', foreground: '--mn-danger', background: '--mn-sheet', where: '.field-error, .notice.error' },
     { role: 'Успех', foreground: '--mn-positive', background: '--mn-sheet', where: '.notice.success' },
     { role: 'Внимание', foreground: '--mn-caution', background: '--mn-sheet', where: '.notice.warning' },
-    { role: 'Граница поля', foreground: '--mn-field-border', background: '--mn-sheet', where: 'input, textarea (нетекстовый порог 3:1)' }
+    { role: 'Граница поля', foreground: '--mn-field-border', background: '--mn-sheet', where: 'input, textarea (нетекстовый порог 3:1)' },
+    { role: 'Текст на ночи', foreground: '--mn-on-night', background: '--mn-night', where: 'app-night-sky: заголовки, основной текст' },
+    { role: 'Вторичный текст на ночи', foreground: '--mn-on-night-muted', background: '--mn-night', where: 'app-night-sky: .muted' },
+    { role: 'Рубрика на ночи', foreground: '--mn-star-lavender', background: '--mn-night', where: 'app-night-sky: .eyebrow' },
+    { role: 'Бумажная кнопка ночи', foreground: '--mn-ink', background: '--mn-on-night', where: 'app-night-sky: .button.primary' },
+    { role: 'Заливка удержания', foreground: '--mn-ink', background: '--mn-path-hover', where: 'Удержание завершения, hover шеврона вехи' }
 ];
 
 /** The spacing and size steps of `src/theme/tokens.css`. */

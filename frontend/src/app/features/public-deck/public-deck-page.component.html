@@ -61,7 +61,7 @@
         @if (materialKey() !== null) {
           <a class="back-link" [routerLink]="[]"><span aria-hidden="true">←</span> К колоде</a>
         }
-        <header class="page-heading hub-heading">
+        <header class="page-heading hub-heading" mnTourAnchor="community.deck">
           <div class="titles">
             <p class="eyebrow">Колода</p>
             <h1 class="hub-title" tabindex="-1">{{ current.title }}</h1>
@@ -96,7 +96,7 @@
               <a class="button primary" [routerLink]="['/decks', copy.deckId]">{{ text.openCopy }}</a>
               @if (copy.preparing) { <p class="hint copy-hint">{{ text.copyPreparing }}</p> }
             } @else {
-              <button type="button" class="button primary" [attr.aria-busy]="copying() ? 'true' : null" [attr.aria-disabled]="copying() ? 'true' : null"
+              <button type="button" class="button primary" mnTourAnchor="community.add" [attr.aria-busy]="copying() ? 'true' : null" [attr.aria-disabled]="copying() ? 'true' : null"
                 (click)="addCopy()">{{ copying() ? text.adding : text.add }}</button>
             }
             @if (copyNotice(); as notice) { <p class="notice error copy-notice" role="alert">{{ notice }}</p> }

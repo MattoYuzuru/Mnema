@@ -1,7 +1,7 @@
 # AI-17 operations and evaluation evidence
 
 Status: operations implementation merged through [PR #370](https://github.com/MattoYuzuru/Mnema/pull/370)
-as `f554a2b5`; owner acceptance of the evaluation remains pending.
+as `f554a2b5`. On 2026-10-15 the owner confirmed in the AI launch chat that the required quality review was completed and approved, together with the RKN approvals. The historical report and its machine-evidence limitations below are preserved; runtime prompt v1 is unchanged.
 Issue [#300](https://github.com/MattoYuzuru/Mnema/issues/300). Final integrated S1–S8 evidence is tracked
 in [#302](https://github.com/MattoYuzuru/Mnema/issues/302). This record claims neither deployment,
 prompt activation nor enabled production AI.
@@ -25,7 +25,7 @@ The [complete candidate report](./candidate-v2-report.md) and [JSON](./candidate
 cover all 300 generation fixtures (80 notes, 80 prompts, 60 edits, 80 exercises), including 90
 held-out cases. The production text route was tested with candidate prompt **v2** and
 `golden-rubric-v3`; both acceptance judges answered every fixture. Active runtime prompts remain
-**v1**. Neither a new prompt activation nor a human-reviewed quality gate is claimed.
+**v1**. The machine report alone claims neither a new prompt activation nor a human-reviewed quality gate; the owner attestation dated 2026-10-15 above updates the human-review status.
 
 | Measure | Result |
 |---|---:|
@@ -59,7 +59,7 @@ This corpus covers short, synthetic text inputs, not media, large decks, long so
 production usage/queue behavior or real-user acceptance. The database/role/retention behavior
 is verified separately by integration tests. Judge opinions still need owner calibration.
 
-## Owner evidence still required
+## Historical owner-review handoff (accepted by the owner on 2026-10-15)
 
 The owner review files live outside the repository, in `~/.local/share/mnema/epic-77-run5-eval/`: `owner-calibration-review.md` (the review itself) and
 `calibration-extra/report.json` (the 20 additional cases and their judge opinions); the candidate report is in this directory. The `owner-calibration-review.md` deliverable contains **60 unique cases**: the balanced
@@ -95,8 +95,7 @@ review and final slice gates are linked from PR #370; the final run5 composition
 
 V39 adds notification triggers/assessment claims; V40 adds ephemeral intent requests. They were
 unmerged/unapplied when numbered. Before an older runtime rollback, drain or remove expired
-ephemeral requests so text does not remain without its sweeper. Keep the public AI flags disabled
-while the human/quality gates are pending. Do not reset retained owner databases.
+ephemeral requests so text does not remain without its sweeper. The owner confirmed the human/quality gates on 2026-10-15; use the current AI runbook for launch state. Do not reset retained owner databases.
 
 Official references consulted: [PostgreSQL NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html)
 for commit-only wake hints and sweep fallback;

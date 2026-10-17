@@ -1,3 +1,4 @@
+import { isSampleNotShareable, sampleShareRefusedText } from '../../../core/onboarding/sample-deck';
 import { BlockedMedia, ChecklistKey, ContentLevel, PublicationFailure, RELEASE_NOTE_MAX_CODE_POINTS } from './publication.models';
 
 /** The words of the publication block and the «Сделать публичной» checklist (docs/product/community-decks.md; plain language, no long dashes). */
@@ -98,6 +99,7 @@ export const CONTENT_LEVEL_LABEL: Readonly<Record<ContentLevel, string>> = {
 export function publicationFailureText(failure: PublicationFailure | null): string {
     if (failure === null || failure.status === 0) return PUBLICATION_TEXT.network;
     if (failure.status === 412) return PUBLICATION_TEXT.stale;
+    if (isSampleNotShareable(failure.status, failure.code)) return sampleShareRefusedText();
     if (failure.status === 409 && failure.code === 'PUBLICATION_REQUIREMENTS') {
         return CHECKLIST_TEXT.rejected(failure.failed.map(key => CHECKLIST_LABEL[key]));
     }

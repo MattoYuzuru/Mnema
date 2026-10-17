@@ -1,5 +1,6 @@
 """Fixture safety regressions; not a substitute for the real browser composition."""
 import contextlib
+import datetime
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
@@ -493,6 +494,55 @@ module.main()
         # The register limit of the disposable Identity (ten per address) is cleared before the people are made; the token can set a public-profile consent.
         self.assertEqual(["DELETE FROM app_identity.rate_limit"], statements)
         self.assertIn("account.write", token.call_args.kwargs["scope"])
+
+    def test_onboarding_scenario_is_exclusive_wired_enables_the_journey_for_its_run_and_is_syntactically_valid(self):
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("onboarding.mjs").read_text()
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn("import { runOnboarding } from './onboarding.mjs'", driver)
+        self.assertIn("config.onboarding", driver)
+        self.assertIn('"onboarding": getattr(self.args, "onboarding", False)', runner)
+        self.assertIn('"onboarding.mjs"', runner)
+        # Everything a learner does is the real UI; nothing is injected, stubbed or intercepted, and no stage is finished through a hidden fallback.
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("Fetch.failRequest", source)
+        self.assertIn("openGuestTab", driver)
+        for stage in ("welcome", "survey", "own_details", "own_create_deck", "pause_resume", "own_material", "own_exercise", "own_study", "own_finale", "replay", "hold", "skip",
+                      "community", "a11y", "sign_out"):
+            self.assertIn(f"stage('{stage}'", source)
+        # The flag of the journey and the release instant are for the ordinary Learning of this disposable run (inside the community branch), never for another process.
+        instant = datetime.datetime(2026, 10, 17, 12, 0, tzinfo=datetime.timezone.utc)
+        switches = HARNESS.onboarding_switches(instant)
+        self.assertEqual({"LEARNING_ONBOARDING_ENABLED": "true", "LEARNING_ONBOARDING_ELIGIBLE_FROM": "2026-10-17T11:55:00Z"}, switches)
+        self.assertNotIn("LEARNING_ONBOARDING_EXPERIMENT_ENABLED", switches)
+        self.assertEqual(1, runner.count("**onboarding_switches()"))
+        self.assertIn("**recs_switches()", runner)
+        self.assertIn('getattr(self.args, "community", False) and not generation and not promo', runner)
+        self.assertTrue(HARNESS.catalogue_fixture_enabled(SimpleNamespace(onboarding=True)))
+        self.assertFalse(HARNESS.catalogue_fixture_enabled(SimpleNamespace(onboarding=False)))
+        node = shutil.which("node")
+        if node is not None:
+            for name in ("onboarding.mjs", "browser.mjs"):
+                result = subprocess.run([node, "--check", str(Path(__file__).with_name(name))], capture_output=True)
+                self.assertEqual(0, result.returncode, name)
+        # Exclusive: it registers accounts of its own and never runs another scenario's flow.
+        for extra in (["--community"], ["--updates"], ["--catalog"], ["--recs"], ["--authoring"], ["--authoring", "--media"], ["--authoring", "--generation"],
+                      ["--authoring", "--assessment"], ["--authoring", "--only-promo"]):
+            with self.subTest(extra=extra), patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--onboarding", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+
+    def test_onboarding_gets_the_catalogue_composition_and_its_fixture_only_in_its_disposable_run(self):
+        fixture, server = self.proxy()
+        fixture.args.onboarding = True
+        status, _, body = self.request(server, "GET", "/app-config.js")
+        self.assertEqual(200, status)
+        self.assertIn('"communityLaunched": true', body.decode())
+        with patch.object(fixture, "catalog_rank", return_value={"generations": 1, "scheduledJobsDone": 1}):
+            self.assertEqual(200, self.request(server, "POST", "/__fixture/catalog-rank", "{}")[0])
+        fixture.args.onboarding = False
+        self.assertEqual(404, self.request(server, "POST", "/__fixture/catalog-rank", "{}")[0])
 
     def test_recs_isolated_flags_and_exclusivity(self):
         self.assertEqual({"LEARNING_COMMUNITY_EVENTS_ENABLED": "true", "LEARNING_COMMUNITY_FOR_YOU_ENABLED": "true"}, HARNESS.recs_switches())

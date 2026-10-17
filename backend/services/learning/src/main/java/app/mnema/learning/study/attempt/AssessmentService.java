@@ -7,6 +7,7 @@ import app.mnema.learning.capability.SemanticAssessmentProvider.GradeRequest;
 import app.mnema.learning.catalog.exercise.EvaluatorPolicy;
 import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.catalog.exercise.Rubric;
+import app.mnema.learning.onboarding.SampleChecks;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
@@ -49,7 +50,8 @@ import java.util.UUID;
  * <p><b>Authority.</b> The model only gives verdicts. {@link SemanticPolicy} turns them into a judgement under a
  * {@link SemanticStrictness} that is a function of the objective's state; the evidence goes through the baseline reducer like any
  * other, and nothing here writes {@code StudyState} directly. Provider uncertainty is never a result. A grade is paid for
- * (one fair-use answer check) only when it is delivered, in the transaction that stores it.
+ * (one fair-use answer check) only when it is delivered, in the transaction that stores it. The first free checks of an account in its onboarding sample deck are counted
+ * as {@link SampleChecks} instead of the plan's bucket (OB-203).
  *
  * <p><b>Locks.</b> Every command takes the attempt advisory lock first, then the session row, the presentation row, the
  * assessment row and the objective's state row, in that order; the deadline sweeper only touches overdue assessment rows with
@@ -76,19 +78,21 @@ public class AssessmentService {
     private final AttemptConclusion conclusion;
     private final LearningCapabilities capabilities;
     private final UsageLedger ledger;
+    private final SampleChecks sampleChecks;
     private final AssessmentSettings settings;
     private final ApplicationEventPublisher events;
     private final MeterRegistry meters;
     private final TransactionTemplate transaction;
 
     public AssessmentService(AssessmentRepository assessments, AttemptRepository attempts, AttemptConclusion conclusion,
-                             LearningCapabilities capabilities, UsageLedger ledger, AssessmentSettings settings,
-                             ApplicationEventPublisher events, PlatformTransactionManager transactions, MeterRegistry meters) {
+                             LearningCapabilities capabilities, UsageLedger ledger, SampleChecks sampleChecks,
+                             AssessmentSettings settings, ApplicationEventPublisher events, PlatformTransactionManager transactions, MeterRegistry meters) {
         this.assessments = assessments;
         this.attempts = attempts;
         this.conclusion = conclusion;
         this.capabilities = capabilities;
         this.ledger = ledger;
+        this.sampleChecks = sampleChecks;
         this.settings = settings;
         this.events = events;
         this.meters = meters;
@@ -149,7 +153,7 @@ public class AssessmentService {
                 current ? state.orElseThrow().level() : 0, current ? state.orElseThrow().correctStreak() : 0,
                 !assessments.attemptedExercise(actor, presentation.deckId(), presentation.exerciseId(), presentation.learningEpoch()));
         String unavailable = !capabilities.aiAssessment().available() ? "CAPABILITY_UNAVAILABLE"
-                : !ledger.fairUseFits(actor, Bucket.ASSESSMENT, 1) ? "USAGE_LIMIT"
+                : !(sampleChecks.covers(actor, deck) || ledger.fairUseFits(actor, Bucket.ASSESSMENT, 1)) ? "USAGE_LIMIT"
                 : assessments.inFlight(actor) >= settings.maxInFlight() ? "BUSY" : null;
         AssessmentRepository.Row row = new AssessmentRepository.Row(command.attemptId(), actor, session,
                 presentation.presentationId(), deck, unavailable == null ? "ASSESSING" : "UNAVAILABLE", unavailable,
@@ -343,7 +347,10 @@ public class AssessmentService {
         }
         SemanticPolicy.Graded graded = (SemanticPolicy.Graded) result;
         // paid only for a delivered grade, in this transaction; a refusal rolls it back and the caller falls back to self-check
-        ledger.consume(row.accountId(), Bucket.ASSESSMENT, 1, "assessment:" + attemptId, attemptId.toString());
+        // one of the account's free checks in its onboarding sample deck (OB-203) is counted instead of the plan's bucket; past them the check is paid as ever
+        if (!sampleChecks.consume(row.accountId(), row.deckId(), "sample-check:assessment:" + attemptId, attemptId.toString())) {
+            ledger.consume(row.accountId(), Bucket.ASSESSMENT, 1, "assessment:" + attemptId, attemptId.toString());
+        }
         AttemptEvaluation evaluation = evaluation(graded, strictness, rubric, presentation, row, now);
         conclusion.conclude(row.accountId(), row.deckId(), row.sessionId(), command(row, presentation), presentation, evaluation,
                 presentation.evaluator(), row.payloadHash(), now);

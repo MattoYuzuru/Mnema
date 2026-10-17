@@ -44,7 +44,8 @@ class DeckHubContractFixtureTest {
             assertThat(insights.path("timezone").stringValue(null)).isEqualTo(HUB.path("constants").path("defaultTimezone").stringValue(null));
         }
         assertThat(HUB.path("constants").path("mechanics").valueStream().map(JsonNode::stringValue).toList()).isEqualTo(MECHANICS);
-        assertThat(HUB.path("insights").path("widgetActions").size()).isEqualTo(5);
+        assertThat(HUB.path("insights").path("presentation").path("figures").size()).isEqualTo(5);
+        assertThat(HUB.path("insights").path("presentation").path("actions").booleanValue()).isFalse();
     }
 
     @Test

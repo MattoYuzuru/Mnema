@@ -716,3 +716,35 @@ export function parseReceipt(value: unknown): CommandReceipt {
         delivery: nullable(o['delivery'], delivery)
     };
 }
+
+/** `GET /api/admin/onboarding/experiment` (contracts/onboarding): aggregates of the holdout `onboarding_v1`, never an account. */
+export interface OnboardingExperimentGroup {
+    readonly variant: string;
+    readonly accounts: number;
+    readonly activated: number;
+    readonly returned: number;
+}
+
+export interface OnboardingExperimentReport {
+    readonly experiment: string;
+    readonly from: string;
+    readonly to: string;
+    readonly minimumGroup: number;
+    readonly smallSample: boolean;
+    readonly groups: readonly OnboardingExperimentGroup[];
+}
+
+export function parseOnboardingReport(value: unknown): OnboardingExperimentReport {
+    const o = object(value);
+    return {
+        experiment: str(o['experiment'], 40),
+        from: day(o['from']),
+        to: day(o['to']),
+        minimumGroup: integer(o['minimumGroup']),
+        smallSample: flag(o['smallSample']),
+        groups: array(o['groups'], group => {
+            const g = object(group);
+            return { variant: str(g['variant'], 32), accounts: integer(g['accounts']), activated: integer(g['activated']), returned: integer(g['returned']) };
+        }, 20)
+    };
+}

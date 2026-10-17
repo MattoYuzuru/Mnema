@@ -69,9 +69,18 @@ export async function runRecs(ctx) {
     await until(() => actor.page(`return [...document.querySelectorAll('main button')].some(b=>b.textContent.trim()===args[0]&&!b.disabled&&b.getClientRects().length>0);`, text), `button «${text}» did not become available`, 30000);
     await actor.enter('main button', text);
   };
-  const topicCheck = async (actor, text) => {
-    const selector = 'app-interest-picker input[data-interest-topic="spanish"]';
-    need(await actor.page('return Boolean(document.querySelector(args[0]));', selector), `interest checkbox «${text}» missing`);
+  const topicCheck = async (actor, topicId) => {
+    const topic = world.leaves.find(topic => topic.id === topicId);
+    need(topic, `interest topic ${topicId} missing from catalogue`);
+    const selector = 'app-interest-picker button[data-interest-topic="' + topicId + '"]';
+    if (!(await actor.page('return Boolean(document.querySelector(args[0]));', selector)) && topic.parentId !== null) {
+      await actor.enter('app-interest-picker button[data-interest-category="' + topic.parentId + '"]');
+      for (let step = 0; step < Math.ceil(world.leaves.filter(candidate => candidate.parentId === topic.parentId).length / 5); step++) {
+        if (await actor.page('return Boolean(document.querySelector(args[0]));', selector)) break;
+        await actor.enter('app-interest-picker button.more');
+      }
+    }
+    need(await actor.page('return Boolean(document.querySelector(args[0]));', selector), `interest topic ${topicId} is unreachable`);
     await actor.focus(selector); await actor.press('Space');
   };
 
@@ -80,10 +89,22 @@ export async function runRecs(ctx) {
     world.leaves = p.body.availableTopics;
     need((await recommendations()).body.decks.length === 0, 'empty catalogue has recommendations');
     for (const path of ['/api/community/interests', '/api/community/recommendations']) need((await learning('GET', path, { bearer: null })).status === 401, 'guest private route admitted');
-    await open(guest); need(!(await guest.has('Что хотите изучать?')), 'guest sees interest onboarding');
+    await open(guest); need(!(await guest.has('Что вы хотите изучать в Мнеме?')), 'guest sees interest onboarding');
     need((await forYouCards(guest)).length === 0, 'guest sees For you');
-    await open(member); need(await member.has('Что хотите изучать?'), 'first-entry chips missing');
-    await shoot(member, 'desktop-first-entry'); return { privateRoutes: true, emptyShelfHidden: true, guestUntracked: true };
+    await open(member); need(await member.has('Что вы хотите изучать в Мнеме?'), 'first-entry chips missing');
+    await member.enter('app-interest-picker button[data-interest-category="languages"]');
+    await member.focus('app-interest-picker button[data-interest-topic="english"]'); await member.press('Space');
+    await until(() => exists('app-interest-picker .chosen [data-interest-topic="english"]', member.tab), 'selected topic did not stay visible');
+    await member.tab.call('Emulation.setEmulatedMedia', { features: [{ name: 'forced-colors', value: 'active' }] });
+    try {
+      const colours = await member.page(`const button=document.querySelector('app-interest-picker .chosen [data-interest-topic="english"]');
+        const style=getComputedStyle(button); return {foreground:style.color,background:style.backgroundColor,outline:style.outlineStyle,width:style.outlineWidth,pressed:button.getAttribute('aria-pressed')};`);
+      need(colours.pressed === 'true' && colours.foreground !== colours.background && colours.outline === 'solid' && parseFloat(colours.width) >= 2,
+        'forced-colours selected topic is indistinguishable: ' + JSON.stringify(colours));
+      await shoot(member, 'desktop-interest-forced-colours');
+    } finally { await member.tab.call('Emulation.setEmulatedMedia', { features: [] }); }
+    await member.focus('app-interest-picker .chosen [data-interest-topic="english"]'); await member.press('Space');
+    await shoot(member, 'desktop-first-entry'); return { privateRoutes: true, emptyShelfHidden: true, guestUntracked: true, topicForcedColours: true };
   });
 
   await stage('seed', ['empty_and_guests'], async () => {
@@ -114,7 +135,7 @@ export async function runRecs(ctx) {
   });
 
   await stage('onboarding_and_shelf', ['seed'], async () => {
-    await open(member); await topicCheck(member, 'Испанский'); await button(member, 'Сохранить интересы');
+    await open(member); await topicCheck(member, 'spanish'); await button(member, 'Сохранить интересы');
     await until(async () => (await profile()).body.selectedTopics.some(t => t.id === 'spanish'), 'selection not persisted');
     await until(async () => (await forYouCards(member)).length >= 4, 'For you shelf did not appear', 30000);
     need(await member.has('Потому что вы учите'), 'explanation missing');
@@ -193,7 +214,7 @@ export async function runRecs(ctx) {
     await shoot(member, 'profile-reset');
     await open(member, '/community', MOBILE);
     need((await forYouCards(member)).length === 0, 'For you remained after reset');
-    need(!(await member.has('Что хотите изучать?')), 'reset nags with first-entry prompt');
+    need(!(await member.has('Что вы хотите изучать в Мнеме?')), 'reset nags with first-entry prompt');
     return { resetOldSignals: true, profileVisible: true, shelfHidden: true, noRepeatedOnboarding: true };
   });
   await stage('sparse', ['profile_reset'], async () => {
@@ -202,8 +223,7 @@ export async function runRecs(ctx) {
     need(matches.length > 0 && matches.length < 4, 'sparse fixture must have one to three matching candidates');
     await open(member, '/profile', MOBILE);
     await button(member, 'Изменить интересы');
-    await member.focus('app-interest-picker input[data-interest-topic="' + topic.id + '"]');
-    await member.press('Space'); await button(member, 'Сохранить интересы');
+    await topicCheck(member, topic.id); await button(member, 'Сохранить интересы');
     await until(async () => (await profile()).body.selectedTopics.some(t => t.id === topic.id), 'sparse interest not saved');
     await open(member, '/community', MOBILE);
     need((await recommendations()).body.decks.length === 0, 'sparse interest pool produced a personal shelf');
