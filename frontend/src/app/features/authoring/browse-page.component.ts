@@ -1,3 +1,4 @@
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -18,7 +19,7 @@ import { ItemDetail, isTakenDown, newCommandId } from './authoring.models';
 
 @Component({
     selector: 'app-browse-page',
-    imports: [RouterLink, NativeMediaSurfaceComponent, HoldToDeleteButtonComponent, AskMnemaComponent, ReadingFrameComponent],
+    imports: [RouterLink, TourAnchorDirective, NativeMediaSurfaceComponent, HoldToDeleteButtonComponent, AskMnemaComponent, ReadingFrameComponent],
     templateUrl: './browse-page.component.html',
     styleUrl: './authoring-page.css',
     changeDetection: ChangeDetectionStrategy.OnPush

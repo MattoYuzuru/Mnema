@@ -1,3 +1,4 @@
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
 import {
     ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild
 } from '@angular/core';
@@ -28,8 +29,9 @@ import {
  */
 @Component({
     selector: 'app-new-material-page',
-    imports: [GenerationComposerComponent, ItemEditorPageComponent],
+    imports: [GenerationComposerComponent, ItemEditorPageComponent, TourAnchorDirective],
     template: `
+      <div class="tour-region" mnTourAnchor="own.material">
       @switch (mode()) {
         @case ('loading') {
           <section class="page-loading"><h1 tabindex="-1">Новый материал</h1><p role="status">Готовим страницу…</p></section>
@@ -46,9 +48,11 @@ import {
           <app-item-editor-page />
         }
       }
+      </div>
     `,
     styles: [`
       :host { display: block; min-inline-size: 0; }
+      .tour-region { min-inline-size: 0; }
       .page-loading { inline-size: min(56rem, 100%); margin-inline: auto; padding: clamp(1.5rem, 6vw, 5rem) clamp(1.125rem, 5vw, 4rem); color: var(--mn-body); }
       .page-loading h1 { margin: 0 0 1rem; color: var(--mn-ink); font: 500 clamp(2rem, 5vw, 3.5rem)/1.12 var(--mn-font-display, Georgia, serif); }
       .ai-note { inline-size: min(76rem, 100%); margin: 1rem auto 0; padding: .75rem clamp(1.125rem, 5vw, 4rem); box-sizing: border-box; border-inline-start: 4px solid var(--mn-ink); background: var(--mn-soft); color: var(--mn-body); }

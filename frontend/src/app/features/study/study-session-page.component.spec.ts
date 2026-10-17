@@ -18,6 +18,7 @@ import { StudySessionPageComponent } from './study-session-page.component';
 import { MEDIA_PLAYBACK_RESOLVER, MediaPlaybackResolver } from './media-playback-resolver';
 import { clone, fakePlayback, ids, mechanics } from './study-test-data';
 import { spyObj, type SpyObj, lastCall } from '../../../testing/mocks';
+import { TourEvents } from '../../core/onboarding/tour-events';
 
 describe('StudySessionPageComponent', () => {
     const deck = metadataFixture.detail as unknown as OwnDeck;
@@ -572,6 +573,36 @@ describe('StudySessionPageComponent', () => {
         api.start.mockReturnValue(of({ value: { ...sessionOf([fixtures['selfCheck']]), status: 'COMPLETE', presentations: [] }, replayed: false }));
         createStarted();
         expect(promoPopup.request).toHaveBeenCalledOnce();
+    });
+
+    it('tells the onboarding tour that the session is over before it asks for the promo popup, so the popup finds the tour on the screen', () => {
+        const order: string[] = [];
+        TestBed.inject(TourEvents).listen(event => { order.push(event); });
+        promoPopup.request.mockImplementation(() => { order.push('promo'); return Promise.resolve(); });
+        api.start.mockReturnValue(of({ value: { ...sessionOf([fixtures['selfCheck']]), status: 'COMPLETE', presentations: [] }, replayed: false }));
+        createStarted();
+        expect(order).toEqual(['study.started', 'study.completed', 'promo']);
+    });
+
+    it('tells the tour that the session began only once the server has opened one, and nothing more while it goes on', () => {
+        const seen: string[] = [];
+        TestBed.inject(TourEvents).listen(event => { seen.push(event); });
+        api.start.mockReturnValue(of({ value: sessionOf([fixtures['selfCheck']]), replayed: false }));
+        fixture = TestBed.createComponent(StudySessionPageComponent);
+        fixture.detectChanges();
+        // The setup screen is not a session: the link that opened the page has not started anything.
+        expect(seen).toEqual([]);
+        fixture.componentInstance.startScheduled('STANDARD');
+        fixture.detectChanges();
+        expect(seen).toEqual(['study.started']);
+    });
+
+    it('does not tell the tour that a session began when the server refuses to open one', () => {
+        const seen: string[] = [];
+        TestBed.inject(TourEvents).listen(event => { seen.push(event); });
+        api.start.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+        createStarted();
+        expect(seen).toEqual([]);
     });
 
     it('connects completion replay, practice, explainable progress and confirmed restart', () => {

@@ -2,6 +2,7 @@ import { DestroyRef, Injectable, inject, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Subscription, map, of, switchMap } from 'rxjs';
 
+import { isSampleNotShareable, sampleShareRefusedText } from '../../core/onboarding/sample-deck';
 import {
     DeckCommand,
     DeckFailure,
@@ -442,7 +443,7 @@ export function deckFailureMessage(failure: DeckFailure): string {
         case 401: return 'Сессия завершилась. Войдите снова, чтобы продолжить.';
         case 403: return 'У этой сессии недостаточно прав для действия.';
         case 404: return 'Колода не найдена или больше недоступна.';
-        case 409: return 'Это действие уже изменилось. Обновите страницу и попробуйте снова.';
+        case 409: return isSampleNotShareable(409, failure.code) ? sampleShareRefusedText() : 'Это действие уже изменилось. Обновите страницу и попробуйте снова.';
         case 412: return 'Колода изменилась в другой вкладке.';
         case 428: return 'Не удалось подтвердить версию колоды. Обновите страницу.';
         case 503: return 'Сервис временно недоступен. Попробуйте ещё раз.';

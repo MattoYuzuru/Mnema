@@ -59,6 +59,14 @@ public class ExperimentEvents {
     }
 
     /**
+     * The entry of {@code POST /api/experiment-events}: like {@link #record} but a server-only experiment is ignored (accepted, never counted), so a client cannot inflate
+     * a counter it does not own.
+     */
+    public boolean recordFromClient(UUID account, String key, Event event) {
+        return assignments.clientVisible(key) && record(account, key, event);
+    }
+
+    /**
      * @return whether the event was counted; false for an experiment that is not enabled
      * @throws RateLimitedException the account sent too many events this minute or a new account cannot be tracked within the bounded table
      */

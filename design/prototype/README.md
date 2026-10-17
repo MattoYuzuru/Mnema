@@ -74,4 +74,6 @@ sheet/ink 13.595:1 — все четыре проходят WCAG AA для об�
 TalkBack, реальные iOS/Android, Safari, Firefox, offline sync и production quality
 gate данным прототипом не проверены. Главный агент отдельно запускает gate репозитория.
 
+Прототип онбординга (OB-001, 2026-10-15): [onboarding/](onboarding/README.md).
+
 Полный design handoff: [design-and-experience-2026-09.md](../../docs/frontend/design-and-experience-2026-09.md).

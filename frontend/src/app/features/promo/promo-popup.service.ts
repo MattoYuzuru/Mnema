@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { QuietZone } from '../../core/notifications/quiet-zone';
+import { AttentionCoordinator } from '../../core/onboarding/attention-coordinator';
 import { AuthService } from '../../auth.service';
 import { PromoApiService } from './promo-api.service';
 import { PopupEvent, PromoCampaign } from './promo.models';
@@ -30,6 +31,7 @@ export class PromoPopupService {
     private readonly api = inject(PromoApiService);
     private readonly router = inject(Router);
     private readonly quiet = inject(QuietZone);
+    private readonly attention = inject(AttentionCoordinator);
     private readonly auth = inject(AuthService);
     private readonly visible = signal<PromoCampaign | null>(null);
     /** The campaign being shown now, or null. */
@@ -45,6 +47,8 @@ export class PromoPopupService {
 
     constructor() {
         this.synchronize();
+        // The window is on the screen from here to its close: the coordinator knows, so nothing louder opens over it unasked.
+        effect(() => this.attention.report('promo', this.visible() !== null));
         effect(() => {
             this.auth.status();
             this.auth.user();
@@ -55,7 +59,8 @@ export class PromoPopupService {
     /** A natural breakpoint: show the popup if this session has not been asked, the learner has no task open and the server allows it. */
     async request(): Promise<void> {
         const owner = this.synchronize();
-        if (owner === null || this.quiet.active() || this.asking || this.visible() !== null) return;
+        // One loud surface at a time: not over the first entry or the tour, not in the middle of the journey or on the day it ended.
+        if (owner === null || this.quiet.active() || !this.attention.canShow('promo') || this.asking || this.visible() !== null) return;
         const preference = this.preference(owner);
         if (preference === null && this.decided(owner)) return;
         this.asking = true;
@@ -66,7 +71,7 @@ export class PromoPopupService {
             const campaign = await firstValueFrom(this.api.popup());
             this.synchronize();
             // The learner moved on, or opened a task meanwhile: nothing is shown and the session keeps its one chance.
-            if (epoch !== this.epoch || this.quiet.active()) return;
+            if (epoch !== this.epoch || this.quiet.active() || !this.attention.canShow('promo')) return;
             this.remember(owner);
             if (campaign === null) return;
             this.visible.set(campaign);

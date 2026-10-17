@@ -1019,8 +1019,13 @@ export class WorkshopSessionStore {
             held.artifactId === artifact.artifactId && !isNewer(held.rowVersion, artifact.rowVersion) ? artifact : held) });
     }
 
+    /** The material the last approval put into the deck: the onboarding tour sends the learner to its exercises. */
+    readonly lastMaterial = signal<string | null>(null);
+
     private published(ack: ApprovalAck): void {
         this.deckPin = { rowVersion: ack.deckVersion, revisionId: ack.deckRevisionId };
+        const item = ack.artifacts.map(done => done.publishedRef).find(ref => ref.kind === 'ITEM');
+        if (item !== undefined) this.lastMaterial.set(item.memberKey);
         const session = this.session();
         if (session !== null) {
             this.session.set({ ...session, artifacts: session.artifacts.map(artifact => {

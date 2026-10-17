@@ -125,6 +125,26 @@ enum ApiErrorCode {
             "Promo code unavailable",
             "Promo codes cannot be redeemed from this network right now."
     ),
+    ONBOARDING_TRANSITION(
+            HttpStatus.CONFLICT,
+            "Journey transition not allowed",
+            "The tour cannot take this action in its current state."
+    ),
+    SAMPLE_DECK_UNAVAILABLE(
+            HttpStatus.CONFLICT,
+            "Sample deck unavailable",
+            "The sample deck is not available right now."
+    ),
+    SAMPLE_DECK_NOT_SHAREABLE(
+            HttpStatus.CONFLICT,
+            "Sample deck not shareable",
+            "A sample deck cannot be published, shared or copied."
+    ),
+    ONBOARDING_UNAVAILABLE(
+            HttpStatus.CONFLICT,
+            "Onboarding unavailable",
+            "The onboarding tour is turned off."
+    ),
     MEDIA_UPLOAD_CONFLICT(HttpStatus.CONFLICT, "Media upload conflict", "The upload state or parts do not match the command."),
     MEDIA_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Media storage unavailable", "Media storage is temporarily unavailable."),
     VERSION_CONFLICT(

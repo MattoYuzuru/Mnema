@@ -288,6 +288,23 @@ LEARNING_COMMUNITY_CATALOG_ENABLED=true MNEMA_LOCAL_COMMUNITY_LAUNCHED=true` (pa
 «Сообщество» entry in the header before its production launch: the development frontend container writes `communityLaunched` into `app-config.js`
 and the app honours it on a loopback host only. `/sitemap-decks.xml` is proxied to Learning by the local nginx like in production.
 
+### First-entry tour «Начало пути» (onboarding OB-E1)
+
+On the local stack the tour is on (`LEARNING_ONBOARDING_ENABLED=true`, `LEARNING_ONBOARDING_ELIGIBLE_FROM=2026-10-16T00:00:00Z`, both in
+`compose.local-full-stack.yml`); production keeps the application default off. Only an account Identity marks new (younger than 48 hours) and
+without a live deck is offered the tour on its first `GET /api/onboarding`; any account can start it from the profile. The holdout
+`onboarding_v1` (`LEARNING_ONBOARDING_EXPERIMENT_ENABLED`) buckets accounts only with `MNEMA_EXPERIMENT_SECRET`; without it nobody is held out.
+Contract: [`contracts/onboarding`](../../contracts/onboarding/README.md).
+
+### Sample deck «Моя первая колода» (onboarding OB-E2)
+
+`LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED` is on locally; the branch «Посмотреть на примере» appears once a template is configured. The
+template is an ordinary deck of a local editorial account, built by MnemaDeckStudio (`runs/onboarding-memory-sample`) through the
+authoring API and published at `LINK`. Put its id in `LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID` and restart the stack: Learning
+marks it `SAMPLE_TEMPLATE` when it starts. The local editorial account's credentials live next to the stack state
+(`onboarding-editorial-account.json`, mode 0600); updating the template is described in the
+[onboarding evidence runbook](../engineering/evidence/onboarding/ob-e2/sample-template-runbook.md).
+
 ### Promo codes, A/B and the promo popup (#302)
 
 Promo codes need no extra configuration locally. An administrator creates a code with `POST /api/admin/promo-codes` (the caller's token and an

@@ -89,4 +89,62 @@ describe('InterestStore account and command boundary', () => {
         TestBed.configureTestingModule({ providers: [{ provide: AuthService, useValue: { status, user } }, { provide: RecommendationsApiService, useValue: api }, { provide: COMMUNITY_LAUNCH, useValue: false }] });
         api.profile.mockClear(); store = TestBed.inject(InterestStore); store.ensure(); TestBed.tick(); expect(api.profile).not.toHaveBeenCalled();
     });
+    describe('the skip of the first-entry survey', () => {
+        it('writes an empty selection with the current version, quietly', async () => {
+            await store.skip();
+            expect(api.change).toHaveBeenCalledTimes(1);
+            expect(api.change.mock.calls[0][0].topicIds).toEqual([]);
+            expect(api.change.mock.calls[0][1]).toBe(PROFILE.rowVersion);
+            expect(store.notice()).toBe('');
+            expect(store.error()).toBe('');
+            expect(store.busy()).toBe(false);
+            expect(store.onboarding()).toBe(false);
+        });
+
+        it('waits for the profile to be read before it writes, because the write needs its version', async () => {
+            vi.useFakeTimers();
+            try {
+                const read = new Subject<InterestProfile>();
+                api.profile.mockReturnValue(read);
+                TestBed.resetTestingModule();
+                TestBed.configureTestingModule({ providers: [{ provide: AuthService, useValue: { status, user } }, { provide: RecommendationsApiService, useValue: api }, { provide: COMMUNITY_LAUNCH, useValue: true }] });
+                store = TestBed.inject(InterestStore); store.ensure(); TestBed.tick();
+                const skipping = store.skip();
+                await vi.advanceTimersByTimeAsync(200);
+                expect(api.change).not.toHaveBeenCalled();
+                read.next({ ...PROFILE, rowVersion: '5' });
+                read.complete();
+                await vi.advanceTimersByTimeAsync(200);
+                await skipping;
+                expect(api.change.mock.calls[0][1]).toBe('5');
+            } finally { vi.useRealTimers(); }
+        });
+
+        it('reads the profile again on a stale version and sends the skip once more, without the banner of an ordinary save', async () => {
+            api.change.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 412 }))).mockReturnValueOnce(of({ ...PROFILE, rowVersion: '9', onboardingComplete: true }));
+            api.profile.mockReturnValue(of({ ...PROFILE, rowVersion: '8' }));
+            await store.skip();
+            expect(api.change).toHaveBeenCalledTimes(2);
+            expect(api.change.mock.calls[1][1]).toBe('8');
+            expect(store.notice()).toBe('');
+            expect(store.error()).toBe('');
+            expect(store.profile()?.onboardingComplete).toBe(true);
+        });
+
+        it('gives up quietly after one retry and does nothing for a profile that is already complete or for a guest', async () => {
+            api.change.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412 })));
+            await store.skip();
+            expect(api.change).toHaveBeenCalledTimes(2);
+            expect(store.notice()).toBe('');
+            expect(store.error()).toBe('');
+            api.change.mockClear();
+            api.profile.mockReturnValue(of({ ...PROFILE, onboardingComplete: true }));
+            store.reload();
+            await store.skip();
+            expect(api.change).not.toHaveBeenCalled();
+            status.set('anonymous'); TestBed.tick();
+            await store.skip();
+            expect(api.change).not.toHaveBeenCalled();
+        });
+    });
 });

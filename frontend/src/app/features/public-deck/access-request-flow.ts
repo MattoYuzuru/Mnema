@@ -2,6 +2,7 @@ import { DestroyRef, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Observable } from 'rxjs';
 
+import { isSampleNotShareable } from '../../core/onboarding/sample-deck';
 import { AccessApiService } from '../own-decks/access/access-api.service';
 import { accessFailureOf } from '../own-decks/access/access.models';
 import { PUBLIC_ACTION_TEXT, longWaitText } from './public-deck.text';
@@ -59,6 +60,7 @@ export class AccessRequestFlow {
                 if (failure?.status === 403 && (failure.code === null || failure.code === 'DECK_INVITE_ONLY')) return this.sent();
                 this.state.set('idle');
                 if (failure?.status === 404) this.hooks.gone();
+                else if (failure !== null && isSampleNotShareable(failure.status, failure.code)) this.error.set(PUBLIC_ACTION_TEXT.copySample);
                 else if (failure?.status === 400) this.hooks.readable();
                 else if (failure?.status === 422) this.error.set(PUBLIC_ACTION_TEXT.requestLimit);
                 else if (failure?.status === 429) this.error.set(`Слишком много запросов. ${longWaitText(publicFailureOf(error).retryAfter)}`);

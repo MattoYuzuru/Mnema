@@ -64,6 +64,7 @@
       <article class="study-card" [attr.aria-busy]="phase() === 'submitting'">
         <p class="eyebrow">Вспомните без подсказки@if (presentation.isNew) { <app-new-badge /> }</p>
         <h2>{{ heading(presentation.type) }}</h2>
+        @if (sampleCheckHint(); as hint) { <p class="hint" data-sample-check>{{ hint }}</p> }
         <app-learner-exercise [exercise]="presentation" [transcriptRevealed]="presentation.transcriptRevealed"
           [resetKey]="presentation.presentationId" [hints]="hints()" [hintPending]="hintPending()"
           [transcriptLoading]="transcriptLoading()" [busy]="phase() === 'submitting'" [pairChecker]="pairChecker()"

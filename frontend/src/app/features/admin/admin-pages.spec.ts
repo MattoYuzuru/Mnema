@@ -105,7 +105,7 @@ describe('owner console shell', () => {
         const links = root.querySelector<HTMLElement>('#admin-navigation-links')!;
         expect(toggle.getAttribute('aria-controls')).toBe(links.id);
         expect(toggle.getAttribute('aria-expanded')).toBe('false'); expect(links.classList.contains('is-open')).toBe(false);
-        expect(root.querySelectorAll('nav a')).toHaveLength(8);
+        expect(root.querySelectorAll('nav a')).toHaveLength(9);
         toggle.click(); fixture.detectChanges();
         expect(toggle.getAttribute('aria-expanded')).toBe('true'); expect(links.classList.contains('is-open')).toBe(true);
         toggle.click(); fixture.detectChanges(); expect(toggle.getAttribute('aria-expanded')).toBe('false');
@@ -148,7 +148,7 @@ describe('owner console shell', () => {
         http.expectOne('/api/admin/console/access').flush(wire.access);
         await settle();
         expect(root.querySelector('router-outlet')).not.toBeNull();
-        expect(root.querySelectorAll('nav a')).toHaveLength(8);
+        expect(root.querySelectorAll('nav a')).toHaveLength(9);
         fixture.destroy();
         expect(TestBed.inject(AdminSession).access()).toBeNull();
     });
