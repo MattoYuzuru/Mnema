@@ -14,8 +14,21 @@ from typing import Callable, Iterable
 SHA = re.compile(r"[0-9a-f]{40}")
 ENVIRONMENT = "prod"
 RUNTIME_PREFIXES = ("backend/", "frontend/", "contracts/", "deploy/production/", "security/")
-# Documentation next to the runtime sources does not change an image.
-DOC_PREFIXES = ("frontend/", "deploy/production/")
+# Inputs that the five release images and the host bundle provably never contain. Anything else under a runtime
+# prefix stays runtime, so an unknown kind of file still releases. Evidence per pattern:
+# - backend/Dockerfile copies only the Gradle build and services/, then runs the two bootJar tasks (no test sources);
+# - backend/media-worker/Dockerfile copies only the mnema_media_worker package;
+# - frontend ships the Angular build output; tsconfig.app.json compiles from src/main.ts, never *.spec.ts;
+# - Markdown is documentation unless it is a packaged resource (backend src/main, frontend src/ assets).
+NON_RUNTIME = tuple(re.compile(pattern) for pattern in (
+    r"backend/services/[^/]+/src/test/.+",
+    r"backend/test-support/.+",
+    r"backend/(?:test-durations\.tsv|test-opt-ins\.json|coverage-baseline\.json)",
+    r"backend/scripts/.+",
+    r"backend/media-worker/tests/.+",
+    r"frontend/src/(?:.+/)?[^/]+\.spec\.ts",
+    r"(?!.*/src/main/)(?!frontend/src/)(?:backend|frontend|deploy/production)/.+\.md",
+))
 RUNTIME_FILES = frozenset({
     ".github/workflows/deploy.yaml",
     "scripts/deploy-vps.sh",
@@ -28,7 +41,7 @@ RUNTIME_FILES = frozenset({
 def is_runtime_path(path: str) -> bool:
     if path in RUNTIME_FILES:
         return True
-    if path.endswith(".md") and path.startswith(DOC_PREFIXES):
+    if any(pattern.fullmatch(path) for pattern in NON_RUNTIME):
         return False
     return path.startswith(RUNTIME_PREFIXES)
 
@@ -86,8 +99,9 @@ def decide(event: str, sha: str, gh: Callable[[str], object], git: Callable[...,
         return True, "diff against the deployed commit failed"
     changed = runtime_changes(output.splitlines())
     if changed:
-        return True, f"{len(changed)} runtime path(s) changed since the deployed commit"
-    return False, "no runtime path changed since the deployed commit"
+        shown = ", ".join(changed[:5]) + (", ..." if len(changed) > 5 else "")
+        return True, f"{len(changed)} runtime path(s) changed since the deployed commit {deployed[:12]}: {shown}"
+    return False, f"no runtime path changed since the deployed commit {deployed[:12]}"
 
 
 def _gh(repository: str) -> Callable[[str], object]:

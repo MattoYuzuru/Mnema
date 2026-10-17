@@ -1,6 +1,8 @@
 """Docs-only merges must not rebuild or redeploy; any runtime path must."""
 import importlib.util
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -67,11 +69,31 @@ class ReleaseScopeTest(unittest.TestCase):
                  'deploy/production/compose.yaml', 'deploy/production/Caddyfile', 'deploy/production/mnema-deploy.py',
                  '.github/workflows/deploy.yaml', 'scripts/deploy-vps.sh', 'scripts/render_vps_candidate.py',
                  'scripts/verify_release_security_evidence.py', 'scripts/release_scope.py',
-                 'security/trivy-release-ignore']
+                 'security/trivy-release-ignore',
+                 # Packaged Markdown and anything a test-looking name does not prove to be test-only.
+                 'backend/services/learning/src/main/resources/ai/prompts/v2/system.md',
+                 'frontend/src/assets/brand/README.md', 'frontend/src/app/testing/fixtures.ts',
+                 'frontend/src/app/app.spec.ts.orig', 'frontend/tsconfig.app.json', 'frontend/vitest.config.mts',
+                 'backend/services/learning/src/testFixtures/x.java', 'backend/media-worker/mnema_media_worker/process.py',
+                 'backend/build.gradle.kts', 'contracts/decks/README.md']
         for path in paths:
             with self.subTest(path=path):
                 deploy, reason = SCOPE.decide('push', HEAD, history(), git(diff=(0, 'docs/a.md\n' + path + '\n')))
                 self.assertTrue(deploy, reason)
+
+    def test_tests_and_their_inputs_do_not_release(self):
+        paths = ['backend/services/learning/src/test/java/app/mnema/AppTest.java',
+                 'backend/services/identity-account/src/test/resources/fixture.json',
+                 'backend/test-support/java/app/mnema/testing/TestInventory.java', 'backend/test-durations.tsv',
+                 'backend/test-opt-ins.json', 'backend/coverage-baseline.json', 'backend/scripts/check_coverage.py',
+                 'backend/media-worker/tests/test_worker.py', 'backend/media-worker/README.md',
+                 'backend/services/learning/guide.md', 'backend/AGENTS.md', 'frontend/AGENTS.md',
+                 'frontend/src/app/app.spec.ts', 'frontend/src/app/features/study/study-page.component.spec.ts']
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertFalse(SCOPE.is_runtime_path(path))
+        deploy, reason = SCOPE.decide('push', HEAD, history(), git(diff=(0, '\n'.join(paths) + '\n')))
+        self.assertFalse(deploy, reason)
 
     def test_the_baseline_is_the_newest_deployment_whose_latest_status_is_success(self):
         self.assertEqual(SCOPE.latest_successful_sha(history()), DEPLOYED)
@@ -127,6 +149,70 @@ class ReleaseScopeTest(unittest.TestCase):
 
     def test_already_deployed_commit_is_not_released_again(self):
         self.assertFalse(SCOPE.decide('push', DEPLOYED, history(), git())[0])
+
+
+class ReleaseScopeHistoryTest(unittest.TestCase):
+    """Real Git history: the decision is cumulative from the deployed commit, not from the previous main commit."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.cmd('init', '-q', '-b', 'main')
+        self.cmd('config', 'user.email', 'scope@example.invalid')
+        self.cmd('config', 'user.name', 'scope')
+        self.deployed = self.commit({'backend/services/learning/src/main/java/App.java': 'v1', 'docs/a.md': 'a'})
+
+    def cmd(self, *args):
+        return subprocess.run(['git', '-C', str(self.root), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+    def git(self, *args):
+        result = subprocess.run(['git', '-C', str(self.root), *args], capture_output=True, text=True)
+        return result.returncode, result.stdout
+
+    def commit(self, files, delete=(), move=()):
+        for name, text in files.items():
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_text(text)
+        for name in delete:
+            self.cmd('rm', '-q', name)
+        for old, new in move:
+            (self.root / new).parent.mkdir(parents=True, exist_ok=True)
+            self.cmd('mv', old, new)
+        self.cmd('add', '-A')
+        self.cmd('commit', '-q', '-m', 'change')
+        return self.cmd('rev-parse', 'HEAD')
+
+    def decide(self, head):
+        return SCOPE.decide('push', head, history(deployments=[{'id': 2, 'sha': self.deployed}]), self.git)
+
+    def test_test_only_change_after_the_deployment_does_not_release(self):
+        head = self.commit({'backend/services/learning/src/test/java/AppTest.java': 't', 'docs/b.md': 'b'})
+        self.assertFalse(self.decide(head)[0])
+
+    def test_an_unreleased_runtime_change_survives_a_later_test_only_commit(self):
+        self.commit({'backend/services/learning/src/main/java/App.java': 'v2'})        # A, never deployed
+        head = self.commit({'frontend/src/app/app.spec.ts': 'spec'})                   # B, test-only
+        deploy, reason = self.decide(head)
+        self.assertTrue(deploy, reason)
+        self.assertIn('backend/services/learning/src/main/java/App.java', reason)
+
+    def test_deleting_or_moving_runtime_source_into_tests_releases(self):
+        moved = self.commit({}, move=[('backend/services/learning/src/main/java/App.java',
+                                       'backend/services/learning/src/test/java/App.java')])
+        self.assertTrue(self.decide(moved)[0])
+        self.setUp()
+        deleted = self.commit({}, delete=['backend/services/learning/src/main/java/App.java'])
+        self.assertTrue(self.decide(deleted)[0])
+
+    def test_a_deployed_commit_outside_the_history_releases(self):
+        head = self.commit({'docs/c.md': 'c'})
+        gh = history(deployments=[{'id': 2, 'sha': 'f' * 40}])
+        deploy, reason = SCOPE.decide('push', head, gh, self.git)
+        self.assertTrue(deploy, reason)
+        shallow = SCOPE.decide('push', head, history(deployments=[{'id': 2, 'sha': self.deployed}]),
+                               lambda *args: (128, '') if args[0] == 'diff' else self.git(*args))
+        self.assertTrue(shallow[0], shallow[1])
 
 
 if __name__ == '__main__':

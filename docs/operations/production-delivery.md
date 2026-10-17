@@ -29,10 +29,15 @@ push to main → validate → backend-quality ‖ frontend-quality ‖ release-s
 - `release-scope` compares the push with the newest successful `prod` GitHub
   Deployment that **Main CI** created (the status's run is resolved and must be
   `deploy.yaml`; the operations workflow creates none, because its job sets
-  `deployment: false`, which keeps required reviewers and secrets). A merge that changes nothing under `backend/`, `frontend/` (outside
-  `*.md`), `contracts/`, `deploy/production/` (outside `*.md`), `security/` or the
-  release scripts/workflow (`scripts/release_scope.py`) skips build, approval and
-  deployment. An unknown baseline releases. Manual dispatch of Main CI
+  `deployment: false`, which keeps required reviewers and secrets). A merge that changes nothing under `backend/`, `frontend/`,
+  `contracts/`, `deploy/production/`, `security/` or the release scripts/workflow
+  (`scripts/release_scope.py`) skips build, approval and deployment. Inside those paths, files that no
+  release image contains do not count: backend tests and their inputs (`src/test/`, `test-support/`,
+  shard/opt-in/coverage data, `backend/scripts/`, media-worker tests), frontend `*.spec.ts`, and Markdown
+  outside packaged resources (backend `src/main/`, frontend `src/`). The `NON_RUNTIME` list in the script
+  states the Dockerfile evidence for each pattern; any other file still releases. The comparison is cumulative
+  from the deployed commit, so an unreleased runtime change is not hidden by a later test-only merge.
+  An unknown baseline releases. Manual dispatch of Main CI
   (`gh workflow run deploy.yaml --ref main`) always releases the current main.
 - `deploy-production` waits for the `prod` Environment reviewer. After approval it
   re-verifies the candidate checksums and the GitHub attestations (provenance and
