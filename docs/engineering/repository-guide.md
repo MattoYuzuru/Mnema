@@ -185,44 +185,17 @@ the verified per-shell setup (`JAVA_HOME`, `DOCKER_HOST`,
 [agent runbook](./agent-runbook.md#workstation-setup-owners-mac).
 
 ```bash
-cd backend
-./gradlew clean quality
-
-cd ../frontend
-npm ci
-npm run lint
-npm run test
-npm run build
-
-cd ..
+python3 scripts/checks.py plan      # every check, why it runs, and the hosted job that repeats it
+python3 scripts/checks.py run       # the full gate on the committed HEAD in its own validation worktree
+python3 scripts/checks.py verify    # before push: the record still matches the unchanged commit
 ```
 
-Repository policy and docs:
-
-```bash
-python3 scripts/verify_docs.py
-python3 scripts/verify_github_actions_pins.py
-python3 scripts/verify_security_automation_policy.py
-python3 scripts/verify_artifact_security_policy.py
-python3 scripts/verify_production_image_pins.py
-python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v
-```
-
-Real cross-service security/cancellation:
-
-```bash
-./backend/gradlew -p backend :services:identity-account:bootJar :services:learning:bootJar
-MNEMA_RUN_CANCELLATION_INTEGRATION=1 python3 -m unittest discover -s scripts/learning-security/tests -v
-python3 scripts/learning-security/run.py
-python3 scripts/learning-security/verify_cancellation.py
-```
-
-The remaining mandatory release/security/smoke contracts are the exact
-commands in the `frontend-checks` and `frontend-tests` jobs of
-[PR Quality](../../.github/workflows/pull-request.yaml). They include every maintained
-`scripts/test-*.sh` and the smoke unit suite; VPS backup and restore are covered by
-`scripts/tests/test_vps_*.py` in `backend-runtime`. Operational contract tests do not
-perform a deployment.
+The catalogue in [`scripts/checks.py`](../../scripts/checks.py) owns the command list: backend
+quality, security/cancellation and runtime/media checks, the frontend build/lint/tests, repository
+policy and docs, and every maintained `scripts/test-*.sh` contract and smoke suite. The hosted
+`release-images` preflight in [PR Quality](../../.github/workflows/pull-request.yaml) builds and
+scans the five release images; operational contract tests do not perform a deployment. Details and
+the validation-worktree protocol: [agent runbook](./agent-runbook.md#quality-gate-what-ci-equivalent-means).
 
 The real browser harness covers auth, authoring and one `FREE_RESPONSE` Study interaction in
 its base `--authoring` flow; `--authoring --media --mechanics` extends it to authoring and

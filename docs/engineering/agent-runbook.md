@@ -69,13 +69,23 @@ Docker endpoint and a per-check timeout, so its receipt is source-bound to the v
 `agent-dev` (or with `MNEMA_CHECK_RUNNER=direct`) commands run directly. The run record
 (`<sha12>.json`, next to the worktree) binds commit, tree and plan digest. `verify` rejects a missing or
 partial (`--affected`) plan, a failed or incomplete run, a changed validation worktree and any stale receipt;
-the fix is a new run, never a reused result. A fresh worktree means a fresh `npm ci` and Gradle build
-directory; the shared npm/Gradle caches still apply.
+the fix is a new run, never a reused result. `run` and `verify` continue with the candidate's own
+`scripts/checks.py`, so an edited or different catalogue in the working checkout cannot define the gate, and
+a `--affected` run is recorded separately (`<sha12>.affected.json`) without replacing a full-gate record.
+Each check is one `agent-dev run`: heavy checks hold the shared `heavy` lock for all of their commands and
+wait for it (`MNEMA_CHECK_LOCK_TIMEOUT`, default 6 hours) instead of failing; a lock that never frees is
+recorded as `blocked`, not `failed`. A rerun of the same candidate reuses its clean worktree, including its
+build directories (the backend gate starts with `clean`); `clean` removes the worktree, records and logs.
+`MNEMA_CHECK_RUNNER=direct` (or no `agent-dev`) runs commands without toolchain selection or receipts; such
+a record is bound only to the commit and the clean worktree, and says so (`"runner": "direct"`).
 
 `--affected` selects checks by owned paths with both sides of renames and deletions; an unknown path, a
 missing merge base or an empty change set selects the full plan. It is for feedback during work only: the
 final gate is always the full plan. `release-images` is hosted only (it needs a fresh Trivy database) and
-runs in PR Quality; Main CI repeats the scan on the exact release digests.
+runs in PR Quality when the pull request changes a release-image input (`release_scope.py --changed`);
+Main CI repeats the scan on the exact release digests. A docs- or test-only pull request records the skip in
+its summary. Local Docker checks use the fixed `:verified` tags the suites expect; the `heavy` lock held per
+check keeps another cooperating session from retagging them mid-check.
 
 `quality` has no separate backend lint/static-analysis task today (compile + tests +
 coverage). Java compilation is the configured static check (`-Xlint:all -Werror`).

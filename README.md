@@ -59,21 +59,12 @@ MinIO для файлов, обработку медиа и фронтенд.
 
 ## Проверить изменения
 
-Перед PR нужен полный набор проверок. Минимальный локальный набор:
+Перед PR нужен полный набор проверок на закоммиченном изменении:
 
 ```bash
-cd backend
-./gradlew clean quality
-
-cd ../frontend
-npm ci
-npm run lint
-npm run test
-npm run build
-
-cd ..
-python3 scripts/verify_docs.py
-python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+python3 scripts/checks.py plan     # что будет проверено и где это повторяет CI
+python3 scripts/checks.py run      # полный gate в отдельном worktree этого коммита
+python3 scripts/checks.py verify   # перед push: результат относится к неизменённому коммиту
 ```
 
 Backend-проверки поднимают PostgreSQL в Testcontainers, пороги покрытия обязательны.
