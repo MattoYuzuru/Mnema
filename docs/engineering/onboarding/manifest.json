@@ -1,0 +1,381 @@
+{
+  "schemaVersion": 1,
+  "packageId": "mnema-onboarding-2026-10-14",
+  "status": "Backlog",
+  "artifactStatus": "accepted",
+  "githubMapping": {
+    "OB-001": {
+      "issue": 517,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/517"
+    },
+    "OB-002": {
+      "issue": 518,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/518"
+    },
+    "OB-003": {
+      "issue": 519,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/519"
+    },
+    "OB-E1": {
+      "issue": 520,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/520"
+    },
+    "OB-101": {
+      "issue": 521,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/521"
+    },
+    "OB-102": {
+      "issue": 522,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/522"
+    },
+    "OB-103": {
+      "issue": 523,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/523"
+    },
+    "OB-104": {
+      "issue": 524,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/524"
+    },
+    "OB-105": {
+      "issue": 525,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/525"
+    },
+    "OB-E2": {
+      "issue": 526,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/526"
+    },
+    "OB-201": {
+      "issue": 527,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/527"
+    },
+    "OB-202": {
+      "issue": 528,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/528"
+    },
+    "OB-203": {
+      "issue": 529,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/529"
+    },
+    "OB-204": {
+      "issue": 530,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/530"
+    },
+    "OB-E3": {
+      "issue": 531,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/531"
+    },
+    "OB-301": {
+      "issue": 532,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/532"
+    },
+    "OB-302": {
+      "issue": 533,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/533"
+    },
+    "OB-303": {
+      "issue": 534,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/534"
+    },
+    "OB-304": {
+      "issue": 535,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/535"
+    },
+    "OB-305": {
+      "issue": 536,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/536"
+    },
+    "OB-E4": {
+      "issue": 537,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/537"
+    },
+    "OB-401": {
+      "issue": 538,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/538"
+    },
+    "OB-402": {
+      "issue": 539,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/539"
+    },
+    "OB-403": {
+      "issue": 540,
+      "url": "https://github.com/MattoYuzuru/Mnema/issues/540"
+    }
+  },
+  "items": [
+    {
+      "localId": "OB-001",
+      "kind": "design",
+      "title": "Прототип и утверждённые тексты онбординга",
+      "body": "tasks/ob-001.md",
+      "status": "Backlog",
+      "dependsOn": [],
+      "gate": "Owner approval of prototype and texts"
+    },
+    {
+      "localId": "OB-002",
+      "kind": "legal",
+      "title": "Политика ПДн для данных онбординга",
+      "body": "tasks/ob-002.md",
+      "status": "Backlog",
+      "dependsOn": []
+    },
+    {
+      "localId": "OB-003",
+      "kind": "content",
+      "title": "Базовые колоды каталога владельца",
+      "body": "tasks/ob-003.md",
+      "status": "Backlog",
+      "dependsOn": [],
+      "gate": "Owner approval of MnemaDeckStudio plans; PRIVATE until deployment"
+    },
+    {
+      "localId": "OB-E1",
+      "kind": "epic",
+      "title": "Первый вход, опрос и тур",
+      "body": "epics/ob-e1-first-entry-and-tour.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-001"
+      ]
+    },
+    {
+      "localId": "OB-101",
+      "kind": "engineering",
+      "parent": "OB-E1",
+      "title": "Контракт, схема и API journey",
+      "body": "tasks/ob-101.md",
+      "status": "Backlog",
+      "dependsOn": []
+    },
+    {
+      "localId": "OB-102",
+      "kind": "engineering",
+      "parent": "OB-E1",
+      "title": "Движок spotlight-тура и элементы стайлгайда",
+      "body": "tasks/ob-102.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-001"
+      ]
+    },
+    {
+      "localId": "OB-103",
+      "kind": "engineering",
+      "parent": "OB-E1",
+      "title": "«Начало пути»: приветствие, опрос, координация",
+      "body": "tasks/ob-103.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-101",
+        "OB-102"
+      ]
+    },
+    {
+      "localId": "OB-104",
+      "kind": "engineering",
+      "parent": "OB-E1",
+      "title": "Ветки тура, финал и перепрохождение",
+      "body": "tasks/ob-104.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-103"
+      ]
+    },
+    {
+      "localId": "OB-105",
+      "kind": "verification",
+      "parent": "OB-E1",
+      "title": "Измерение, holdout и проверка OB-E1",
+      "body": "tasks/ob-105.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-101",
+        "OB-102",
+        "OB-103",
+        "OB-104"
+      ]
+    },
+    {
+      "localId": "OB-E2",
+      "kind": "epic",
+      "title": "«Моя первая колода»",
+      "body": "epics/ob-e2-sample-deck.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-101",
+        "OB-102"
+      ]
+    },
+    {
+      "localId": "OB-201",
+      "kind": "engineering",
+      "parent": "OB-E2",
+      "title": "deck.purpose, запреты и SampleDeckService",
+      "body": "tasks/ob-201.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-101"
+      ]
+    },
+    {
+      "localId": "OB-202",
+      "kind": "content",
+      "parent": "OB-E2",
+      "title": "Содержание шаблона и установка",
+      "body": "tasks/ob-202.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-201"
+      ],
+      "gate": "Owner approval of the MnemaDeckStudio plan for «Как устроена память»"
+    },
+    {
+      "localId": "OB-203",
+      "kind": "engineering",
+      "parent": "OB-E2",
+      "title": "Ветка «На примере», плашка, ИИ-проверки",
+      "body": "tasks/ob-203.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-104",
+        "OB-202"
+      ]
+    },
+    {
+      "localId": "OB-204",
+      "kind": "verification",
+      "parent": "OB-E2",
+      "title": "Проверка OB-E2",
+      "body": "tasks/ob-204.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-201",
+        "OB-202",
+        "OB-203"
+      ]
+    },
+    {
+      "localId": "OB-E3",
+      "kind": "epic",
+      "title": "«Путь Mnema»",
+      "body": "epics/ob-e3-path.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-101",
+        "OB-102"
+      ]
+    },
+    {
+      "localId": "OB-301",
+      "kind": "engineering",
+      "parent": "OB-E3",
+      "title": "Реестр вех, ledger и recorder",
+      "body": "tasks/ob-301.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-101"
+      ]
+    },
+    {
+      "localId": "OB-302",
+      "kind": "engineering",
+      "parent": "OB-E3",
+      "title": "Backfill вех по истории",
+      "body": "tasks/ob-302.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-301"
+      ]
+    },
+    {
+      "localId": "OB-303",
+      "kind": "engineering",
+      "parent": "OB-E3",
+      "title": "Страница «Путь», переходы и тосты",
+      "body": "tasks/ob-303.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-102",
+        "OB-301"
+      ]
+    },
+    {
+      "localId": "OB-304",
+      "kind": "engineering",
+      "parent": "OB-E3",
+      "title": "Побочные квесты",
+      "body": "tasks/ob-304.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-303"
+      ]
+    },
+    {
+      "localId": "OB-305",
+      "kind": "verification",
+      "parent": "OB-E3",
+      "title": "Проверка OB-E3",
+      "body": "tasks/ob-305.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-301",
+        "OB-302",
+        "OB-303",
+        "OB-304"
+      ]
+    },
+    {
+      "localId": "OB-E4",
+      "kind": "epic",
+      "title": "Ритм и награда",
+      "body": "epics/ob-e4-rhythm-and-reward.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-E3"
+      ]
+    },
+    {
+      "localId": "OB-401",
+      "kind": "engineering",
+      "parent": "OB-E4",
+      "title": "Недельный ритм",
+      "body": "tasks/ob-401.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-101",
+        "OB-301"
+      ]
+    },
+    {
+      "localId": "OB-402",
+      "kind": "engineering",
+      "parent": "OB-E4",
+      "title": "Награда за полный «Путь» (gated)",
+      "body": "tasks/ob-402.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-301",
+        "OB-303",
+        "OB-002"
+      ],
+      "gate": "Owner decided to build (Q10, 2026-10-14); production flag only after OB-002 legal review of offer terms"
+    },
+    {
+      "localId": "OB-403",
+      "kind": "verification",
+      "parent": "OB-E4",
+      "title": "Проверка OB-E4",
+      "body": "tasks/ob-403.md",
+      "status": "Backlog",
+      "dependsOn": [
+        "OB-401"
+      ]
+    }
+  ],
+  "ownerDecisions": {
+    "date": "2026-10-14",
+    "source": "questions.md"
+  },
+  "progressLedger": "progress.md",
+  "githubPublishedAt": "2026-10-15"
+}

@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterRenderEffect, computed, inject, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 import { ActionMenuComponent, ActionMenuItem } from './action-menu.component';
@@ -14,9 +14,9 @@ let nextCard = 0;
 /**
  * The card of a public deck in the catalogue, a shelf or an author's profile (skeleton: the layout and states; the data
  * source and the actions are wired by the screens that use it; «Поделиться» is done by the card itself). Title (a link when `link` is given), a two-line
- * description, topic and language (each with a hidden «Тема:» / «Язык:» prefix), the author chip, the size, media badges with words, the audience counts (only from
+ * description, topic and language (each with a hidden «Тема:» / «Язык:» prefix, plus the optional `note` stamp), the author chip (`authorShown`, on by default), the size, media badges with words, the audience counts (only from
  * 10 and rounded), the update date and the «⋯» menu. There are no stars and no likes. Without an author (hidden
- * profile) the chip draws nothing; without media or with small audiences the row is simply absent.
+ * profile) the chip draws nothing; without media or with small audiences (`null` or below 10) the row is simply absent, and so is a topic or a language that is empty.
  */
 @Component({
     selector: 'app-public-deck-card',
@@ -25,7 +25,7 @@ let nextCard = 0;
       <article class="card" [attr.aria-labelledby]="titleId">
         <div class="head">
           <ng-template #titleText>
-            @if (link(); as to) { <a [routerLink]="to">{{ deck().title }}</a> } @else { {{ deck().title }} }
+            @if (link(); as to) { <a [routerLink]="to" (click)="opened.emit(deck())">{{ deck().title }}</a> } @else { {{ deck().title }} }
           </ng-template>
           @switch (headingLevel()) {
             @case (2) { <h2 class="title" [id]="titleId"><ng-container [ngTemplateOutlet]="titleText" /></h2> }
@@ -35,11 +35,14 @@ let nextCard = 0;
           <app-action-menu [label]="'Действия с колодой «' + deck().title + '»'" [items]="menuItems()" (chosen)="chosen($event)" />
         </div>
         <p class="description">{{ deck().description }}</p>
-        <p class="tags">
-          <span class="stamp"><span class="visually-hidden">Тема: </span>{{ deck().topic }}</span>
-          <span class="stamp"><span class="visually-hidden">Язык: </span>{{ deck().language }}</span>
-        </p>
-        <app-author-chip [username]="deck().author.username" [avatarSrc]="deck().author.avatarSrc" />
+        @if (deck().topic !== '' || deck().language !== '' || note()) {
+          <p class="tags">
+            @if (deck().topic !== '') { <span class="stamp"><span class="visually-hidden">Тема: </span>{{ deck().topic }}</span> }
+            @if (deck().language !== '') { <span class="stamp"><span class="visually-hidden">Язык: </span>{{ deck().language }}</span> }
+            @if (note(); as text) { <span class="stamp solid">{{ text }}</span> }
+          </p>
+        }
+        @if (authorShown()) { <app-author-chip [username]="deck().author.username" [avatarSrc]="deck().author.avatarSrc" /> }
         <p class="size">{{ size() }}</p>
         @if (deck().media.length > 0) {
           <ul class="media" role="list" aria-label="Что внутри">
@@ -69,8 +72,38 @@ export class PublicDeckCardComponent {
     readonly headingLevel = input<2 | 3 | 4>(3);
     /** The route of the deck page; without it the title is plain text. */
     readonly link = input<string | readonly string[] | null>(null);
+    /** A short mark next to the topic and language, for a state of this deck for this reader (a profile's invitation-only deck: «Доступна вам»). */
+    readonly note = input<string | null>(null);
+    /** Draws the author chip. A list where every deck is by the same author (the author's own page) leaves it out: the chip would say the same on every card. */
+    readonly authorShown = input(true);
     /** The `id` of a chosen menu row other than «Поделиться». */
     readonly action = output<string>();
+    readonly observe = input(false);
+    readonly visible = output<PublicDeckCard>();
+    readonly opened = output<PublicDeckCard>();
+    private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
+    private observer: IntersectionObserver | null = null;
+    private observationEpoch = 0;
+    constructor() {
+        inject(DestroyRef).onDestroy(() => { this.observationEpoch++; this.observer?.disconnect(); });
+        afterRenderEffect(() => {
+            const enabled = this.observe();
+            const epoch = ++this.observationEpoch;
+            let fired = false;
+            const deck = this.deck();
+            this.observer?.disconnect();
+            this.observer = null;
+            if (!enabled || typeof IntersectionObserver === 'undefined') return;
+            this.observer = new IntersectionObserver(entries => {
+                if (!fired && epoch === this.observationEpoch && this.observe() && entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= 0.5)) {
+                    fired = true;
+                    this.visible.emit(deck);
+                    this.observer?.disconnect();
+                }
+            }, { threshold: 0.5 });
+            this.observer.observe(this.element.nativeElement);
+        });
+    }
 
     private readonly links = inject(ShareLinkService);
     protected readonly fallbackUrl = signal<string | null>(null);

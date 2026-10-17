@@ -51,7 +51,7 @@ class ImmutableStorageIntegrationTest extends PostgresIntegrationTest {
         jdbc.sql("CREATE TABLE IF NOT EXISTS app_learning.storage_publication_fixture (id UUID PRIMARY KEY, version BIGINT NOT NULL, root_id UUID)").update();
         jdbc.sql("CREATE TABLE IF NOT EXISTS app_learning.storage_projection_fixture (id UUID PRIMARY KEY)").update();
         // Explicit complete graph in this disposable test database; never cascade into unknown tables.
-        jdbc.sql("TRUNCATE app_learning.generation_research, app_learning.generation_media_ref, app_learning.generation_media_candidate, app_learning.generation_media_clip, app_learning.speech_cache, app_learning.generation_media_slot, app_learning.generation_event, "
+        jdbc.sql("TRUNCATE app_learning.catalog_event, app_learning.deck_exposure_day, app_learning.recommendation_snapshot, app_learning.user_topic_interest, app_learning.community_interest_profile, app_learning.generation_research, app_learning.generation_media_ref, app_learning.generation_media_candidate, app_learning.generation_media_clip, app_learning.speech_cache, app_learning.generation_media_slot, app_learning.generation_event, "
                 + "app_learning.generation_step, app_learning.generation_artifact_turn, app_learning.generation_artifact_revision, "
                 + "app_learning.generation_artifact, app_learning.generation_session_source, app_learning.generation_note_snapshot, app_learning.generation_session, "
                 + "app_learning.item_preview, app_learning.study_pair_interaction, app_learning.content_media_ref, app_learning.draft_media_ref, "
@@ -73,7 +73,7 @@ class ImmutableStorageIntegrationTest extends PostgresIntegrationTest {
                 + "app_learning.exercise_definition, app_learning.objective_head, "
                 + "app_learning.objective_revision, app_learning.memory_objective, app_learning.deck_head_item, "
                 + "app_learning.deck_item_change, app_learning.deck_item_exemplar, app_learning.item_revision, "
-                + "app_learning.published_media, app_learning.deck_publication_event, app_learning.deck_publication, app_learning.deck_access_grant, "
+                + "app_learning.editorial_pick, app_learning.public_deck, app_learning.catalog_listing, app_learning.published_media, app_learning.deck_publication_event, app_learning.deck_publication, app_learning.deck_access_grant, "
                 + "app_learning.fork_unit_decision, app_learning.fork_apply_log, app_learning.fork_update_log_objective, app_learning.fork_update_log, app_learning.combined_publication_unit, app_learning.combined_publication, "
                 + "app_learning.deck_fork, app_learning.deck_invite, app_learning.deck_access_request, "
                 + "app_learning.learning_item, app_learning.deck, app_learning.deck_revision, app_learning.storage_edge, "

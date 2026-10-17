@@ -95,6 +95,20 @@ class ItemControllerTest {
     }
 
     @Test
+    void navigationUsesPrivateHeadersAndOpaqueNotFound() throws Exception {
+        ObjectNode navigation = JSON.createObjectNode().put("deckVersion", "2").put("memberKey", member.toString());
+        navigation.putNull("previousMemberKey").putNull("nextMemberKey");
+        when(service.navigation(actor, deck, member)).thenReturn(navigation);
+        mvc.perform(get("/decks/" + deck + "/items/" + member + "/navigation"))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""))
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(content().json(navigation.toString()));
+        when(service.navigation(actor, deck, member)).thenThrow(new ResourceNotFoundException());
+        mvc.perform(get("/decks/" + deck + "/items/" + member + "/navigation"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
     void strictInputsAndOpaqueNotFoundUseStableProblemDetails() throws Exception {
         mvc.perform(post("/decks/" + deck + "/items").contentType(MediaType.APPLICATION_JSON).content(createBody()))
                 .andExpect(status().isPreconditionRequired()).andExpect(jsonPath("$.code").value("PRECONDITION_REQUIRED"));

@@ -35,9 +35,14 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
             `${prefix}/learning-profile`, `${prefix}/speech-consent`, `${prefix}/promo-codes/redemptions`, `${prefix}/promo-popup`, `${prefix}/promo-popup/events`,
             `${prefix}/experiment-events`, `${prefix}/billing/checkout`,
             // The topic directory of the publication checklist (Share/8) and the invitation redemption of a signed-in viewer (Share/13).
-            `${prefix}/topics`, `${prefix}/invites:redeem`];
+            `${prefix}/topics`, `${prefix}/invites:redeem`,
+            `${prefix}/community/interests`, `${prefix}/community/interests:reset`, `${prefix}/community/events`,
+            `${prefix}/community/exposures`, `${prefix}/community/recommendations`,
+            // The onboarding journey (contracts/onboarding): the view and its two commands.
+            `${prefix}/onboarding`, `${prefix}/onboarding/journey`, `${prefix}/onboarding/preferences`,
+            `${prefix}/onboarding/sample-deck`];
         const adminRoute = [`${prefix}/admin/console/access`, `${prefix}/admin/console/report`, `${prefix}/admin/console/audit`, `${prefix}/admin/promo-codes`, `${prefix}/admin/support/tickets`,
-            `${prefix}/admin/complaints`, `${prefix}/admin/complaints/journal`].includes(url.pathname)
+            `${prefix}/admin/complaints`, `${prefix}/admin/complaints/journal`, `${prefix}/admin/onboarding/experiment`].includes(url.pathname)
             // The complaint queue of the owner console (Share/15): one complaint, its unit picker and the two decisions (`:decide`, `:unhide`).
             || new RegExp(`^${pattern}/admin/complaints/${accountId}(?:/units|:decide|:unhide)?$`, 'iu').test(url.pathname)
             || new RegExp(`^${pattern}/admin/console/users/${accountId}$`, 'iu').test(url.pathname)
@@ -49,6 +54,9 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
         const entityId = '[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}';
         const publicRead = new RegExp(`^${pattern}/public/decks/[1-9A-HJ-NP-Za-km-z]{10}(?:/items(?:/${entityId})?|/exercises|/media/${entityId}|/complaints|/access-requests(?::withdraw)?)?$`, 'u')
             .test(url.pathname)
+            // The community catalogue (epic 3): facets, shelves, browse and search, and the decks of an author. The bearer is optional there too: a guest sends none, and a
+            // signed-in viewer sends it so the limits are keyed by the account and the author's page can add the invitation-only decks the viewer was granted.
+            || new RegExp(`^${pattern}/public/community/(?:facets|shelves|decks|authors/${entityId}/decks)$`, 'u').test(url.pathname)
             // Asking for and withdrawing access to an invitation deck (Share/13) is signed-in only, like filing a complaint.
             // Filing a complaint about a profile (Share/15): signed-in only, the login is the Identity profile username.
             || new RegExp(`^${pattern}/public/profiles/[A-Za-z0-9_.-]{3,50}/complaints$`, 'u').test(url.pathname);

@@ -201,6 +201,26 @@ public class ItemService {
         return result;
     }
 
+    /** Соседи читаются из текущего counted root без загрузки всех страниц колоды. */
+    @Transactional(timeout = 10)
+    public ObjectNode navigation(UUID actor, UUID deckId, UUID memberKey) {
+        ItemRepository.DeckHead deck = own(actor, deckId);
+        ItemRecord item = repository.headItem(actor, deckId, memberKey).orElseThrow(ResourceNotFoundException::new);
+        int ordinal = repository.currentOrdinal(deck, item).orElseThrow(VersionConflictException::new);
+        int start = Math.max(0, ordinal - 1);
+        List<Entry> entries = memberPages().read(tree(deck.scopeId(), deck.membersRootId(), deck.memberCount()),
+                start, Math.min(deck.memberCount() - start, ordinal == 0 ? 2 : 3));
+        if (!entries.get(ordinal - start).key().equals(memberKey)) throw new VersionConflictException();
+        ObjectNode result = JsonNodeFactory.instance.objectNode().put("deckId", deckId.toString())
+                .put("memberKey", memberKey.toString()).put("deckRevisionId", deck.revisionId().toString())
+                .put("deckVersion", Long.toString(deck.version())).put("ordinal", ordinal).put("total", deck.memberCount());
+        if (ordinal == 0) result.putNull("previousMemberKey");
+        else result.put("previousMemberKey", entries.getFirst().key().toString());
+        if (ordinal + 1 == deck.memberCount()) result.putNull("nextMemberKey");
+        else result.put("nextMemberKey", entries.getLast().key().toString());
+        return result;
+    }
+
     public WriteResult publish(UUID actor, UUID deckId, long expectedDeckVersion, ItemPublicationCommand command) {
         return publish(actor, deckId, expectedDeckVersion, command, (ignored, replayed) -> { });
     }

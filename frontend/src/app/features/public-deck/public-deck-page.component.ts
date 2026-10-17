@@ -1,3 +1,5 @@
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
@@ -5,6 +7,8 @@ import { ActivatedRoute, Router, RouterLink, Scroll } from '@angular/router';
 import { Subscription, filter, take } from 'rxjs';
 
 import { learnerOrigin } from '../../app.config';
+import { CatalogTelemetry } from '../community/catalog-telemetry.service';
+import { InterestStore } from '../community/interest-store.service';
 import { AuthService } from '../../auth.service';
 import { AuthorCardsService } from '../../author-cards.service';
 import { safeReturnUrl } from '../../auth-protocol';
@@ -71,7 +75,7 @@ const READER_MENU_ITEMS: readonly ActionMenuItem[] = [SHARE_MENU_ITEM, COMPLAINT
     selector: 'app-public-deck-page',
     imports: [RouterLink, AccessScreenComponent, ActionMenuComponent, AuthorChipComponent, DeckDescriptionComponent, GlyphComponent,
         PublicExercisesListComponent, PublicMaterialComponent, PublicMaterialsListComponent, SegmentedChoiceComponent, ShareButtonComponent,
-        ShareLinkFieldComponent, ComplaintDialogComponent],
+        ShareLinkFieldComponent, ComplaintDialogComponent, TourAnchorDirective],
     providers: [PublicPageMeta],
     templateUrl: './public-deck-page.component.html',
     styleUrl: './public-deck-page.component.css',
@@ -101,7 +105,10 @@ export class PublicDeckPageComponent {
     private readonly router = inject(Router);
     private readonly api = inject(PublicDeckApiService);
     private readonly auth = inject(AuthService);
+    private readonly telemetry = inject(CatalogTelemetry);
+    private readonly interests = inject(InterestStore);
     private readonly forks = inject(ForkApiService);
+    private readonly tour = inject(TourEvents);
     private readonly access = inject(AccessApiService);
     private readonly authors = inject(AuthorCardsService);
     private readonly links = inject(ShareLinkService);
@@ -174,6 +181,11 @@ export class PublicDeckPageComponent {
         effect(() => {
             const code = this.code();
             untracked(() => void this.load(code));
+        });
+        // The community tour waits for a deck to be opened; whoever opens one, the tour is told once the deck is on the screen.
+        effect(() => {
+            const deck = this.deck();
+            if (deck !== null && this.phase() === 'ready') untracked(() => this.tour.emit('community.deck-opened'));
         });
         // After a screen is replaced by another the focus lands on the new page heading. A material focuses its own heading
         // («Материал 3 из 12») once it is there; going back to the hub puts the focus on the row that was opened.
@@ -255,7 +267,10 @@ export class PublicDeckPageComponent {
         this.forks.copy(code, commandId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: created => {
                 this.copyCommand = null;
-                void this.router.navigate(['/decks', created.deckId]).finally(() => this.copying.set(false));
+                // The tour's «Добавить к себе» step is done by the copy that worked, not by the click.
+                // A tour that took the event opens the copy's hub itself (the same place), so the page does not navigate a second time.
+                if (this.tour.emit('deck.copied', { deckId: created.deckId })) this.copying.set(false);
+                else void this.router.navigate(['/decks', created.deckId]).finally(() => this.copying.set(false));
             },
             error: (error: unknown) => {
                 const failure = forkFailureOf(error);
@@ -263,6 +278,7 @@ export class PublicDeckPageComponent {
                 this.copying.set(false);
                 this.copyNotice.set(failure.kind === 'not-found' ? PUBLIC_ACTION_TEXT.copyNotFound
                     : failure.kind === 'own-deck' ? PUBLIC_ACTION_TEXT.copyOwn
+                    : failure.kind === 'sample' ? PUBLIC_ACTION_TEXT.copySample
                     : failure.kind === 'limit' ? PUBLIC_ACTION_TEXT.copyLimit(failure.limit)
                     : failure.kind === 'rate-limited' ? `Слишком много запросов. ${waitText(failure.retryAfter)}`
                     : failure.kind === 'busy' ? PUBLIC_ACTION_TEXT.copyBusy
@@ -292,6 +308,7 @@ export class PublicDeckPageComponent {
         this.meta.title(null);
         // A signed-in viewer's bearer must be on the first request, so the server can say OWNER or GRANTEE.
         await this.auth.restore();
+        this.interests.ensure();
         if (sequence !== this.sequence) return;
         const token = this.takeInviteToken(code);
         if (token !== null) this.redeem(token, code, sequence);
@@ -371,6 +388,7 @@ export class PublicDeckPageComponent {
 
     private accept(deck: PublicDeck): void {
         this.deck.set(deck);
+        if (deck.visibility === 'PUBLIC') this.telemetry.detail(deck.code);
         this.phase.set('ready');
         this.meta.indexable(deck.visibility === 'PUBLIC');
         this.meta.title(deck.title);

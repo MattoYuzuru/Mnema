@@ -2,6 +2,7 @@ package app.mnema.learning.speech;
 
 import app.mnema.learning.ai.Transcription;
 import app.mnema.learning.capability.LearningCapabilities;
+import app.mnema.learning.onboarding.SampleChecks;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.RateLimitedException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
@@ -56,17 +57,20 @@ class SpeechInputService {
     private final LearningCapabilities capabilities;
     private final Transcription transcription;
     private final UsageLedger ledger;
+    private final SampleChecks sampleChecks;
     private final ObjectProvider<SpeechInputWorker> worker;
     private final TransactionTemplate transaction;
 
     SpeechInputService(SpeechInputRepository repository, SpeechConsents consents, SpeechInputSettings settings, LearningCapabilities capabilities,
-                       Transcription transcription, UsageLedger ledger, ObjectProvider<SpeechInputWorker> worker, PlatformTransactionManager transactions) {
+                       Transcription transcription, UsageLedger ledger, SampleChecks sampleChecks, ObjectProvider<SpeechInputWorker> worker,
+                       PlatformTransactionManager transactions) {
         this.repository = repository;
         this.consents = consents;
         this.settings = settings;
         this.capabilities = capabilities;
         this.transcription = transcription;
         this.ledger = ledger;
+        this.sampleChecks = sampleChecks;
         this.worker = worker;
         this.transaction = new TransactionTemplate(transactions);
         this.transaction.setTimeout(10);
@@ -130,7 +134,9 @@ class SpeechInputService {
             Long wait = repository.waitIfFull(submission.owner(), settings.rateWindow().toSeconds(), settings.rateLimit());
             if (wait != null) throw new RateLimitedException(wait);
             long seconds = repository.openSeconds(submission.owner()) + (submission.declaredMs() + 999) / 1000;
-            ledger.requireFairUse(submission.owner(), Bucket.STT, seconds);
+            // a spoken answer in the account's onboarding sample deck is covered by its free checks (OB-203) and needs no room in the plan's bucket
+            boolean free = submission.purpose() == Transcription.Purpose.STUDY_ANSWER && submission.deck() != null && sampleChecks.covers(submission.owner(), submission.deck());
+            if (!free) ledger.requireFairUse(submission.owner(), Bucket.STT, seconds);
             Instant expires = repository.insert(id, submission.owner(), submission.key(), hash, submission.purpose(), submission.lang(), submission.deck(),
                     submission.mimeType(), submission.declaredMs(), submission.audio(), submission.script(), region, settings.deadline(), settings.ttl());
             return new Accepted(id, false, expires);

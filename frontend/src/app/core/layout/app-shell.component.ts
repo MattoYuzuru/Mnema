@@ -3,6 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 import { filter, map } from 'rxjs';
+import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 import { DeckConstellationComponent } from '../../shared/deck-constellation.component';
 import { PublicFooterComponent } from '../../shared/public-footer.component';
 
@@ -13,12 +14,15 @@ import { NotificationCenter } from '../notifications/notification-center';
 import { ToastRegionComponent } from '../notifications/toast-region.component';
 import { GoalOnboardingComponent } from '../../features/goal/goal-onboarding.component';
 import { PromoPopupHostComponent } from '../../features/promo/promo-popup-host.component';
+import { OnboardingHostComponent } from '../../features/onboarding/onboarding-host.component';
+import { TourEngine } from '../onboarding/tour-engine.service';
+import { TourHostComponent } from '../onboarding/tour-host.component';
 
 @Component({
     selector: 'app-shell',
     host: { '(pointerover)': 'setWaveOrigin($event)' },
     imports: [RouterLink, RouterLinkActive, RouterOutlet, DeckConstellationComponent, NotificationBellComponent, ToastRegionComponent,
-        GoalOnboardingComponent, PromoPopupHostComponent, PublicFooterComponent],
+        GoalOnboardingComponent, PromoPopupHostComponent, PublicFooterComponent, TourHostComponent, OnboardingHostComponent],
     templateUrl: './app-shell.component.html',
     styleUrl: './app-shell.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -28,6 +32,7 @@ export class AppShellComponent {
     readonly status = toSignal(this.auth.status$, { initialValue: this.auth.status() });
     readonly user = toSignal(this.auth.user$, { initialValue: this.auth.user() });
     private readonly router = inject(Router);
+    private readonly tour = inject(TourEngine);
 
     readonly routeUrl = toSignal(this.router.events.pipe(
         filter(event => event instanceof NavigationEnd), map(event => event.urlAfterRedirects)
@@ -36,6 +41,7 @@ export class AppShellComponent {
     /** The standalone event editor of the learner host (`/manage/events`) keeps the learner shell it always had. */
     readonly adminMode = computed(() => isAdminHost || /^\/manage(?:\/|$)/u.test(this.routeUrl().split('?')[0])
         && !/^\/manage\/events(?:\/|$)/u.test(this.routeUrl().split('?')[0]));
+    readonly communityLaunched = inject(COMMUNITY_LAUNCH);
     readonly learningHome = isAdminHost ? `${learnerOrigin(window.location.hostname, window.location.origin)}/decks` : '/decks';
     private readonly notifications = inject(NotificationCenter);
     readonly constellationSeed = computed(() => {
@@ -69,6 +75,8 @@ export class AppShellComponent {
 
     focusPageHeading(): void {
         queueMicrotask(() => {
+            // A running tour step owns the focus: the card heading takes it back after the page is activated, instead of the page heading.
+            if (this.tour.holdsFocus) { this.tour.refocus(); return; }
             const heading = document.querySelector<HTMLElement>('#main-content h1');
             heading?.focus();
         });

@@ -16,6 +16,8 @@ import { WorkshopPageComponent } from './features/generation/workshop-page.compo
 import { StudySessionPageComponent } from './features/study/study-session-page.component';
 import { StyleguidePageComponent } from './styleguide/styleguide-page.component';
 import { PublicDeckPageComponent } from './features/public-deck/public-deck-page.component';
+import { CommunityPageComponent } from './features/community/community-page.component';
+import { AuthorPageComponent } from './features/community/author-page.component';
 import { publicDeckMatcher } from './features/public-deck/public-deck-routing';
 import { UrlSegment } from '@angular/router';
 
@@ -71,8 +73,8 @@ describe('appRoutes', () => {
     it('guards a lazy owner shell and protects transactional children before leaving', () => {
         const manage = ownerRoutes(true).find(route => route.path === 'manage')!;
         expect(manage.canActivate).toEqual([authGuard]); expect(manage.loadComponent).toBeDefined();
-        expect(manage.children?.map(child => child.path)).toEqual(['', 'users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints', 'complaints/journal', 'complaints/:complaintId', 'audit']);
-        for (const path of ['users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints/:complaintId']) expect(manage.children?.find(child => child.path === path)?.canDeactivate).toHaveLength(1);
+        expect(manage.children?.map(child => child.path)).toEqual(['', 'users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints', 'complaints/journal', 'complaints/:complaintId', 'community', 'onboarding', 'audit']);
+        for (const path of ['users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'complaints/:complaintId', 'community']) expect(manage.children?.find(child => child.path === path)?.canDeactivate).toHaveLength(1);
     });
 
     it('keeps the event editor reachable on the learner host outside the owner shell, ahead of it', async () => {
@@ -132,5 +134,24 @@ describe('appRoutes', () => {
         expect(match('d')).toBeNull();
         expect(match('d', 'a', 'b', 'c')).toBeNull();
         expect(match('decks', 'Kq7xT3mNpR')).toBeNull();
+    });
+
+    it('opens the community catalogue to guests: one lazy public route, no guard, before the catch-all', async () => {
+        const route = appRoutes.find(candidate => candidate.path === 'community')!;
+        expect(route).toBeDefined();
+        expect(route.canActivate).toBeUndefined();
+        expect(route.component).toBeUndefined();
+        expect(appRoutes.indexOf(route)).toBeLessThan(appRoutes.findIndex(candidate => candidate.path === '**'));
+        expect(await route.loadComponent!()).toBe(CommunityPageComponent);
+    });
+
+    it('opens the author page to guests: one lazy public route /u/:username, no guard, before the catch-all, whatever the launch flag says', async () => {
+        const route = appRoutes.find(candidate => candidate.path === 'u/:username')!;
+        expect(route).toBeDefined();
+        expect(route.canActivate).toBeUndefined();
+        expect(route.component).toBeUndefined();
+        expect(route.data).toBeUndefined();
+        expect(appRoutes.indexOf(route)).toBeLessThan(appRoutes.findIndex(candidate => candidate.path === '**'));
+        expect(await route.loadComponent!()).toBe(AuthorPageComponent);
     });
 });

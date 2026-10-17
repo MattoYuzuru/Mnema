@@ -32,21 +32,36 @@ export class DeckConstellationComponent {
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
     private observer: ResizeObserver | null = null;
+    private pageObserver: MutationObserver | null = null;
 
     constructor() {
         effect(() => {
             this.layoutKey();
             afterNextRender(() => this.observePage(), { injector: this.injector });
         });
-        this.destroyRef.onDestroy(() => this.observer?.disconnect());
+        this.destroyRef.onDestroy(() => {
+            this.observer?.disconnect();
+            this.pageObserver?.disconnect();
+        });
     }
 
     private observePage(): void {
         if (this.destroyRef.destroyed) return;
         const main = this.host.nativeElement.parentElement;
-        const page = main?.lastElementChild?.firstElementChild;
-        if (!(main instanceof HTMLElement) || !(page instanceof HTMLElement)) { this.rails.set(null); return; }
+        if (!(main instanceof HTMLElement)) { this.rails.set(null); return; }
+        this.pageObserver?.disconnect();
+        // Lazy-маршрут может появиться после первого рендера оболочки. Наблюдаем только замену прямого
+        // дочернего элемента main: изменения звёзд и содержимого страницы сюда не попадают.
+        this.pageObserver = new MutationObserver(() => this.observeContent(main));
+        this.pageObserver.observe(main, { childList: true });
+        this.observeContent(main);
+    }
+
+    private observeContent(main: HTMLElement): void {
+        if (this.destroyRef.destroyed) return;
         this.observer?.disconnect();
+        const page = main.lastElementChild?.firstElementChild;
+        if (!(page instanceof HTMLElement)) { this.rails.set(null); return; }
         const measure = () => {
             const bounds = main.getBoundingClientRect();
             const content = page.getBoundingClientRect();

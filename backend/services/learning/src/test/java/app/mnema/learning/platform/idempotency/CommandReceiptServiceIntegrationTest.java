@@ -39,7 +39,7 @@ class CommandReceiptServiceIntegrationTest extends PostgresIntegrationTest {
                     value TEXT NOT NULL
                 )
                 """).update();
-        jdbcClient.sql("TRUNCATE app_learning.capture_note, app_learning.idempotency_effect_fixture, "
+        jdbcClient.sql("TRUNCATE app_learning.catalog_event, app_learning.deck_exposure_day, app_learning.recommendation_snapshot, app_learning.user_topic_interest, app_learning.community_interest_profile, app_learning.capture_note, app_learning.idempotency_effect_fixture, "
                 + "app_learning.command_receipt").update();
     }
 

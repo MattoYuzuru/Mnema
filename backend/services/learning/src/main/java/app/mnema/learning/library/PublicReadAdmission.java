@@ -19,7 +19,7 @@ import java.util.function.Supplier;
  * the caller counts what its own work decides.
  */
 @Component
-final class PublicReadAdmission {
+public final class PublicReadAdmission {
     private final PublicRouteSettings settings;
     private final PublicReadLimiter limiter;
     private final MeterRegistry meters;
@@ -33,11 +33,8 @@ final class PublicReadAdmission {
     }
 
     /** Runs {@code work} inside a place of the bulkhead; the place is released when it ends, however it ends. */
-    <T> T within(String route, Viewer viewer, Supplier<T> work) {
-        if (!settings.enabled) {
-            count(route, "disabled");
-            throw new ResourceNotFoundException();
-        }
+    public <T> T within(String route, Viewer viewer, Supplier<T> work) {
+        requireEnabled(route);
         // A signed-in viewer was admitted by the filter of the public chain before Identity was asked (one token cannot drive unlimited
         // Identity round trips); only guests are counted here.
         if (viewer.isGuest()) {
@@ -62,7 +59,15 @@ final class PublicReadAdmission {
         }
     }
 
-    void count(String route, String outcome) {
+    /** Catalogue descendants can check their parent switch before parsing a request. */
+    public void requireEnabled(String route) {
+        if (!settings.enabled) {
+            count(route, "disabled");
+            throw new ResourceNotFoundException();
+        }
+    }
+
+    public void count(String route, String outcome) {
         meters.counter("mnema_public_deck_requests_total", "route", route, "outcome", outcome).increment();
     }
 }

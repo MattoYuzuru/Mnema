@@ -65,6 +65,37 @@ class CurrentIdentityFilterClaimTest {
         assertThat(IdentityClaims.publicProfileReady(run(200, body))).isEqualTo(expected);
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "{\"sub\":\"SUB\",\"mnema_trusted\":true,\"mnema_new_account\":false}|true|false",
+            "{\"sub\":\"SUB\",\"mnema_trusted\":false,\"mnema_new_account\":true}|false|true",
+            "{\"sub\":\"SUB\",\"mnema_trusted\":true,\"mnema_new_account\":true}|true|true",
+            "{\"sub\":\"SUB\"}|null|null",
+            "{\"sub\":\"SUB\",\"mnema_trusted\":\"true\",\"mnema_new_account\":\"true\"}|false|false",
+            "{\"sub\":\"SUB\",\"mnema_trusted\":1,\"mnema_new_account\":1}|false|false",
+            "{\"sub\":\"SUB\",\"mnema_trusted\":null,\"mnema_new_account\":null}|null|null",
+            "{\"sub\":\"SUB\",\"mnema_trusted\":[true],\"mnema_new_account\":{\"a\":true}}|false|false",
+            "{\"sub\":\"SUB\",\"mnema_trusted\":true}|true|null",
+            "{\"sub\":\"SUB\",\"mnema_new_account\":true}|null|true"
+    })
+    void theAntiAbuseSignalsAreReadStrictlyAnAbsentClaimIsUnknownAndAMalformedOneIsFalse(String body, String trusted, String newAccount) throws Exception {
+        assertThat(IdentityClaims.signals(run(200, body))).isEqualTo(new IdentityClaims.AccountSignals(flag(trusted), flag(newAccount)));
+    }
+
+    private static Boolean flag(String text) { return text.equals("null") ? null : Boolean.valueOf(text); }
+
+    @Test
+    void theAntiAbuseClaimNamesAreTheOnesInTheSharedContractFileAndARequestWithoutAnIdentityCheckHasUnknownSignals() throws Exception {
+        java.nio.file.Path root = java.nio.file.Path.of("").toAbsolutePath();
+        while (root != null && !java.nio.file.Files.exists(root.resolve("contracts/identity/user-info-claims.json"))) root = root.getParent();
+        assertThat(root).isNotNull();
+        var contract = JsonMapper.builder().build().readTree(java.nio.file.Files.readString(root.resolve("contracts/identity/user-info-claims.json")));
+        assertThat(IdentityClaims.TRUSTED_CLAIM).isEqualTo(contract.path("trusted").path("claim").stringValue(null));
+        assertThat(IdentityClaims.NEW_ACCOUNT_CLAIM).isEqualTo(contract.path("newAccount").path("claim").stringValue(null));
+        assertThat(IdentityClaims.signals(new MockHttpServletRequest("GET", "/public/decks/x"))).isEqualTo(IdentityClaims.AccountSignals.UNKNOWN);
+        assertThat(IdentityClaims.AccountSignals.UNKNOWN).isEqualTo(new IdentityClaims.AccountSignals(null, null));
+    }
+
     @Test
     void theClaimNameIsTheOneIdentityWritesAccordingToTheSharedContractFile() throws Exception {
         java.nio.file.Path root = java.nio.file.Path.of("").toAbsolutePath();

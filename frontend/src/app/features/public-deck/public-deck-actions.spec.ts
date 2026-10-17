@@ -11,6 +11,7 @@ import forks from '../../../../../contracts/decks/forks.json';
 import contract from '../../../../../contracts/decks/public-read.json';
 import { AuthService, AuthStatus } from '../../auth.service';
 import { AuthorCardsService } from '../../author-cards.service';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { AccessApiService } from '../own-decks/access/access-api.service';
 import { ForkApiService } from '../own-decks/fork/fork-api.service';
 import { isCanonicalCommandId } from '../own-decks/own-deck.models';
@@ -61,7 +62,7 @@ describe('the actions of the public deck view: copy, invitation, access request'
             { provide: PublicDeckApiService, useValue: api },
             { provide: ForkApiService, useValue: copies },
             { provide: AccessApiService, useValue: accessApi },
-            { provide: AuthService, useValue: { status, restore: vi.fn().mockResolvedValue(undefined) } },
+            { provide: AuthService, useValue: { status, user: signal(null), restore: vi.fn().mockResolvedValue(undefined) } },
             { provide: AuthorCardsService, useValue: { card: vi.fn().mockResolvedValue(null), avatarUrl: vi.fn() } }
         ] });
     });
@@ -80,6 +81,59 @@ describe('the actions of the public deck view: copy, invitation, access request'
         }
     }
     const withCopy = (myCopy: PublicDeck['myCopy']): PublicDeck => ({ ...PUBLIC, myCopy });
+
+    describe('what the onboarding tour is told', () => {
+        const heard = (): [string, unknown][] => {
+            const seen: [string, unknown][] = [];
+            TestBed.inject(TourEvents).listen((event, payload) => { seen.push([event, payload]); });
+            return seen;
+        };
+
+        it('says that a deck was opened once its page is on the screen, so the community tour can go on', async () => {
+            api.summary.mockReturnValue(of(PUBLIC));
+            const seen = heard();
+            await open(publicUrl);
+            expect(seen).toContainEqual(['community.deck-opened', undefined]);
+        });
+
+        it('marks the deck summary and «Добавить к себе» as the places the tour points at', async () => {
+            api.summary.mockReturnValue(of(PUBLIC));
+            await open(publicUrl);
+            expect(root().querySelector('header.hub-heading')!.getAttribute('data-tour-anchor')).toBe('community.deck');
+            expect(button('Добавить к себе').getAttribute('data-tour-anchor')).toBe('community.add');
+        });
+
+        it('says that the deck was copied only when the copy worked, with the id of the copy', async () => {
+            api.summary.mockReturnValue(of(PUBLIC));
+            copies.copy.mockReturnValueOnce(throwError(() => problem(404, 'DECK_NOT_FOUND')));
+            const seen = heard();
+            await open(publicUrl);
+            button('Добавить к себе').click();
+            await settle();
+            expect(seen.filter(([event]) => event === 'deck.copied')).toEqual([]);
+            copies.copy.mockReturnValue(of({ commandId: 'x', deckId: COPY_ID, preparing: true, existing: false }));
+            button('Добавить к себе').click();
+            await settle();
+            expect(seen.filter(([event]) => event === 'deck.copied')).toEqual([['deck.copied', { deckId: COPY_ID }]]);
+        });
+
+        it('opens the copy itself, unless a tour gate took the event and goes to the copy\'s hub on its own', async () => {
+            api.summary.mockReturnValue(of(PUBLIC));
+            copies.copy.mockReturnValue(of({ commandId: 'x', deckId: COPY_ID, preparing: true, existing: false }));
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+            await open(publicUrl);
+            button('Добавить к себе').click();
+            await settle();
+            expect(navigate).toHaveBeenCalledWith(['/decks', COPY_ID]);
+            navigate.mockClear();
+            TestBed.inject(TourEvents).listen(() => true);
+            await open(publicUrl);
+            button('Добавить к себе').click();
+            await settle();
+            expect(navigate).not.toHaveBeenCalled();
+            expect(button('Добавить к себе').disabled).toBe(false);
+        });
+    });
 
     describe('«Добавить к себе»', () => {
         it('is the primary action of a signed-in viewer who has no copy, and adds nothing for a guest', async () => {
@@ -169,6 +223,7 @@ describe('the actions of the public deck view: copy, invitation, access request'
             api.summary.mockReturnValue(of(PUBLIC));
             const cases: readonly (readonly [HttpErrorResponse, string])[] = [
                 [problem(409, 'FORK_OWN_DECK'), 'Это ваша колода: добавлять её к себе не нужно.'],
+                [problem(409, 'SAMPLE_DECK_NOT_SHAREABLE'), 'Учебной колодой поделиться нельзя. Создайте свою — ею можно.'],
                 [problem(404, 'RESOURCE_NOT_FOUND'), 'Сейчас добавить колоду к себе нельзя. Попробуйте позже.'],
                 [problem(429, 'RATE_LIMITED', {}, { 'Retry-After': '37' }), 'Слишком много запросов. Подождите 37 с и повторите.'],
                 [problem(503, 'PUBLIC_READ_BUSY', {}, { 'Retry-After': '1' }), 'Сейчас много читателей. Повторите через секунду.'],
@@ -459,6 +514,7 @@ describe('the actions of the public deck view: copy, invitation, access request'
             await open(`/d/${INVITE.code}`);
             const cases: readonly (readonly [HttpErrorResponse, string])[] = [
                 [problem(422, 'RESOURCE_LIMIT_EXCEEDED', { limit: 20 }), 'У вас уже слишком много открытых запросов. Дождитесь ответов или отмените лишние.'],
+                [problem(409, 'SAMPLE_DECK_NOT_SHAREABLE'), 'Учебной колодой поделиться нельзя. Создайте свою — ею можно.'],
                 [problem(429, 'RATE_LIMITED', {}, { 'Retry-After': '3600' }), 'Слишком много запросов. Подождите 60 мин и повторите.'],
                 [problem(429, 'RATE_LIMITED', {}, { 'Retry-After': '45' }), 'Слишком много запросов. Подождите 45 с и повторите.'],
                 [problem(0, null), 'Не удалось отправить запрос. Проверьте соединение и повторите.']

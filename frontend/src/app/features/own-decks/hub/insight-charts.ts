@@ -4,11 +4,11 @@ import { MECHANIC_LABELS, STATE_LABELS, daysText, exercisesText, materialsText, 
 
 /**
  * Pure geometry and wording for the five Insight widgets. The template only places what is computed here, so the
- * numbers in the drawing, the caption sentence and the table alternative cannot disagree.
+ * numbers in the drawing and its text labels cannot disagree.
  */
 
 export interface StateSegment { readonly state: MaterialState; readonly label: string; readonly count: number; readonly x: number; readonly width: number; }
-export interface DueBar { readonly date: string; readonly label: string; readonly tableLabel: string; readonly materials: number; readonly height: number; readonly x: number; }
+export interface DueBar { readonly date: string; readonly label: string; readonly materials: number; readonly height: number; readonly x: number; }
 export interface MechanicBar { readonly mechanic: Mechanic; readonly label: string; readonly count: number; readonly width: number; }
 
 export const STATE_BAR_WIDTH = 300;
@@ -38,7 +38,7 @@ export function stateSegments(states: DeckInsights['states']): readonly StateSeg
 export function dueBars(days: readonly DueDay[]): readonly DueBar[] {
     const peak = Math.max(1, ...days.map(day => day.materials));
     return days.map((day, index) => ({
-        date: day.date, label: dayLabel(day.date, index), tableLabel: `${index === 0 ? 'Сегодня, ' : ''}${longDay(day.date)}`, materials: day.materials, x: index * DUE_COLUMN + 8,
+        date: day.date, label: dayLabel(day.date, index), materials: day.materials, x: index * DUE_COLUMN + 8,
         // A zero day keeps a short rule so the empty column is still drawn.
         height: day.materials === 0 ? 2 : Math.max(6, Math.round(day.materials / peak * (DUE_PLOT_HEIGHT - 8)))
     }));
@@ -108,10 +108,4 @@ export function capturesSentence(captures: DeckInsights['captures'], asOf: strin
     const days = Math.max(0, Math.floor((Date.parse(asOf) - Date.parse(captures.oldestOpenCreatedAt)) / 86_400_000));
     const age = days === 0 ? 'сегодня' : `${daysText(days)} назад`;
     return `Ждут разбора ${notesText(captures.open)}; самая давняя — ${age}.`;
-}
-
-/** Whether some mechanic is unused while others are in use: the widget then suggests adding one. */
-export function hasUnusedMechanic(counts: DeckInsights['exercisesByMechanic']): boolean {
-    const used = MECHANICS.filter(mechanic => counts[mechanic] > 0).length;
-    return used > 0 && used < MECHANICS.length;
 }

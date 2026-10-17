@@ -59,6 +59,7 @@
 .sg-stack { display: grid; gap: .9rem; }
 .sg-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 1rem; }
 .sg-field { max-inline-size: 28rem; }
+.sg-order-list { margin: 0 0 .9rem; padding: 0; list-style: none; }
 .sg-field input:not([type='checkbox'], [type='radio']), .sg-field textarea { inline-size: 100%; }
 .sg-inline { display: flex; align-items: center; gap: .25rem; margin: 0; }
 .sg-stage .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
@@ -149,3 +150,22 @@
 .sg-revert { display: grid; gap: .6rem; justify-items: start; margin: 0; }
 .sg-revert p { margin: 0; }
 .sg-order { margin: 0; padding-inline-start: 1.4rem; line-height: 1.7; }
+
+/* «Знакомство»: specimens of the spotlight tour. */
+.sg-tour-pair, .sg-night-pair { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); align-items: start; }
+.sg-night-pair app-night-sky { min-block-size: 24rem; }
+.sg-veil-stage { position: relative; max-inline-size: 100%; overflow: hidden; border: 1px solid var(--mn-rule); background: var(--mn-paper); }
+.sg-veil-page { display: grid; gap: .5rem; align-content: end; justify-items: start; block-size: 100%; padding: 1.25rem 1.5rem; }
+/* The target stands exactly in the cut-out of the specimen (36,42,190,56 less the 8px padding). */
+.sg-veil-target { position: absolute; inset-inline-start: 44px; inset-block-start: 50px; inline-size: 174px; block-size: 40px; min-block-size: 0; }
+.sg-veil-title { margin: 0; color: var(--mn-ink); font: 600 1.5rem/1.1 var(--mn-font-display); }
+.sg-hold-states { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); margin-block-end: 1rem; }
+.sg-hold-states figure { display: grid; align-content: start; gap: .5rem; margin: 0; padding: 1rem; border: 1px solid var(--mn-rule); background: var(--mn-sheet); }
+.sg-hold-states figcaption { color: var(--mn-muted); font-size: .85rem; }
+.sg-mock-hub { display: grid; gap: 1rem; justify-items: start; max-inline-size: 36rem; margin-block: 1rem; padding: 1rem; border: 1px solid var(--mn-rule); background: var(--mn-paper); }
+.sg-mock-hub > header, .sg-mock-hub > section { inline-size: 100%; padding: .75rem; border: 1px solid var(--mn-rule); background: var(--mn-sheet); }
+.sg-mock-hub h4 { margin: 0; }
+.sg-mock-list { margin: 0; padding-inline-start: 1.2rem; }
+@media (forced-colors: active) { .sg-veil-stage, .sg-hold-states figure, .sg-mock-hub, .sg-mock-hub > header, .sg-mock-hub > section { border-color: CanvasText; } }
+.sg-survey-forward { display: flex; flex-wrap: wrap; gap: .5rem; }
+.sg-root app-night-sky app-survey-card { margin-block: 1rem; }

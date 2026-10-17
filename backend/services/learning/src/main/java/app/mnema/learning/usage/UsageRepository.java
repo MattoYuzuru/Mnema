@@ -254,6 +254,20 @@ class UsageRepository {
                 .param("units", entry.units()).param("now", time(entry.createdAt())).update() == 1;
     }
 
+    /**
+     * Serializes the sponsored consumption of one account and operation (transaction-scoped): the count below is read and then written, so two parallel checks of the same
+     * account must not both see "one left". Taken last and held only to the end of the short transaction that stores a delivered grade or transcript.
+     */
+    void lockSponsored(UUID owner, SponsoredOperation operation) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))").param("key", "sponsored:" + operation.name() + ":" + owner).query().listOfRows();
+    }
+
+    /** How many entries of a sponsored operation the account has; served by the partial index {@code usage_ledger_sample_check} (the operation is an enum constant, inlined for the planner). */
+    long sponsoredCount(UUID owner, SponsoredOperation operation) {
+        return jdbc.sql("SELECT count(*) FROM app_learning.usage_ledger_entry WHERE owner_id=:owner AND operation='" + operation.name() + "'")
+                .param("owner", owner).query(Long.class).single();
+    }
+
     Optional<LedgerRow> ledgerByKey(String idempotencyKey) {
         return jdbc.sql("SELECT owner_id,kind,credits,reservation_id,period_id,operation,cost_micros,reference,bucket,units "
                         + "FROM app_learning.usage_ledger_entry WHERE idempotency_key=:key").param("key", idempotencyKey)

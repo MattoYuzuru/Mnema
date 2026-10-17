@@ -1,0 +1,6 @@
+/* Styleguide-only layout of the «Сообщество» section (namespaced sg-*; the specimens use the real app classes). */
+.sg-field-box { position: relative; max-inline-size: 26rem; }
+.sg-field-box input { inline-size: 100%; min-block-size: var(--mn-touch-min); }
+.sg-address { margin: 0; overflow-wrap: anywhere; }
+.sg-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.sg-shelf-narrow { max-inline-size: 24rem; }

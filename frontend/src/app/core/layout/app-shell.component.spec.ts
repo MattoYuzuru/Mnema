@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { TourEngine } from '../onboarding/tour-engine.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { BehaviorSubject, NEVER, of } from 'rxjs';
@@ -9,6 +10,7 @@ import { NotificationCenter } from '../notifications/notification-center';
 import { LearningProfileApiService } from '../../features/goal/learning-profile-api.service';
 import { AppShellComponent } from './app-shell.component';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
+import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 
 @Component({ template: '<h1 tabindex="-1">Мои колоды</h1>' })
 class TestPageComponent {
@@ -68,7 +70,7 @@ describe('AppShellComponent', () => {
         expect(root.querySelectorAll('main').length).toBe(1);
         expect(root.querySelector<HTMLAnchorElement>('.skip-link')?.getAttribute('href')).toBe('#main-content');
         expect(Array.from(root.querySelectorAll('.primary-nav a')).map(link => link.getAttribute('href')))
-            .toEqual(['/decks', '/decks/new', '/profile']);
+            .toEqual(['/decks', '/community', '/decks/new', '/profile']);
         expect(root.textContent).not.toContain('Начать обучение');
     });
 
@@ -105,6 +107,21 @@ describe('AppShellComponent', () => {
 
         expect(document.activeElement?.textContent).toBe('Мои колоды');
         expect(auth.logout).not.toHaveBeenCalled();
+    });
+
+    it('leaves the focus to the card of a running tour step after a page is activated, and takes it to the page heading otherwise', async () => {
+        const engine = TestBed.inject(TourEngine);
+        engine.start({ id: 'x', branch: null, steps: [{ key: 'finale.ai', anchor: 'hub.start', title: 'Т', body: { kind: 'paragraphs', paragraphs: [] }, gate: 'next' }] });
+        (document.activeElement as HTMLElement | null)?.blur();
+        const requested = engine.focusRequest();
+        fixture.componentInstance.focusPageHeading();
+        await Promise.resolve();
+        expect(document.activeElement?.textContent).not.toBe('Мои колоды');
+        expect(engine.focusRequest()).toBe(requested + 1);
+        engine.pause();
+        fixture.componentInstance.focusPageHeading();
+        await Promise.resolve();
+        expect(document.activeElement?.textContent).toBe('Мои колоды');
     });
 
     it('suppresses learner prompts, public footer and notification polling in the owner console', async () => {
@@ -209,5 +226,84 @@ describe('AppShellComponent', () => {
         await fixture.componentInstance.logout();
 
         expect(TestBed.inject(Router).url).toBe('/login');
+    });
+});
+
+describe('AppShellComponent and the community catalogue', () => {
+    const USER = {
+        accountId: '11111111-1111-4111-8111-111111111111', email: 'reader@example.test', emailVerified: true, profileUsername: 'reader',
+        displayName: 'Читатель', hasPassword: true, name: 'Читатель'
+    };
+
+    async function create(launched: boolean, signedIn: boolean, url = '/'): Promise<{ fixture: ComponentFixture<AppShellComponent>; root: HTMLElement; router: Router }> {
+        const auth = spyObj<AuthService>({ status: vi.fn(), user: vi.fn(), logout: vi.fn() });
+        auth.status.mockReturnValue(signedIn ? 'authenticated' : 'anonymous');
+        auth.user.mockReturnValue(signedIn ? USER : null);
+        Object.defineProperty(auth, 'status$', { value: of<AuthStatus>(signedIn ? 'authenticated' : 'anonymous') });
+        Object.defineProperty(auth, 'user$', { value: of(signedIn ? USER : null) });
+        await TestBed.configureTestingModule({
+            imports: [AppShellComponent],
+            providers: [
+                provideRouter([{ path: '', component: TestPageComponent }, { path: 'community', component: TestPageComponent }, { path: 'manage', component: TestPageComponent }]),
+                { provide: AuthService, useValue: auth },
+                { provide: COMMUNITY_LAUNCH, useValue: launched },
+                { provide: NotificationsApiService, useValue: { list: () => NEVER } },
+                { provide: LearningProfileApiService, useValue: { load: () => NEVER } }
+            ]
+        }).compileComponents();
+        const fixture = TestBed.createComponent(AppShellComponent);
+        const router = TestBed.inject(Router);
+        await router.navigateByUrl(url);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        return { fixture, root: fixture.nativeElement as HTMLElement, router };
+    }
+    const nav = (root: HTMLElement) => [...root.querySelectorAll('.primary-nav a')].map(link => [link.textContent!.trim(), link.getAttribute('href')]);
+
+    it('leads nowhere to the catalogue while it is closed: no nav item, no search entry', async () => {
+        const guest = await create(false, false);
+        expect(nav(guest.root)).toEqual([['Материалы', '/#materials'], ['Упражнения', '/#exercises'], ['Как учиться', '/#rhythm']]);
+        expect(guest.root.querySelector('app-book-search')).toBeNull();
+        TestBed.resetTestingModule();
+        const reader = await create(false, true);
+        expect(nav(reader.root).map(([, href]) => href)).toEqual(['/decks', '/decks/new', '/profile']);
+        expect(reader.root.querySelector('app-book-search')).toBeNull();
+    });
+
+    it('puts «Сообщество» second for a signed-in reader and first for a guest, once it is open', async () => {
+        const reader = await create(true, true);
+        expect(nav(reader.root)).toEqual([['Мои колоды', '/decks'], ['Сообщество', '/community'], ['Новая колода', '/decks/new'], ['Профиль', '/profile']]);
+        TestBed.resetTestingModule();
+        const guest = await create(true, false);
+        expect(nav(guest.root)).toEqual([['Сообщество', '/community'], ['Материалы', '/#materials'], ['Упражнения', '/#exercises'], ['Как учиться', '/#rhythm']]);
+    });
+
+    it('marks «Сообщество» as the current page on the community page', async () => {
+        const { root } = await create(true, true, '/community?q=кот');
+        const link = [...root.querySelectorAll('.primary-nav a')].find(item => item.getAttribute('href') === '/community')!;
+        expect(link.getAttribute('aria-current')).toBe('page');
+    });
+
+    it('keeps search out of the header for a guest and a signed-in reader on every route', async () => {
+        for (const signedIn of [false, true]) {
+            const { fixture, root, router } = await create(true, signedIn);
+            expect(root.querySelector('app-book-search, search')).toBeNull();
+            await router.navigateByUrl('/community'); fixture.detectChanges();
+            expect(root.querySelector('app-book-search, search')).toBeNull();
+            if (signedIn) {
+                const identity = root.querySelector('.identity')!;
+                expect(identity.textContent).toBe(USER.email);
+                expect(identity.getAttribute('title')).toBe(USER.email);
+                expect(identity.nextElementSibling?.tagName.toLowerCase()).toBe('app-notification-bell');
+                expect(root.querySelector('.session button.button')?.textContent).toBe('Выйти');
+            }
+            fixture.destroy(); TestBed.resetTestingModule();
+        }
+    });
+
+    it('leaves the owner console without the catalogue', async () => {
+        const { root } = await create(true, true, '/manage');
+        expect(root.querySelector('app-book-search')).toBeNull();
+        expect(nav(root)).toEqual([['Открыть Мнему', root.querySelector('.primary-nav a')!.getAttribute('href')]]);
     });
 });

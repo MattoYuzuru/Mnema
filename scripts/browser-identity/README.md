@@ -159,8 +159,9 @@ fixture), then checks:
 
 | Stage | Assertions |
 |---|---|
-| statistics | five `<figure>`s drawn when scrolled into view (`@defer (on viewport)`), each `svg[role=img]` named by its `<figcaption>`; every figure has a `<details>` with a real table opened by a real click; all five tables carry exactly the numbers of `GET /api/decks/{id}/insights`; coverage shows materials without exercises; no vanity metric; each widget ends in an action |
+| statistics | five `<figure>`s in one surface, each `svg[role=img]` named by its `<figcaption>`; numerical legends match `GET /api/decks/{id}/insights` and remain available before deferred SVG rendering; no tables or action links; at desktop width mechanics spans two columns beside coverage, with states, due dates and captures below |
 | responsive | `hub-1440.png`, `hub-390.png`, `hub-320-at-200-percent.png` (320 CSS px at DPR 2), the document never overflows horizontally at 390 and 320 |
+| material navigation | first/last boundaries and route reuse through real neighbour links; at 1440/1200 px the chevrons remain vertically centred in the material gutters while scrolling; at 1050/390 px the links follow the document without covering its text (`material-navigation-<width>.png`) |
 | sort | the radio group is changed with a real ArrowRight; materials without exercises come first, every row keeps its true ordinal (`2,3,4,1`), the order equals the API's `sort=exerciseCount` order |
 | «Эталон» | the star is toggled with a real Space press (`aria-pressed`, name «Эталон: <title>»), the server stores it, it survives a reload, and the budget note shows «1 из 10» |
 | selection | checkbox + Shift+click range, tri-state «Выбрать все» (mixed, checked, cleared), the `role="region"` bulk bar with the count, sticky and inside the viewport, its height reserved as `--mn-bulk-bar-height`, **no «ИИ» button while the capability is off**, real Esc clears the selection (`hub-selection-1440.png`, `hub-selection-390.png`) |
@@ -532,14 +533,14 @@ Nothing is stubbed or intercepted. Every tab's console (calls, uncaught exceptio
 
 | Stage | Assertions |
 |---|---|
-| `community_consent` (once) | `/profile`: the switch «Показывать мой профиль другим» starts off, the per-field boxes «Имя», «Фото», «О себе» start unticked and disabled, the approved consent text is shown; Space turns it on, the preview shows `@login`, Identity reports `enabled` and `publishReady` with every field off |
-| `publish` | deck and three materials through the real editor, one exercise through the API; the hub's picker has exactly «Приватная · По ссылке · По приглашению · Публичная» and starts «Приватная»; ArrowRight x3 stages «Публичная» («Изменить доступ: Публичная»), Enter on «Сделать публичной…» opens the checklist (description, profile, pictures ready; language detected); topic; publication; the API reports `PUBLIC`, a 10-character code and `/d/{code}/{slug}`, the hub shows the link and lists the materials |
+| `community_consent` (once) | `/profile`: the button «Показывать мой профиль другим» starts unpressed and the field buttons are hidden; Space turns it on, the joined «Имя», «Фото», «О себе» buttons appear unpressed, the preview shows `@login`, and Identity reports `enabled` and `publishReady` with every field off |
+| `publish` | deck and three materials through the real editor, one exercise through the API; «Поделиться» opens the centred native modal, whose picker has exactly «Приватная · По ссылке · По приглашению · Публичная» and starts «Приватная»; selecting «Публичная» opens the checklist directly (description, profile, pictures ready; language detected); topic; publication; the API reports `PUBLIC`, a 10-character code and `/d/{code}/{slug}`, the hub shows the link and lists the materials |
 | `guest` | `/d/{code}/wrong-slug` and `/d/{code}` are replaced by the canonical address; the context holds no cookie and no storage; title, `@author` chip, «Публичная», «3 материала · 1 упражнение», the published description; `meta referrer` is `no-referrer` and `robots` `index,follow`; the materials are the owner's titles; the first material link is reached by real Tab (focus-visible) and opened with Enter («Материал 1 из 3», «← К колоде»); the exercise preview shows the prompt, never the accepted answer (page text and `/api/public/decks/{code}/exercises`); the primary action is «Войдите, чтобы добавить колоду к себе» with a `/login?returnUrl=` link; no «Учить», «Изменить», «Мастерская»; no horizontal overflow, 44 px target; no bearer on any public read and none answered 5xx; an unknown code gives «Колода не найдена» and the approved sentence |
 | `copy` | the member sees «Добавить к себе» only; real Tab reaches it, Enter copies; the copy hub opens within the SPA; a MutationObserver installed beforehand records the heading «Готовим колоду…», (the job can finish in about 150 ms on a fast machine, so the heading is required only when preparation took 2.5 s or more; `preparingTextObserved` and `materializedAfterMs` say what happened), then (bounded 60 s) the ready hub with «Копия колоды «…»», the same three materials and «Учить»; `GET /api/decks/{id}` reports `fork {preparing:false, failed:false, sourceAvailable:true, upstreamTitle}` |
 | `study` | Study of the copy: Space starts, the author's prompt is shown without the answer, the typed answer gets a correct feedback with focus on its heading; the author's `GET /api/decks/{id}/insights` is unchanged (timestamps ignored) |
 | `reopen` | the second visit offers only «Открыть мою копию» (a link to the copy, reached by Tab, opened with Enter); a second `POST /api/decks/forks` returns the live copy (`existing: true`) |
 | `complaint` | on the public deck: the owner's «⋯» (reached by Tab, opened with Enter) offers «Поделиться» and no «Пожаловаться», Escape closes it with the focus back on «⋯», and the API refuses his own complaint with 400; the member's «⋯» offers «Поделиться» and «Пожаловаться» (ArrowDown, Enter): a modal `<dialog>` «Пожаловаться на колоду» naming the deck, five unselected reasons, fits the viewport, every button is at least 44 px; Escape closes it and returns the focus to «⋯»; opened again, «Отправить жалобу» without a reason says «Выберите причину.», keeps the dialog and puts the focus on the reason, sends nothing; three ArrowDown choose «Спам или реклама» (the live hint shows, the error goes), Tab reaches the text field and the send button; Enter sends one `POST /api/public/decks/{code}/complaints` with the bearer, answered 202; the dialog closes, the toast «Жалоба отправлена» appears (a `MutationObserver` records it, it lives 3 s), the focus is on «⋯»; a repeat through the API is the same 202 `RECEIVED` |
-| `invite_only` | the owner steps the picker back with ArrowLeft («Изменить доступ: По приглашению», the line «Ссылка изменится, и старые ссылки перестанут работать.»), «Применить»; the code is rotated and the link is `/d/{code}` without a slug; the old link shows «Колода не найдена» to a guest and names no title; the new link shows a guest and the member without a grant «Колода доступна по приглашению» with the approved sentence, no title, `noindex`, and «Запросить доступ» (reached by Tab, Enter); then the approved «Запрос отправлен. Если автор согласится, колода появится по этой же ссылке.» with focus on it; the member's copy hub says «Автор закрыл исходную колоду. Ваша копия остаётся с вами, но обновлений больше не будет.» and still works; the request is sent by the page with the bearer and answered 202; the owner's «Запросы доступа» panel lists the request with «Принять»/«Отклонить» |
+| `invite_only` | the owner selects «По приглашению» in the sharing dialog and the change saves immediately, without «Применить»; the code is rotated and the link is `/d/{code}` without a slug; the old link shows «Колода не найдена» to a guest and names no title; the new link shows a guest and the member without a grant «Колода доступна по приглашению» with the approved sentence, no title, `noindex`, and «Запросить доступ» (reached by Tab, Enter); then the approved «Запрос отправлен. Если автор согласится, колода появится по этой же ссылке.» with focus on it; the member's copy hub says «Автор закрыл исходную колоду. Ваша копия остаётся с вами, но обновлений больше не будет.» and still works; the request is sent by the page with the bearer and answered 202; the owner's «Запросы доступа» panel lists the request with «Принять»/«Отклонить» |
 | `withdraw` | the member asks again (the same sentence, a repeat of an open request), «Отменить запрос» replaces the button and is reached by Tab (focus-visible); Enter sends one `POST …/access-requests:withdraw` with the bearer, answered 204; «Запрос отменён.» is shown, the sentence «Запрос отправлен…» goes, the focus is on «Запросить доступ»; the owner's panel is empty; the member asks again and the owner sees exactly one decidable request |
 | `approve` | «Принять» by keyboard empties the list; the same link now opens the deck for the member («По приглашению», «Открыть мою копию») |
 | `invite_create` | in the «Доступ» panel, «Пригласительные ссылки» has the defaults «Один раз» and «7 дней» and an empty list; «Создать ссылку» (Enter) shows the new link once (`host/d/{code}?invite={43 characters}`, the rotated code, the sentence «Ссылка показана один раз.») with the focus on it; «Готово, я сохранил ссылку» removes the token from the page and returns the focus to «Создать ссылку»; the list row reads «Действует» and «Одноразовая, ещё не открыта», and `GET /api/decks/{id}/invites` carries no token |
@@ -564,8 +565,8 @@ SPA without nginx SSI); the other outcomes of invitation links (a one-time link 
 block after a revocation, the 1000-person limit, a bad token) and of requests (limits, requests switched off); grant by login and «Закрыть доступ»; the
 complaint dialog's other outcomes (404 «Колода больше недоступна», 429 «Попробуйте позже», an ended session), a complaint filed by a guest or about a
 profile, the owner console and its decisions, hiding and takedown (Share/15 is covered by its own tests); that the `Referer` of requests after the redemption
-is clean (the address is rewritten before the first sub-request, which is not observed per request); the catalog, Community page, profile `/u/{username}` and
-update review (other epics); zero-load and 100k-MAU (scenario H) behaviour; production.
+is clean (the address is rewritten before the first sub-request, which is not observed per request); the catalogue, the Community page and the profile `/u/{username}` (`--catalog`) and the
+update review (`--updates`); zero-load and 100k-MAU (scenario H) behaviour; production.
 
 ## Update of a copy (`--updates`, #446)
 
@@ -613,6 +614,73 @@ Not verified here: Chrome only; no real touch input, screen reader or Safari/Fir
 (auto-load of the rows, `APPLYING` as a background job and its polling, 409 `UPDATE_PLAN_STALE` mid-review); the automatic acceptance itself (only the setting is
 checked); exercises other than `FREE_RESPONSE`, media in a compared material, moderation takedowns of a side, a source that closed under the review, the
 author's own view of who updated; the `Referer`/privacy checks of `--community`.
+
+## Community catalogue (`--catalog`, Community/8, #455)
+
+`python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node "$NODE24" --catalog` (no `--authoring` needed; default deadline 900 s, about
+4 minutes of run time; **exclusive**: it cannot be combined with `--community`, `--updates`, `--authoring`, `--media`, `--mechanics`, `--generation`, `--assessment`,
+`--only-promo` or `--admin`, because it must start from an empty catalogue). It is the integrated check of epic 3 on one commit, against the real Identity, Learning
+and PostgreSQL; nothing is stubbed or intercepted.
+
+The composition is the one of `--community` (the ordinary Learning, the three community kill switches on) plus:
+
+- `LEARNING_COMMUNITY_CATALOG_ENABLED=true` (the catalogue's own switch, `false` as shipped) and `LEARNING_COMMUNITY_CATALOG_FACETS_TTL=PT1S` (the facets and the topic
+  shelves are cached up to five minutes per instance; one second is the smallest value the setting takes, so a poll sees the projection). The guest limit
+  (`learning.community.public-routes.guest-per-minute`, 120) stays as shipped: the limit stage hammers the real one.
+- A short rank schedule (`LEARNING_COMMUNITY_RANK_INITIAL_DELAY=PT3S`, `…_SCHEDULE_INTERVAL=PT5S`). The hourly job (dedupe key: the UTC hour) therefore runs at the first
+  tick, while the catalogue is still empty, which the first stage waits for. Every later generation is a job with a key of its own, `rank:harness-<n>`, inserted into
+  `app_learning.learning_job` through the harness fixture endpoint `/__fixture/catalog-rank`; the real queue and the real `CatalogRank` build it, and the scenario waits
+  for the completed generation (`rank_generation`) before it reads a number.
+- **The launch flag of the frontend.** `COMMUNITY_LAUNCHED` is a code constant (`false` until the enabling pull request). The harness serves the built `dist` with
+  `window.MNEMA_APP_CONFIG = {…, communityLaunched: true}` in its `app-config.js`; `resolveAppConfig` keeps that key **only on a loopback host** (`localhost`, `127.0.0.1`,
+  `admin.localhost`) and drops it everywhere else, so a runtime file on a real host can never open the Community. With the flag open the masthead carries the closed
+  book, which is also why the base flow's `submit()` and its «primary action» probe skip the `search` landmark and the masthead.
+- A **console owner**: the `events_fixture` account is the configured owner (`MNEMA_ADMIN_OWNER_ACCOUNT_ID`) and Identity registers the admin client because the run sets
+  `MNEMA_IDENTITY_ADMIN_ORIGIN=https://admin.localhost` (never served). `/__fixture/catalog-admin-token` mints a bearer of the `mnema-admin-web` client by the same
+  authorization-code + PKCE exchange the console uses (the redirect is read from its `Location` header). The console routes themselves are called through the API.
+- `/__fixture/catalog-accounts` registers synthetic accounts through the real Identity (register, login, PKCE) and returns their bearers. Identity allows ten
+  registrations from one address in 15 minutes and every request of this run is one address (the base flow and the console owner already spent three), so the endpoint first
+  clears `app_identity.rate_limit` of the disposable database.
+
+Who is who: the **author** is the first account (first tab), the **learner** the second (second tab, the holder of an invitation to the INVITE deck), the **guest** a third tab in a
+new browser context. A second author (`catalog_shelf_author`, consent given) holds 30 filler decks, so the lists are longer than one page while the first author's page stays one
+page and can be read whole; `catalog_no_consent` is an account without a public profile; nine more accounts (`catalog_copier_1…9`) copy a deck. The decks are seeded through the real
+Learning API in the shape the product's own clients send (deck, ten materials in one bulk publication, one `FREE_RESPONSE` exercise, the publication with topic, language and level);
+the authoring UI is `--community`'s business. Everything a reader does (the page, the book, the filters, the keyboard) goes through the real UI with CDP key events.
+
+Seed: nine listed decks of the author (three Spanish: «Испанские глаголы», «Spanish verbs for travel», «Español para principiantes»; four English, two
+«SQL и данные»), one PUBLIC deck below the threshold (9 materials), one LINK deck, one INVITE deck; thirty fillers of the second author in «Другое». The catalogue lists 39.
+
+| Stage | Assertions |
+|---|---|
+| `catalog_empty` | the schedule's own first generation exists; facets `listedCount: 0`, shelves `[]`; a guest's `/community` says «Пока здесь пусто.» and the approved sentence, no shelf, no card, no filters, the book is there with its label, exactly one `search` landmark and one `h1`; Tab reaches «Как поделиться колодой» with a visible focus ring, Enter opens it (the three approved steps), Enter closes it, Space opens it; a signed-in reader is led to «Мои колоды», a guest to «Войти»; 390 px: no overflow |
+| `catalog_seed` | profile consent through Identity; the decks, the invitation redeemed by the learner; the **projection jobs** are waited for (facets list 39); one more rank generation (`sort=popular` lists 39) |
+| `catalog_shelves` | «Новое» (6 cards), «Другое» (6) and «Английский» (4) are shown; «Испанский» (3), «SQL и данные» (2), «Выбор Мнемы» and «Учат сейчас» (nothing in them) are not; no shelf has fewer than four cards; no sub-threshold, LINK or INVITE deck on any shelf; no card shows an audience yet; «Все» of «Новое» by Enter leads to `/community?sort=new` and the list, and the focus is on the page heading, visible; 390 px: each shelf is a row that scrolls sideways and the page does not |
+| `catalog_search` | typing sends no request (no live search); Enter puts `?q=` into the address; «испанский» finds exactly the three Spanish decks; «Spanish» the same three; the typo «испнские глаголы» puts «Испанские глаголы» first and leaves «Английские фразовые глаголы» out; the count text is a `role=status` region, announced once per search (three searches, three announcements; the observer counts each `p.count` when it first has text and when its text changes); the sorting says why it is off; the sub-threshold, LINK and INVITE decks are not found by their own words, with no bearer, the author's and the learner's; the empty result has its sentence; 390 px: three cards, no overflow |
+| `catalog_filters` | topic «Английский» (4), level «A2» (2), «Письменный ответ» (2), «Аудио» (no result sentence) by keyboard, the address gains each in the canonical order; the four chips are named «Убрать фильтр «…»»; a reload restores the address, the chips and «Фильтры · 4»; removing a chip by Enter moves the focus to the chip that took its place (visible); «Сбросить всё» empties the address, brings the shelves back and puts the focus on the first control of the panel (the button is not drawn on a wide page); the sorting by ArrowRight x2 reaches the address after the wait; 390 px: «Фильтры · 3» is a disclosure (`aria-expanded`), the chips and the reset keep the focus on a chip and then on «Фильтры» |
+| `catalog_scroll` | `/community?sort=new`: 24 cards, no «Показать ещё»/next button anywhere; a real scroll to the end brings the other 15 by itself; no duplicate, the same order as the API's walk of the list; no list request failed |
+| `catalog_counts` | the learner finds «Испанские глаголы» through the search and copies it with the keyboard (Tab to «Добавить к себе», Enter); after **one** copy, then after **nine**, neither the API nor the card shows an audience; after the **tenth** the API says 10 and the card reads «Добавили 10»; the author's own copy attempt is refused (409) and his visit to his own deck followed by one more generation leaves 10; a card carries no score, rank, deck id or revision |
+| `catalog_author` | `/u/<author>`: «Колоды автора», the nine listed decks **and** the sub-threshold one; a guest sees neither the INVITE nor the LINK deck and no «Доступна вам»; the learner who holds the grant sees the INVITE deck marked «Доступна вам» with the address `/d/{code}` (the server's own list is checked first, with his bearer and without); the author sees «Так ваш профиль видят другие» with «Настроить профиль», no invitation part, and the profile settings' «Открыть публичную страницу профиля» leads back to the page; an account without consent and a name nobody has both say «Профиль не найден» and the approved sentence; 390 px: no overflow |
+| `catalog_masthead` | the closed book is in the masthead of `/` (not on `/community`, where the open book is the only `search` landmark); Enter opens it and the focus is in the field; text + Enter leads to `/community?q=…` with the three decks; Escape folds it and returns the focus to «Открыть поиск колод»; `scrollWidth <= width` at 390, 768, 900 and 1280 px on `/`, `/community` (guest and author) and `/decks` (author), measured once the page has settled |
+| `catalog_motion` | with motion allowed the book opens (`mn-book-open`) and the cards arrive with `mn-ink-in`; with `prefers-reduced-motion: reduce` both are `animation-name: none`, no animation is running on the page and the typewriter hint does not change over 2.8 s |
+| `catalog_a11y` | on the shelves, a search, a filtered list, the signed-in page and the author's page: the browser's accessibility tree has no link, button, text field, combobox, checkbox, radio, switch, tab or menu item without a name, exactly one `search` landmark and one `h1`; after opening a deck from a card by Enter the focus is on the page heading and is `:focus-visible` |
+| `catalog_console` | a learner's token is 403 on the editorial route; five decks are saved into «Выбор Мнемы», then reordered: the shelf is the first one and reads in the owner's order (a shelf needs four decks, so two would not show); the learner files a complaint, the owner's `HIDDEN` decision removes the deck from the shelf (four stay, in order), from the search, from the browse list and from the facets, and a guest gets «Колода не найдена» |
+| `catalog_limits` (last) | `GET /api/public/community/decks` as a guest until 429: `RATE_LIMITED`, `Retry-After` between 1 and 60 s, `no-store`, within 125 requests; the page then says «Слишком много запросов. …» with «Повторить», and after the wait the button brings the page back |
+
+A failed stage writes `failure-catalog-<stage>-<owner|member|guest>.png` and `failure-catalog_<stage>.txt` (the reason carries `[after: …]`, the last API or fixture call), the stages
+after it that need the seed are `skipped`, and the run fails. The stages run in this order on purpose: the limit stage uses up the minute's guest allowance of the loopback address
+and the console stage hides a deck, so they are last. Screenshots: `catalog-<desktop|mobile>-{empty,shelves,browse,search,filters,scroll,counts,author,editorial,reduced-motion,limited,masthead}-<guest|member>.png`.
+
+Defects this scenario found and that are fixed with their own tests: the catalogue's four read routes were not in the credential allowlist of `auth.interceptor.ts`, so a signed-in viewer's
+bearer never reached them (the author's page could never show «Доступна вам», and the limits were never keyed by the account); the sideways row of a shelf did not contain the cards'
+`position: absolute` screen-reader words, so at 390 px the whole page scrolled sideways (`deck-shelf.component.css`, `deck-shelf.css.spec.ts`); the focus fell to the body when «Все»
+replaced the shelves with the list (`community-page.component.ts`).
+
+Not verified here: Chrome only; no real touch input, screen reader (the accessibility tree is checked, not what a reader says), Safari/Firefox or physical phone (the mobile pass is a 390 px
+emulated viewport); media filters with real media (the «Внутри: аудио» filter is exercised against a catalogue without any, so it proves the empty result, not a match), the «Учат сейчас»
+shelf and the study-days half of the audience (no scheduled session is run), the author's own study sessions (his visit and his copy attempt are), «Для вас» (epic 4), the sitemap, anomaly flags
+and the console's own pages (the editorial and complaint routes are called through the API with a real admin-client token; the console UI is `--admin`'s), a catalogue past 1000 decks or 200
+search candidates, a rank generation expiring (412 `VERSION_CONFLICT` of an old cursor), the 503 `PUBLIC_READ_BUSY` bulkhead, the nginx server-side includes of the link previews, production.
 
 ## Infinite scroll (`--authoring --media --mechanics`, #397)
 
@@ -701,3 +769,105 @@ passing browser run, the full repository gates, an independent review or product
 
 References: [Chromium certificate SPKI switch](https://chromium.googlesource.com/chromium/src/+/main/services/network/public/cpp/network_switches.cc)
 and [Chrome DevTools Network protocol](https://chromedevtools.github.io/devtools-protocol/tot/Network/).
+
+## Community recommendations (`--recs`, Recs/4, #459)
+
+`--recs` is exclusive and composes the same disposable catalogue services as `--catalog`, with
+`learning.community.events.enabled` and `learning.community.for-you.enabled` enabled for that
+run only. It never changes the retained stack or production flags. Built JARs and production
+frontend are required; run under `caffeinate -d -i`, with no other browser run at the same time.
+
+```sh
+caffeinate -d -i python3 scripts/browser-identity/run.py \
+  --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node --recs
+```
+
+The synthetic catalogue is published through the real Learning API with public-profile consent
+from real disposable Identity accounts. Real UI keyboard actions select interest chips, open
+For-you cards, add a copy and reset the profile. Assertions cover a guest's 401/private UI,
+empty/sparse recommendations, explanation, diversity in the first ten, exclusion of authored
+and copied decks, accepted telemetry with bearer, For-you sorting, 320 px, a 720 px viewport
+corresponding to 200% reflow of a 1440 px desktop, reduced motion and named/focusable controls.
+The viewport checks prove reflow, not browser zoom rendering or a physical phone. Chrome CDP
+accessibility smoke does not prove VoiceOver/TalkBack, Safari, Firefox or touch.
+
+Evidence consists of `recs_*` stages in `browser.json` and `recs-*.png` images. Any failed stage
+fails the run; dependent stages are marked skipped. The `--catalog`, `--community` and `--updates`
+regressions are run separately after the recommendation implementation.
+
+## Onboarding tour (`--onboarding`, OB-E1)
+
+```sh
+caffeinate -d -i python3 scripts/browser-identity/run.py \
+  --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node --onboarding
+```
+
+Prerequisites are those of `--catalog` (built `bootJar`s of Identity and Learning, the built Angular `dist`, cached `postgres:18`, Chrome); no MinIO, worker, FFmpeg or AWS
+CLI. **Exclusive**: it cannot be combined with any other scenario flag, because the account that meets the tour is a fresh one and the base flow's authoring pages are
+exactly what the tour takes over. About 40 s of browser time; with the start of the two JVMs and PostgreSQL 1 to 2 minutes in all (49 s warm, 2.5 minutes cold); the default deadline is 600 s.
+
+The composition is the one of `--catalog` (the ordinary Learning with the three community kill switches, the catalogue switch, a short rank schedule, the frontend launch
+flag opened for this loopback run, the fixture endpoints) plus, for the ordinary Learning of this run only:
+
+- `LEARNING_ONBOARDING_ENABLED=true` and `LEARNING_ONBOARDING_ELIGIBLE_FROM=<five minutes before the start of the run>` (the journey ships off, and `eligible-from` is
+  required, and validated at startup, when it is on). An account is offered the tour when the clock is past that instant, Identity marks it new (`mnema_new_account`, 48
+  hours) and it owns no live deck: every account the scenario registers is. The experiment `onboarding_v1` stays off (`LEARNING_ONBOARDING_EXPERIMENT_ENABLED` is not set),
+  so nobody is held out and everybody gets the tour. The holdout itself is not exercised here.
+- `LEARNING_COMMUNITY_EVENTS_ENABLED` and `LEARNING_COMMUNITY_FOR_YOU_ENABLED` (the switches of `--recs`): the second question of the survey is the interest picker of «Для вас»,
+  and without them its card is not asked.
+- AI generation stays off, as shipped (`features.aiEnabled` is `false` in the served `app-config.js`): the composer is replaced by the plain editor (`?write=1`), and the
+  congratulation follows the study session with no «ИИ в Mnema» card.
+
+`browser.mjs` leaves the base flow whole (it runs inside one labelled block) and calls `onboarding.mjs`, which registers **its own accounts through the real form, one per
+browser context** (`openGuestTab`: no shared cookie, so a second context is a second device). Everything a learner does goes through the real UI with CDP mouse and keyboard
+events; the clicks on the controls a tour step points at are real mouse clicks that first check what is under the pointer (a card or a veil over the control is a
+failure, with the name of the cover). The API is only read: the journey (`GET /api/onboarding`, with the person's own bearer), the learning profile and the deck list, to see
+what the server stored. The four decks of the community branch are seeded through the real Learning API, in the background while the first account walks its branch, so that
+the first account's branch choice meets an empty catalogue (four listed decks make «Найти готовую колоду» appear).
+
+| Stage | Account, viewport | Assertions |
+|---|---|---|
+| `welcome` | `onb_journey`, 1440, then 390 and 320 at DPR 2 | «Начало пути» opens by itself on a fresh account: a modal `<dialog>` named by its heading, the focus on the `h1`, thirty stars, two buttons of **equal height**, both in the window; the server journey is `OFFERED`, `autoOffer`; the accessibility tree (CDP `Accessibility.getFullAXTree`) has the dialog with that name, a level-one heading and exactly the two named buttons (the page behind is not in the tree); with `prefers-reduced-motion: reduce` no animation is running (the baseline of the same page runs eleven); with `forced-colors: active` the sky is not drawn and the text keeps its color; no horizontal scroll at 1440, 390 and 320 px |
+| `survey` | same, **keyboard only** | Tab and Enter start it; the goal by Tab + Space; the interests skipped by Tab to «Пропустить»; the counters «Вопрос N из 4» and the `progressbar` (name «Пройдено вопросов», value text «0 из 4» … «3 из 4», in the DOM and in the accessibility tree); the focus on each card's heading; the survey has no stars; a **reload** on the third card reopens the same card; «Впервые» by Space, «3 дня» by ArrowRight, «Готово» by Enter; the branch choice offers «Создать свою» only (**empty catalogue**: no «Найти готовую колоду», no template: no «Посмотреть на примере», no stamp); the server keeps `experience: NEW`, `weeklyTarget: 3` and the learning profile |
+| `own_details` | same, 1440 (then 390/320, forced colors) | «Шаг 1 из 4», `role="dialog"` with the heading as its name, the focus is on the heading (the first card is announced by it; the card's own polite status region is empty, and says «Шаг N из 4» on the next ones), the gate line names the real button; the card is **not** modal once the target is on the screen, the rest of the page is `inert` (the masthead included), the target and the tour's own surfaces are not; the cut-out surrounds the form; the accessibility tree has the dialog and only named buttons; in forced colors the frame is a 3 px outline; at 390 and 320 px the card is a bottom sheet and nothing scrolls sideways |
+| `own_create_deck` | same | the deck is created through the real form and the real button (a real click: the card must not cover it); the server follows to `own.material`; **the page must be the editor (`?write=1`)**: when it is not, a `gap` is recorded and the scenario goes on by hand (SPA navigation) |
+| `pause_resume` | same + a second context (**another device**) | Escape pauses: the plaque «Знакомство на паузе» is a labelled region, the focus is on «Продолжить знакомство», no veil, nothing inert (the accessibility tree has more links behind the pause than behind the step), the server is `PAUSED`; the second device signs the same account in through the form and shows the plaque **without moving** and without a command (the row version is unchanged); «Продолжить» there returns to the same step and, because the page finds the account's latest ready deck, goes to that deck's editor: the step's anchor appears and the text variant «Этого места сейчас нет на экране» does not; back on the first device the learner who has wandered to `/decks` presses «Продолжить» and must land on the step's page |
+| `own_material` | same | the editor: text typed, the draft acknowledged, «Опубликовать» by a real click; the tour moves to the exercise step whose page must be `/decks/…/materials/…/exercises/new` |
+| `own_exercise` | same | a free-response exercise made in the real editor, «Создать упражнение» by a real click; the next step is the hub with «Учить» |
+| `own_study` | same | the gate line names «Учить»; a real click starts the session: the server is `PAUSED` at `own.study`, and **in the setup, while answering and at the feedback** there is no veil, no card, no plaque, no inert element and no open dialog |
+| `own_finale` | same | no «ИИ в Mnema» (AI is off); the congratulation «Начало положено» is a modal dialog named by its heading with the focus on it and its stars; «К колоде» completes: the server is `COMPLETED` with `finishedAt` and branch `OWN`, the learner is on the hub, nothing is inert or open, a reload does not bring «Начало пути» back, one deck exists |
+| `replay` | same | «Пройти знакомство заново» in the profile opens the branch choice **without the survey** (no progress bar, no «Назад»); the server is `IN_PROGRESS` at `choose`, `replayCount: 1`, branch `null`; the journey's answers and `GET /api/learning-profile` are byte for byte unchanged and the replay made no deck; «Своя колода» offers «Новая колода» and the existing deck; **Escape pauses the choice** (server `PAUSED` at `choose`, the dialog closes, the plaque «Продолжить знакомство» takes the focus and reopens the same choice, still without the survey or a way back); choosing the existing deck starts the tour at «Первый материал» with the deck count unchanged |
+| `hold` | `onb_hold`, 390 (touch emulation off: mouse) | Escape on the first survey card pauses the journey (server `PAUSED` at `survey.goal`, plaque, «Продолжить» reopens the card); the community branch first: the hint at the search and, after the (compressed) two minutes, the offer «Не нашли подходящую?» which takes the focus and must be live; «Создать свою» moves the tour to the own-deck branch; a paused tour is not moved by a page load of `/profile` and «Продолжить» returns to the step's page; the first click arms «Завершить знакомство» (`aria-pressed`, glyph, **accessible name «Удерживайте 2 секунды, чтобы завершить знакомство»** in the accessibility tree); a pointer press released after 600 ms does nothing; **holding Enter for 2.4 s** finishes: the toast «Знакомство завершено. Пройти его снова можно в профиле.», the server is `COMPLETED`, nothing is inert or open; the questions skipped stored nothing |
+| `skip` | `onb_skip`, 320 at DPR 2 | no horizontal scroll; «Мне это знакомо — сразу к делу» closes the dialog; the toast with «Открыть «Путь»» (to `/profile`); the server is `SKIPPED` with `finishedAt`; a reload does not bring the welcome back |
+| `community` | `onb_community`, 1440 | the branch choice offers «Найти готовую колоду» and «Создать свою» (four listed decks, no template); the tour starts at `/community`, the focus is on the step card's heading (not on the page's: asserted), and a learner who skipped the interests card meets no notice and the skip ends stored with exactly one `PUT` (the survey re-reads the interests after the goal answer, which bumps their version on the server); a **search** by keyboard («Английские»), a real click on the card; the informational step «Что внутри колоды» is modal, named, with «Назад», «Дальше» and the hold button, all named in the accessibility tree; «Дальше»; «Добавить к себе» (the gate names it) by a real click; the copy's hub with «Учить»; the click pauses the tour (server `PAUSED` at `community.study`) and the study setup has no veil; one deck (the copy) exists |
+| `a11y` | | the evidence above, collected in `onboarding-a11y.json`: welcome, survey card, informational step, action-gated step, the inert state and its removal, the keyboard path, the reduced-motion and forced-colors results, the narrow layouts |
+| `sign_out` | two accounts | the real «Выйти» (two logouts that carry only the bearer, which the runner audits) |
+
+A failed stage writes `failure-onboarding-<stage>-<journey|hold|skip|community>.png` and `failure-onboarding_<stage>.txt`, the stages that need it are `skipped`, and the run
+fails. A card that does not appear says what the server holds for the account and where the learner is. `gap:<id>` entries are steps the tour should have brought the learner to
+and did not (the scenario goes on by hand so that later steps still produce evidence); `onboardingFindings` in `browser.json` are observations that do not fail the run.
+
+Screenshots (`onboarding-*.png`): `welcome-{1440,390,320-at-200-percent,reduced-motion-1440,forced-colors-1440}`, `survey-goal-1440`, `survey-experience-after-reload-1440`,
+`branch-choice-{1440,390,community-1440}`, `tour-own-details-{1440,390,320-at-200-percent,forced-colors-1440}`, `pause-1440`, `second-device-{plaque,resumed}-1440`,
+`tour-own-study-1440`, `study-no-veil-1440`, `finale-1440`, `replay-choice-1440`, `hold-{armed,finished}-390`, `skip-toast-320-at-200-percent`,
+`tour-community-{search,deck,study}-1440`, `tour-community-stuck-nudge-390`.
+
+Defects this scenario found (each was fixed by its own change and is now an assertion): the credential allowlist of `auth.interceptor.ts` did not carry `/api/onboarding`,
+`/onboarding/journey` and `/onboarding/preferences`, so the page's own read went out without the bearer (401) and «Начало пути» never opened in a browser (every unit spec passed); the pages'
+own redirects after «Создать колоду», «Опубликовать» and «Создать упражнение» replaced the tour's navigation; a paused tour moved the page on a load and «Продолжить» did not navigate; the offer
+«Не нашли подходящую?» was inert; after the route change to `/community` the page took the focus away from the step card; «Пропустить» on the interests card sent a `PUT /api/community/interests`
+that answered 412 and `/community` then said «Интересы обновились… Ваш выбор ещё не сохранён»; a tour resumed on a second device could not follow the route of a deck it did not know; the replayed
+branch choice had no way out. A step the tour should have brought the learner to and did not is still recorded as `gap:<id>` (the scenario goes on by hand) and keeps the run red.
+
+Not covered, and why:
+
+- The **community branch is covered up to the study gate** (search, open, «Что внутри колоды», «Добавить к себе», the copy's hub, «Учить» pauses the tour and the session setup has no
+  veil); the session of the copy is not played to its end, and the finale after it is the own-deck branch's. The **sample branch** («На примере») does not exist until OB-E2
+  (`sampleDeck.available` is `false`): only its absence from the choice is checked. The brief tour of `FAMILIAR`/`CONFIDENT`, the AI finale card (AI is off) and the holdout
+  (the experiment is off) are not exercised.
+- The two timers of the community step (45 s and 120 s) are **compressed to 1.5 s and 4 s** by wrapping `window.setTimeout` in the page of one account (`hold`); nothing else is
+  changed. The real delays are the product's constants and are not waited for.
+- Chrome only, headless: no VoiceOver, NVDA, TalkBack or any other screen reader (the accessibility tree and the live region's text are checked, not what a reader says); no real
+  touch input (the 390 px pass is an emulated viewport driven by the mouse; the hold is a mouse press and a held key); no Safari or Firefox; forced colors and reduced motion are
+  Chrome's emulation of the media features, not an operating-system setting; 320 px is the 320 px layout rasterized at DPR 2, not the browser's text-size setting.
+- The cross-device case is two browser contexts of one machine; the pause is read by the second context at its sign-in, not pushed to it.

@@ -8,6 +8,12 @@ import hubFixture from '../../../../../contracts/decks/hub.json';
 import forksFixture from '../../../../../contracts/decks/forks.json';
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { ToastService } from '../../core/notifications/toast.service';
+import onboardingFixture from '../../../../../contracts/onboarding/journey.json';
+import { JourneyStore } from '../../core/onboarding/journey.store';
+import { OnboardingView } from '../../core/onboarding/onboarding.models';
+import { TourEngine } from '../../core/onboarding/tour-engine.service';
+import { TourEvents } from '../../core/onboarding/tour-events';
+import { paragraphs } from '../../core/onboarding/tour-rich-text';
 import { OwnDeck } from './own-deck.models';
 import { DeckDetailState, DeckMutationState, OwnDecksStore } from './own-decks.store';
 import { OwnDeckDetailPageComponent } from './own-deck-detail-page.component';
@@ -49,11 +55,13 @@ describe('OwnDeckDetailPageComponent', () => {
     const detail = signal<DeckDetailState>({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
     const mutation = signal<DeckMutationState>({ phase: 'idle' });
     const fragment = new BehaviorSubject<string | null>(null);
+    const journeyView = signal<OnboardingView | null>(null);
 
     beforeEach(async () => {
         detail.set({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
         mutation.set({ phase: 'idle' });
         fragment.next(null);
+        journeyView.set(null);
         store = spyObj<OwnDecksStore>({
             openDeck: vi.fn().mockName("OwnDecksStore.openDeck"),
             retryDetail: vi.fn().mockName("OwnDecksStore.retryDetail"),
@@ -111,6 +119,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 { provide: ModerationApiService, useValue: moderation },
                 { provide: ForkApiService, useValue: forkApi },
                 { provide: ToastService, useValue: toasts },
+                { provide: JourneyStore, useValue: { view: journeyView.asReadonly() } },
                 { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })), fragment } }
             ]
         }).overrideComponent(OwnDeckDetailPageComponent, {
@@ -274,30 +283,38 @@ describe('OwnDeckDetailPageComponent', () => {
             expect(root().innerHTML).not.toContain('/materials"');
         });
 
-        it('offers «Доступ…» in the «⋯» menu of the deck and brings the access section into focus', async () => {
+        it('opens sharing from an explicit button, keeps publication in the dialog and restores focus on Escape', async () => {
             document.body.append(root());
-            expect(root().querySelector('app-action-menu button[aria-haspopup="menu"]')!.getAttribute('aria-label')).toBe(`Действия с колодой «${deck.metadata.title}»`);
-            const items = [...root().querySelectorAll<HTMLButtonElement>('app-action-menu [role=menuitem]')];
-            expect(items.map(item => item.textContent!.trim())).toEqual(['Доступ…']);
-            const section = root().querySelector<HTMLElement>('app-publication-block section')!;
-            expect(section.id).toBe('access');
-            const reveal = vi.spyOn(section, 'scrollIntoView');
-            items[0].click();
+            const share = root().querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+            const dialog = root().querySelector<HTMLDialogElement>('app-paper-dialog dialog')!;
+            expect(share.textContent).toContain('Поделиться');
+            expect(share.getAttribute('aria-label')).toContain('Приватная');
+            expect(root().querySelector('app-action-menu')).toBeNull();
+            expect(dialog.open).toBe(false);
+            expect(dialog.querySelector('app-publication-block')).not.toBeNull();
+            share.focus(); share.click();
             fixture.detectChanges();
-            expect(reveal).toHaveBeenCalled();
-            expect(document.activeElement).toBe(section.querySelector('h2'));
+            expect(dialog.open).toBe(true);
+            expect(document.activeElement).toBe(dialog.querySelector('h2'));
+            dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+            expect(dialog.open).toBe(false);
+            expect(document.activeElement).toBe(share);
             root().remove();
         });
 
-        it('lands on the access section when the address carries #access, once per deck', async () => {
+        it('opens sharing for the #access notification once per deck', async () => {
+            (document.activeElement as HTMLElement | null)?.blur();
             fragment.next('access');
             document.body.append(root());
             fixture.detectChanges();
             await fixture.whenStable();
-            expect(document.activeElement).toBe(root().querySelector('app-publication-block h2'));
-            (document.activeElement as HTMLElement).blur();
+            const dialog = root().querySelector<HTMLDialogElement>('app-paper-dialog dialog')!;
+            expect(dialog.open).toBe(true);
+            expect(document.activeElement).toBe(dialog.querySelector('h2'));
+            dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
             fixture.detectChanges();
-            expect(document.activeElement).not.toBe(root().querySelector('app-publication-block h2'));
+            expect(dialog.open).toBe(false);
+            expect(document.activeElement).toBe(root().querySelector('button[aria-haspopup="dialog"]'));
             root().remove();
         });
 
@@ -361,12 +378,8 @@ describe('OwnDeckDetailPageComponent', () => {
             expect(third.componentInstance.generationAvailable()).toBe(false);
         });
 
-        it('lists materials without exercises first when a statistics widget asks for them', () => {
-            const withoutExercises = [...root().querySelectorAll<HTMLButtonElement>('app-deck-insights button')]
-                .find(button => button.textContent?.includes('Показать материалы без упражнений'))!;
-            withoutExercises.click();
-            fixture.detectChanges();
-            expect(items.list).toHaveBeenLastCalledWith(deck.deckId, { sort: 'exerciseCount', exerciseCount: true, limit: 50 });
+        it('keeps statistics informational without a second materials action', () => {
+            expect(root().querySelector('app-deck-insights')?.textContent).not.toContain('Показать материалы без упражнений');
         });
     });
     describe('moderation notice', () => {
@@ -415,8 +428,8 @@ describe('OwnDeckDetailPageComponent', () => {
         it('draws an ordinary deck exactly as before: no source line, no state block, only «Доступ…» in the menu', async () => {
             await show(null);
             expect(root().querySelector('app-copy-origin, app-copy-status')).toBeNull();
-            expect(menu()).toEqual(['Доступ…']);
-            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Изменить']);
+            expect(menu()).toEqual([]);
+            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Изменить', 'Поделиться. Доступ: Приватная']);
             expect(live()).toBe('');
         });
 
@@ -424,14 +437,14 @@ describe('OwnDeckDetailPageComponent', () => {
             await show(states.ready);
             expect(root().querySelector('app-copy-origin')!.textContent!.replace(/\s+/gu, ' ').trim()).toBe('Копия колоды «Испанский язык: базовые глаголы»');
             expect(root().querySelector('app-copy-origin a')!.getAttribute('href')).toBe(`/d/${states.ready.upstreamCode}`);
-            expect(menu()).toEqual(['Доступ…', 'Отвязать от автора']);
+            expect(menu()).toEqual(['Отвязать от автора']);
             expect(root().querySelector('app-copy-status')).toBeNull();
             expect(actions()).toContain('Учить');
         });
 
         it('links a ready, attached copy to the update review, and leaves it out for an ordinary deck, a detached copy and a copy being prepared', async () => {
             await show(states.ready);
-            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Проверить обновления', 'Изменить']);
+            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Проверить обновления', 'Изменить', 'Поделиться. Доступ: Приватная']);
             const link = [...root().querySelectorAll<HTMLAnchorElement>('nav.hub-actions > a')].find(anchor => anchor.textContent?.trim() === 'Проверить обновления')!;
             expect(link.getAttribute('href')).toBe(`/decks/${deck.deckId}/update`);
             await show(states.detached);
@@ -448,7 +461,7 @@ describe('OwnDeckDetailPageComponent', () => {
             expect(root().querySelector('app-unavailable-note .hint')!.textContent).toBe(forksFixture.texts.sourceClosed);
             expect(root().querySelector('app-copy-origin')).toBeNull();
             await show(states.detached);
-            expect(menu()).toEqual(['Доступ…']);
+            expect(menu()).toEqual([]);
             expect(root().querySelector('app-copy-origin .stamp')!.textContent).toBe('Отвязана от автора');
         });
 
@@ -466,7 +479,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(links[0]!.textContent!.trim()).toBe('Посмотреть обновление');
                 expect(links[0]!.classList.contains('secondary')).toBe(true);
                 expect(links[0]!.classList.contains('primary')).toBe(false);
-                expect([...root().querySelectorAll('.button.primary')].map(item => item.textContent!.trim())).toEqual(['Учить']);
+                expect([...root().querySelectorAll('.button.primary')].filter(item => !item.closest('dialog:not([open])')).map(item => item.textContent!.trim())).toEqual(['Учить']);
                 expect(links[0]!.getAttribute('href')).toBe(`/decks/${deck.deckId}/update`);
                 expect(offer.contains(links[0]!)).toBe(true);
                 expect(actions()).not.toContain('Проверить обновления');
@@ -513,7 +526,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(news()!.querySelector('time')!.getAttribute('datetime')).toBe(states.updatedAutomatically.lastUpdate!.appliedAt);
                 expect(links()[0]).toEqual(['Посмотреть, что изменилось', `/decks/${deck.deckId}/update/history`]);
                 expect(news()!.querySelector('button, .button.primary')).toBeNull();
-                expect([...root().querySelectorAll('.button.primary')].map(item => item.textContent!.trim())).toEqual(['Учить']);
+                expect([...root().querySelectorAll('.button.primary')].filter(item => !item.closest('dialog:not([open])')).map(item => item.textContent!.trim())).toEqual(['Учить']);
             });
 
             it('sits under the actions, so «Учить» is not pushed down by it', async () => {
@@ -531,7 +544,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(links()).toEqual([['Посмотреть, что изменилось', `/decks/${deck.deckId}/update/history`], ['Посмотреть обновление', `/decks/${deck.deckId}/update`]]);
                 expect(root().querySelectorAll('a[href$="/update"]')).toHaveLength(1);
                 expect(root().querySelectorAll('app-update-badge')).toHaveLength(1);
-                expect([...root().querySelectorAll('.button.primary')].map(item => item.textContent!.trim())).toEqual(['Учить']);
+                expect([...root().querySelectorAll('.button.primary')].filter(item => !item.closest('dialog:not([open])')).map(item => item.textContent!.trim())).toEqual(['Учить']);
             });
 
             it('links to the review screen itself when something waits and no offer is shown, and not when nothing waits', async () => {
@@ -947,7 +960,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 expect(toasts.echo).toHaveBeenCalledWith('Копия отвязана от автора.');
                 expect(toasts.echo).toHaveBeenCalledTimes(1);
                 expect(document.activeElement).toBe(root().querySelector('h1'));
-                expect(menu()).toEqual(['Доступ…']);
+                expect(menu()).toEqual([]);
             });
 
             it('says what went wrong and keeps the question open', async () => {
@@ -962,6 +975,102 @@ describe('OwnDeckDetailPageComponent', () => {
                 }
                 expect(store.refreshDetail).not.toHaveBeenCalled();
             });
+        });
+    });
+
+    describe('for the onboarding tour', () => {
+        const root = () => fixture.nativeElement as HTMLElement;
+        const study = () => [...root().querySelectorAll<HTMLAnchorElement>('a')].find(link => link.textContent?.trim() === 'Учить')!;
+        const states = forksFixture.fork as unknown as Record<'preparing' | 'ready', DeckFork>;
+
+        it('marks «Учить» as the place the tour points at, and does not claim the session has begun when the link is pressed (the study page says so)', () => {
+            const seen: string[] = [];
+            TestBed.inject(TourEvents).listen(event => { seen.push(event); });
+            expect(study().getAttribute('data-tour-anchor')).toBe('hub.start');
+            study().addEventListener('click', event => event.preventDefault());
+            study().click();
+            expect(seen).toEqual([]);
+        });
+
+        it('tells a running tour that the copy is still being prepared, and that it is ready, instead of letting it time out', async () => {
+            const engine = TestBed.inject(TourEngine);
+            engine.start({ id: 't', branch: 'COMMUNITY', steps: [{ key: 'community.study', anchor: 'hub.start', title: 'Т', body: paragraphs('Текст'), gate: 'next' }] });
+            detail.set({ phase: 'ready', deckId: deck.deckId, failure: null, deck: { ...deck, fork: states.preparing } });
+            fixture.detectChanges();
+            TestBed.tick();
+            expect(engine.preparing()).toBe(true);
+            detail.set({ phase: 'ready', deckId: deck.deckId, failure: null, deck: { ...deck, fork: states.ready } });
+            fixture.detectChanges();
+            TestBed.tick();
+            expect(engine.preparing()).toBe(false);
+            engine.stop();
+        });
+
+        it('lets go of the preparing note when the page is left', () => {
+            const engine = TestBed.inject(TourEngine);
+            engine.start({ id: 't', branch: 'COMMUNITY', steps: [{ key: 'community.study', anchor: 'hub.start', title: 'Т', body: paragraphs('Текст'), gate: 'next' }] });
+            engine.setPreparing(true);
+            fixture.destroy();
+            expect(engine.preparing()).toBe(false);
+            engine.stop();
+        });
+    });
+    describe('the sample deck of the onboarding', () => {
+        const root = (): HTMLElement => fixture.nativeElement as HTMLElement;
+        const actions = (): (string | null | undefined)[] => [...root().querySelectorAll('nav.hub-actions > a, nav.hub-actions > button')].map(element => element.getAttribute('aria-label') ?? element.textContent?.trim());
+        const sampleView = (deckId: string | null): OnboardingView =>
+            ({ ...(onboardingFixture.views.sampleReady as OnboardingView), sampleDeck: { available: true, deckId, updateAvailable: false, freeChecksLeft: 2 } });
+        async function show(): Promise<void> { fixture.detectChanges(); await fixture.whenStable(); TestBed.tick(); fixture.detectChanges(); }
+
+        it('marks the hub of the account\'s sample copy with the stamp and the plaque, and offers nothing to share', async () => {
+            journeyView.set(sampleView(deck.deckId));
+            await show();
+            const plaque = root().querySelector('.hub-heading app-sample-plaque')!;
+            expect(plaque.querySelector('.stamp')!.textContent).toBe('Учебная');
+            expect(plaque.textContent).toContain('Учебная колода: образец, к которому можно возвращаться');
+            expect(actions()).toEqual(['Учить', 'Добавить материал', 'На потом, заметок: 2', 'Изменить']);
+            expect(root().querySelector('[aria-haspopup="dialog"]')).toBeNull();
+            expect(root().querySelector('app-paper-dialog, app-publication-block, app-access-panel')).toBeNull();
+            expect(root().innerHTML).not.toContain('Поделиться');
+        });
+
+        it('leaves the title above the plaque and the deck\'s own actions working', async () => {
+            journeyView.set(sampleView(deck.deckId));
+            await show();
+            const header = root().querySelector('.hub-heading')!;
+            expect(header.querySelector('h1')!.compareDocumentPosition(header.querySelector('app-sample-plaque')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+            expect(root().querySelector('[data-tour-anchor="hub.start"]')).not.toBeNull();
+            expect(root().querySelector('[data-tour-anchor="hub.header"]')).toBe(header);
+        });
+
+        it('does not open the sharing dialog for a notification\'s #access fragment', async () => {
+            journeyView.set(sampleView(deck.deckId));
+            fragment.next('access');
+            await show();
+            expect(root().querySelector('app-paper-dialog')).toBeNull();
+        });
+
+        it.each([
+            ['another deck is the sample copy', sampleView('99999999-9999-4999-8999-999999999999')],
+            ['the account has no sample copy', sampleView(null)],
+            ['the onboarding view has not arrived', null]
+        ])('draws an ordinary hub, with sharing, when %s', async (_name, view) => {
+            journeyView.set(view);
+            await show();
+            expect(root().querySelector('app-sample-plaque')).toBeNull();
+            expect(actions()).toContain('Поделиться. Доступ: Приватная');
+            expect(root().querySelector('app-paper-dialog')).not.toBeNull();
+        });
+
+        it('follows the view: the plaque appears when the view names this deck, and goes with it', async () => {
+            await show();
+            expect(root().querySelector('app-sample-plaque')).toBeNull();
+            journeyView.set(sampleView(deck.deckId));
+            await show();
+            expect(root().querySelector('app-sample-plaque')).not.toBeNull();
+            journeyView.set(sampleView(null));
+            await show();
+            expect(root().querySelector('app-sample-plaque')).toBeNull();
         });
     });
 });

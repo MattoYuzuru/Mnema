@@ -1,0 +1,26 @@
+:host { display: block; min-inline-size: 0; }
+fieldset { border: 0; padding: 0; margin: 0; min-inline-size: 0; }
+legend { color: var(--mn-ink); font-size: 1.15rem; font-weight: 600; }
+.intro { max-inline-size: 65ch; margin-block: .65rem 1.25rem; }
+.topics, .actions { display: flex; flex-wrap: wrap; gap: .65rem; min-inline-size: 0; }
+.chosen { margin-block-end: 1.25rem; }
+.chosen .eyebrow { margin-block: 0 .6rem; }
+.topic, .category { gap: .75rem; max-inline-size: 100%; text-align: start; white-space: normal; overflow-wrap: anywhere; }
+.topic { border-radius: var(--mn-topic-radius); }
+.topic[aria-pressed='true'] { background: var(--mn-ink); color: var(--mn-on-ink); }
+.topic-mark { flex: none; font-size: 1.15rem; line-height: 1; }
+.category { justify-content: space-between; background: var(--mn-sheet); }
+.category[aria-expanded='true'] { border-width: 2px; padding: calc(.65rem - 1px) calc(1rem - 1px); }
+.branches:has(.topics) { padding-block-start: 1.25rem; }
+.branch-heading { color: var(--mn-ink); margin-block: 0 .65rem; font-weight: 600; overflow-wrap: anywhere; }
+.more { margin-block-start: .5rem; }
+.selection-status { margin-block: 1rem 0; }
+.actions { margin-block-start: 1rem; }
+/* Цвет текста остаётся ButtonText: Chromium может рисовать Canvas-подложку за буквами. */
+@media (forced-colors: active) {
+    .topic, .category { border-color: ButtonText; background: Canvas; color: ButtonText; }
+    .topic[aria-pressed='true'] { background: Canvas; color: ButtonText; outline: 2px solid Highlight; outline-offset: -2px; }
+    .category[aria-expanded='true'] { border-color: Highlight; }
+    .topic:focus-visible, .category:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
+    .topic:disabled, .category:disabled { border-color: GrayText; color: GrayText; }
+}

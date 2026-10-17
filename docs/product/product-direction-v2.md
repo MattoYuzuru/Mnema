@@ -5,7 +5,7 @@ artifact:
   title: "Mnema greenfield product direction"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-10-10"
+  updated_at: "2026-10-13"
   owners: ["project-owner"]
   assumptions:
     - "Approximately ten production accounts must survive; content, media, review and AI data may be reset."
@@ -183,7 +183,7 @@ community release; обещание готового большого катал
 ### P2 — segment depth
 
 - code completion/test runner, pronunciation/oral recall, numeric/symbolic answers;
-- human/self-rubric explanation experiments; AI grading remains outside this roadmap until #77 is reactivated;
+- complex explanation experiments; rubric-based `ai-semantic` is implemented by #77, while its availability and calibration follow the current Study/AI contracts;
 - native Android/iOS offline deck packs and review sync;
 - richer within-material merges and proposals to improve upstream decks;
 - higher-price speaking/tutor experiment only after retention and unit economics.

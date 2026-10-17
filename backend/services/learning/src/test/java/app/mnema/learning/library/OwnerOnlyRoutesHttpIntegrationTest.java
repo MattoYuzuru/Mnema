@@ -160,6 +160,8 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         // materials
         rows.add(Row.of("GET /decks/{deckId}/items", w -> get("/decks/" + w.deck().id() + "/items")));
         rows.add(Row.of("GET /decks/{deckId}/items/{memberKey}", w -> get("/decks/" + w.deck().id() + "/items/" + w.deck().material().member())));
+        rows.add(Row.of("GET /decks/{deckId}/items/{memberKey}/navigation",
+                w -> get("/decks/" + w.deck().id() + "/items/" + w.deck().material().member() + "/navigation")));
         rows.add(Row.of("POST /decks/{deckId}/items", w -> {
             ObjectNode body = command().put("expectedDeckRevisionId", w.deckRevision().toString());
             body.set("document", w.document().deepCopy());
@@ -461,9 +463,10 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
 
     @Test
     void thePublicRoutesNeverOfferAWrite() {
-        // the only controllers that serve non-owners (deck reads and link-preview metadata) have GET mappings only
+        // the only controllers that serve non-owners (deck reads, link-preview metadata and the community catalogue) have GET mappings only
         mappings.getHandlerMethods().forEach((info, method) -> {
-            if (!method.getBeanType().equals(PublicDeckController.class) && !method.getBeanType().equals(PublicMetaController.class)) return;
+            if (!method.getBeanType().equals(PublicDeckController.class) && !method.getBeanType().equals(PublicMetaController.class)
+                    && !method.getBeanType().equals(app.mnema.learning.community.CatalogController.class)) return;
             assertThat(info.getMethodsCondition().getMethods()).containsOnly(RequestMethod.GET);
         });
         // the only writes below /public are a signed-in account asking for access and taking the request back (Share/13) and filing a complaint (Share/15); the security chain admits exactly that method and path
@@ -476,6 +479,8 @@ class OwnerOnlyRoutesHttpIntegrationTest extends PostgresIntegrationTest {
         ArrayNode patterns = JSON.createArrayNode();
         mappings.getHandlerMethods().keySet().forEach(info -> info.getPathPatternsCondition().getPatternValues().forEach(patterns::add));
         assertThat(patterns.toString()).contains("/public/decks/{code}", "/public/decks/{code}/items", "/public/decks/{code}/items/{memberKey}", "/public/decks/{code}/exercises",
-                "/public/meta/decks/{code}", "/public/meta/decks/{code}/head", "/public/meta/profiles/{username}", "/public/meta/profiles/{username}/head");
+                "/public/meta/decks/{code}", "/public/meta/decks/{code}/head", "/public/meta/profiles/{username}", "/public/meta/profiles/{username}/head",
+                // the community catalogue (Community/2, /6, /7) is GET-only as well
+                "/public/community/facets", "/public/community/shelves", "/public/community/decks", "/public/community/authors/{accountId}/decks", "/public/sitemap.xml");
     }
 }

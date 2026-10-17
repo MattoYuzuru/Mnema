@@ -38,6 +38,7 @@ describe('canonical bearer interceptor', () => {
             '/api/speech-inputs?purpose=COMPOSER', '/api/speech-inputs/0a000000-0000-4000-8000-000000000029',
             '/api/promo-codes/redemptions', '/api/promo-popup', '/api/promo-popup/events', '/api/experiment-events',
             '/api/billing/checkout', '/api/billing/orders/0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d',
+            '/api/onboarding', '/api/onboarding/journey', '/api/onboarding/preferences', '/api/onboarding/sample-deck', '/api/admin/onboarding/experiment?from=2026-10-01&to=2026-10-10',
             '/api/admin/events', '/api/admin/events/access', '/api/admin/events/123',
             '/api/admin/console/access', '/api/admin/console/report?from=2026-10-01&to=2026-10-10', '/api/admin/console/audit',
             '/api/admin/console/users/10000000-0000-4000-8000-000000000001', '/api/admin/promo-codes',
@@ -50,7 +51,11 @@ describe('canonical bearer interceptor', () => {
             '/api/public/decks/Kq7xT3mNpR/items/7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
             '/api/public/decks/Kq7xT3mNpR/media/7f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
             '/api/public/decks/Kq7xT3mNpR/complaints', '/api/public/profiles/ivan.k/complaints',
+            '/api/community/interests', '/api/community/interests:reset', '/api/community/events', '/api/community/exposures', '/api/community/recommendations?q=кот',
             '/api/topics', '/api/invites:redeem', '/api/public/decks/Kq7xT3mNpR/access-requests', '/api/public/decks/Kq7xT3mNpR/access-requests:withdraw',
+            // the community catalogue: the bearer is optional, and a signed-in viewer's must reach it (limits by account, the author's invitation-only decks)
+            '/api/public/community/facets', '/api/public/community/shelves', '/api/public/community/decks?q=spanish&limit=24',
+            '/api/public/community/authors/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35/decks?limit=24&cursor=abc',
             '/api/admin/complaints?status=OPEN&limit=50', '/api/admin/complaints/journal?limit=50',
             '/api/admin/complaints/0199c478-b000-7000-8000-000000000001', '/api/admin/complaints/0199c478-b000-7000-8000-000000000001/units?kind=ITEM',
             '/api/admin/complaints/0199c478-b000-7000-8000-000000000001:decide', '/api/admin/complaints/0199c478-b000-7000-8000-000000000001:unhide',
@@ -77,6 +82,7 @@ describe('canonical bearer interceptor', () => {
             '/api/capabilities/x', '/api/capabilities-other', '/api/exercise-previews/x', '/api/exercise-previews-other',
             '/api/usage/x', '/api/usage-other', '/api/usage%2fx', '/api/plans/x', '/api/plans-other', '/api/learning-profile/x', '/api/speech-consent/x', '/api/speech-consent-other', '/api/speech-inputs-other', '/api/speech-inputs%2fx',
             '/api/promo-codes', '/api/billing/tbank/notifications', '/api/billing', '/api/billing/checkout/x', '/api/promo-codes/redemptions/x', '/api/promo-popup/other', '/api/experiment-events/x', '/api/admin/promo-codes-other', '/api/admin/console/other', '/api/admin/console/report/x',
+            '/api/onboarding-other', '/api/onboarding/x', '/api/onboarding/sample-deck/x', '/api/onboarding/sample-deck-other', '/api/onboarding%2fjourney', '/api/onboarding/journey/x', '/api/admin/onboarding', '/api/admin/onboarding/experiment/x',
             '/api/admin/support/tickets/x', '/api/admin/support/tickets/1/files', '/api/admin/console/users/x', '/api/admin/promo-codes/x',
             `${identity}/api/accounts/admin/directory/x`, `${identity}/api/accounts/admin/accounts/10000000-0000-4000-8000-000000000001/admin`,
             '/api/events', '/api/admin/events-other', '/api/admin/events%2f123',
@@ -99,8 +105,14 @@ describe('canonical bearer interceptor', () => {
             '/api/admin/complaints/0199c478-b000-7000-8000-000000000001/other', '/api/admin/complaints/0199c478-b000-7000-8000-000000000001/units/x',
             'https://evil.test/api/public/profiles/ivan.k/complaints',
             // topics, invitation redemption and access requests: exactly the documented routes
+            '/api/community/interests/other', '/api/community/interests:reset/other', '/api/community/events/other', '/api/community/exposures/other', '/api/community/recommendations/other', '/api/community-other/interests',
             '/api/topics/x', '/api/topics-other', '/api/invites', '/api/invites:other', '/api/invites:redeem/x',
             '/api/public/decks/Kq7xT3mNpR/access-requests/x', '/api/public/decks/Kq7xT3mNpR/access-requests:other', '/api/public/decks/Kq7xT3mNp0/access-requests',
+            // the catalogue: exactly its four read routes (the sitemap and the owner's editorial shelf are not the page's)
+            '/api/public/community', '/api/public/community/', '/api/public/community/facets/x', '/api/public/community/shelves/x', '/api/public/community/decks/x',
+            '/api/public/community/authors', '/api/public/community/authors/x/decks', '/api/public/community/authors/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35',
+            '/api/public/community/authors/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35/decks/x', '/api/public/community/authors/0198a6c0-1d3e-7a52-9b0c-2f6d8e4a1c35%2fdecks',
+            '/api/public/community/other', '/api/public/sitemap.xml', '/api/x/public/community/facets', 'https://evil.test/api/public/community/facets',
             'https://evil.test/api/decks', '//evil.test/api/decks', 'https://user@identity.example.test/userinfo']) {
             expect(isCredentialTarget(url, identity, '/api', window.location.origin), url).toBe(false);
             http.get(url).subscribe();
@@ -124,6 +136,15 @@ describe('canonical bearer interceptor', () => {
         signedIn.flush({});
         expect(isCredentialTarget('/api/public/decks/Kq7xT3mNpR', identity, '/api', window.location.origin)).toBe(true);
         expect(isCredentialTarget('/api/public/decks/Kq7xT3mNpR/../decks', identity, '/api', window.location.origin)).toBe(false);
+    });
+
+    it('binds private recommendations to the configured absolute base and exact paths', () => {
+        const base = 'https://learning.test/custom/api';
+        for (const route of ['interests', 'interests:reset', 'events', 'exposures', 'recommendations']) {
+            expect(isCredentialTarget(`${base}/community/${route}?limit=12`, identity, base, window.location.origin)).toBe(true);
+            expect(isCredentialTarget(`${base}/community/${route}/extra`, identity, base, window.location.origin)).toBe(false);
+            expect(isCredentialTarget(`https://evil.test/custom/api/community/${route}`, identity, base, window.location.origin)).toBe(false);
+        }
     });
 
     it('binds401 expiration to the exact request token', () => {

@@ -26,6 +26,8 @@ class LearningProfileRepository {
         this.jdbc = jdbc;
     }
 
+    Instant now() { return jdbc.sql("SELECT statement_timestamp()").query(Timestamp.class).single().toInstant(); }
+
     Optional<Row> find(UUID owner) {
         return jdbc.sql("SELECT goal,answered_at FROM app_learning.learning_profile WHERE owner_id=:owner")
                 .param("owner", owner)

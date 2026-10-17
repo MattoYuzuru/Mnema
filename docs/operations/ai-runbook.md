@@ -8,6 +8,21 @@ own [AI egress proxy](./ai-egress-proxy.md) runbook. Architecture and decisions:
 §9 providers and budgets). The quality gate before a change of a route, a prompt or a model is
 the golden eval of the [eval gate](#8-eval-gate-before-changing-a-model-route-or-prompt).
 
+## Production admission — 15 October 2026
+
+The owner confirmed the required RKN approvals and the quality review in the launch chat on
+2026-10-15. Production enables the implemented generation, assessment, text-to-speech, image-search and
+web-search capability switches. Each still requires a configured provider; the launch does not
+invent missing Yandex Search credentials. ABROAD speech-to-text stays off pending the explicit owner decision on original audio described
+in the product contract §6. Image/video generation remain unavailable. Operational
+kill switches, per-account allowances, provider budgets and individual voice consent remain.
+Prompt **v1** and the existing model routes are unchanged; this admission does not activate v2.
+
+Provider credentials travel through the explicit `prod` Environment allowlist to root-only
+`app.env`, then only to the `all` Learning process. The host-generated user HMAC secret and the
+existing egress proxy credentials stay in root-only `runtime.env`, outside GitHub. The optional api/worker overlay stays inactive and keeps its
+AI gates off and API credentials empty. Policy and terms 1.7 describe the active flows.
+
 ## 1. Topology
 
 One Learning image runs in one of three roles (`MNEMA_RUNTIME_ROLES` = `learning.runtime.roles`):
@@ -259,7 +274,7 @@ sweeper (`SpeechInputSweeper` runs in every role).
 | Generation sessions | 30 days after last activity, then one day readable, then purged | `generation_session` and children |
 | Speech clips cache | 180 days (`learning.ai.tts.cache-ttl`) | `speech_cache` |
 | Licensed image search cache | 24 hours | `image_search_cache` |
-| Answer text of a semantic check | until the presentation expires; the stored grade keeps short quotes | `study_assessment` |
+| Temporary answer text of a semantic check | cleared at terminal completion or expiry; separate scheduled raw response lasts 30 days; scheduled feedback may retain short quotes until account deletion | `study_assessment`, `study_raw_response`, attempt receipt; [Study contract](../../contracts/study/README.md#ai-assessment-of-free-explanations-ai-semantic-292) |
 
 ## 7. Failure modes of the operations layer itself
 

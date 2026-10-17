@@ -32,6 +32,15 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(RENDER.render(names, environ), {'GOOGLE_CLIENT_ID': 'g-id'})
         self.assertEqual(RENDER.render(names, {}), {})
 
+    def test_ai_credentials_follow_the_allowlist_and_do_not_accept_arbitrary_provider_variables(self):
+        names = RENDER.read_keys(KEYS)
+        values = {'PROD_MNEMA_AI_DEEPSEEK_API_KEY': 'fixture-text-key',
+                  'PROD_MNEMA_AI_USER_KEY_SECRET': 'host-secret-must-not-travel',
+                  'PROD_MNEMA_AI_EGRESS_PROXY_PASSWORD': 'host-secret-must-not-travel',
+                  'PROD_MNEMA_AI_UNREVIEWED_PROVIDER_KEY': 'must-not-travel'}
+        self.assertEqual(RENDER.render(names, values), {
+            'MNEMA_AI_DEEPSEEK_API_KEY': 'fixture-text-key'})
+
     def test_key_list_is_strict(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'keys'

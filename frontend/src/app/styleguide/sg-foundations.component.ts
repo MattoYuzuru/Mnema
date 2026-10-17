@@ -10,7 +10,7 @@ import { SgSpecimenComponent } from './sg-specimen.component';
 
 /** Tokens whose resolved value is shown next to a swatch or a scale step. */
 const SIZE_TOKENS = ['--mn-radius', '--mn-touch-min', '--mn-glyph-size', '--mn-page-width', '--mn-page-gutter', '--mn-workspace-width'] as const;
-const MOTION_TOKENS = ['--mn-wave-duration', '--mn-list-wave-duration'] as const;
+const MOTION_TOKENS = ['--mn-wave-duration', '--mn-list-wave-duration', '--mn-tour-hold'] as const;
 const FONT_TOKENS = ['--mn-font-display', '--mn-font-body', '--mn-font-mono'] as const;
 
 /** The «Основы» sections: principles, palette, semantic colours, typography, spacing, radii, motion, icons. */

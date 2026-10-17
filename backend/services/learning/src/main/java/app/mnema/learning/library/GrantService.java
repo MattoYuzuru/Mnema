@@ -44,6 +44,7 @@ public class GrantService {
 
     private final AccessRepository repository;
     private final LibraryRepository library;
+    private final DeckPurposeGuard purposes;
     private final ProfileDirectory profiles;
     private final ProfileLookupBudget budget;
     private final AccessMetrics metrics;
@@ -61,6 +62,7 @@ public class GrantService {
                  PlatformTransactionManager transactions, Clock clock) {
         this.repository = repository;
         this.library = library;
+        this.purposes = new DeckPurposeGuard(library);
         this.profiles = profiles;
         this.budget = budget;
         this.metrics = metrics;
@@ -115,6 +117,7 @@ public class GrantService {
     private Grant grantOnce(UUID owner, UUID deck, String username) {
         readOnly.executeWithoutResult(status -> {
             requireOwned(owner, deck);
+            purposes.requireShareable(deck);
             Publication publication = library.publication(owner, deck).orElseThrow(PublicationRequiredException::new);
             if (publication.visibility() != DeckVisibility.INVITE || publication.publishedRevisionId() == null) throw new PublicationRequiredException();
         });

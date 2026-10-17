@@ -25,6 +25,7 @@ import { ExerciseDetail, ExercisePage } from './exercise.models';
 import { ItemApiService } from './item-api.service';
 import { NativeMediaUploadApi } from './native-media-upload.api';
 import { spyObj, type SpyObj, lastCall } from '../../../testing/mocks';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { ToastService } from '../../core/notifications/toast.service';
 import { GenerationApiService } from '../generation/generation-api.service';
 import { ArtifactDetail, RequestValidationError, parseApprovalAck, parseArtifactDetail } from '../generation/generation.models';
@@ -693,6 +694,32 @@ describe('ExerciseAuthoringPageComponent', () => {
     });
 
     describe('creates every mechanic', () => {
+        it('tells the onboarding tour that an exercise was saved into the deck, only once it was', () => {
+            configure();
+            const seen: [string, unknown][] = [];
+            TestBed.inject(TourEvents).listen((event, payload) => { seen.push([event, payload]); });
+            select('SELF_CHECK');
+            const fixtureSpec = mechanics['createSelfCheck'].exercise;
+            component().setPrompt(fixtureSpec.content.prompt);
+            component().setReference(fixtureSpec.content.reference);
+            expect(seen).toEqual([]);
+            component().save();
+            expect(seen).toEqual([['exercise.published', { deckId: deck.deckId }]]);
+            expect(page().querySelector('section.exercise-page')!.getAttribute('data-tour-anchor')).toBe('own.exercise');
+        });
+
+        it('leaves the way on to the tour when a gate took the event: the page does not navigate a second time', () => {
+            configure();
+            TestBed.inject(TourEvents).listen(() => true);
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+            select('SELF_CHECK');
+            const fixtureSpec = mechanics['createSelfCheck'].exercise;
+            component().setPrompt(fixtureSpec.content.prompt);
+            component().setReference(fixtureSpec.content.reference);
+            component().save();
+            expect(navigate).not.toHaveBeenCalled();
+        });
+
         it('SELF_CHECK with an image question and a rich reference', () => {
             configure();
             select('SELF_CHECK');
@@ -1710,6 +1737,8 @@ describe('ExerciseAuthoringPageComponent', () => {
 
         it('saves by approving the artifact with the edited exercise as the replacement, then returns to the Workshop', () => {
             open();
+            const tourSeen: [string, unknown][] = [];
+            TestBed.inject(TourEvents).listen((event, payload) => { tourSeen.push([event, payload]); });
             approved();
             component().setPrompt([text('Исправленный вопрос?')]);
             refresh();
@@ -1727,8 +1756,21 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(JSON.stringify(replacement!.exercise)).toContain('Исправленный вопрос?');
             expect(replacement!.exercise.subject).toEqual({ memberKey: item.memberKey, itemRevisionId: item.itemRevisionId });
             expect(toast.echo).toHaveBeenCalledWith('Упражнение сохранено в колоду');
+            expect(tourSeen).toContainEqual(['exercise.published', { deckId: deck.deckId }]);
             expect(router.navigate).toHaveBeenCalledWith(['/decks', deck.deckId, 'workshop', sessionId]);
             expect(component().dirty()).toBe(false);
+        });
+
+        it('returns to the Workshop by itself only when no tour gate took the event, which goes on to its own next place', () => {
+            open();
+            TestBed.inject(TourEvents).listen(() => true);
+            approved();
+            component().setPrompt([text('Исправленный вопрос?')]);
+            refresh();
+            component().save();
+            refresh();
+            expect(lastCall(generationApi.approveArtifact)).toBeDefined();
+            expect(router.navigate).not.toHaveBeenCalled();
         });
 
         it('keeps the objective the proposal reused when the page lists it, and creates one by title when it does not', () => {

@@ -10,6 +10,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -27,6 +29,10 @@ public class PublicProfiles {
     /** Date of the approved consent text. A client that shows another text is refused with 409. */
     public static final String TEXT_VERSION = "2026-10-10";
     public static final int MAX_BATCH = 50;
+    /** An account is {@code mnema_trusted} from this age on (with a verified e-mail); the contract is {@code contracts/community/catalog.json}, RFC 11.2. */
+    public static final Duration TRUSTED_AFTER = Duration.ofDays(3);
+    /** An account is {@code mnema_new_account} while it is younger than this. */
+    public static final Duration NEW_ACCOUNT_WITHIN = Duration.ofHours(48);
     private static final Pattern USERNAME = Pattern.compile("[A-Za-z0-9_.-]{3,50}");
 
     public record Consent(boolean enabled, boolean showDisplayName, boolean showAvatar, boolean showBio,
@@ -130,6 +136,29 @@ public class PublicProfiles {
         return jdbcClient.sql("""
                         SELECT EXISTS(SELECT 1 FROM app_identity.public_profile_consent c JOIN app_identity.account a ON a.account_id=c.account_id
                                       WHERE c.account_id=:id AND\s""" + CARD_GATE + ")").param("id", accountId).query(Boolean.class).single();
+    }
+
+    /**
+     * The three product signals of {@code /userinfo} (Learning reads no Identity table): {@code publishReady} (the claim {@code mnema_public_profile}),
+     * {@code trusted} (the address is confirmed, AND the account is at least {@link #TRUSTED_AFTER} old; confirmed means the e-mail is verified OR the account has ANY federated identity (Google, Yandex, GitHub): signing in through a provider is the confirmation even where the provider does not vouch for the e-mail, as Yandex does not) and
+     * {@code newAccount} (the account is younger than {@link #NEW_ACCOUNT_WITHIN}). {@code trusted} and {@code newAccount} are anti-abuse inputs of the
+     * community ranking (a copy by an untrusted account weighs less; a burst of copies by new accounts raises a flag in the owner console); they are
+     * never shown to anybody and carry no personal data. One primary-key statement; {@code now} is the caller's clock. An unknown account is all false.
+     */
+    public record UserInfoSignals(boolean publishReady, boolean trusted, boolean newAccount) {
+    }
+
+    public UserInfoSignals userInfoSignals(UUID accountId, Instant now) {
+        OffsetDateTime at = now.atOffset(java.time.ZoneOffset.UTC);
+        return jdbcClient.sql("""
+                        SELECT EXISTS(SELECT 1 FROM app_identity.public_profile_consent c WHERE c.account_id=a.account_id AND\s""" + CARD_GATE + """
+                               ) AS ready,
+                               ((a.email_verified OR EXISTS(SELECT 1 FROM app_identity.external_identity x WHERE x.account_id=a.account_id)) AND a.created_at <= :trustedBefore) AS trusted,
+                               (a.created_at > :newAfter) AS fresh
+                        FROM app_identity.account a WHERE a.account_id=:id""")
+                .param("id", accountId).param("trustedBefore", at.minus(TRUSTED_AFTER)).param("newAfter", at.minus(NEW_ACCOUNT_WITHIN))
+                .query((rs, row) -> new UserInfoSignals(rs.getBoolean("ready"), rs.getBoolean("trusted"), rs.getBoolean("fresh")))
+                .optional().orElse(new UserInfoSignals(false, false, false));
     }
 
     public Optional<Card> card(UUID id) {

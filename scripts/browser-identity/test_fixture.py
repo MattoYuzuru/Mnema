@@ -1,5 +1,6 @@
 """Fixture safety regressions; not a substitute for the real browser composition."""
 import contextlib
+import datetime
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
@@ -428,6 +429,155 @@ module.main()
                     contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
                 HARNESS.main()
             self.assertEqual(2, exit_code.exception.code)
+
+    def test_catalog_scenario_is_exclusive_wired_opens_the_launch_flag_only_for_its_run_and_is_syntactically_valid(self):
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("catalog.mjs").read_text()
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn("import { runCatalog } from './catalog.mjs'", driver)
+        self.assertIn("config.catalog", driver)
+        self.assertIn('"catalog": getattr(self.args, "catalog", False)', runner)
+        self.assertIn('"catalog.mjs"', runner)
+        # Everything a reader does is the real UI; nothing is injected, stubbed or intercepted, and no stage is finished through a fallback.
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("Fetch.failRequest", source)
+        for stage in ("empty", "seed", "shelves", "search", "filters", "scroll", "counts", "author", "masthead", "motion", "a11y", "console", "limits"):
+            self.assertIn(f"stage('{stage}'", source)
+        # The limit stage uses up the minute's guest allowance and the console stage hides a deck: they run last.
+        self.assertLess(source.index("stage('a11y'"), source.index("stage('console'"))
+        self.assertLess(source.index("stage('console'"), source.index("stage('limits'"))
+        # The catalogue's own switch and the short rank schedule are for this run only, on the ordinary Learning (inside the community branch).
+        switches = HARNESS.catalog_switches()
+        self.assertEqual({"LEARNING_COMMUNITY_CATALOG_ENABLED": "true", "LEARNING_COMMUNITY_CATALOG_FACETS_TTL": "PT1S",
+                          "LEARNING_COMMUNITY_RANK_INITIAL_DELAY": "PT3S", "LEARNING_COMMUNITY_RANK_SCHEDULE_INTERVAL": "PT5S"}, switches)
+        self.assertEqual(1, runner.count("catalog_switches())"))
+        self.assertIn('getattr(self.args, "community", False) and not generation and not promo', runner)
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("catalog.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+        # Exclusive: the run starts from an empty catalogue, so it shares no run with a scenario that publishes decks.
+        for extra in (["--community"], ["--updates"], ["--authoring"], ["--authoring", "--media"], ["--authoring", "--generation"], ["--authoring", "--assessment"],
+                      ["--authoring", "--only-promo"]):
+            with self.subTest(extra=extra), patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--catalog", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+
+    def test_catalog_run_serves_the_launch_flag_and_its_fixture_endpoints_to_itself_only(self):
+        fixture, server = self.proxy()
+        def runtime_config():
+            status, _, body = self.request(server, "GET", "/app-config.js")
+            self.assertEqual(200, status)
+            return json.loads(body.decode().removeprefix("window.MNEMA_APP_CONFIG=").removesuffix(";"))
+        # Any other run: no launch flag, no catalogue endpoint of the harness.
+        self.assertNotIn("communityLaunched", runtime_config())
+        for path in ("/__fixture/catalog-rank", "/__fixture/catalog-accounts", "/__fixture/catalog-admin-token"):
+            self.assertEqual(404, self.request(server, "POST", path, "{}")[0], path)
+        fixture.args.catalog = True
+        self.assertIs(True, runtime_config()["communityLaunched"])
+        # Only a POST to a known path with a sound body does anything.
+        self.assertEqual(404, self.request(server, "GET", "/__fixture/catalog-rank")[0])
+        self.assertEqual(404, self.request(server, "POST", "/__fixture/catalog-other", "{}")[0])
+        with patch.object(fixture, "catalog_rank", return_value={"generations": 2, "scheduledJobsDone": 1}) as rank:
+            status, _, body = self.request(server, "POST", "/__fixture/catalog-rank", json.dumps({"enqueue": True}), {"Content-Type": "application/json"})
+        self.assertEqual((200, {"generations": 2, "scheduledJobsDone": 1}), (status, json.loads(body)))
+        rank.assert_called_once_with(True)
+        for names in ([], "x", ["a b"], ["ok", "../etc"], ["n" * 41], [str(index) for index in range(17)]):
+            with self.subTest(names=names):
+                self.assertEqual(400, self.request(server, "POST", "/__fixture/catalog-accounts", json.dumps({"names": names}))[0])
+        statements = []
+        with patch.object(fixture, "sql", side_effect=statements.append), patch.object(fixture, "account", return_value=(object(), "account-id")), \
+                patch.object(fixture, "token", return_value={"access_token": "synthetic"}) as token:
+            status, _, body = self.request(server, "POST", "/__fixture/catalog-accounts", json.dumps({"names": ["catalog_copier_1"]}))
+        self.assertEqual((200, [{"name": "catalog_copier_1", "accountId": "account-id", "token": "synthetic"}]), (status, json.loads(body)))
+        # The register limit of the disposable Identity (ten per address) is cleared before the people are made; the token can set a public-profile consent.
+        self.assertEqual(["DELETE FROM app_identity.rate_limit"], statements)
+        self.assertIn("account.write", token.call_args.kwargs["scope"])
+
+    def test_onboarding_scenario_is_exclusive_wired_enables_the_journey_for_its_run_and_is_syntactically_valid(self):
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("onboarding.mjs").read_text()
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn("import { runOnboarding } from './onboarding.mjs'", driver)
+        self.assertIn("config.onboarding", driver)
+        self.assertIn('"onboarding": getattr(self.args, "onboarding", False)', runner)
+        self.assertIn('"onboarding.mjs"', runner)
+        # Everything a learner does is the real UI; nothing is injected, stubbed or intercepted, and no stage is finished through a hidden fallback.
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("Fetch.failRequest", source)
+        self.assertIn("openGuestTab", driver)
+        for stage in ("welcome", "survey", "own_details", "own_create_deck", "pause_resume", "own_material", "own_exercise", "own_study", "own_finale", "replay", "hold", "skip",
+                      "community", "a11y", "sign_out"):
+            self.assertIn(f"stage('{stage}'", source)
+        # The flag of the journey and the release instant are for the ordinary Learning of this disposable run (inside the community branch), never for another process.
+        instant = datetime.datetime(2026, 10, 17, 12, 0, tzinfo=datetime.timezone.utc)
+        switches = HARNESS.onboarding_switches(instant)
+        self.assertEqual({"LEARNING_ONBOARDING_ENABLED": "true", "LEARNING_ONBOARDING_ELIGIBLE_FROM": "2026-10-17T11:55:00Z"}, switches)
+        self.assertNotIn("LEARNING_ONBOARDING_EXPERIMENT_ENABLED", switches)
+        self.assertEqual(1, runner.count("**onboarding_switches()"))
+        self.assertIn("**recs_switches()", runner)
+        self.assertIn('getattr(self.args, "community", False) and not generation and not promo', runner)
+        self.assertTrue(HARNESS.catalogue_fixture_enabled(SimpleNamespace(onboarding=True)))
+        self.assertFalse(HARNESS.catalogue_fixture_enabled(SimpleNamespace(onboarding=False)))
+        node = shutil.which("node")
+        if node is not None:
+            for name in ("onboarding.mjs", "browser.mjs"):
+                result = subprocess.run([node, "--check", str(Path(__file__).with_name(name))], capture_output=True)
+                self.assertEqual(0, result.returncode, name)
+        # Exclusive: it registers accounts of its own and never runs another scenario's flow.
+        for extra in (["--community"], ["--updates"], ["--catalog"], ["--recs"], ["--authoring"], ["--authoring", "--media"], ["--authoring", "--generation"],
+                      ["--authoring", "--assessment"], ["--authoring", "--only-promo"]):
+            with self.subTest(extra=extra), patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--onboarding", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+
+    def test_onboarding_gets_the_catalogue_composition_and_its_fixture_only_in_its_disposable_run(self):
+        fixture, server = self.proxy()
+        fixture.args.onboarding = True
+        status, _, body = self.request(server, "GET", "/app-config.js")
+        self.assertEqual(200, status)
+        self.assertIn('"communityLaunched": true', body.decode())
+        with patch.object(fixture, "catalog_rank", return_value={"generations": 1, "scheduledJobsDone": 1}):
+            self.assertEqual(200, self.request(server, "POST", "/__fixture/catalog-rank", "{}")[0])
+        fixture.args.onboarding = False
+        self.assertEqual(404, self.request(server, "POST", "/__fixture/catalog-rank", "{}")[0])
+
+    def test_recs_isolated_flags_and_exclusivity(self):
+        self.assertEqual({"LEARNING_COMMUNITY_EVENTS_ENABLED": "true", "LEARNING_COMMUNITY_FOR_YOU_ENABLED": "true"}, HARNESS.recs_switches())
+        self.assertFalse(HARNESS.catalogue_fixture_enabled(SimpleNamespace()))
+        self.assertTrue(HARNESS.catalogue_fixture_enabled(SimpleNamespace(recs=True)))
+        for extra in (["--catalog"], ["--community"], ["--updates"], ["--authoring"], ["--admin"]):
+            with self.subTest(extra=extra), patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--recs", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+
+    def test_recs_gets_launch_and_fixture_only_in_its_disposable_run(self):
+        fixture, server = self.proxy()
+        fixture.args.recs = True
+        status, _, body = self.request(server, "GET", "/app-config.js")
+        self.assertEqual(200, status)
+        self.assertIn('"communityLaunched": true', body.decode())
+        with patch.object(fixture, "catalog_rank", return_value={"generations": 2, "scheduledJobsDone": 1}):
+            self.assertEqual(200, self.request(server, "POST", "/__fixture/catalog-rank", "{}")[0])
+        fixture.args.recs = False
+        self.assertEqual(404, self.request(server, "POST", "/__fixture/catalog-rank", "{}")[0])
+
+    def test_catalog_rank_job_is_enqueued_through_the_real_queue_with_a_key_of_its_own(self):
+        fixture = self.fixture()
+        statements = []
+        fixture.sql = lambda statement, **_: (statements.append(statement), "3")[1]
+        self.assertEqual({"generations": 3, "scheduledJobsDone": 3}, fixture.catalog_rank(True))
+        self.assertIn("INSERT INTO app_learning.learning_job", statements[0])
+        self.assertIn("'catalog.rank','rank:harness-1'", statements[0])
+        fixture.catalog_rank(True)
+        self.assertIn("'rank:harness-2'", [part for part in statements if "INSERT" in part][1])
+        statements.clear()
+        fixture.catalog_rank(False)
+        self.assertEqual(2, len(statements))
+        self.assertTrue(all(statement.startswith("SELECT") for statement in statements))
 
     def test_generation_scenario_is_wired_uses_only_the_stub_and_is_syntactically_valid(self):
         for arguments in (["--generation"],):

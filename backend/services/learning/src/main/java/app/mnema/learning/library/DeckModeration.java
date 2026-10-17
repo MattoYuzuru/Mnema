@@ -1,5 +1,6 @@
 package app.mnema.learning.library;
 
+import app.mnema.learning.community.CatalogOutbox;
 import app.mnema.learning.platform.id.UuidPolicy;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -16,7 +17,7 @@ import java.util.UUID;
  * deck. A hidden deck is invisible to everybody but its owner ({@link DeckAccess}, the invitation redemption); copies other people made are untouched.
  * The flag is not part of the owner's publication command: republishing, changing the level or rotating the code never clears it, and only
  * {@link #unhide} does. Changing it bumps the publication row version (the guard trigger demands it), so an open publication editor gets a 412 and reloads;
- * it also appends one {@code deck_publication_event} row when the deck has a published revision, so the catalog projector (epic 3) re-evaluates the deck.
+ * it also appends one {@code deck_publication_event} row and enqueues the catalogue projection ({@link CatalogOutbox}) when the deck has a published revision, so the projector (Community/1) re-evaluates the deck.
  *
  * <p>Writers run inside the decision's transaction ({@code MANDATORY}) and lock the publication row first.
  */
@@ -30,8 +31,12 @@ public class DeckModeration {
     public record Notice(UUID deckId, boolean hidden, Instant hiddenAt, int materials, int exercises) { }
 
     private final JdbcClient jdbc;
+    private final CatalogOutbox outbox;
 
-    DeckModeration(JdbcClient jdbc) { this.jdbc = jdbc; }
+    DeckModeration(JdbcClient jdbc, CatalogOutbox outbox) {
+        this.jdbc = jdbc;
+        this.outbox = outbox;
+    }
 
     /** The deck behind an id, deleted or not, with its publication; empty for an id that never was a deck. */
     public Optional<Info> deck(UUID deckId) {
@@ -76,16 +81,17 @@ public class DeckModeration {
         Optional<Boolean> current = jdbc.sql("SELECT hidden_by_moderation FROM app_learning.deck_publication WHERE deck_id = :deck FOR UPDATE")
                 .param("deck", deckId).query(Boolean.class).optional();
         if (current.isEmpty() || current.orElseThrow() == hidden) return false;
-        jdbc.sql("""
+        record Flipped(UUID revision, DeckVisibility visibility) { }
+        Flipped flipped = jdbc.sql("""
                 UPDATE app_learning.deck_publication
                    SET hidden_by_moderation = :hidden, hidden_at = CAST(:at AS timestamptz), row_version = row_version + 1, updated_at = statement_timestamp()
                  WHERE deck_id = :deck
-                """).param("hidden", hidden).param("at", hidden ? Timestamp.from(now) : null, java.sql.Types.TIMESTAMP).param("deck", deckId).update();
-        jdbc.sql("""
-                INSERT INTO app_learning.deck_publication_event(deck_id, published_revision_id, visibility, occurred_at)
-                SELECT deck_id, published_revision_id, visibility, statement_timestamp() FROM app_learning.deck_publication
-                 WHERE deck_id = :deck AND published_revision_id IS NOT NULL
-                """).param("deck", deckId).update();
+                RETURNING published_revision_id, visibility
+                """).param("hidden", hidden).param("at", hidden ? Timestamp.from(now) : null, java.sql.Types.TIMESTAMP).param("deck", deckId)
+                .query((row, ignored) -> new Flipped(row.getObject("published_revision_id", UUID.class), DeckVisibility.valueOf(row.getString("visibility")))).single();
+        // the outbox row and the projection job in this very transaction: the catalogue removes a hidden deck (and brings it back) as soon as the job runs
+        if (hidden) outbox.withdrawn(deckId);
+        if (flipped.revision() != null) outbox.publicationChanged(deckId, flipped.revision(), flipped.visibility());
         return true;
     }
 

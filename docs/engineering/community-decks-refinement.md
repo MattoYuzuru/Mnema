@@ -5,7 +5,7 @@ artifact:
   title: "Колоды сообщества: эпики, задачи, зависимости и правила исполнения"
   status: accepted
   created_at: "2026-10-10"
-  updated_at: "2026-10-11"
+  updated_at: "2026-10-13"
   owners: ["project-owner"]
 ---
 
@@ -15,11 +15,10 @@ artifact:
 - Техника — в [архитектуре](../architecture/community-decks.md).
 - Решения владельца 2026-10-10 — в
   [журнале](../decisions/owner-decisions-2026-08.md#колоды-сообщества-принято-2026-10-10).
-- Задачи ведутся на доске «Mnema Kanban» (Project #4). Все стоят в Backlog, пока
-  не выполнен Definition of Ready из
+- Задачи ведутся на доске «Mnema Kanban» (Project #4). Актуальный локальный статус приведён ниже; GitHub после блокировки не обновлялся. Ready требует Definition of Ready из
   [work item standard](./work-item-standard.md).
 
-## Статус выполнения (2026-10-11)
+## Статус выполнения (2026-10-13)
 
 Эпик 1 ([#419](https://github.com/MattoYuzuru/Mnema/issues/419)) закрыт: Share/1–17 и
 попутная [#461](https://github.com/MattoYuzuru/Mnema/issues/461) смержены и выкачены.
@@ -30,7 +29,17 @@ artifact:
 [#460](https://github.com/MattoYuzuru/Mnema/issues/460) смержены и выкачены, миграции V59–V65
 (без V62); автоприём выключен до решения владельца. Updates/5 и Updates/6 вышли одним PR, потому что
 контракт копии меняется на обеих сторонах одновременно. Подробности:
-[evidence эпика 2](./evidence/community-decks/epic-2/README.md). Эпик 3 идёт.
+[evidence эпика 2](./evidence/community-decks/epic-2/README.md).
+
+Эпик 3 ([#421](https://github.com/MattoYuzuru/Mnema/issues/421)): Community/0–8 влиты одним PR [#502](https://github.com/MattoYuzuru/Mnema/pull/502)
+(он заменил [#500](https://github.com/MattoYuzuru/Mnema/pull/500) и [#501](https://github.com/MattoYuzuru/Mnema/pull/501))
+и выкачены выключенными. Миграции `V66`–`V69`. Подробности и то, что не проверено:
+[evidence эпика 3](./evidence/community-decks/epic-3/README.md). Попутная
+[#462](https://github.com/MattoYuzuru/Mnema/issues/462) ждёт двух недель после запуска GC (не раньше 2026-10-24).
+
+Эпик 4 ([#422](https://github.com/MattoYuzuru/Mnema/issues/422)): Recs/1–4 влиты PR [#541](https://github.com/MattoYuzuru/Mnema/pull/541) поверх
+эпика 3. Новые зависимости не добавлялись, функции выкачены выключенными. Состояние реализации, проверок и сравнение ранкеров:
+[evidence эпика 4](./evidence/community-decks/epic-4/README.md).
 
 В production функции эпика 1 включены релизом #481 вместе с текстами политики 1.4 и
 соглашения (выключатели — [runtime policy index](./runtime-policy-index.md)).

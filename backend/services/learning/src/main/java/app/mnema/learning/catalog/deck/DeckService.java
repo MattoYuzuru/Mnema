@@ -1,5 +1,8 @@
 package app.mnema.learning.catalog.deck;
 
+import app.mnema.learning.community.CatalogOutbox;
+import app.mnema.learning.community.CatalogEvents;
+import app.mnema.learning.community.InterestService;
 import app.mnema.learning.fork.ForkReadModel;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
@@ -28,14 +31,20 @@ public class DeckService {
     private final CompareAndSetExecutor cas;
     private final ImmutableStorage storage;
     private final ForkReadModel forks;
+    private final CatalogOutbox catalog;
+    private final CatalogEvents events;
+    private final InterestService interests;
 
     public DeckService(DeckRepository repository, CommandReceiptService receipts,
-                       CompareAndSetExecutor cas, ImmutableStorage storage, ForkReadModel forks) {
+                       CompareAndSetExecutor cas, ImmutableStorage storage, ForkReadModel forks, CatalogOutbox catalog, CatalogEvents events, InterestService interests) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
         this.storage = storage;
         this.forks = forks;
+        this.catalog = catalog;
+        this.events = events;
+        this.interests = interests;
     }
 
     @Transactional(readOnly = true, timeout = 10)
@@ -109,12 +118,15 @@ public class DeckService {
         });
     }
 
-    /** Tombstones the deck while keeping immutable revisions and attempt references intact. */
+    /** Tombstones the deck while keeping immutable revisions and attempt references intact. A deck in the community catalogue leaves it as soon as the projection job runs. */
     @Transactional(timeout = 10)
     public void delete(UUID actor, UUID deck, long expected) {
         DeckRecord current = own(actor, deck);
         if (current.rowVersion() != expected) throw new VersionConflictException();
+        interests.lockSignal(actor);
         cas.updateOne(expected, () -> repository.tombstone(actor, deck, expected));
+        catalog.deckDeleted(deck);
+        events.dropped(actor, deck);
     }
 
     private WriteResult execute(UUID actor, DeckCommand command, String type, ObjectNode envelope, Supplier<ObjectNode> action) {

@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 
+import { isSampleNotShareable } from '../../../core/onboarding/sample-deck';
 import { OwnDeckProtocolError, isCanonicalCommandId, isCanonicalEntityId } from '../own-deck.models';
 
 /**
@@ -176,6 +177,8 @@ export type ForkFailureKind =
     | 'invite-only'
     /** 409 `FORK_OWN_DECK`. */
     | 'own-deck'
+    /** 409 `SAMPLE_DECK_NOT_SHAREABLE`: the deck is a sample deck (or its template), which nobody copies or shares. */
+    | 'sample'
     /** 409 `DECK_PREPARING`: the copy is not ready for this action yet. */
     | 'preparing'
     /** 409 `CAPABILITY_UNAVAILABLE` with reason `DETACHED`: a detached copy gets no updates, so its update setting cannot change. */
@@ -210,7 +213,7 @@ export function forkFailureOf(error: unknown): ForkFailure {
         case 403: return failure(code === 'DECK_INVITE_ONLY' ? 'invite-only' : 'other');
         case 404: return failure('not-found');
         case 409:
-            return failure(code === 'FORK_OWN_DECK' ? 'own-deck' : code === 'DECK_PREPARING' ? 'preparing'
+            return failure(code === 'FORK_OWN_DECK' ? 'own-deck' : code === 'DECK_PREPARING' ? 'preparing' : isSampleNotShareable(409, code) ? 'sample'
                 : code === 'CAPABILITY_UNAVAILABLE' && body['reason'] === 'DETACHED' ? 'detached' : 'other');
         case 422: return failure(code === 'RESOURCE_LIMIT_EXCEEDED' ? 'limit' : 'other');
         case 429: return failure('rate-limited');

@@ -15,6 +15,9 @@ import { runWorkshop } from './workshop.mjs';
 import { runAssessment } from './assessment.mjs';
 import { runCommunity } from './community.mjs';
 import { runUpdates } from './updates.mjs';
+import { runCatalog } from './catalog.mjs';
+import { runRecs } from './recs.mjs';
+import { runOnboarding } from './onboarding.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const defaultCdpTimeout = Number.isInteger(config.cdpTimeoutMs) && config.cdpTimeoutMs >= 1000 && config.cdpTimeoutMs <= 120_000 ? config.cdpTimeoutMs : 10_000;
@@ -97,6 +100,9 @@ let mechanicsFailures = [];
 let mechanicsFindings = [];
 let communityOutcome = null;
 let updatesOutcome = null;
+let catalogOutcome = null;
+let recsOutcome = null;
+let onboardingOutcome = null;
 let diagnostics = () => ({});
 async function openTab() {
   const response = await fetch(`http://127.0.0.1:${config.debugPort}/json/new?about:blank`,
@@ -183,9 +189,12 @@ try {
       // Community decks (#439): two passes of ~24 full page loads each on four tabs (the invitee registers in its own browser context), every one with
       // its public reads, the author card and the shell assets.
       // The update of a copy (Updates/7, #446) is another two passes on two tabs (about 3700 requests: every full load fetches the shell assets and chunks).
-      const communityBudget = (config.communityScenario ? 3600 : 0) + (config.updates ? 4800 : 0);
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0) + (config.admin ? 1000 : 0) + communityBudget
-          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0) + (config.community ? 300 : 0) + (config.communityScenario && config.updates ? 300 : 0)) {
+      // The onboarding tour (OB-E1) signs up four accounts in contexts of their own and loads the app about a hundred times between them.
+      const communityBudget = (config.communityScenario ? 3600 : 0) + (config.updates ? 4800 : 0) + (config.catalog ? 7000 : 0) + (config.recs ? 7000 : 0) + (config.onboarding ? 6000 : 0);
+      // Hub/reading проверяет дополнительные полные загрузки материалов и общие lazy chunks. Лимит
+      // остаётся конечным для всего сценария, включая последующий проход по quiet routes onboarding.
+      if (networkRequests > (config.mechanics ? 5000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0) + (config.admin ? 1000 : 0) + communityBudget
+          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0) + (config.admin ? 80 : 0) + (config.community ? 300 : 0) + (config.communityScenario && config.updates ? 300 : 0) + ((config.catalog || config.recs) ? 400 : 0) + (config.onboarding ? 500 : 0)) {
         asynchronousFailure = true;
         firstAsynchronousFailure ??= 'bounded browser request budget exceeded';
       }
@@ -367,7 +376,8 @@ try {
     }
     await until(() => exists('#detail-title', tab), 'deck metadata form did not open behind «Изменить»');
   }
-  async function submit(tab = cdp) { await tab.evaluate("document.querySelector('form button[type=submit]').click()"); }
+  // The first submit button outside a `search` landmark: with the community launch flag on (`--catalog`) the masthead carries the closed book, a form of its own.
+  async function submit(tab = cdp) { await tab.evaluate("[...document.querySelectorAll('form button[type=submit]')].find(button => !button.closest('search')).click()"); }
   async function pressKey(key, code, virtualKeyCode, modifiers = 0, tab = cdp) {
     const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...event });
@@ -385,6 +395,77 @@ try {
     await writeFile(join(config.output, name), Buffer.from(capture.data, 'base64'));
   }
   const sanitizedLocation = (tab = cdp) => tab.evaluate('location.pathname');
+  /**
+   * `--onboarding` (OB-E1): the account that meets the tour is a fresh one, so this scenario registers its own through the real form, one per browser
+   * context (`openGuestTab`), and never runs the base flow, whose authoring pages the tour would take over. `signUp` resolves with the account's bearer.
+   */
+  async function signUp(tab, login) {
+    const before = tokenExchanges;
+    await navigate('/register', tab);
+    await fill('#email', login + '@example.invalid', tab);
+    await fill('#username', login, tab);
+    await fill('#password', config.password, tab);
+    if (await exists('#login-name', tab)) await fill('#login-name', login, tab);
+    await submit(tab);
+    await until(async () => tokenExchanges > before && (await sanitizedLocation(tab)) === '/decks', 'registration of ' + login + ' did not sign in', 30_000);
+    return bearerTokens.at(-1);
+  }
+  /** Signs an existing account in through the real login form (another device: a context of its own has no cookie). */
+  async function signIn(tab, login) {
+    const before = tokenExchanges;
+    await navigate('/login', tab);
+    await fill('#login-name', login, tab);
+    await fill('#password', config.password, tab);
+    await submit(tab);
+    await until(async () => tokenExchanges > before && (await sanitizedLocation(tab)) === '/decks', 'sign-in of ' + login + ' did not finish', 30_000);
+    return bearerTokens.at(-1);
+  }
+  /** The real «Выйти» control of the signed-in `/login` page; the wire audit of the runner needs two logouts that carry only the bearer. */
+  async function signOut(tab) {
+    logoutStatus = 0;
+    await navigate('/login', tab);
+    await until(() => exists(config.logoutSelector, tab), 'logout control absent');
+    require(await click(config.logoutSelector, tab), 'logout control is not clickable');
+    await until(() => logoutStatus === 204, 'logout did not answer 204');
+  }
+  /** The evidence of the run: every scenario's results, the wire and cookie checks, and the verdict. */
+  async function finishRun() {
+    await Promise.all([...asyncWork]);
+    for (const body of exchanges) {
+      const verifier = body.get('code_verifier');
+      require(verifier && verifier.length >= 43 && verifier.length <= 128, 'invalid PKCE verifier');
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      require(challenges.has(challenge) && body.get('redirect_uri') === config.frontend + '/auth/callback', 'PKCE exchange mismatch');
+    }
+    require(browserErrors === 0 && !asynchronousFailure && !tabs.some(tab => tab.eventFailed), 'browser runtime errors');
+    const screenshot = await cdp.call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(config.output, 'login.png'), Buffer.from(screenshot.data, 'base64'));
+    // A community gap (a flow the product does not complete through its own UI) is a finding like a failed stage: the run is red until it is fixed.
+    const communityFailures = [...(communityOutcome?.failures ?? []), ...(updatesOutcome?.failures ?? []), ...(catalogOutcome?.failures ?? []), ...(recsOutcome?.failures ?? []), ...(onboardingOutcome?.failures ?? []), ...(communityOutcome?.gaps ?? []).map(gap => ({ stage: 'gap:' + gap.id, reason: gap.effect }))];
+    const evidence = { state: mechanicsFailures.length === 0 && communityFailures.length === 0 ? 'passed' : 'failed',
+      ...(config.mechanics ? { mechanicsFailures, mechanicsFindings, syntheticMicrophone: true, realDeviceMicrophone: false } : {}),
+      ...(config.community ? { communityFailures, communityGaps: communityOutcome?.gaps ?? [] } : {}),
+      ...(config.onboarding ? { onboardingFindings: onboardingOutcome?.findings ?? [] } : {}),
+      scenarios: results, tokenExchanges, networkRequests, identityRequests, cancelledInterceptions,
+      externalRequestsBlocked: externalRequests,
+      browserRuntimeErrors: browserErrors, transport: 'real HTTPS, exact ephemeral SPKI allowlist, same-site cross-origin loopback',
+      browser: (await cdp.call('Browser.getVersion')).product };
+    await writeFile(join(config.output, 'browser.json'), JSON.stringify(evidence, null, 2));
+    if (mechanicsFailures.length > 0 || communityFailures.length > 0) process.exitCode = 1;
+  }
+  // The base flow below is one labelled block, so that `--onboarding` can leave it whole (no re-indenting of a thousand lines).
+  base: {
+  if (config.onboarding) {
+    step = 'onboarding_prepare';
+    onboardingOutcome = await runOnboarding({
+      config, record, SafeFailure, until, exists, navigate, fill, submit, click, clickText, saveScreenshot, saveFullScreenshot, signUp, signIn, signOut,
+      setStep: value => { step = value; }, openGuestTab });
+    step = 'onboarding_finish';
+    await navigate('/login');
+    await until(() => exists('#login-name'), 'final login route absent');
+    await finishRun();
+    break base;
+  }
   step = 'wrong_callback';
   await navigate('/auth/callback?code=fixture-invalid&state=fixture-invalid');
   await until(() => exists(config.errorSelector), 'wrong callback not rejected');
@@ -646,8 +727,9 @@ try {
   await saveScreenshot('own-deck-1440.png');
   await cdp.call('Emulation.setDeviceMetricsOverride',
     { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  // `main`: with the community launch flag open (--catalog) the masthead's closed book carries a hidden primary button of its own.
   require(await cdp.callFunction(`function() {
-    const action = document.querySelector('.button.primary');
+    const action = document.querySelector('main .button.primary');
     return document.documentElement.scrollWidth <= document.documentElement.clientWidth
       && action instanceof HTMLElement && action.getBoundingClientRect().height >= 44;
   }`), '390px layout overflowed or exposed an undersized primary action');
@@ -1053,12 +1135,19 @@ try {
       [320, 900, 2, 'study-320-at-200-percent.png']]) {
       await second.call('Emulation.setDeviceMetricsOverride',
         { width, height, deviceScaleFactor: dpr, mobile: width === 390 });
-      require(await second.callFunction(`function() {
+      const studyLayout = await second.callFunction(`function() {
         const action = document.querySelector('.study-card .button.primary');
-        return matchMedia('(prefers-reduced-motion: reduce)').matches
-          && document.documentElement.scrollWidth <= document.documentElement.clientWidth
-          && action instanceof HTMLElement && action.getBoundingClientRect().height >= 44;
-      }`), 'Study layout or touch target failed under responsive reduced-motion emulation');
+        return { reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+          viewport: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth,
+          actionHeight: action instanceof HTMLElement ? action.getBoundingClientRect().height : null,
+          overflow: [...document.querySelectorAll('header, main, .study-card, .session, .primary-nav, app-native-media-surface, app-audio-player')]
+            .map(e => ({ node: e.tagName, class: e.className, left: e.getBoundingClientRect().left, right: e.getBoundingClientRect().right }))
+            .filter(r => r.left < 0 || r.right > document.documentElement.clientWidth) };
+      }`);
+      if (!studyLayout.reduced || studyLayout.scroll > studyLayout.viewport || studyLayout.actionHeight < 44) {
+        await saveScreenshot('failure-study-layout-' + width + '.png', second);
+        require(false, 'Study layout or touch target failed: ' + JSON.stringify(studyLayout));
+      }
       await saveScreenshot(name, second);
     }
     await second.call('Emulation.setDeviceMetricsOverride',
@@ -1162,6 +1251,20 @@ try {
       config, record, SafeFailure, until, exists, navigate, fill, clickText, saveScreenshot, saveFullScreenshot,
       setStep: value => { step = value; }, ownerTab: cdp, ownerBearer: firstBearer, memberTab: second, memberBearer: secondBearer });
   }
+  if (config.catalog) {
+    // The community catalogue (Community/8, #455): an empty one, a seeded one, shelves, search, filters, counts, the author's page, the console; first account as
+    // the author (first tab), second account as the learner (second tab) and a guest tab in a new browser context.
+    step = 'catalog_prepare';
+    catalogOutcome = await runCatalog({
+      config, record, SafeFailure, until, exists, navigate, saveScreenshot, saveFullScreenshot,
+      setStep: value => { step = value; }, ownerTab: cdp, ownerBearer: firstBearer, memberTab: second, memberBearer: secondBearer, openGuestTab });
+  }
+  if (config.recs) {
+    step = 'recs_prepare';
+    recsOutcome = await runRecs({
+      config, record, SafeFailure, until, exists, navigate, saveScreenshot, saveFullScreenshot,
+      setStep: value => { step = value; }, ownerTab: cdp, ownerBearer: firstBearer, memberTab: second, memberBearer: secondBearer, openGuestTab });
+  }
   step = 'first_tab_profile';
   // The first tab stayed in the background through the authoring, notification, mechanics and hub flows; bring it back
   // before reading it, as the second tab's focus changes in those flows may have hidden it.
@@ -1233,27 +1336,8 @@ try {
   require(!(await authenticated()) && await cdp.callFunction(`function(values) {
     return !values.some(value => document.body.innerText.includes(value));
   }`, [[config.login, config.email]]), 'screenshot not anonymous');
-  await Promise.all([...asyncWork]);
-  for (const body of exchanges) {
-    const verifier = body.get('code_verifier');
-    require(verifier && verifier.length >= 43 && verifier.length <= 128, 'invalid PKCE verifier');
-    const challenge = createHash('sha256').update(verifier).digest('base64url');
-    require(challenges.has(challenge) && body.get('redirect_uri') === config.frontend + '/auth/callback', 'PKCE exchange mismatch');
+  await finishRun();
   }
-  require(browserErrors === 0 && !asynchronousFailure && !tabs.some(tab => tab.eventFailed), 'browser runtime errors');
-  const screenshot = await cdp.call('Page.captureScreenshot', { format: 'png' });
-  await writeFile(join(config.output, 'login.png'), Buffer.from(screenshot.data, 'base64'));
-  // A community gap (a flow the product does not complete through its own UI) is a finding like a failed stage: the run is red until it is fixed.
-  const communityFailures = [...(communityOutcome?.failures ?? []), ...(updatesOutcome?.failures ?? []), ...(communityOutcome?.gaps ?? []).map(gap => ({ stage: 'gap:' + gap.id, reason: gap.effect }))];
-  const evidence = { state: mechanicsFailures.length === 0 && communityFailures.length === 0 ? 'passed' : 'failed',
-    ...(config.mechanics ? { mechanicsFailures, mechanicsFindings, syntheticMicrophone: true, realDeviceMicrophone: false } : {}),
-    ...(config.community ? { communityFailures, communityGaps: communityOutcome?.gaps ?? [] } : {}),
-    scenarios: results, tokenExchanges, networkRequests, identityRequests, cancelledInterceptions,
-    externalRequestsBlocked: externalRequests,
-    browserRuntimeErrors: browserErrors, transport: 'real HTTPS, exact ephemeral SPKI allowlist, same-site cross-origin loopback',
-    browser: (await cdp.call('Browser.getVersion')).product };
-  await writeFile(join(config.output, 'browser.json'), JSON.stringify(evidence, null, 2));
-  if (mechanicsFailures.length > 0 || communityFailures.length > 0) process.exitCode = 1;
 } catch (error) {
   // No caught exception, URL, DOM, response body or stack may reveal a credential.
   await writeFile(join(config.output, 'browser.json'), JSON.stringify({ state: 'failed', step,

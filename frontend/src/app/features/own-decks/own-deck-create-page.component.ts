@@ -2,7 +2,10 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, injec
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
-import { DeckMetadata, validateDeckMetadata } from './own-deck.models';
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
+import { TourEvents } from '../../core/onboarding/tour-events';
+
+import { CREATE_DECK_LABEL, DeckMetadata, validateDeckMetadata } from './own-deck.models';
 import { DeckDescriptionComponent } from './deck-description.component';
 import { DeckRecoveryContext, OwnDeckRecoveryService } from './own-deck-recovery.service';
 import {
@@ -16,7 +19,7 @@ import {
 
 @Component({
     selector: 'app-own-deck-create-page',
-    imports: [ReactiveFormsModule, RouterLink, DeckDescriptionComponent],
+    imports: [ReactiveFormsModule, RouterLink, DeckDescriptionComponent, TourAnchorDirective],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-create-page.component.html',
     styleUrl: './own-decks-page.css',
@@ -36,8 +39,10 @@ export class OwnDeckCreatePageComponent {
     readonly mayRetrySameCommand = mayRetrySameCommand;
     readonly mutationLocksDraft = mutationLocksDraft;
     readonly canStartNewMutation = canStartNewMutation;
+    protected readonly createLabel = CREATE_DECK_LABEL;
 
     private readonly router = inject(Router);
+    private readonly tour = inject(TourEvents);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
     private readonly recovery = inject(OwnDeckRecoveryService);
     private readonly recoveryContext: DeckRecoveryContext = { operation: 'create' };
@@ -60,7 +65,10 @@ export class OwnDeckCreatePageComponent {
                 this.recovery.clear(this.recoveryContext);
                 if (mutation.deck.deckId !== this.navigatedDeckId) {
                     this.navigatedDeckId = mutation.deck.deckId;
-                    void this.router.navigate(['/decks', mutation.deck.deckId]);
+                    // The tour's «Создать колоду» step is done by the deck that was made.
+                    // When the tour took the event it goes on to the next place itself; two navigations at once would cancel each other.
+                    const taken = this.tour.emit('deck.created', { deckId: mutation.deck.deckId });
+                    if (!taken) void this.router.navigate(['/decks', mutation.deck.deckId]);
                 }
                 return;
             }

@@ -1,6 +1,7 @@
 package app.mnema.learning.study.session;
 
 import app.mnema.learning.capability.LearningCapabilities;
+import app.mnema.learning.community.CatalogEvents;
 import app.mnema.learning.catalog.content.NativeNodeIndex;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
 import app.mnema.learning.catalog.exercise.AnswerKey;
@@ -45,17 +46,19 @@ public class StudySessionService {
     private final ExerciseManifestReader manifest;
     private final LearningCapabilities capabilities;
     private final ExerciseNewMarks newMarks;
+    private final CatalogEvents catalogEvents;
     // MATCH order must not be reproducible from identifiers a client holds.
     private final RandomGenerator shuffle = new SecureRandom();
 
     public StudySessionService(StudySessionRepository repository, CommandReceiptService receipts,
-                               ImmutableStorage storage, LearningCapabilities capabilities, ExerciseNewMarks newMarks) {
+                               ImmutableStorage storage, LearningCapabilities capabilities, ExerciseNewMarks newMarks, CatalogEvents catalogEvents) {
         this.repository = repository;
         this.receipts = receipts;
         this.nativeBatches = new NativeStorageBatches(storage);
         this.manifest = new ExerciseManifestReader(storage);
         this.capabilities = capabilities;
         this.newMarks = newMarks;
+        this.catalogEvents = catalogEvents;
     }
 
     @Transactional(timeout = 10)
@@ -100,6 +103,7 @@ public class StudySessionService {
                 issueNext(inserted, generation, source, now, false);
                 inserted = repository.session(actor, deckId, sessionId).orElseThrow();
             }
+            if (command.mode() != StudySessionCommand.Mode.REPLAY && !inserted.status().equals("EMPTY")) catalogEvents.studyStarted(actor, deckId);
             return response(inserted);
         });
         return new StartResult(response, !applied[0], "PREPARING".equals(response.path("status").stringValue(null)));

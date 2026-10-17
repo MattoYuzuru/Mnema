@@ -79,6 +79,12 @@ export interface DeckMetadataValidation {
     readonly unicodeValid: boolean;
 }
 
+/** The submit button of the form of a new deck; the onboarding tour names the same control in its gate. */
+export const CREATE_DECK_LABEL = 'Создать колоду';
+
+/** The label of the hub's primary button; the onboarding tour quotes it in its gate line. */
+export const STUDY_DECK_LABEL = 'Учить';
+
 export class OwnDeckProtocolError extends Error {
     constructor(message: string) {
         super(message);

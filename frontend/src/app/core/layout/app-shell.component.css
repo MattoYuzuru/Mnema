@@ -25,6 +25,7 @@
 
 .paper-shell {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 1fr auto;
     min-block-size: 100dvh;
 }
@@ -36,7 +37,7 @@
 
 .masthead {
     display: grid;
-    grid-template-columns: minmax(11rem, 1fr) auto minmax(11rem, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
     align-items: center;
     gap: 1.5rem;
     min-block-size: 6.25rem;
@@ -70,7 +71,7 @@
     gap: clamp(.75rem, 2.5vw, 2.25rem);
 }
 
-.primary-nav { justify-content: center; }
+.primary-nav { justify-content: center; flex-wrap: wrap; gap: 0 clamp(.75rem, 2.5vw, 2.25rem); min-inline-size: 0; }
 
 .primary-nav a {
     position: relative;
@@ -105,15 +106,17 @@
 
 .primary-nav a.active { font-weight: 700; }
 
-.session { justify-content: flex-end; min-inline-size: 0; }
-
+.session { justify-content: flex-end; flex-wrap: nowrap; min-inline-size: 0; gap: .75rem; }
+.session > :is(app-notification-bell, .button) { flex: none; }
 .identity,
 .session-note {
+    min-inline-size: 0;
     max-inline-size: 12rem;
     color: var(--mn-muted);
     font-size: .75rem;
     overflow-wrap: anywhere;
 }
+.identity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 main {
     position: relative;
@@ -130,11 +133,12 @@ main:focus-visible {
 @media (max-width: 62.5rem) {
     .masthead { grid-template-columns: auto 1fr auto; gap: 1rem; }
     .brand { font-size: 2.1rem; }
-    .primary-nav { gap: 1rem; }
-    .identity { display: none; }
+    .primary-nav { column-gap: 1rem; }
+    .identity { max-inline-size: 9rem; }
 }
 
-@media (max-width: 43.75rem) {
+/* На узком экране навигация занимает свою строку. */
+@media (max-width: 56rem) {
     .masthead {
         display: flex;
         flex-wrap: wrap;
@@ -153,8 +157,14 @@ main:focus-visible {
         gap: .25rem .75rem;
     }
     .primary-nav a { font-size: .65rem; }
-    .session { margin-inline-start: auto; }
+    .session { margin-inline-start: auto; max-inline-size: 100%; }
     .button.mono { padding-inline: .65rem; }
+}
+
+@media (max-width: 38rem) {
+    .masthead { gap: .5rem 1rem; }
+    .session:has(.identity) { flex: 1 1 100%; justify-content: flex-end; margin-inline-start: 0; }
+    .identity { margin-inline-end: auto; max-inline-size: none; }
 }
 
 @media (max-width: 21rem) {

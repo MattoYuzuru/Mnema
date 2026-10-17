@@ -1,3 +1,4 @@
+import { sampleShareRefusedText } from '../../core/onboarding/sample-deck';
 import { PublicDeckFailure } from './public-deck.models';
 
 /** A calm sentence for a public read that failed, naming what could not be loaded («материалы», «упражнения»). */
@@ -14,12 +15,8 @@ export function waitText(retryAfter: number | null): string {
     return retryAfter === null ? 'Подождите немного и повторите.' : `Подождите ${retryAfter} с и повторите.`;
 }
 
-/**
- * The «Сообществе» link of the «Колода не найдена» screen. The Community catalogue is epic 3 and has no route yet, so the
- * sentence «…или поищите похожие в Сообществе» is left out until it does.
- * TODO(Community catalogue epic): set the route (for example '/community') when it exists.
- */
-export const COMMUNITY_ROUTE: string | null = null;
+/** The «Сообществе» link of the «Колода не найдена» screen: the community catalogue. */
+export const COMMUNITY_ROUTE = '/community';
 
 /** The label of an exercise type, for the preview list; a mechanic newer than this client is just «Упражнение». */
 export const EXERCISE_FALLBACK_LABEL = 'Упражнение';
@@ -50,6 +47,8 @@ export const PUBLIC_ACTION_TEXT = {
     copyPreparing: 'Копия ещё готовится.',
     copyNotFound: 'Сейчас добавить колоду к себе нельзя. Попробуйте позже.',
     copyOwn: 'Это ваша колода: добавлять её к себе не нужно.',
+    /** The deck is a sample deck: the approved sentence of the onboarding, said wherever sharing one is refused. */
+    copySample: sampleShareRefusedText(),
     copyLimit: (limit: number | null): string => `${limit === null ? 'Одновременно можно готовить ограниченное число копий.' : `Одновременно можно готовить не больше ${limit} копий.`} Дождитесь, пока часть будет готова, и повторите.`,
     copyBusy: 'Сейчас много читателей. Повторите через секунду.',
     copyQueueBusy: 'Сейчас готовится много копий. Повторите через минуту.',

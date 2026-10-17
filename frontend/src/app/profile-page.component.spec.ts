@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { NEVER, Subject, of, throwError } from 'rxjs';
@@ -51,6 +52,9 @@ describe('ProfilePageComponent', () => {
                 { provide: PlansApiService, useValue: { load: () => NEVER } },
                 { provide: SpeechInputApiService, useValue: { withdrawConsent: () => of(undefined) } },
                 { provide: AuthService, useValue: {
+                        status: signal('authenticated'),
+                        user: signal(null),
+                        restore: vi.fn().mockResolvedValue(undefined),
                         setPassword: vi.fn().mockName("AuthService.setPassword")
                     } }
             ] });
@@ -371,7 +375,7 @@ describe('ProfilePageComponent', () => {
         const section = root.querySelector('section#public-profile-settings')!;
         expect(section.getAttribute('aria-labelledby')).toBe('public-profile-heading');
         expect(root.querySelector('#public-profile-heading')?.textContent).toBe('Публичный профиль');
-        expect(section.querySelector('app-public-profile-settings input[role=switch]')).not.toBeNull();
+        expect(section.querySelector('app-public-profile-settings button.profile-toggle[aria-pressed]')).not.toBeNull();
         const ids = [...root.querySelectorAll('.profile-layout > section')].map(item => item.id || 'details');
         expect(ids.slice(0, 3)).toEqual(['details', 'public-profile-settings', 'ai-budget']);
     });

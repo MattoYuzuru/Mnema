@@ -29,6 +29,19 @@ class BrowserIdentityConfigTests(unittest.TestCase):
         self.assertIn('identityRedirectUri = "https://localhost:8443/auth/callback"', content)
         self.assertIn('learningApiBaseUrl = "/api"', content)
 
+    def test_community_launch_is_written_only_for_a_development_container(self):
+        _, content, _ = self.generate()
+        self.assertNotIn("communityLaunched", content)
+        code, content, _ = self.generate(MNEMA_COMMUNITY_LAUNCHED="true")
+        self.assertEqual(code, 0)
+        self.assertIn("window.MNEMA_APP_CONFIG.communityLaunched = true;", content)
+        _, content, _ = self.generate(MNEMA_COMMUNITY_LAUNCHED="yes")
+        self.assertNotIn("communityLaunched", content)
+        _, content, _ = self.generate(MNEMA_COMMUNITY_LAUNCHED="true", MNEMA_APP_ENV="prod", MNEMA_STORAGE_ORIGIN="https://storage.example.com",
+                                      MNEMA_PUBLIC_ORIGIN="https://mnema.example.com", MNEMA_AUTH_SERVER_URL="https://auth.example.com",
+                                      MNEMA_IDENTITY_REDIRECT_URI="https://mnema.example.com/auth/callback")
+        self.assertNotIn("communityLaunched", content)
+
     def test_rejects_same_origin_identity(self):
         code, _, _ = self.generate(MNEMA_AUTH_SERVER_URL="https://localhost:8443")
         self.assertNotEqual(code, 0)

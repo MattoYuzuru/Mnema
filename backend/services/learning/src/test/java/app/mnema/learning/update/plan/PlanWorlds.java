@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The worlds of the update plan tests, built with the production services and the production HTTP routes: an author's published deck, a real copy of it made by
  * {@code POST /decks/forks} and materialized by the real job, and everything the author and the learner do to their decks afterwards (edits, additions, removals, order, exercises,
  * objectives, titles) through the same services the editor uses. The plan is then asked of the real service or the real route.
+ * Large media-free initial bulks use BulkItemFixture; operations under test and small authoring worlds keep the production command path.
  */
 final class PlanWorlds {
     static final JsonMapper JSON = JsonMapper.builder().build();
@@ -65,6 +66,7 @@ final class PlanWorlds {
     final ManifestPages manifests;
     final StudyFixtures study;
     final SharedScopeFixture shared;
+    final app.mnema.learning.catalog.item.BulkItemFixture bulkItems;
 
     PlanWorlds(int port, DeckService decks, ItemService items, ExerciseService exercises, StudySessionService sessions, MediaCatalog media, ImmutableStorage storage,
                JdbcClient jdbc, PlatformTransactionManager transactions, ManifestPages manifests) {
@@ -76,6 +78,7 @@ final class PlanWorlds {
         this.manifests = manifests;
         this.study = new StudyFixtures(decks, items, exercises, sessions, media, jdbc);
         this.shared = new SharedScopeFixture(decks, items, storage, jdbc, transactions);
+        this.bulkItems = new app.mnema.learning.catalog.item.BulkItemFixture(storage, jdbc, transactions);
     }
 
     static UUID id(JsonNode node, String field) { return UUID.fromString(node.path(field).stringValue(null)); }
@@ -154,6 +157,14 @@ final class PlanWorlds {
 
     /** Many materials (without exercises), created in publications of {@value #BULK}; returns the members in order. */
     List<UUID> bulk(UUID owner, UUID deck, int count, String prefix) {
+        if (count >= 100) {
+            var documents = java.util.stream.IntStream.range(0, count).mapToObj(index -> {
+                ObjectNode document = MediaFixtures.imageDocument();
+                ((ObjectNode) document.path("root").path("content").get(0).path("content").get(0).path("attrs")).put("text", prefix + " " + index);
+                return document;
+            }).toList();
+            return bulkItems.append(owner, deck, documents).stream().map(app.mnema.learning.catalog.item.BulkItemFixture.Created::member).toList();
+        }
         List<UUID> members = new ArrayList<>();
         for (int from = 0; from < count; from += BULK) {
             JsonNode head = decks.read(owner, deck);

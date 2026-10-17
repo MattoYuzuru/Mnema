@@ -11,7 +11,31 @@ public final class IdentityClaims {
     public static final String PUBLIC_PROFILE_CLAIM = "mnema_public_profile";
     private static final String PUBLIC_PROFILE_ATTRIBUTE = IdentityClaims.class.getName() + ".publicProfile";
 
+    /** {@code mnema_trusted}: the account's e-mail is verified and the account is at least 3 days old (contracts/identity/user-info-claims.json). */
+    public static final String TRUSTED_CLAIM = "mnema_trusted";
+    /** {@code mnema_new_account}: the account is younger than 48 hours. */
+    public static final String NEW_ACCOUNT_CLAIM = "mnema_new_account";
+    private static final String SIGNALS_ATTRIBUTE = IdentityClaims.class.getName() + ".signals";
+
     private IdentityClaims() { }
+
+    /**
+     * The two anti-abuse signals of the account behind a request (internal: they weigh a copy in the community rank and feed the owner console's anomaly flag, and are
+     * shown to nobody). Each is {@code null} when Identity did not send the claim at all (an Identity that predates it: the deploy order of the two services is not guaranteed;
+     * "unknown", stored as NULL and weighed like "not trusted", never "new"), {@code true} for a JSON true and {@code false} for anything else, a malformed value included:
+     * a missing claim lowers the weight of a copy but never raises a flag.
+     */
+    public record AccountSignals(Boolean trusted, Boolean newAccount) {
+        /** What is assumed when Identity said nothing. */
+        public static final AccountSignals UNKNOWN = new AccountSignals(null, null);
+    }
+
+    static void signals(HttpServletRequest request, AccountSignals signals) { request.setAttribute(SIGNALS_ATTRIBUTE, signals); }
+
+    /** The signals Identity reported for this request; {@link AccountSignals#UNKNOWN} when the request was not checked against Identity. */
+    public static AccountSignals signals(HttpServletRequest request) {
+        return request.getAttribute(SIGNALS_ATTRIBUTE) instanceof AccountSignals signals ? signals : AccountSignals.UNKNOWN;
+    }
 
     static void publicProfile(HttpServletRequest request, boolean ready) { request.setAttribute(PUBLIC_PROFILE_ATTRIBUTE, ready); }
 

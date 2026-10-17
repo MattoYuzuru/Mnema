@@ -5,7 +5,7 @@ artifact:
   title: "Mnema AI layer: product decisions, economics and UX"
   status: accepted
   created_at: "2026-10-02"
-  updated_at: "2026-10-04"
+  updated_at: "2026-10-15"
   owners: ["project-owner"]
   source_tasks: ["owner voice brief 2026-10-01", "owner feedback 2026-10-02", "Epic #77"]
   assumptions:
@@ -114,6 +114,19 @@ Study до явного одобрения; текст дешёв, на конт
 | Веб-поиск | #299: Yandex Search API v2 sync — primary напрямую из РФ; Perplexity Search API — fallback через шлюз, выключен по умолчанию. Ключей для live-проверки нет; реализация проверяется на Stub и recorded fixtures |
 | Ключи | Задачи без ключа в окружении завершаются на Stub и recorded fixtures с пометкой «live не проверено» |
 | Trial | Не реализован; решение владельца открыто (#280). Флага в коде нет: #301/#302 поставили платные тиры и промокоды без trial |
+
+### Допуск production 2026-10-15
+
+Владелец сообщил о получении необходимых подтверждений РКН и отдельно подтвердил,
+что проверил и одобрил требуемые результаты quality review #300. Это обновляет
+исторический статус уведомлений выше; чувствительные документы остаются приватными.
+В production допускаются реализованные генерация/правка, проверка ответов, Google TTS
+через существующий egress и поиск изображений. Веб-поиск требует отсутствующие пока
+Yandex credentials. Image/video generation остаются выключенными. Для ABROAD STT
+сохраняется отдельное открытое решение о передаче исходного голоса в §6.
+Runtime prompt v1, маршруты, тарифы и operational kill switches сохраняются.
+Политика и соглашение 1.7 раскрывают внешние AI-потоки и отдельное голосовое согласие;
+фактический rollout и проверки ведутся в [AI runbook](../operations/ai-runbook.md).
 
 ## 4. UX-решения
 

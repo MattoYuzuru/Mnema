@@ -121,6 +121,12 @@ The contract is [`contracts/moderation`](../moderation/README.md). Every decisio
 `COMPLAINT_DECIDE` (resource: the complaint id) or `COMPLAINT_UNHIDE`; the full record (time, actor, action, target snapshot, number of units) is
 `content_takedown_journal`, listed by `GET /api/admin/complaints/journal`. Neither carries text typed by a reporter.
 
+## Community
+
+The shelf «Выбор Мнемы» (`/api/admin/community/editorial`) and the anomaly flags (`/api/admin/community/anomalies`) of the community catalogue,
+same owner check. The contract is [`contracts/community`](../community/README.md). Journal actions: `COMMUNITY_EDITORIAL_UPDATE` (resource: the shelf, the constant id
+`00000000-0000-7000-8000-00000000e001` because the journal needs one; one row per effective change of the list) and `COMMUNITY_ANOMALY_DISMISS` (resource: the deck id).
+
 ## Promo creation safety
 
 `POST /api/admin/promo-codes` requires `Idempotency-Key` (canonical command UUID v4/v7) and an explicit

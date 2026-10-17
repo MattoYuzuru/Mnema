@@ -119,11 +119,29 @@ services:
       MNEMA_ADMIN_SUPPORT_ENDPOINT: ${MNEMA_ADMIN_SUPPORT_ENDPOINT:-}
       MNEMA_ADMIN_SUPPORT_SECRET: ${MNEMA_ADMIN_SUPPORT_SECRET:-}
       MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP: "false"
-      LEARNING_AI_EGRESS_ENABLED: "false"
-      LEARNING_FEATURES_AI_ASSESSMENT_ENABLED: "false"
-      LEARNING_FEATURES_AI_GENERATION_ENABLED: "false"
-      LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED: "false"
+      # Owner admitted AI and confirmed the quality review on 2026-10-15. Keep operational kill switches.
+      LEARNING_AI_EGRESS_ENABLED: "true"
+      LEARNING_FEATURES_AI_ASSESSMENT_ENABLED: "true"
+      LEARNING_FEATURES_AI_GENERATION_ENABLED: "true"
+      LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED: "true"
+      # Original-audio ABROAD STT needs the separate owner decision in ai-layer-2026-10.md §6.
+      LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED: "false"
+      LEARNING_FEATURES_IMAGE_SEARCH_ENABLED: "true"
+      LEARNING_FEATURES_WEB_SEARCH_ENABLED: "true"
       LEARNING_FEATURES_IMAGE_GENERATION_ENABLED: "false"
+      LEARNING_FEATURES_VIDEO_GENERATION_ENABLED: "false"
+      MNEMA_AI_DEEPSEEK_API_KEY: ${MNEMA_AI_DEEPSEEK_API_KEY:-}
+      MNEMA_AI_OPENROUTER_API_KEY: ${MNEMA_AI_OPENROUTER_API_KEY:-}
+      MNEMA_AI_GOOGLE_API_KEY: ${MNEMA_AI_GOOGLE_API_KEY:-}
+      MNEMA_AI_PIXABAY_API_KEY: ${MNEMA_AI_PIXABAY_API_KEY:-}
+      MNEMA_AI_OPENVERSE_CLIENT_ID: ${MNEMA_AI_OPENVERSE_CLIENT_ID:-}
+      MNEMA_AI_OPENVERSE_CLIENT_SECRET: ${MNEMA_AI_OPENVERSE_CLIENT_SECRET:-}
+      MNEMA_AI_YANDEX_SEARCH_API_KEY: ${MNEMA_AI_YANDEX_SEARCH_API_KEY:-}
+      MNEMA_AI_YANDEX_FOLDER_ID: ${MNEMA_AI_YANDEX_FOLDER_ID:-}
+      MNEMA_AI_USER_KEY_SECRET: ${MNEMA_AI_USER_KEY_SECRET:-}
+      MNEMA_AI_EGRESS_PROXY_URL: ${MNEMA_AI_EGRESS_PROXY_URL:-}
+      MNEMA_AI_EGRESS_PROXY_USER: ${MNEMA_AI_EGRESS_PROXY_USER:-}
+      MNEMA_AI_EGRESS_PROXY_PASSWORD: ${MNEMA_AI_EGRESS_PROXY_PASSWORD:-}
       # Media object storage (Yandex Object Storage). Without the key pair (app.env) upload stays unconfigured. Set-but-empty is "" to
       # Spring, so the non-empty defaults are repeated here.
       LEARNING_MEDIA_UPLOAD_ENDPOINT: ${LEARNING_MEDIA_UPLOAD_ENDPOINT:-https://storage.yandexcloud.net}
@@ -172,6 +190,14 @@ services:
       LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED: "true"
       LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED: "true"
       LEARNING_COMMUNITY_FORKS_ENABLED: "true"
+      # Community decks, epic 3 (#421): the public catalogue, its search, author pages and /sitemap-decks.xml. Switched on with policy and terms 1.6,
+      # which describe it, and the frontend launch flag; false answers 404 on the catalogue routes and the frontend entry points lead nowhere.
+      LEARNING_COMMUNITY_CATALOG_ENABLED: "true"
+      # Community decks, epic 4 (#422): recording of catalogue events and exposures, and the nightly interest profile (policy 1.6, section 15).
+      # Retention and partition upkeep run either way.
+      LEARNING_COMMUNITY_EVENTS_ENABLED: "true"
+      # «Для вас» (Recs/3, #422): the personal shelf and sort for a signed-in reader; needs the catalogue and the frontend launch flag. false answers 404.
+      LEARNING_COMMUNITY_FOR_YOU_ENABLED: "true"
       # Study snapshot retention (#460): on. The first release shipped it off; the read-only check after it found no Study sessions in
       # production (2026-10-11), so there is no backlog to purge.
       LEARNING_STUDY_RETENTION_ENABLED: "true"

@@ -108,7 +108,7 @@ describe('Study shared contract fixtures', () => {
         expect(session.active.mode).toBe(session.startScheduled.mode);
         expect(session.activeReplay.mode).toBe(session.startReplay.mode);
         expect(session.activePractice.mode).toBe(session.startPractice.mode);
-        expect(progress.response.items.map(item => item.state)).toEqual(['ON_TRACK', 'NOT_STARTED']);
+        expect(progress.response.items.map(item => item.state)).toEqual(['LEARNING', 'NOT_STARTED']);
         expect((progress.response as unknown as JsonObject)['percentage']).toBeUndefined();
         expect(restart.precondition.objectiveStates[0].learningEpoch).toBe('0');
         expect(restart.persistedEffect.objectiveStates[0].learningEpoch).toBe('1');

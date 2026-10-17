@@ -6,6 +6,11 @@ export interface AppConfig {
     buildId: string;
     /** Public BotFather username, without @. Optional in runtime overrides and fixtures. */
     supportTelegramUsername?: string;
+    /**
+     * Opens the community catalogue's entry points ahead of the `COMMUNITY_LAUNCHED` constant. Only honoured on a loopback host (the development
+     * stack and the browser harness `--catalog`); on any other host the override is dropped, so a runtime file can never launch the Community.
+     */
+    communityLaunched?: boolean;
     features: AppFeatures;
 }
 
@@ -46,9 +51,11 @@ export function resolveAppConfig(host: string, origin: string, override: AppConf
         supportTelegramUsername: 'Mnema_Support_Bot',
         features: { showEmailVerificationWarning: !local }
     };
+    const { communityLaunched, ...runtime } = override;
     return {
         ...defaults,
-        ...override,
+        ...runtime,
+        ...(local && communityLaunched === true ? { communityLaunched: true } : {}),
         // The image's shared runtime file pins main-host settings; an exact admin host uses its registered client.
         ...(admin ? { identityRedirectUri: `${origin}/auth/callback`, clientId: 'mnema-admin-web' } : {}),
         features: { ...defaults.features, ...override.features }

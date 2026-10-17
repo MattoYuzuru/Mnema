@@ -7,6 +7,7 @@ import { AccountProfile, AccountProfileApi } from '../../account-profile.api';
 import { ToastService } from '../../core/notifications/toast.service';
 import { PUBLIC_PROFILE_TEXT_VERSION, PublicProfileConsent, PublicProfileConsentUpdate } from '../../public-profile';
 import { AuthorChipComponent } from '../../shared/author-chip.component';
+import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 
 type ConsentField = 'enabled' | 'showDisplayName' | 'showAvatar' | 'showBio';
 
@@ -18,41 +19,33 @@ const TEXT_OUTDATED = 'Текст согласия обновился. Обно�
  * «Публичный профиль» of /profile (#423): the separate, per-field, revocable consent to show the profile to other people
  * (152-FZ art. 10.1). Every change is saved at once as the complete state; nothing is ticked beforehand and a field is never
  * implied by the switch. While a save is on its way the controls stay focusable (`aria-disabled`, never `disabled`, so
- * focus is not thrown out) and further changes are ignored; a failed save puts the control back and says why.
+ * focus is not thrown out) and further changes are ignored; a failed save puts the control back and says why. With the consent on and a login, and
+ * once the Community is open (`COMMUNITY_LAUNCH`), the preview ends with the link «Открыть публичную страницу профиля» to the real page `/u/<логин>`.
  */
 @Component({
     selector: 'app-public-profile-settings',
     imports: [RouterLink, AuthorChipComponent],
     template: `
-      <p id="public-profile-consent-text" class="consent-text">Когда профиль публичный, ваш логин видят все, кто открывает ваши публичные колоды или страницу профиля. Ниже отметьте, что ещё можно показывать: имя, фото, «О себе». Эти данные видны только на сайте mnema.app, и мы не передаём их никому для других целей. Согласие действует, пока вы его не выключите. Выключить можно здесь в любой момент или письмом на адрес из раздела «Оператор»: профиль и подпись на колодах скроются сразу. Без публичного профиля ваши колоды остаются доступны вам и тем, кому вы дали доступ.</p>
+      <p id="public-profile-consent-text" class="hint consent-text">Другие увидят ваш логин<span>{{ username() ? ': @' + username() : '' }}</span>. Остальное выбираете вы.</p>
       <p class="hint status" role="status" aria-atomic="true">{{ status() }}</p>
       @if (consent(); as current) {
         <div class="controls">
-          <label class="settings-row is-switch is-live">
-            <input type="checkbox" role="switch" [checked]="current.enabled" [disabled]="!current.enabled && !username()"
-                   [attr.aria-disabled]="busy() ? 'true' : null" [attr.aria-describedby]="switchDescription(current)"
-                   (click)="hold($event)" (change)="change('enabled', $event)" />
-            <span>Показывать мой профиль другим</span>
-          </label>
+          <button type="button" class="toggle-button profile-toggle" [attr.aria-pressed]="current.enabled"
+            [disabled]="!current.enabled && !username()" [attr.aria-disabled]="busy() ? 'true' : null"
+            [attr.aria-describedby]="switchDescription(current)" (click)="change('enabled')">Показывать мой профиль другим</button>
           @if (!current.enabled && !username()) {
             <p id="consent-username-hint" class="hint">{{ usernameRequired }}</p>
           }
-          <fieldset class="check-group" [attr.aria-describedby]="current.enabled ? null : 'consent-fields-hint'">
-            <legend>Что ещё показывать</legend>
-            <div class="check-field">
-              <label class="check-row"><input type="checkbox" [checked]="current.showDisplayName" [disabled]="!current.enabled"
-                [attr.aria-disabled]="busy() ? 'true' : null" (click)="hold($event)" (change)="change('showDisplayName', $event)" /><span>Имя</span></label>
-            </div>
-            <div class="check-field">
-              <label class="check-row"><input type="checkbox" [checked]="current.showAvatar" [disabled]="!current.enabled"
-                [attr.aria-disabled]="busy() ? 'true' : null" (click)="hold($event)" (change)="change('showAvatar', $event)" /><span>Фото</span></label>
-            </div>
-            <div class="check-field">
-              <label class="check-row"><input type="checkbox" [checked]="current.showBio" [disabled]="!current.enabled"
-                [attr.aria-disabled]="busy() ? 'true' : null" (click)="hold($event)" (change)="change('showBio', $event)" /><span>О себе</span></label>
-            </div>
-            @if (!current.enabled) { <p id="consent-fields-hint" class="hint">Станет доступно, когда вы включите публичный профиль.</p> }
-          </fieldset>
+          @if (current.enabled) {
+            <fieldset class="profile-fields">
+              <legend>Что показывать?</legend>
+              <div class="toggle-buttons">
+                <button type="button" class="toggle-button" [attr.aria-pressed]="current.showDisplayName" [attr.aria-disabled]="busy() ? 'true' : null" (click)="change('showDisplayName')">Имя</button>
+                <button type="button" class="toggle-button" [attr.aria-pressed]="current.showAvatar" [attr.aria-disabled]="busy() ? 'true' : null" (click)="change('showAvatar')">Фото</button>
+                <button type="button" class="toggle-button" [attr.aria-pressed]="current.showBio" [attr.aria-disabled]="busy() ? 'true' : null" (click)="change('showBio')">О себе</button>
+              </div>
+            </fieldset>
+          }
         </div>
         @if (error(); as message) {
           <div class="notice error" role="alert">
@@ -60,7 +53,6 @@ const TEXT_OUTDATED = 'Текст согласия обновился. Обно�
             @if (outdated()) { <button type="button" class="button small" (click)="reloadPage()">Обновить страницу</button> }
           </div>
         }
-        <p class="hint terms"><a routerLink="/privacy" fragment="public-profile" target="_blank" rel="noopener">Условия показа профиля<span class="visually-hidden"> (откроется в новой вкладке)</span></a></p>
 
         <div class="preview">
           <h3>Как меня видят другие</h3>
@@ -68,6 +60,7 @@ const TEXT_OUTDATED = 'Текст согласия обновился. Обно�
             <app-author-chip [username]="name" [avatarSrc]="previewAvatar()" />
             @if (current.showDisplayName && profile().displayName; as displayName) { <p class="preview-name">{{ displayName }}</p> }
             @if (current.showBio && profile().bio; as bio) { <p class="preview-bio">{{ bio }}</p> }
+            @if (communityLaunched) { <a class="page-link" [routerLink]="['/u', name]">Открыть публичную страницу профиля</a> }
           } @else {
             <p class="preview-hidden">Профиль скрыт</p>
           }
@@ -80,18 +73,20 @@ const TEXT_OUTDATED = 'Текст согласия обновился. Обно�
     styles: [`
       :host { display: block; min-inline-size: 0; }
       .consent-text { max-inline-size: 60ch; margin: 0 0 1.25rem; }
-      .controls { display: grid; gap: .5rem; }
+      .controls { display: grid; justify-items: start; gap: .75rem; }
+      .profile-fields { min-inline-size: 0; margin: 0; border: 0; padding: 0; }
+      .profile-fields legend { padding: 0 0 .5rem; color: var(--mn-ink); font-weight: 650; }
       .status { min-block-size: 1.5em; margin-block: .5rem; }
+      .status:empty { position: absolute; inline-size: 1px; block-size: 1px; min-block-size: 0; overflow: hidden; margin: 0; }
       .notice { margin-block: .5rem; }
       .notice p { margin: 0 0 .5rem; }
       .notice p:last-child { margin: 0; }
-      .terms { margin-block: .5rem 1.5rem; }
-      .terms a { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 46px); color: var(--mn-ink); text-underline-offset: .22em; }
-      .preview { display: grid; justify-items: start; gap: .5rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: 1rem; }
+      .preview { margin-block-start: var(--mn-space-5); display: grid; justify-items: start; gap: .5rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: 1rem; }
       .preview h3 { margin: 0; color: var(--mn-ink); font-size: 1rem; font-weight: 650; }
       .preview p { margin: 0; overflow-wrap: anywhere; }
       .preview-name { color: var(--mn-ink); font-weight: 650; }
       .preview-bio { max-inline-size: 60ch; white-space: pre-line; }
+      .page-link { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 46px); color: var(--mn-ink); text-underline-offset: .22em; }
       .preview-hidden { color: var(--mn-muted); }
       @media (forced-colors: active) { .preview { border-color: CanvasText; } }
     `],
@@ -104,6 +99,8 @@ export class PublicProfileSettingsComponent implements OnInit {
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
     private readonly destroyRef = inject(DestroyRef);
+    /** The own page `/u/<логин>` is offered once the Community is open to readers (the route itself exists always). */
+    protected readonly communityLaunched = inject(COMMUNITY_LAUNCH);
 
     /** The saved account profile: the login is the precondition, name and «О себе» feed the preview. */
     readonly profile = input.required<AccountProfile>();
@@ -149,7 +146,7 @@ export class PublicProfileSettingsComponent implements OnInit {
             this.state.set('ready');
             if (refocus) {
                 // The retry button is gone now: focus moves to the first control instead of falling back to the page.
-                afterNextRender(() => this.host.nativeElement.querySelector<HTMLInputElement>('input:not(:disabled)')?.focus(), { injector: this.injector });
+                afterNextRender(() => this.host.nativeElement.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(), { injector: this.injector });
             }
         } catch { this.state.set('failed'); }
         finally { this.retrying.set(false); }
@@ -162,28 +159,22 @@ export class PublicProfileSettingsComponent implements OnInit {
         return !current.enabled && !this.username() ? 'public-profile-consent-text consent-username-hint' : 'public-profile-consent-text';
     }
 
-    /** A click during a save is cancelled before the box flips, so the control keeps the value that is being saved. */
-    protected hold(event: Event): void { if (this.busy()) event.preventDefault(); }
-
     protected reloadPage(): void { this.document.location.reload(); }
 
-    protected async change(field: ConsentField, event: Event): Promise<void> {
-        const input = event.target as HTMLInputElement;
+    protected async change(field: ConsentField): Promise<void> {
         const current = this.consent();
-        if (current === null || this.busy()) return;
-        const update = this.update(current, field, input.checked);
+        if (current === null || this.busy() || (field === 'enabled' && !current.enabled && !this.username())) return;
+        const update = this.update(current, field, !current[field]);
         this.busy.set(true);
         this.error.set(null);
         this.outdated.set(false);
         try {
             const saved = await firstValueFrom(this.api.savePublicProfile(update));
             this.consent.set(saved);
-            input.checked = saved[field];
             this.toasts.echo(field === 'enabled'
                 ? (saved.enabled ? 'Публичный профиль включён.' : 'Публичный профиль скрыт.')
                 : 'Настройки показа сохранены.');
         } catch (failure) {
-            input.checked = current[field];
             await this.explain(failure);
         } finally { this.busy.set(false); }
     }

@@ -287,7 +287,7 @@ class ArtifactSecurityPolicyTest(unittest.TestCase):
     def test_secret_interpolation_in_run_script_is_rejected(self):
         self.replace(
             ".github/workflows/pull-request.yaml",
-            "run: ./gradlew quality",
+            "run: ./gradlew --parallel --max-workers=2 compileJava jacocoTestReport jacocoRootReport coverageBaselineCheck -PcoverageShards=8 -x test",
             "run: |\n          echo '${{ secrets.SYNTHETIC_ONLY }}'",
         )
 
@@ -296,7 +296,7 @@ class ArtifactSecurityPolicyTest(unittest.TestCase):
     def test_scalar_environment_dump_is_rejected(self):
         self.replace(
             ".github/workflows/pull-request.yaml",
-            "run: ./gradlew quality",
+            "run: ./gradlew --parallel --max-workers=2 compileJava jacocoTestReport jacocoRootReport coverageBaselineCheck -PcoverageShards=8 -x test",
             "run: printenv",
         )
 

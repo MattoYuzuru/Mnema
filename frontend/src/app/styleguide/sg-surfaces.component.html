@@ -3,6 +3,27 @@
   <h2 id="menus-title">Меню и окна</h2>
   <p class="sg-lede">Всплывающее строится на нативном: <code>popover</code> и <code>&lt;dialog&gt;</code> дают Esc, возврат фокуса и верхний слой без своих скриптов.
     Ничто не зависит от hover.</p>
+  <app-sg-specimen title="Бумажное модальное окно" selector="<app-paper-dialog>"
+    when="Общий диалог с заголовком и кнопкой закрытия. Нативный dialog делает фон неактивным, удерживает фокус, закрывается по Esc и возвращает фокус к открывшей кнопке. Содержимое сохраняется после закрытия. На узком экране лист ограничен видимой высотой и прокручивается."
+    [tokens]="['--mn-sheet', '--mn-ink', '--mn-rule']"
+    usage='<app-paper-dialog #dialog title="Поделиться"><p>Настройки доступа</p></app-paper-dialog><button (click)="dialog.open()">Поделиться</button>'>
+    <button type="button" class="button" (click)="paperDialog.open()">Открыть диалог</button>
+    <app-paper-dialog #paperDialog title="Поделиться" subtitle="Испанские глаголы — образец">
+      <p>Здесь находятся настройки доступа к колоде.</p>
+    </app-paper-dialog>
+  </app-sg-specimen>
+  <app-sg-specimen title="Кнопки независимого выбора" selector=".toggle-button, .toggle-buttons"
+    when="Каждая кнопка меняет собственное состояние aria-pressed. У включённой индиго и белый текст, у выключенной прозрачный фон, при наведении лаванда. Связанные варианты соединены без промежутков. Фокус видим с клавиатуры; при уменьшенном движении переходов нет."
+    [tokens]="['--mn-ink', '--mn-on-ink', '--mn-soft']">
+    <div class="sg-stack">
+      <button type="button" class="toggle-button" [attr.aria-pressed]="profileShown()" (click)="profileShown.set(!profileShown())">Показывать мой профиль другим</button>
+      @if (profileShown()) {
+        <div role="group" aria-label="Что показывать?" class="toggle-buttons">
+          @for (field of ['Имя', 'Фото', 'О себе']; track field) { <button type="button" class="toggle-button" [attr.aria-pressed]="profileFields().includes(field)" (click)="toggleProfileField(field)">{{ field }}</button> }
+        </div>
+      }
+    </div>
+  </app-sg-specimen>
   <app-sg-specimen title="Подсказка «ⓘ»" selector="<app-toggletip>"
     when="Пояснение, которое нужно не всем. Обязательное (ошибка, ограничение) остаётся в потоке страницы, а не прячется в подсказку."
     [tokens]="['--mn-ink', '--mn-sheet', '--mn-rule']"
@@ -81,6 +102,12 @@
     [tokens]="['--mn-ink', '--mn-on-ink', '--mn-font-mono']"
     usage='<span class="stamp">Пример</span> <span class="stamp solid">Новое</span> <app-new-badge />'>
     <div class="actions"><span class="stamp">Пример</span><span class="stamp solid">Ваше задание</span><span>Материал <app-new-badge /></span></div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Учебная колода" selector="<app-sample-plaque>"
+    when="Метка личного образца в начале его хаба: штамп «Учебная» и утверждённая фраза о том, зачем колода. Это обычный текст, без роли и живой области: хаб не объявляет то, что не новость. Рисует её только хаб колоды, которую знакомство сделало для этого аккаунта; у остальных колод её нет. У такой колоды в хабе нет «Поделиться» и окна доступа, а отказ сервера делиться ею (409 SAMPLE_DECK_NOT_SHAREABLE) говорит одной фразой: «Учебной колодой поделиться нельзя. Создайте свою — ею можно.»"
+    [tokens]="['--mn-ink', '--mn-space-2', '--mn-space-3']"
+    usage='<app-sample-plaque />'>
+    <app-sample-plaque />
   </app-sg-specimen>
   <app-sg-specimen title="Чип автора" selector="<app-author-chip>"
     when="Подпись автора публичной колоды: фото 20 px и @логин в одну строку, рядом с названием или в карточке. Фото показывается, только если автор разрешил; иначе (или если оно не загрузилось) стоит нейтральный кружок с буквой. Если автор скрыл профиль или логина нет, чип не рисует ничего. Логин — настоящий текст, фото декоративное; длинный логин обрезается многоточием."
@@ -193,12 +220,14 @@
     </ol>
   </app-sg-specimen>
   <app-sg-specimen title="Блок публикации" selector="<app-publication-block>"
-    when="Хаб колоды: единственное место, где управляют доступом. Вверху выбор уровня («Приватная», «По ссылке», «По приглашению», «Публичная»): выбор только отмечает уровень, под ним коротко сказано, кто увидит колоду и что будет со ссылками, и «Применить» отправляет изменение. «Публичная» ведёт в чек-лист (раскрывается здесь же), понижение меняет ссылку. У колоды с доступом ниже идут ссылка и «Поделиться», время публикации и, если колода изменилась после неё, «Изменения для учеников не опубликованы (N)» с «Опубликовать обновление» и необязательным «Что нового» до 500 символов. У колоды «По приглашению» добавляются переключатель «Принимать запросы доступа» и панель доступа. Блок читает своё состояние отдельным запросом: сбой даёт повтор внутри блока, хаб остаётся. Примеры работают на демо-данных без сервера."
+    when="В хабе кнопка «Поделиться» со знаком уровня открывает бумажное модальное окно. В нём управляют доступом. Вверху выбор уровня («Приватная», «По ссылке», «По приглашению», «Публичная»): выбор сразу сохраняет доступ. «Публичная» открывает обязательный чек-лист, понижение меняет ссылку. При неизвестном исходе «Повторить» отправляет ту же команду. У колоды с доступом ниже идут ссылка и «Поделиться», время публикации и, если колода изменилась после неё, «Изменения для учеников не опубликованы (N)» с «Опубликовать обновление» и необязательным «Что нового» до 500 символов. У колоды «По приглашению» добавляются переключатель «Принимать запросы доступа» и панель доступа. Блок читает своё состояние отдельным запросом: сбой даёт повтор внутри блока, хаб остаётся. Примеры работают на демо-данных без сервера."
     [tokens]="['--mn-rule', '--mn-ink', '--mn-soft']"
-    usage='<app-publication-block anchor="access" [deckId]="deck.deckId" [deckTitle]="deck.metadata.title" (levelChange)="level.set($event)" (editDescription)="openEditor()" />'>
+    usage='<app-publication-block [deckId]="deck.deckId" [deckTitle]="deck.metadata.title" (levelChange)="level.set($event)" (editDescription)="openEditor()" />'>
     <div class="sg-stack">
-      <app-publication-block [deckId]="privateDeck" deckTitle="Японский для начинающих" />
-      <app-publication-block [deckId]="sharedDeck" deckTitle="Японский для начинающих" />
+      <button type="button" class="button" (click)="privateShare.open()">Поделиться приватной колодой</button>
+      <app-paper-dialog #privateShare title="Поделиться" subtitle="Японский для начинающих"><app-publication-block [deckId]="privateDeck" deckTitle="Японский для начинающих" /></app-paper-dialog>
+      <button type="button" class="button" (click)="publicShare.open()">Поделиться публичной колодой</button>
+      <app-paper-dialog #publicShare title="Поделиться" subtitle="Японский для начинающих"><app-publication-block [deckId]="sharedDeck" deckTitle="Японский для начинающих" /></app-paper-dialog>
     </div>
   </app-sg-specimen>
   <app-sg-specimen title="Панель доступа" selector="<app-access-panel>"
@@ -210,7 +239,8 @@
   <app-sg-specimen title="Блок публикации: по приглашению" selector="<app-publication-block>"
     when="Тот же блок у колоды «По приглашению»: выбор уровня, переключатель запросов и панель доступа под ним."
     [tokens]="['--mn-rule', '--mn-ink']">
-    <app-publication-block [deckId]="inviteDeck" deckTitle="Японский для начинающих" />
+    <button type="button" class="button" (click)="inviteShare.open()">Поделиться колодой по приглашению</button>
+    <app-paper-dialog #inviteShare title="Поделиться" subtitle="Японский для начинающих"><app-publication-block [deckId]="inviteDeck" deckTitle="Японский для начинающих" /></app-paper-dialog>
   </app-sg-specimen>
   <app-sg-specimen title="Шкала расхода" selector="<app-usage-meter>"
     when="Расход лимита ИИ: текст под шкалой — источник истины, сама полоса скрыта от скринридера. Использовано, резерв, ещё не открытое и засечки разблокировок."

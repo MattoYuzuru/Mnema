@@ -1,0 +1,55 @@
+{
+  "app.mnema.learning.study.attempt.SemanticEvalRunner": [
+    "run()"
+  ],
+  "app.mnema.learning.ai.ImageSearchLiveTest": [
+    "openverseSearchesAndDownloadsWithClientCredentials()",
+    "pixabaySearchesAndDownloadsWithAKey()",
+    "wikimediaCommonsSearchesAndDownloadsWithoutAKey()"
+  ],
+  "app.mnema.learning.ai.SpeechLiveTest": [
+    "speechKitSpeaksARussianPhrase()",
+    "geminiSpeaksARussianAndAJapanesePhrase()"
+  ],
+  "app.mnema.learning.media.MediaUploadIntegrationTest": [
+    "realImageAudioAndVideoPassUploadWorkerAndSignedPlayback(Path)"
+  ],
+  "app.mnema.learning.media.S3LiveParityTest": [
+    "ifNoneMatchPutRejectsASecondWriterAndReconcilesAnIdenticalRetry(Path)",
+    "conditionalCopyPassesOnMatchAndFailsWith412OnMismatch()",
+    "presignedMultipartCreatePartListCompleteIsStoredEncrypted()",
+    "presignedGetHonoursRangeAndDeleteRemovesTheObject()",
+    "presignedSinglePutWithContentLengthIsStoredEncrypted()"
+  ],
+  "app.mnema.learning.ai.WebSearchLiveTest": [
+    "yandexAnswersARussianAndAnEnglishQuestion()",
+    "perplexityAnswersARussianAndAnEnglishQuestionThroughTheProxy()"
+  ],
+  "app.mnema.learning.ai.eval.GoldenEvalRunner": [
+    "run()"
+  ],
+  "app.mnema.learning.generation.GenerationExercisesLiveProviderTest": [
+    "fiveAutoExercisesForOneMaterialComeBackValidatedWithAtLeastThreeMechanics()"
+  ],
+  "app.mnema.learning.ai.eval.AiEvalRunner": [
+    "run()"
+  ],
+  "app.mnema.learning.generation.GenerationPlanLiveProviderTest": [
+    "aThinkingPlanForThreeMaterialsComesBackValidWithinThePlannerDeadline()"
+  ],
+  "app.mnema.learning.ai.SttLiveTest": [
+    "geminiTranscribesTheClipDirectly()",
+    "theSelfHostedContainerTranscribesTheClip()"
+  ],
+  "app.mnema.learning.generation.GenerationLiveProviderTest": [
+    "twentyVerbsOfMotionComeBackAsAValidMaterialWithinSixMinutesAndTheLedgerCarriesTheDebit()"
+  ],
+  "app.mnema.learning.ai.eval.LiveProviderTest": [
+    "openRouterAnswersTheFallbackRouteWithoutReasoning()",
+    "deepSeekAnswersPlainStreamedAndJsonCalls()"
+  ],
+  "app.mnema.identityaccount.avatar.S3LiveParityTest": [
+    "versionedAvatarFlowMatchesTheProductionContract()",
+    "exactEraseRemovesEveryVersionOfTheOwnedAvatar()"
+  ]
+}

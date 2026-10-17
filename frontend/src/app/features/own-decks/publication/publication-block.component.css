@@ -1,6 +1,6 @@
 /* Layout only: hints, notices, buttons, fields and errors are the shared classes. */
 :host { display: block; min-inline-size: 0; }
-.publication { display: grid; gap: var(--mn-space-3); margin-block: var(--mn-space-5); border-block: 1px solid var(--mn-rule); padding-block: var(--mn-space-4); }
+.publication { display: grid; gap: var(--mn-space-3); margin: 0; }
 .publication-head h2:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 .publication-private, .publication-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--mn-space-2) var(--mn-space-4); }
 .publication-shared { display: grid; gap: var(--mn-space-3); min-inline-size: 0; }

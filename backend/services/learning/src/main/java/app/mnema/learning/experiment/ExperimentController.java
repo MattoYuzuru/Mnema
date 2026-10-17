@@ -16,7 +16,7 @@ import java.util.Set;
 
 /**
  * {@code POST /api/experiment-events {key, event: EXPOSURE|CONVERSION}} → 204. The event is counted in a metric against the variant the server
- * assigned to the token's account; an experiment that is not enabled is accepted and ignored, a malformed body is a 400.
+ * assigned to the token's account; an experiment that is not enabled, or is server-only ({@code client=false}), is accepted and ignored, a malformed body is a 400.
  */
 @RestController
 @RequestMapping(value = "/experiment-events", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -38,7 +38,7 @@ public final class ExperimentController {
             throw new InvalidRequestException();
         }
         if (key == null || key.length() > 40) throw new InvalidRequestException();
-        events.record(PromoBodies.owner(identity), key, event);
+        events.recordFromClient(PromoBodies.owner(identity), key, event);
         return ResponseEntity.noContent().header("Cache-Control", "private, no-store").build();
     }
 }

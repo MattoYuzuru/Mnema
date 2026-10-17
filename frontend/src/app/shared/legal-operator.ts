@@ -26,8 +26,8 @@ export const LEGAL_OPERATOR: LegalOperator = {
 };
 
 /** Effective date of the current legal documents; both pages show it and the version below. */
-export const LEGAL_EFFECTIVE_DATE = '11 октября 2026';
-export const LEGAL_DOCUMENT_VERSION = '1.4';
+export const LEGAL_EFFECTIVE_DATE = '15 октября 2026';
+export const LEGAL_DOCUMENT_VERSION = '1.7';
 
 export const LEGAL_SITE = 'https://mnema.app';
 

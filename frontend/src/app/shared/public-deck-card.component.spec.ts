@@ -15,12 +15,14 @@ const FULL: PublicDeckCard = {
 
 @Component({
     imports: [PublicDeckCardComponent],
-    template: `<app-public-deck-card [deck]="deck" [link]="link" [headingLevel]="level" [menuItems]="items" (action)="actions.push($event)" />`
+    template: `<app-public-deck-card [deck]="deck" [link]="link" [headingLevel]="level" [note]="note" [authorShown]="authorShown" [menuItems]="items" (action)="actions.push($event)" />`
 })
 class HostComponent {
     deck = FULL;
     link: string | null = null;
     level: 2 | 3 | 4 = 3;
+    note: string | null = null;
+    authorShown = true;
     items = [{ id: 'share', label: 'Поделиться' }, { id: 'report', label: 'Пожаловаться' }];
     readonly actions: string[] = [];
 }
@@ -71,6 +73,24 @@ describe('PublicDeckCardComponent', () => {
         expect(ids[0]).not.toBe(ids[1]);
         expect(ids[0]).not.toContain('full');
         expect(first.root.querySelector('article')?.getAttribute('aria-labelledby')).toBe(ids[0]);
+    });
+
+    it('shows the note as one more stamp next to the topic and the language, and nothing without it', () => {
+        expect(create().root.querySelectorAll('.tags .stamp')).toHaveLength(2);
+        TestBed.resetTestingModule();
+        const { root } = create({ note: 'Доступна вам' });
+        const stamps = [...root.querySelectorAll('.tags .stamp')];
+        expect(stamps.map(stamp => stamp.textContent)).toEqual(['Тема: Языки', 'Язык: Испанский', 'Доступна вам']);
+        expect(stamps[2].querySelector('.visually-hidden')).toBeNull();
+    });
+
+    it('leaves the author chip out where the list is one author\'s (`authorShown` off) and draws it by default', () => {
+        expect(create().root.querySelector('app-author-chip .chip')).not.toBeNull();
+        TestBed.resetTestingModule();
+        const { root } = create({ authorShown: false });
+        expect(root.querySelector('app-author-chip')).toBeNull();
+        expect(root.querySelector('.login')).toBeNull();
+        expect(root.querySelector('.size')).not.toBeNull();
     });
 
     it('takes the heading level from the screen: h3 by default, h2 or h4 on request', () => {
@@ -133,5 +153,22 @@ describe('PublicDeckCardComponent', () => {
         await fixture.whenStable();
         fixture.detectChanges();
         expect(root.querySelector<HTMLInputElement>('app-share-link-field input')?.value).toBe(FULL.shareUrl);
+    });
+
+    it('draws no audience row for null counts (the catalogue sends nothing below 10)', () => {
+        const { root } = create({ deck: { ...FULL, addedCount: null, learningNowCount: null } });
+        expect(root.querySelector('.audience')).toBeNull();
+        TestBed.resetTestingModule();
+        expect(audience(create({ deck: { ...FULL, addedCount: null, learningNowCount: 15 } }).root)).toEqual([['Учат сейчас', '15']]);
+    });
+
+    it('draws no stamp for a topic or a language that is empty, and no empty line when nothing is left', () => {
+        const { root } = create({ deck: { ...FULL, topic: '', language: 'Испанский' } });
+        expect([...root.querySelectorAll('.tags .stamp')].map(stamp => stamp.textContent!.trim())).toEqual(['Язык: Испанский']);
+        TestBed.resetTestingModule();
+        const bare = create({ deck: { ...FULL, topic: '', language: '' } }).root;
+        expect(bare.querySelector('.tags')).toBeNull();
+        TestBed.resetTestingModule();
+        expect(create({ deck: { ...FULL, topic: '', language: '' }, note: 'Доступна вам' }).root.querySelector('.tags .stamp.solid')?.textContent).toBe('Доступна вам');
     });
 });

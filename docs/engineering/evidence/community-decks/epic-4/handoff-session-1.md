@@ -1,0 +1,80 @@
+---
+artifact:
+  id: community-decks-epic-4-handoff-1
+  type: handoff
+  title: "Handoff: эпик 4, сессия 1"
+  status: historical
+  created_at: "2026-10-13"
+  updated_at: "2026-10-14"
+  owners: ["project-owner"]
+---
+
+# Handoff: эпик 4, сессия 1
+
+Handoff сессии 1 эпика [#422](https://github.com/MattoYuzuru/Mnema/issues/422), опубликован в нём комментарием.
+
+**База.** Эпик 3 (`f033d533`, [его handoff](../epic-3/handoff-session-1.md)). Эпик 4 влит PR [#541](https://github.com/MattoYuzuru/Mnema/pull/541) и выкачен выключенным.
+
+**Сделано.** Recs/1–4 (#456–#459), Learning `V70__catalog_events.sql` и
+`V71__topic_interests.sql`; новые зависимости не добавлялись.
+
+- Recs/1: UUIDv7/месячные события, анонимные дневные показы, lifecycle-атрибуция версии,
+  обслуживание партиций и подтверждений телеметрии, политика 1.6 и сопутствующие таблицы.
+- Recs/2: optional chips, выбранные/вычисленные темы, goal и копии, занятия/открытия,
+  ночной пересчёт активных, профиль и сброс с новой границей сигналов.
+- Recs/3: кандидаты до 100, принятая формула, строгое разнообразие первых десяти,
+  исследовательские места 11/12, объяснения полки/сетки, исключение своих колод и живых копий,
+  непротиворечивые курсоры и повторная проверка публичности.
+- Recs/4: прозрачный [отчёт на синтетике](README.md#сравнение-ранкеров-на-синтетике), скрипт,
+  fixture/logs, анонимный SQL-экспорт, пороги co-occurrence/эмбеддингов, `--recs` и регрессии
+  `--catalog`, `--community`, `--updates`; документы отражают локальную реализацию всех четырёх эпиков.
+
+**Коммиты до интеграционного evidence.** `f1118581` контракт/политика; `e4cabd08` frontend;
+`e459290b` пять UI-правок ревью; `623f47cc` backend; `4465582b` две backend-правки ревью;
+`59235665` инвалидация по effective signals; `88a19065` актуальный профиль перед reset.
+Полный линейный диапазон эпика 4: `f033d533..f4f5e636` (`git log` включает последующий Recs/4/evidence).
+Все коммиты используют локальную Git identity владельца без дополнительных attribution trailers.
+
+**Уточнено внутри канона.** Принятые формула, 13 месяцев, выключенный запуск и отсутствие ML сохранены.
+Гости не записываются. Тексты поиска не сохраняются вообще. Текущий и 12 предыдущих календарных месяцев
+UTC, два будущих заранее; DROP и cleanup продолжаются при выключенной записи. Телеметрия пакетируется
+до 48 видимых карточек, без sampling; receipts этого scope живут семь дней. Interest receipts содержат
+только ack, поэтому сброс не оставляет исторический профиль в результатах команд. Сброс/копия/цель/
+пересчёт сериализуются строкой аккаунта и временем PostgreSQL. Цель даёт общих родителей справочника,
+не выдуманный язык. Успешные SCHEDULED/PRACTICE дают интерес, REPLAY/EMPTY нет; scheduler/global
+engagement не менялись. Равный нулевой score упорядочивается по интересу. B-matching в пределах 100
+кандидатов выбирает допустимую пару exploration и наиболее приоритетные десять карточек; ограничения
+не ослабляются. Effective copy/drop/goal повышают version ровно один раз даже при прежних normalized weights;
+replay/existing-copy/unchanged night не повышают. `/profile` перечитывает известный профиль один раз
+перед действиями, сохраняя unknown command retry; при412 сообщает, что действие ещё не выполнено.
+Cache до 32 вопросов/аккаунт, cursor 24 часа, eviction →412. Подробности:
+[контракт](../../../../../contracts/community/README.md), [архитектура](../../../../architecture/community-decks.md#уточнено-реализацией-эпик-4).
+
+**Evidence.** [README](README.md) содержит критерии, проверки, ревью, снимки и замеры. Локальные
+source-bound receipts хранятся вне Git в `~/.local/state/agent-dev`; итоговый отчёт владельцу указывает
+финальный HEAD и результаты полного gate. Полный backend/frontend gate и scripts должны оставаться
+зелёными на конкретном HEAD, до любого будущего push их необходимо повторить после актуализации main.
+H: локально 5k public, 200k copies, 100k profiles/2M interests, 1M events. 47M≈9,66ГБ и nightly100k≈16,4мин
+являются экстраполяциями; исходные планы/размеры сохранены, production не измерялся.
+
+**Не проверено / риски.** Реальные скринридеры, Safari, Firefox, physical touch и production.
+720 px при desktop1440 проверяет эквивалент reflow200%, не настоящий browser zoom/text scaling.
+Полный объём 47M/13 месяцев и whole nightly100k не прогонялся; event-замер — в одном месяце.
+Learning account purge #409 остаётся отдельным эпиком (поставлены actionable TODO и account indexes).
+Сохраняются ограничения эпиков 1–3: удалённый автор до purge, поздно готовое медиа, кэши каталога;
+польза рекомендаций на настоящей аудитории ещё не доказана.
+
+**Поставка (2026-10-15).** [#541](https://github.com/MattoYuzuru/Mnema/pull/541) выкачен одним релизом с эпиком 3; запись событий, «Для вас» и каталог выключены.
+
+**Оставшиеся шаги.**
+1. Каталог и тексты: `LEARNING_COMMUNITY_CATALOG_ENABLED=true`, frontend `COMMUNITY_LAUNCHED=true`, `COMMUNITY_ROUTE`
+   в public-deck.text и sitemap строка robots. Тексты **1.6** (включают правки 1.5) вернуть из коммита «define recommendations
+   contract and privacy policy 1.6» в истории [#541](https://github.com/MattoYuzuru/Mnema/pull/541): `privacy-page.component.html`,
+   `terms-page.component.html`, `shared/legal-operator.ts`, `legal-pages.spec.ts`; в production сейчас 1.4. Дату
+   `LEGAL_EFFECTIVE_DATE` поставить датой релиза. Затем проверить
+   страницу политики, каталог/поиск/автора/sitemap.
+2. После того как 1.6 доступна: `LEARNING_COMMUNITY_EVENTS_ENABLED=true`, проверить storage/maintenance/профиль/сброс,
+   затем `LEARNING_COMMUNITY_FOR_YOU_ENABLED=true` и полку/разнообразие/свои копии/объяснения. Environment-строки
+   добавить в production compose и установить на хост **до** соответствующего prod approval. Повторить
+   export/evaluation на анонимных production-логах, не утверждая causal lift.
+3. Закрыть эпики #421/#422 после включения и проверки на production. #409 не закрыт.

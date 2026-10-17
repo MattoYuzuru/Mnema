@@ -1,9 +1,14 @@
 package app.mnema.learning.fork;
 
+import app.mnema.learning.community.DeckEngagement;
+import app.mnema.learning.community.CatalogEvents;
+import app.mnema.learning.community.InterestService;
 import app.mnema.learning.library.AccessLevel;
 import app.mnema.learning.library.DeckAccess;
 import app.mnema.learning.library.DeckInviteOnlyException;
 import app.mnema.learning.library.DeckRef;
+import app.mnema.learning.library.DeckPurpose;
+import app.mnema.learning.library.DeckPurposeGuard;
 import app.mnema.learning.library.Denial;
 import app.mnema.learning.library.Resolution;
 import app.mnema.learning.library.Viewer;
@@ -16,12 +21,14 @@ import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
 import app.mnema.learning.platform.jobs.LearningJobs;
+import app.mnema.learning.platform.security.IdentityClaims.AccountSignals;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.PinOwner;
 import app.mnema.learning.storage.StorageTypes.StageBatch;
 import app.mnema.learning.storage.StorageTypes.StagedRoot;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
@@ -54,9 +61,14 @@ public class ForkService {
     private final ImmutableStorage storage;
     private final LearningJobs jobs;
     private final MeterRegistry meters;
+    private final DeckEngagement engagement;
+    private final CatalogEvents events;
+    private final InterestService interests;
+    private final DeckPurposeGuard purposes;
 
     ForkService(ForkRepository repository, ForkSettings settings, DeckAccess access, CommandReceiptService receipts, ImmutableStorage storage,
-                LearningJobs jobs, MeterRegistry meters) {
+                LearningJobs jobs, MeterRegistry meters, DeckEngagement engagement, CatalogEvents events, InterestService interests,
+                DeckPurposeGuard purposes) {
         this.repository = repository;
         this.settings = settings;
         this.access = access;
@@ -64,6 +76,10 @@ public class ForkService {
         this.storage = storage;
         this.jobs = jobs;
         this.meters = meters;
+        this.engagement = engagement;
+        this.events = events;
+        this.interests = interests;
+        this.purposes = purposes;
     }
 
     /** The acknowledgement of a copy command; {@code replayed} is an exact retry of an earlier command. */
@@ -82,21 +98,27 @@ public class ForkService {
         if (!settings.creation()) throw new ResourceNotFoundException();
     }
 
+    /**
+     * @param signals the anti-abuse signals of the caller's account from the Identity answer that authorized the request ({@code IdentityClaims.signals}); they weigh the copy in the community
+     *                rank and flag a burst of copies by new accounts, and are stored with the first copy of the account only
+     */
     @Transactional(timeout = 10)
-    public WriteResult create(UUID actor, ForkCommand command) {
+    public WriteResult create(UUID actor, ForkCommand command, AccountSignals signals) {
         requireEnabled();
         UuidPolicy.requireEntityId(actor, "actor");
         boolean[] applied = {false};
         JsonNode acknowledgement = receipts.execute(new CommandIdentity(command.commandId(), actor, "deck.forks", "fork.create"), command.envelope(), () -> {
             applied[0] = true;
-            return copy(actor, command);
+            return copy(actor, command, signals);
         });
         return new WriteResult(acknowledgement, !applied[0]);
     }
 
-    private ObjectNode copy(UUID actor, ForkCommand command) {
+    private ObjectNode copy(UUID actor, ForkCommand command, AccountSignals signals) {
         Viewer viewer = Viewer.account(actor, null);
         Resolution first = decide(viewer, command.sourceCode());
+        // A sample copy and the template are never copied by a user (OB-201); the owner of the deck got FORK_OWN_DECK above, everybody else a 404 if it is unreadable.
+        purposes.requireShareable(first.deck().deckId());
         repository.lockActor(actor);
         // From here the publication of the source cannot move (a publication or a level change waits for this transaction): decide again, on frozen state.
         UUID frozen = repository.lockPublished(first.deck().deckId()).orElseThrow(ResourceNotFoundException::new);
@@ -110,6 +132,16 @@ public class ForkService {
             meters.counter("mnema_deck_forks_total", "outcome", relinked ? "relinked" : "existing").increment();
             return acknowledgement(command, live.get().deckId(), live.get().preparing(), true);
         }
+        UUID deck = write(actor, command.commandId(), source.deckId(), source.scopeId(), command.sourceCode(), frozen, signals, DeckPurpose.USER);
+        return acknowledgement(command, deck, true, false);
+    }
+
+    /**
+     * The copy itself, in the caller's transaction and under the actor's lock: the account's window and caps (429, 422, 503), the roots of the published revision {@code frozen} with
+     * durable pins of the copy's own, the deck (inserted with its {@code purpose}), its revision 0, the materialization job and the {@code deck_fork} row. The engagement and the
+     * catalogue events are asked for here and decide for themselves ({@link DeckEngagement}, {@link CatalogEvents} write nothing for a source that is not an ordinary deck).
+     */
+    private UUID write(UUID actor, UUID commandId, UUID sourceDeck, UUID scope, String code, UUID frozen, AccountSignals signals, DeckPurpose purpose) {
         ForkRepository.Window window = repository.window(actor, settings.window);
         if (window.count() >= settings.maxPerWindow) {
             meters.counter("mnema_deck_forks_total", "outcome", "throttled").increment();
@@ -125,22 +157,64 @@ public class ForkService {
             meters.counter("mnema_deck_forks_total", "outcome", "busy").increment();
             throw new ForkQueueBusyException();
         }
-        ForkRepository.Published published = repository.published(source.deckId(), frozen);
+        interests.lockSignal(actor);
+        ForkRepository.Published published = repository.published(sourceDeck, frozen);
         UUID deck = UUID.randomUUID();
         UUID genesis = UUID.randomUUID();
         // The storage pattern of every deck revision: stage the roots, retain them durably for the revision, release the staging pins.
-        List<StagedRoot> roots = storage.stageBatch(new StageBatch(source.scopeId(), actor, List.of(),
+        List<StagedRoot> roots = storage.stageBatch(new StageBatch(scope, actor, List.of(),
                 List.of(published.membersRootId(), published.exercisesRootId())), Duration.ofMinutes(1));
         PinOwner owner = new PinOwner("deck.revision", genesis, actor);
         UUID membersPin = storage.retain(roots.getFirst(), owner);
         UUID exercisesPin = storage.retain(roots.getLast(), owner);
-        repository.insertDeck(deck, actor, source.scopeId(), genesis);
-        repository.insertGenesis(deck, genesis, source.scopeId(), actor, command.commandId(), published, membersPin, exercisesPin);
-        roots.forEach(root -> storage.release(source.scopeId(), root.stagingPinId()));
+        repository.insertDeck(deck, actor, scope, genesis, purpose);
+        repository.insertGenesis(deck, genesis, scope, actor, commandId, published, membersPin, exercisesPin);
+        roots.forEach(root -> storage.release(scope, root.stagingPinId()));
         UUID job = jobs.enqueue(QUEUE, deck.toString(), actor, payload(deck));
-        repository.insertFork(deck, source.scopeId(), actor, source.deckId(), command.sourceCode(), frozen, job);
+        repository.insertFork(deck, scope, actor, sourceDeck, code, frozen, job);
+        // Community/3: the metric of the direct source, in this very transaction (the first copy of an account counts; the owner never does).
+        engagement.forked(sourceDeck, actor, signals);
+        events.forked(actor, sourceDeck);
         meters.counter("mnema_deck_forks_total", "outcome", "created").increment();
-        return acknowledgement(command, deck, true, false);
+        return deck;
+    }
+
+    /** The result of {@link #copyTemplate}: the account's copy and whether this call made it. */
+    public record TemplateCopy(UUID deckId, boolean created) { }
+
+    /** Whether {@code template} is ready to be copied right now: a live deck marked {@code SAMPLE_TEMPLATE}, published at {@code LINK}, not hidden by moderation. */
+    public boolean templateReady(UUID template) {
+        UuidPolicy.requireEntityId(template, "templateId");
+        return repository.template(template, false).isPresent();
+    }
+
+    /**
+     * The system copy of the onboarding sample template (OB-201): the same O(1) copy and materialization job as {@link #create}, for a source that does not come from a public code
+     * but from the configuration ({@code learning.onboarding.sample-deck.template-id}), so there is no access decision of a guest and the owner of the template may copy it too. The copy
+     * is inserted with {@code purpose = SAMPLE}. It runs in the caller's transaction (the receipt of {@code SampleDeckService}) under the account's copy lock, freezes the template's
+     * publication like the ordinary copy and keeps its limits (the account's window and caps, the global cap of unfinished copies). It writes no engagement, catalogue event or interest signal
+     * ({@link DeckEngagement}, {@link CatalogEvents}, {@link InterestService} refuse a source that is not an ordinary deck). The caller has already looked for the account's live sample deck;
+     * a live sample copy of the template found here (it is the same copy) is returned as it is, while a live ordinary copy of it (made by the public route before the deck was marked)
+     * is refused like an unready template.
+     *
+     * @return the copy, or empty when the template is not ready (missing, deleted, not marked, not published or not at LINK) or the account holds an ordinary live copy of it
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<TemplateCopy> copyTemplate(UUID actor, UUID template, UUID commandId, AccountSignals signals) {
+        UuidPolicy.requireEntityId(actor, "actor");
+        UuidPolicy.requireEntityId(template, "templateId");
+        repository.lockActor(actor);
+        // The publication row is frozen from here: a republication or a level change of the template waits for this transaction, so what is copied is what was ready.
+        Optional<ForkRepository.Template> found = repository.template(template, true);
+        if (found.isEmpty()) return Optional.empty();
+        ForkRepository.Template source = found.orElseThrow();
+        Optional<ForkRepository.Live> live = repository.live(actor, source.deckId());
+        if (live.isPresent()) {
+            // A live copy made by the ordinary route before the deck was marked is the account's own deck, not its sample deck: answering it would hand the client a deck it never sees as the sample.
+            return repository.isSample(live.get().deckId()) ? Optional.of(new TemplateCopy(live.get().deckId(), false)) : Optional.empty();
+        }
+        UUID deck = write(actor, commandId, source.deckId(), source.scopeId(), source.code(), source.publishedRevisionId(), signals, DeckPurpose.SAMPLE);
+        return Optional.of(new TemplateCopy(deck, true));
     }
 
     /** The access decision for a copy: one 404 for everything unreadable, 403 for an invitation without a grant, 409 for the owner. */
