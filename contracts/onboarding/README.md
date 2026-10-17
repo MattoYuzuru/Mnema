@@ -11,6 +11,7 @@ Backend tests and the frontend contract spec both execute the fixture.
 | Read | `GET /api/onboarding` | 200 view with a strong `ETag`; `If-None-Match` with the current tag is 304 |
 | Tour command | `PUT /api/onboarding/journey` `{commandId, rowVersion, action, branch?, stepKey?}` | 200 view |
 | Preferences | `PUT /api/onboarding/preferences` `{commandId, rowVersion, experience?, weeklyTarget?}` | 200 view |
+| Sample deck (OB-201) | `POST /api/onboarding/sample-deck` `{commandId}` | 201 view with the new copy, 200 view when a live one exists |
 | Holdout report (owner console) | `GET /api/admin/onboarding/experiment?from=&to=` | 200 aggregates per variant |
 
 - **Private.** Bearer required (`learning.read` for `GET`, `learning.write` for `PUT`); `Cache-Control: private, no-store`.
@@ -18,8 +19,11 @@ Backend tests and the frontend contract spec both execute the fixture.
   stores only the tour state, `experience` and `weeklyTarget`. No user text, deck title or search query is stored.
 - **The view.** `enabled` mirrors `learning.onboarding.enabled`; while it is false `journey` is `null`, every `PUT` is
   409 `ONBOARDING_UNAVAILABLE` and the client shows neither «Начало пути» nor the tour (rollback). `milestones`, `path`,
-  `rhythm` and `sampleDeck` are reserved now so the client never changes shape: until OB-E2/E3/E4 they are `[]`, `null`,
-  `null` and `{"available": false, "deckId": null, "updateAvailable": false}`.
+  `rhythm` are reserved now so the client never changes shape: until OB-E3/E4 they are `[]`, `null` and `null`.
+  `sampleDeck` (OB-E2): `available` — the flag `learning.onboarding.sample-deck.enabled`, a configured template that is live and
+  has a published revision; `deckId` — the account's live sample copy or `null`; `updateAvailable` — that copy has an update of
+  the template waiting (the ordinary «Есть обновление»); `freeChecksLeft` — AI checks still free for the account in its sample
+  deck (0–3, per account, not per copy).
 - **Journey state.** `NOT_OFFERED` means there is no row: the account was never offered the tour and did not start it
   from the profile. The first `GET` of an **eligible** account creates the row in `OFFERED` exactly once
   (`INSERT … ON CONFLICT DO NOTHING`, concurrent first reads included). Eligible means: the flag is on, the time is at
@@ -51,5 +55,18 @@ Backend tests and the frontend contract spec both execute the fixture.
 - Failure codes: `INVALID_REQUEST` (400), `AUTHENTICATION_REQUIRED` (401), `ACCESS_DENIED` (403, report without the admin
   scope), `ONBOARDING_TRANSITION` and `ONBOARDING_UNAVAILABLE` and `IDEMPOTENCY_CONFLICT` (409), `VERSION_CONFLICT` (412),
   `PRECONDITION_REQUIRED` (428).
+
+- **Sample deck (OB-E2, [ADR-ONB-003](../../docs/engineering/onboarding/adr/adr-onb-003-sample-deck.md)).** The template is the
+  editorial deck whose id is `learning.onboarding.sample-deck.template-id`; Learning marks it `purpose=SAMPLE_TEMPLATE` when it
+  starts, so the editorial account installs and updates it through the ordinary authoring API. `POST /sample-deck` copies its
+  published revision with the existing copy (`ForkService`) as a system path, `purpose=SAMPLE`; one live copy per account (a
+  repeat or a race returns the live one with 200; after the copy is deleted a new one is made). Idempotent by `commandId`. It
+  does not need a journey row. `409 SAMPLE_DECK_UNAVAILABLE` when the flag is off or the template is missing, deleted or has no
+  published revision; `409 ONBOARDING_UNAVAILABLE` when onboarding is off. Publication, access level, link, invitations and
+  copying of a `SAMPLE` or `SAMPLE_TEMPLATE` deck are `409 SAMPLE_DECK_NOT_SHAREABLE` (publishing a new revision of the
+  template by its owner stays allowed). A sample deck writes no engagement, catalogue events or interest signal.
+- **Free AI checks.** The first `freeAiChecks` AI checks of an account in its `SAMPLE` deck (an `ai-semantic` grade or a speech
+  transcription of an answer) cost the user nothing: they are counted as `ONBOARDING_SAMPLE_CHECK` in the usage ledger instead of
+  the plan's buckets. Later ones are ordinary checks.
 
 Account purge (#409) deletes `onboarding_journey` by `account_id` (TODO in the repository, like `learning_profile`).
