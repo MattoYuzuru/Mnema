@@ -24,7 +24,7 @@ artifact:
 | Пакет документов | `docs/engineering/onboarding/` (в main) |
 | Ветка реализации | `feat/517-onboarding` (worktree `/Users/yuzuru/Projects/Mnema-wt-onboarding`), draft PR [MattoYuzuru/Mnema#554](https://github.com/MattoYuzuru/Mnema/pull/554); задачи OB-001/002/003/202 на доске — In review |
 | База ветки | `origin/main` 42e35d0f (S0), в S1 влит `origin/main` b6f14df8 (a29b7301, 2026-10-16) |
-| Последний handoff | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) (ветка не запушена: PR #554 показывает только S0) |
+| Последний handoff | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) (ветка не запушена: PR #554 показывает только S0) |
 
 ## Статус задач
 
@@ -38,10 +38,10 @@ artifact:
 | OB-103 | local complete, delivery pending | e5f30a26, e034d361, 062ed44b, 748043a2 | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), [harness](../evidence/onboarding/ob-e1/onboarding-results.json) | |
 | OB-104 | local complete, delivery pending | e5f30a26, e034d361, 335e59bf, 062ed44b | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), [harness](../evidence/onboarding/ob-e1/onboarding-results.json) | e2e в одноразовом harness, не на retained stack; «Сообщество» до открытия занятия; 2 строки на утверждение |
 | OB-105 | local complete, delivery pending | 9b2b69c5, 420d43cb, a0d2bf3b, 77294b3a | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) | Holdout server-only; production после OB-002 |
-| OB-201 | not started | — | — | |
-| OB-202 | blocked: OB-201 (сборка в S2) | — | [план](../evidence/onboarding/ob-prep/deck-plans.md#ob-202-учебная-колода-как-устроена-память); `runs/onboarding-memory-sample` | План утверждён 2026-10-16 |
-| OB-203 | not started | — | — | |
-| OB-204 | not started | — | — | |
+| OB-201 | local complete, delivery pending | 89dcc666, 9fe582df, 482de3df | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | V73; purge — #409; L4 (LINK) на решение владельца |
+| OB-202 | local complete, delivery pending | студия вне git; ea723063, c9eb70c5 | [runbook](../evidence/onboarding/ob-e2/sample-template-runbook.md), [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | Шаблон на local stack (deck d59520c8-…, LINK); production — отдельное поручение |
+| OB-203 | local complete, delivery pending | 691d1919, 96c15aaf, 729e6fd4 | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md), [снимки](../evidence/onboarding/ob-e2/) | «ИИ-бюджет» не показывает бесплатные проверки |
+| OB-204 | local complete, delivery pending | 3ecff102 (gate) | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | |
 | OB-301 | not started | — | — | |
 | OB-302 | not started | — | — | |
 | OB-303 | not started | — | — | |
@@ -58,6 +58,7 @@ artifact:
 | 2026-10-15/16 | S0 | Claude Opus 5.5 (lead), 2 × Opus 5.5 research, Opus 5.5 review | 42e35d0f → 0efe11d1 (+ handoff) | OB-001/002/003/202 подготовлены; 2026-10-16 утверждены владельцем, корейский перепланирован | [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) |
 | 2026-10-16/17 | S0+ (колоды) | Claude Opus 5.5 (lead), Sonnet 5.5 high (авторы), Haiku 5.5 (картинки), Opus 5.5 high (ревью) | MnemaDeckStudio (вне git) | 8 базовых колод PRIVATE в production, TTS $0.30 | [сводка](../evidence/onboarding/ob-prep/deck-plans.md) |
 | 2026-10-16/17 | S1 | Claude Opus 5.5 (lead), 2 × Sonnet 5.5 high (backend, frontend), Sonnet 5.5 high (harness), 3 × Opus 5.5 high review | 71ab1c89 + merge b6f14df8 → 748043a2 (+ handoff) | OB-101…OB-105 local complete; полный gate и harness `--onboarding` зелёные | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) |
+| 2026-10-17 | S2 | Claude Opus 5.5 (lead), Sonnet 5.5 high: backend, frontend, импортёр студии, автор pack; Opus 5.5 high: review кода и содержания | 05c1d45c → 3ecff102 (+ handoff) | OB-201…204 local complete; шаблон установлен на local stack; gate зелёный | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) |
 
 Handoff-файлы кладутся в `docs/engineering/evidence/onboarding/<epic>/handoff-session-<N>.md` ветки
 реализации и перечисляются здесь.

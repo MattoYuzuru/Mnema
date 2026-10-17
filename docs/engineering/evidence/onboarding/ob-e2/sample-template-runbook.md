@@ -41,4 +41,7 @@ artifact:
 
 ## Факт установки
 
-Заполняется при установке (handoff S2).
+2026-10-17, local stack `mnema-local-v2` на ветке `feat/517-onboarding`: deck `d59520c8-d144-49f5-910b-4aaf833b8434`
+(«Как устроена память», 11 материалов, 31 упражнение, 2 ИИ-задания, 7 медиа), владелец — локальный аккаунт редакции
+`mnema_editorial_1a434184`, уровень `LINK` (код `xLZLdhEjrd`), помечен `SAMPLE_TEMPLATE`; digest плана `16d97a2b…dd0b`, pack
+`9385c786…`, TTS $0.005241; проверка `PASSED_RUNTIME_API`. Подробности — [handoff S2](handoff-session-2.md).
