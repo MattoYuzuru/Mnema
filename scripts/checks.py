@@ -8,8 +8,9 @@
 
 The final gate before a push is always `run` without --affected on the exact commit being pushed. Edits in the
 working checkout cannot change the candidate, and a candidate that changed after its run is rejected, never
-re-labelled. Hosted CI keeps its parallel jobs; tests/test_verify_checks.py proves that each job line belongs to a
-check here, so local and hosted lists cannot drift apart.
+re-labelled. Hosted CI keeps its parallel jobs; tests/test_verify_checks.py proves that each quality-job command line
+belongs to a check here and that no quality step may continue on error. Whether a local command and its hosted
+lines give the same guarantee is declared per check and reviewed, not derived.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -53,9 +55,10 @@ class Check:
     java: bool = False
     node: bool = False
     docker: bool = False
-    reports: tuple[str, ...] = ()               # JUnit XML globs, relative to the first command's cwd
-    timeout_minutes: int = 20
+    reports: tuple[str, ...] = ()               # JUnit XML globs, relative to the repository root
+    timeout_minutes: float = 20
     needs: tuple[str, ...] = field(default=())  # checks whose outputs this one reads (same worktree)
+    heavy: bool = True                          # holds the shared workstation `heavy` lock while it runs
 
 
 def py(*args: str) -> tuple[str, tuple[str, ...]]:
@@ -67,7 +70,7 @@ CHECKS: tuple[Check, ...] = (
         "docs", "Markdown links, anchors and document statuses",
         (r".*\.md", r"docs/.*", r"scripts/verify_docs\.py"),
         local=(py("scripts/verify_docs.py"),),
-        hosted=(("frontend-checks", ("python3 scripts/verify_docs.py",)),), timeout_minutes=5),
+        hosted=(("frontend-checks", ("python3 scripts/verify_docs.py",)),), timeout_minutes=5, heavy=False),
     Check(
         "automation-policy", "Action pins, security automation, artifact policy, image pins and their tests",
         (r"\.github/.*", r"scripts/.*", r"security/.*", r".*Dockerfile", r"deploy/.*", r"backend/gradle/.*",
@@ -80,7 +83,7 @@ CHECKS: tuple[Check, ...] = (
                 "python3 scripts/verify_artifact_security_policy.py", "python3 scripts/verify_production_image_pins.py",
                 "python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v",
                 "python3 -m unittest " + " ".join(f"scripts.tests.{name}" for name in SCRIPT_TESTS) + " -v")),),
-        timeout_minutes=10),
+        timeout_minutes=10, heavy=False),
     Check(
         "frontend-static", "Exact dependency install, lint and the production build without the styleguide",
         (r"frontend/.*", r"contracts/.*"),
@@ -140,12 +143,13 @@ CHECKS: tuple[Check, ...] = (
                 ("backend-quality", ("./gradlew testInventory --parallel --max-workers=2", "python3 scripts/backend_test_evidence.py merge",
                 "./gradlew --parallel --max-workers=2 compileJava jacocoTestReport jacocoRootReport "
                 "coverageBaselineCheck -PcoverageShards=8 -x test")),),
-        java=True, docker=True, reports=("services/*/build/test-results/test/TEST-*.xml",), timeout_minutes=45),
+        java=True, docker=True, reports=("backend/services/*/build/test-results/test/TEST-*.xml",), timeout_minutes=45),
     Check(
         "release-images", "Each release Dockerfile builds from its real context; no unexcepted HIGH/CRITICAL finding",
         (r"backend/.*", r"frontend/.*", r"deploy/production/.*", r"security/.*", r"contracts/.*",
          r"scripts/verify_release_security_evidence\.py"),
-        hosted=(("release-images", ('python3 scripts/verify_release_security_evidence.py preflight --image "$IMAGE" '
+        hosted=(("release-images", ('python3 -I scripts/release_scope.py --changed "$BASE_SHA" HEAD',
+                                    'python3 scripts/verify_release_security_evidence.py preflight --image "$IMAGE" '
                                     '--service "$SERVICE" --report "$RUNNER_TEMP/preflight-trivy.json" '
                                     "--exceptions security/release-image-exceptions.json "
                                     "--trivy-ignore security/trivy-release-ignore",)),),
@@ -232,7 +236,33 @@ def drift() -> list[str]:
             for line in runs[job]:
                 if line not in claimed.get(job, set()) and line != AGGREGATE:
                     problems.append(f"{workflow}: {job} runs `{line}`, which no check owns")
+        blocks = job_blocks(ROOT / workflow)
+        for job in present:
+            for line in blocks.get(job, []):
+                if re.match(r"\s+continue-on-error:", line):
+                    problems.append(f"{workflow}: {job} may not continue on error")
+                if re.match(r"\s{6,}(?:- )?if:", line) and line.strip().removeprefix("- ") not in STEP_GUARDS:
+                    problems.append(f"{workflow}: {job} has an unreviewed step condition `{line.strip()}`")
     return problems
+
+
+# The only step conditions a quality job may carry: the release-image preflight skips its build and scan, with a
+# visible reason, when the pull request changes no release-image input (scripts/release_scope.py decides).
+STEP_GUARDS = frozenset({"if: ${{ steps.scope.outputs.runtime == 'true' }}"})
+
+
+def job_blocks(path: Path) -> dict[str, list[str]]:
+    jobs: dict[str, list[str]] = {}
+    job, in_jobs = None, False
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if raw == "jobs:":
+            in_jobs = True
+        elif in_jobs and (match := re.fullmatch(r"  ([A-Za-z0-9_-]+):", raw)):
+            job = match.group(1)
+            jobs[job] = []
+        elif job:
+            jobs[job].append(raw)
+    return jobs
 
 
 def git(*args: str, cwd: Path | None = None, check: bool = True) -> str:
@@ -282,8 +312,9 @@ def plan(paths: list[str] | None, affected: bool) -> tuple[list[Check], dict[str
 
 
 def plan_digest(checks: list[Check]) -> str:
-    payload = [[check.id, [list(command) for command in check.local]] for check in checks]
-    return hashlib.sha256(json.dumps(payload).encode()).hexdigest()
+    """Binds a record to the selected checks and to the exact catalogue (this file) that defined them."""
+    payload = json.dumps([[check.id, [list(command) for command in check.local]] for check in checks]).encode()
+    return hashlib.sha256(payload + Path(__file__).read_bytes()).hexdigest()
 
 
 def describe(checks: list[Check], matches: dict[str, list[str]], reason: str, candidate: str) -> str:
@@ -301,9 +332,10 @@ def state_dir() -> Path:
     return Path(configured).expanduser() if configured else Path.home() / ".local/state/agent-dev/mnema-candidates"
 
 
-def candidate_paths(sha: str) -> tuple[Path, Path]:
+def candidate_paths(sha: str, affected: bool = False) -> tuple[Path, Path]:
+    """Validation worktree and run record. A partial (--affected) run never overwrites the full-gate record."""
     base = state_dir()
-    return base / sha[:12], base / f"{sha[:12]}.json"
+    return base / sha[:12], base / f"{sha[:12]}{'.affected' if affected else ''}.json"
 
 
 def candidate_state(worktree: Path) -> tuple[str, bool]:
@@ -320,57 +352,104 @@ def prepare(sha: str) -> Path:
             raise SystemExit(f"validation worktree {worktree} no longer matches {sha[:12]}; run `clean` first")
         return worktree
     worktree.parent.mkdir(parents=True, exist_ok=True)
+    git("worktree", "prune")
     git("worktree", "add", "--detach", str(worktree), sha)
     return worktree
 
 
-def runner_command(check: Check, cwd: Path, argv: tuple[str, ...], first: bool) -> list[str]:
-    helper = os.environ.get("MNEMA_AGENT_DEV", shutil.which("agent-dev") or "")
-    if not helper or os.environ.get("MNEMA_CHECK_RUNNER") == "direct":
-        return list(argv)
-    command = [helper, "run", "--cwd", str(cwd), "--resource", "heavy", "--timeout", str(check.timeout_minutes * 60)]
+def helper() -> str | None:
+    if os.environ.get("MNEMA_CHECK_RUNNER") == "direct":
+        return None
+    return os.environ.get("MNEMA_AGENT_DEV") or shutil.which("agent-dev")
+
+
+def lock_timeout_seconds() -> int:
+    return int(os.environ.get("MNEMA_CHECK_LOCK_TIMEOUT", str(6 * 3600)))
+
+
+def agent_dev_command(tool: str, check: Check, worktree: Path) -> list[str]:
+    """One agent-dev invocation per check: its lock, toolchain and receipt cover all of the check's commands."""
+    command = [tool, "run", "--cwd", str(worktree), "--timeout", str(int(check.timeout_minutes * 60))]
+    if check.heavy:                           # a busy lock is a queue: wait for it instead of failing the gate
+        command += ["--resource", "heavy", "--lock-timeout", str(lock_timeout_seconds())]
     if check.java:
         command += ["--java", "25"]
     if check.node:
         command += ["--node", "24"]
     if check.docker:
         command.append("--docker")
-    for pattern in check.reports if first else ():
+    for pattern in check.reports:
         command += ["--reports", pattern]
-    return [*command, "--", *argv]
+    return [*command, "--", "python3", "scripts/checks.py", "step", check.id]
+
+
+def run_steps(check: Check, root: Path, log=None) -> int:
+    """The check's commands in order inside `root`; the first nonzero exit stops it. Each runs in its own process
+    group, so a timeout also ends the commands it started."""
+    deadline = time.monotonic() + check.timeout_minutes * 60
+    for relative, argv in check.local:
+        print(f"[{check.id}] {' '.join(argv)}", file=log or sys.stdout, flush=True)
+        process = subprocess.Popen(argv, cwd=root / relative, stdout=log, stderr=subprocess.STDOUT if log else None,
+                                   start_new_session=True)
+        try:
+            code = process.wait(timeout=max(1, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            print(f"[{check.id}] timed out after {check.timeout_minutes} min", file=log or sys.stderr, flush=True)
+            return 124
+        if code:
+            return code
+    return 0
+
+
+def tail(path: Path | None, lines: int = 20) -> str:
+    try:
+        return "\n".join(path.read_text(errors="replace").splitlines()[-lines:]) if path else ""
+    except OSError:
+        return ""
 
 
 def execute(sha: str, checks: list[Check], worktree: Path) -> dict:
-    record = {"version": 1, "candidate": sha, "tree": git("rev-parse", f"{sha}^{{tree}}").strip(),
+    tool = helper()
+    record = {"version": 2, "candidate": sha, "tree": git("rev-parse", f"{sha}^{{tree}}").strip(),
               "plan": [check.id for check in checks], "planDigest": plan_digest(checks), "worktree": str(worktree),
-              "complete": False, "checks": []}
+              "runner": "agent-dev" if tool else "direct", "complete": False, "checks": []}
+    logs = state_dir() / f"{sha[:12]}-logs"
+    logs.mkdir(parents=True, exist_ok=True)
     for check in checks:
         if not check.local:
             record["checks"].append({"id": check.id, "status": "hosted-only", "reason": check.hosted_only_reason})
             continue
-        entry = {"id": check.id, "status": "passed", "steps": []}
+        entry = {"id": check.id, "status": "passed"}
         record["checks"].append(entry)
-        for index, (relative, argv) in enumerate(check.local):
-            cwd = worktree / relative
-            command = runner_command(check, cwd, argv, index == 0)
-            started = time.monotonic()
-            print(f"[{check.id}] {' '.join(argv)}", flush=True)
+        started = time.monotonic()
+        print(f"[{check.id}] {check.guarantee}", flush=True)
+        if tool:
+            limit = check.timeout_minutes * 60 + (lock_timeout_seconds() if check.heavy else 0) + 300
             try:
-                result = subprocess.run(command, cwd=cwd, capture_output=True, text=True,
-                                        timeout=check.timeout_minutes * 60 + 120)
+                result = subprocess.run(agent_dev_command(tool, check, worktree), capture_output=True, text=True,
+                                        timeout=limit)
+                code, outcome = result.returncode, last_json(result.stdout)
             except subprocess.TimeoutExpired:
-                result = subprocess.CompletedProcess(command, 124, "", "timed out")
-            step = {"command": list(argv), "cwd": relative, "exit": result.returncode,
-                    "seconds": round(time.monotonic() - started, 1)}
-            receipt = receipt_of(result.stdout)
-            if receipt:
-                step["receipt"] = receipt
-            entry["steps"].append(step)
-            if result.returncode:
+                code, outcome = 124, {}
+            entry.update(exit=code, receipt=outcome.get("receipt"), log=outcome.get("log"))
+            if outcome.get("error") == "resource_busy":
+                entry["status"] = "blocked"
+            elif code or outcome.get("ok") is not True:
                 entry["status"] = "failed"
-                tail = (result.stdout + result.stderr).strip().splitlines()[-15:]
-                print("\n".join(tail), file=sys.stderr)
-                return record
+        else:
+            log_path = logs / f"{check.id}.log"
+            with log_path.open("w") as log:
+                code = run_steps(check, worktree, log)
+            entry.update(exit=code, log=str(log_path))
+            if code:
+                entry["status"] = "failed"
+        entry["seconds"] = round(time.monotonic() - started, 1)
+        if entry["status"] != "passed":
+            print(f"[{check.id}] {entry['status']} (exit {entry['exit']}); log {entry.get('log')}", file=sys.stderr)
+            print(tail(Path(entry["log"]) if entry.get("log") else None), file=sys.stderr)
+            return record
     head, dirty = candidate_state(worktree)
     record["complete"] = head == sha and not dirty
     if not record["complete"]:
@@ -378,15 +457,15 @@ def execute(sha: str, checks: list[Check], worktree: Path) -> dict:
     return record
 
 
-def receipt_of(output: str) -> str | None:
+def last_json(output: str) -> dict:
     for line in reversed(output.strip().splitlines()):
         if line.startswith("{"):
             try:
-                value = json.loads(line).get("receipt")
-            except (ValueError, AttributeError):
-                return None
-            return value if isinstance(value, str) else None
-    return None
+                value = json.loads(line)
+            except ValueError:
+                return {}
+            return value if isinstance(value, dict) else {}
+    return {}
 
 
 def verify(sha: str) -> list[str]:
@@ -408,20 +487,36 @@ def verify(sha: str) -> list[str]:
         head, dirty = candidate_state(worktree)
         if head != sha or dirty:
             problems.append("the validation worktree no longer matches the candidate")
-    helper = os.environ.get("MNEMA_AGENT_DEV", shutil.which("agent-dev") or "")
+    tool = helper() if record.get("runner") == "agent-dev" else None
+    if record.get("runner") == "agent-dev" and not tool:
+        problems.append("the run used agent-dev, which is not available to re-verify its receipts")
     for check in record.get("checks", []):
         if check.get("status") == "hosted-only":
             continue
         if check.get("status") != "passed":
             problems.append(f"{check.get('id')} did not pass")
-        for step in check.get("steps", []):
-            receipt = step.get("receipt")
-            if receipt and helper and worktree.exists():
-                result = subprocess.run([helper, "verify", receipt, "--cwd", str(worktree / step["cwd"])],
-                                        capture_output=True, text=True)
-                if result.returncode:
-                    problems.append(f"{check.get('id')}: receipt for `{' '.join(step['command'])}` is stale")
+        if record.get("runner") != "agent-dev":
+            continue
+        receipt = check.get("receipt")
+        if not receipt:
+            problems.append(f"{check.get('id')} has no receipt")
+        elif tool and worktree.exists():
+            result = subprocess.run([tool, "verify", receipt, "--cwd", str(worktree)], capture_output=True, text=True)
+            if result.returncode:
+                problems.append(f"{check.get('id')}: its receipt is stale or failed")
     return problems
+
+
+def in_candidate(worktree: Path) -> bool:
+    return Path(__file__).resolve().parents[1] == worktree.resolve()
+
+
+def reexec_in(worktree: Path, argv: list[str]) -> None:
+    """Continue with the candidate's own catalogue, so a different or edited checks.py cannot define its gate."""
+    script = worktree / "scripts/checks.py"
+    if not script.is_file():
+        raise SystemExit("the candidate has no scripts/checks.py; run its own documented gate")
+    os.execv(sys.executable, [sys.executable, str(script), *argv])
 
 
 def main() -> int:
@@ -436,25 +531,37 @@ def main() -> int:
     for name in ("verify", "clean"):
         commands.add_parser(name).add_argument("--candidate", default="HEAD")
     commands.add_parser("drift", help="compare this catalogue with the hosted quality jobs")
+    commands.add_parser("step", help=argparse.SUPPRESS).add_argument("check", choices=sorted(BY_ID))
     args = parser.parse_args()
     if args.command == "drift":
         problems = drift()
         print("\n".join(problems) if problems else "catalogue and hosted quality jobs agree")
         return 1 if problems else 0
+    if args.command == "step":                # runs inside the validation worktree, under agent-dev
+        return run_steps(BY_ID[args.check], ROOT)
     sha = resolve(args.candidate)
+    worktree, summary = candidate_paths(sha, getattr(args, "affected", False))
 
     if args.command == "clean":
-        worktree, summary = candidate_paths(sha)
         if worktree.exists():
             git("worktree", "remove", "--force", str(worktree))
-        summary.unlink(missing_ok=True)
-        print(f"removed validation worktree for {sha[:12]}")
+        git("worktree", "prune")
+        for path in (summary, candidate_paths(sha, True)[1]):
+            path.unlink(missing_ok=True)
+        shutil.rmtree(state_dir() / f"{sha[:12]}-logs", ignore_errors=True)
+        print(f"removed validation worktree and records for {sha[:12]}")
         return 0
     if args.command == "verify":
+        if worktree.exists() and not in_candidate(worktree):
+            reexec_in(worktree, ["verify", "--candidate", sha])
         problems = verify(sha)
         print(f"candidate {sha[:12]}: " + ("usable full-gate evidence" if not problems else "; ".join(problems)))
         return 0 if not problems else 3
 
+    if args.command == "run" and not in_candidate(prepare(sha)):
+        if git("status", "--porcelain=v1", "--untracked-files=normal").strip() and args.candidate == "HEAD":
+            print("note: uncommitted changes in this checkout are not part of the candidate", file=sys.stderr)
+        reexec_in(worktree, ["run", "--candidate", sha, "--base", args.base, *(["--affected"] if args.affected else [])])
     paths = changed_paths(args.base, sha) if args.affected else None
     checks, matches, reason = plan(paths, args.affected)
     if args.command == "plan":
@@ -465,17 +572,14 @@ def main() -> int:
             print(describe(checks, matches, reason, sha))
         return 0
 
-    if git("status", "--porcelain=v1", "--untracked-files=normal").strip() and args.candidate == "HEAD":
-        print("note: uncommitted changes in this checkout are not part of the candidate", file=sys.stderr)
     print(describe(checks, matches, reason, sha), flush=True)
-    worktree = prepare(sha)
     record = execute(sha, checks, worktree)
-    _, summary = candidate_paths(sha)
     summary.write_text(json.dumps(record, indent=2) + "\n")
     passed = record["complete"] and all(c["status"] in ("passed", "hosted-only") for c in record["checks"])
-    print(f"{'PASSED' if passed else 'FAILED'}: {sha[:12]} ({len(record['checks'])} checks); record {summary}")
+    print(f"{'PASSED' if passed else 'FAILED'}: {sha[:12]} ({len(record['checks'])} checks, runner "
+          f"{record['runner']}); record {summary}")
     if passed and not args.affected:
-        print(f"before pushing, run: python3 scripts/checks.py verify --candidate {sha}")
+        print(f"before pushing: python3 scripts/checks.py verify --candidate {sha}; afterwards `clean` frees the worktree")
     return 0 if passed else 1
 
 

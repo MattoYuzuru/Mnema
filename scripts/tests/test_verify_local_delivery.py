@@ -21,8 +21,8 @@ QUALITY = {'backend-tests', 'backend-security', 'backend-runtime', 'backend-qual
            'frontend-checks', 'frontend-tests', 'frontend-quality'}
 AGGREGATES = {'backend-quality': ['backend-tests', 'backend-security', 'backend-runtime'],
               'frontend-quality': ['frontend-checks', 'frontend-tests']}
-# Pull requests also build and scan every release image (unpublished); both aggregates require it there.
-PR_AGGREGATES = {name: [*needs, 'release-images'] for name, needs in AGGREGATES.items()}
+# Pull requests also build and scan every release image (unpublished); frontend-quality requires it there.
+PR_AGGREGATES = {**AGGREGATES, 'frontend-quality': [*AGGREGATES['frontend-quality'], 'release-images']}
 ACTIVE = {
     'deploy.yaml': {'validate-main-ref', 'release-scope'} | QUALITY,
     'pull-request.yaml': QUALITY | {'release-images'},

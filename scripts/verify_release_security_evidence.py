@@ -371,7 +371,10 @@ def preflight(args: argparse.Namespace) -> None:
         if validate_image(item["image"]).group("service") == args.service
     ]
     records = vulnerability_records(load_json(args.report), args.image)
-    _, unexcepted, _ = classify_blocking(records, exceptions)
+    applied, unexcepted, _ = classify_blocking(records, exceptions)
+    for item in applied:
+        print(f"::warning::{args.service}: {item['severity']}:{item['finding']}:{item['package']} passes only through "
+              f"an exception (expires {item['expires']}); the release still requires it for the exact digest")
     if unexcepted:
         raise EvidenceFailure(f"blocking vulnerabilities without a valid exception: {blocking_summary(unexcepted)}")
 

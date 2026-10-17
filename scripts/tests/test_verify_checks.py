@@ -38,6 +38,22 @@ class CatalogueTest(unittest.TestCase):
                       "\n".join(problems))
         self.assertIn("runs `npm run lint -- --quiet`, which no check owns", "\n".join(problems))
 
+    def test_a_quality_step_that_may_fail_or_be_skipped_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for workflow in CHECKS.BOTH:
+                target = Path(tmp) / workflow
+                target.parent.mkdir(parents=True, exist_ok=True)
+                text = (ROOT / workflow).read_text(encoding="utf-8")
+                if workflow == CHECKS.MAIN_WORKFLOW:
+                    text = text.replace("      - name: Run frontend lint\n",
+                                        "      - name: Run frontend lint\n        continue-on-error: true\n"
+                                        "        if: ${{ github.actor != 'x' }}\n", 1)
+                target.write_text(text, encoding="utf-8")
+            with mock.patch.object(CHECKS, "ROOT", Path(tmp)):
+                problems = "\n".join(CHECKS.drift())
+        self.assertIn("deploy.yaml: frontend-checks may not continue on error", problems)
+        self.assertIn("deploy.yaml: frontend-checks has an unreviewed step condition", problems)
+
     def test_every_script_suite_is_run_by_some_hosted_job(self):
         hosted = " ".join(line for check in CHECKS.CHECKS for _, lines in check.hosted for line in lines)
         hosted += (ROOT / "scripts/test-frontend-release-contract.sh").read_text(encoding="utf-8")
@@ -56,6 +72,37 @@ class CatalogueTest(unittest.TestCase):
                     if argv[0].startswith("./") or argv[0] in ("python3",) and argv[1].endswith(".py"):
                         script = ROOT / cwd / (argv[0] if argv[0].startswith("./") else argv[1])
                         self.assertTrue(script.is_file(), script)
+
+
+class RunnerTest(unittest.TestCase):
+    def test_a_heavy_check_waits_for_the_shared_lock_and_binds_toolchain_and_reports(self):
+        worktree = Path("/state/candidate")
+        command = CHECKS.agent_dev_command("agent-dev", CHECKS.BY_ID["backend-quality"], worktree)
+        self.assertEqual(command[:6], ["agent-dev", "run", "--cwd", str(worktree), "--timeout", "2700"])
+        joined = " ".join(command)
+        self.assertIn(f"--resource heavy --lock-timeout {CHECKS.lock_timeout_seconds()}", joined)
+        self.assertIn("--java 25", joined)
+        self.assertIn("--docker", joined)
+        self.assertIn("--reports backend/services/*/build/test-results/test/TEST-*.xml", joined)
+        self.assertEqual(command[-5:], ["--", "python3", "scripts/checks.py", "step", "backend-quality"])
+        self.assertGreater(CHECKS.lock_timeout_seconds(), 3600)
+
+    def test_light_checks_take_no_heavy_lock(self):
+        for check_id in ("docs", "automation-policy"):
+            with self.subTest(check=check_id):
+                self.assertNotIn("--resource", CHECKS.agent_dev_command("agent-dev", CHECKS.BY_ID[check_id], Path("/w")))
+        self.assertIn("--node", CHECKS.agent_dev_command("agent-dev", CHECKS.BY_ID["frontend-tests"], Path("/w")))
+
+    def test_a_timeout_ends_the_whole_process_group(self):
+        check = CHECKS.Check("slow", "sleeps", (r".*",), local=((".", ("sh", "-c", "sleep 60 & sleep 60")),),
+                             timeout_minutes=0.03)
+        started = __import__("time").monotonic()
+        with tempfile.TemporaryDirectory() as tmp, open(Path(tmp) / "log", "w") as log:
+            self.assertEqual(CHECKS.run_steps(check, Path(tmp), log), 124)
+        self.assertLess(__import__("time").monotonic() - started, 15)
+
+    def test_partial_runs_have_their_own_record(self):
+        self.assertNotEqual(CHECKS.candidate_paths("a" * 40)[1], CHECKS.candidate_paths("a" * 40, affected=True)[1])
 
 
 class PlanTest(unittest.TestCase):
@@ -149,6 +196,34 @@ class CandidateProtocolTest(unittest.TestCase):
             problems = CHECKS.verify(self.sha)
         self.assertIn("fail did not pass", problems)
         self.assertIn("the run did not complete", problems)
+
+    def fake_agent_dev(self, run_output, verify_exit=0):
+        tool = Path(self.tmp.name) / "agent-dev"
+        tool.write_text("#!/bin/sh\n"
+                        f"if [ \"$1\" = verify ]; then exit {verify_exit}; fi\n"
+                        f"printf '%s\\n' '{json.dumps(run_output)}'\n"
+                        f"exit {0 if run_output.get('ok') else 2}\n")
+        tool.chmod(0o755)
+        return mock.patch.dict(os.environ, {"MNEMA_AGENT_DEV": str(tool), "MNEMA_CHECK_RUNNER": "agent-dev"})
+
+    def test_a_busy_lock_is_reported_as_blocked_not_failed(self):
+        with self.fake_agent_dev({"ok": False, "error": "resource_busy"}):
+            record, _ = self.run_full()
+        self.assertEqual(record["checks"][0]["status"], "blocked")
+        self.assertEqual(len(record["checks"]), 1)                     # stops; nothing later is claimed
+
+    def test_agent_dev_runs_need_a_fresh_receipt_for_every_check(self):
+        with self.fake_agent_dev({"ok": True, "receipt": "/r.json", "log": "/l"}):
+            self.run_full()
+            self.assertEqual(CHECKS.verify(self.sha), [])
+        with self.fake_agent_dev({"ok": True, "receipt": "/r.json"}, verify_exit=3):
+            self.assertIn("edit: its receipt is stale or failed", CHECKS.verify(self.sha))
+        with mock.patch.dict(os.environ, {"MNEMA_CHECK_RUNNER": "direct"}):
+            self.assertIn("the run used agent-dev, which is not available to re-verify its receipts",
+                          CHECKS.verify(self.sha))
+        with self.fake_agent_dev({"ok": True}):
+            self.run_full()
+            self.assertIn("read has no receipt", CHECKS.verify(self.sha))
 
     def test_evidence_belongs_to_one_candidate(self):
         self.run_full()
