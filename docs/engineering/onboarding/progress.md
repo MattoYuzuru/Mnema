@@ -22,7 +22,7 @@ artifact:
 | Поле | Значение |
 |---|---|
 | Пакет документов | `docs/engineering/onboarding/` (в main) |
-| Ветка реализации | `feat/517-onboarding` (worktree `/Users/yuzuru/Projects/Mnema-wt-onboarding`), draft PR [MattoYuzuru/Mnema#554](https://github.com/MattoYuzuru/Mnema/pull/554); задачи OB-001/002/003/202 на доске — In review |
+| Ветка реализации | `feat/517-onboarding` влита в main squash-коммитом 1e4f764e (MattoYuzuru/Mnema#554, 2026-10-17), за выключенными флагами; E3/E4 — новой веткой от main |
 | База ветки | `origin/main` 42e35d0f (S0), в S1 влит `origin/main` b6f14df8 (a29b7301, 2026-10-16) |
 | Последний handoff | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) (ветка не запушена: PR #554 показывает только S0) |
 
@@ -30,18 +30,18 @@ artifact:
 
 | ID | Статус | Commit | Evidence / handoff | Заметки |
 |---|---|---|---|---|
-| OB-001 | local complete, delivery pending | 0801bcb7, 386bc99f | `design/prototype/onboarding/`, [тексты](../evidence/onboarding/ob-prep/texts-for-approval.md), [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) | Утверждено владельцем 2026-10-16; PR #554 |
+| OB-001 | merged | 0801bcb7, 386bc99f | `design/prototype/onboarding/`, [тексты](../evidence/onboarding/ob-prep/texts-for-approval.md), [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) | Утверждено владельцем 2026-10-16; PR #554 |
 | OB-002 | in progress | e8969264, 386bc99f | [раздел 1.7](../evidence/onboarding/ob-prep/ob-002-policy-draft.md) | Текст утверждён 2026-10-16; дата вступления — в PR включения флагов |
 | OB-003 | in progress | — | [сборка и проверка](../evidence/onboarding/ob-prep/deck-plans.md#сборка-базовых-колод-2026-10-1617); MnemaDeckStudio `runs/base-*` | 2026-10-17: 8 новых колод собраны, ревью PASSED, опубликованы PRIVATE в production и проверены; вместе с 2 английскими — 10. Осталось AC 2 (local stack и ветка «Найти готовую») |
-| OB-101 | local complete, delivery pending | 4d824cc5, 9b2b69c5, a0d2bf3b, 70d6b537 | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), `contracts/onboarding/` | V72; флаги prod off |
-| OB-102 | local complete, delivery pending | 213d67c6, e034d361, 335e59bf | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) | Открыты AC: VoiceOver smoke, resize/scroll в браузере |
-| OB-103 | local complete, delivery pending | e5f30a26, e034d361, 062ed44b, 748043a2 | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), [harness](../evidence/onboarding/ob-e1/onboarding-results.json) | |
-| OB-104 | local complete, delivery pending | e5f30a26, e034d361, 335e59bf, 062ed44b | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), [harness](../evidence/onboarding/ob-e1/onboarding-results.json) | e2e в одноразовом harness, не на retained stack; «Сообщество» до открытия занятия; 2 строки на утверждение |
-| OB-105 | local complete, delivery pending | 9b2b69c5, 420d43cb, a0d2bf3b, 77294b3a | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) | Holdout server-only; production после OB-002 |
-| OB-201 | local complete, delivery pending | 89dcc666, 9fe582df, 482de3df | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | V73; purge — #409; L4 (LINK) на решение владельца |
-| OB-202 | local complete, delivery pending | студия вне git; ea723063, c9eb70c5 | [runbook](../evidence/onboarding/ob-e2/sample-template-runbook.md), [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | Шаблон на local stack (deck d59520c8-…, LINK); production — отдельное поручение |
-| OB-203 | local complete, delivery pending | 691d1919, 96c15aaf, 729e6fd4 | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md), [снимки](../evidence/onboarding/ob-e2/) | «ИИ-бюджет» не показывает бесплатные проверки |
-| OB-204 | local complete, delivery pending | 3ecff102 (gate) | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | |
+| OB-101 | merged | 4d824cc5, 9b2b69c5, a0d2bf3b, 70d6b537 | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), `contracts/onboarding/` | V72; флаги prod off |
+| OB-102 | merged | 213d67c6, e034d361, 335e59bf | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) | Открыты AC: VoiceOver smoke, resize/scroll в браузере |
+| OB-103 | merged | e5f30a26, e034d361, 062ed44b, 748043a2 | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), [harness](../evidence/onboarding/ob-e1/onboarding-results.json) | |
+| OB-104 | merged | e5f30a26, e034d361, 335e59bf, 062ed44b | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), [harness](../evidence/onboarding/ob-e1/onboarding-results.json) | e2e в одноразовом harness, не на retained stack; «Сообщество» до открытия занятия; 2 строки на утверждение |
+| OB-105 | merged | 9b2b69c5, 420d43cb, a0d2bf3b, 77294b3a | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) | Holdout server-only; production после OB-002 |
+| OB-201 | merged | 89dcc666, 9fe582df, 482de3df | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | V73; purge — #409; L4 (LINK) на решение владельца |
+| OB-202 | merged (шаблон только на local stack) | студия вне git; ea723063, c9eb70c5 | [runbook](../evidence/onboarding/ob-e2/sample-template-runbook.md), [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | Шаблон на local stack (deck d59520c8-…, LINK); production — отдельное поручение |
+| OB-203 | merged | 691d1919, 96c15aaf, 729e6fd4 | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md), [снимки](../evidence/onboarding/ob-e2/) | «ИИ-бюджет» не показывает бесплатные проверки |
+| OB-204 | merged | 3ecff102 (gate) | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | |
 | OB-301 | not started | — | — | |
 | OB-302 | not started | — | — | |
 | OB-303 | not started | — | — | |
