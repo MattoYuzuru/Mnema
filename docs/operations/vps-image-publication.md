@@ -9,10 +9,12 @@ changes the production runtime, and on a manual dispatch of **Main CI**
 ## Source and images
 
 The `release-scope` job compares the pushed commit with the newest successful Main CI `prod`
-GitHub Deployment and publishes only when `backend/`, `frontend/` (outside `*.md`),
-`contracts/`, `deploy/production/` (outside `*.md`), `security/` or the release
-workflow/scripts changed (`scripts/release_scope.py`); a manual dispatch always
-publishes, and an unknown baseline publishes. Both quality jobs run on the same
+GitHub Deployment and publishes only when a runtime input under `backend/`, `frontend/`,
+`contracts/`, `deploy/production/`, `security/` or the release workflow/scripts changed
+(`scripts/release_scope.py`; tests and unpackaged Markdown are not runtime inputs, see
+[production delivery](production-delivery.md)); a manual dispatch always
+publishes, and an unknown baseline publishes. Pull requests already build every release Dockerfile
+from its real context and apply the same HIGH/CRITICAL rule to the unpublished image (`release-images`). Both quality jobs run on the same
 revision before any image build. Assembly checks that the revision is still current
 remote main; a newer main requires its own run rather than deploying an older
 candidate.

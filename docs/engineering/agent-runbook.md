@@ -45,28 +45,43 @@ problem, never permission to accept skipped tests.
 
 ## Quality gate (what CI-equivalent means)
 
+[`scripts/checks.py`](../../scripts/checks.py) is the single catalogue of checks: each entry states its
+guarantee, local commands, owning paths and the hosted job lines that repeat it.
+`scripts/tests/test_verify_checks.py` fails when a quality job in either workflow runs a line no entry owns,
+or lacks one an entry declares, and when a `scripts/tests` suite is run by no job.
+
 ```bash
-# From the repository root after the per-shell setup above:
-(cd backend && ./gradlew clean quality)          # compile, tests, JaCoCo, coverage-baseline.json floors
-(cd frontend && npm ci && npm run lint && npm run test && npm run build) # Vitest/jsdom: no browser needed
-python3 scripts/verify_docs.py                 # links, anchors, doc statuses
-docker build --tag mnema-vps-postgres-fixture:verified deploy/production
-python3 -m unittest discover -s scripts/tests -p 'test_*.py' # includes Docker-backed restore/search fixtures
+# From the repository root after the per-shell setup above, on a committed candidate:
+python3 scripts/checks.py plan                    # full plan, local+hosted placement of every check
+python3 scripts/checks.py plan --affected         # checks owning the paths changed since origin/main
+python3 scripts/checks.py run                     # the full gate on HEAD
+python3 scripts/checks.py verify                  # before push: the record matches the unchanged commit
+python3 scripts/checks.py clean                   # remove that candidate's validation worktree
+python3 scripts/checks.py drift                   # catalogue vs hosted jobs, without running anything
 ```
+
+`run` resolves the candidate commit (`--candidate REV`, default `HEAD`), creates a detached worktree of it
+under `~/.local/state/agent-dev/mnema-candidates/` (`MNEMA_CANDIDATE_DIR`) and runs the checks there in order,
+stopping at the first failure. Uncommitted edits are not part of a candidate, and edits by you or another
+session in the working checkout cannot change it, so a long backend run is not lost to a concurrent edit.
+Each command goes through `agent-dev run` with the shared `heavy` lock, JDK 25 / Node 24 selection, the
+Docker endpoint and a per-check timeout, so its receipt is source-bound to the validation worktree; without
+`agent-dev` (or with `MNEMA_CHECK_RUNNER=direct`) commands run directly. The run record
+(`<sha12>.json`, next to the worktree) binds commit, tree and plan digest. `verify` rejects a missing or
+partial (`--affected`) plan, a failed or incomplete run, a changed validation worktree and any stale receipt;
+the fix is a new run, never a reused result. A fresh worktree means a fresh `npm ci` and Gradle build
+directory; the shared npm/Gradle caches still apply.
+
+`--affected` selects checks by owned paths with both sides of renames and deletions; an unknown path, a
+missing merge base or an empty change set selects the full plan. It is for feedback during work only: the
+final gate is always the full plan. `release-images` is hosted only (it needs a fresh Trivy database) and
+runs in PR Quality; Main CI repeats the scan on the exact release digests.
 
 `quality` has no separate backend lint/static-analysis task today (compile + tests +
-coverage). Java compilation is the configured static check (`-Xlint:all -Werror`). CI additionally runs `scripts/verify_github_actions_pins.py`,
-`verify_security_automation_policy.py`, `verify_artifact_security_policy.py`,
-`verify_production_image_pins.py`, the maintained `scripts/test-*.sh` contracts and the
-real cross-service checks; the authoritative lists are the `frontend-checks`,
-`frontend-tests`, `backend-tests`, `backend-security` and `backend-runtime` jobs in
-[`.github/workflows/pull-request.yaml`](../../.github/workflows/pull-request.yaml).
-Cross-service security/cancellation harness (needs built boot jars):
-
-```bash
-./backend/gradlew -p backend :services:identity-account:bootJar :services:learning:bootJar
-python3 scripts/learning-security/run.py
-```
+coverage). Java compilation is the configured static check (`-Xlint:all -Werror`).
+Hosted CI keeps its parallel topology (eight backend shards, security, runtime, frontend checks/tests and
+the release-image matrix); locally `backend-quality` runs the same discovery, tests and floors as
+`./gradlew clean quality`.
 
 ### Test throughput and resource envelope
 

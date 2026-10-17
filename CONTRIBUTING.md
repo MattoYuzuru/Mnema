@@ -42,10 +42,10 @@ code-PR, патчи и иные производные работы времен
 Перед отправкой PR выполните:
 
 ```bash
-# Из корня репозитория после настройки toolchain:
-(cd backend && ./gradlew clean quality)
-(cd frontend && npm ci && npm run lint && npm run test && npm run build)
-python3 scripts/verify_docs.py
+# Из корня репозитория после настройки toolchain, на закоммиченном HEAD:
+python3 scripts/checks.py plan     # что и почему будет проверено
+python3 scripts/checks.py run      # полный gate в отдельном worktree этого коммита
+python3 scripts/checks.py verify   # перед push: результат относится к неизменённому коммиту
 ```
 
 Для документации проверьте также `git diff --check`. Полный CI-equivalent gate и
