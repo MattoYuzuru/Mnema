@@ -65,6 +65,21 @@ class OnboardingDisabledHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void withTheFlagOffTheSampleDeckCommandIs409BeforeItsBodyIsReadAndCopiesNothing() {
+        UUID account = UUID.randomUUID();
+        for (String body : new String[] {CONTRACT.path("commands").path("sampleDeck").toString(), "{}", "[]", "not json"}) {
+            HttpResponse<String> response = HttpIdentityFixture.send(port, "POST", "/onboarding/sample-deck", HttpIdentityFixture.reader(account), body, Map.of());
+            assertThat(response.statusCode()).as(body + " " + response.body()).isEqualTo(409);
+            JsonNode expected = CONTRACT.path("problems").path("unavailable");
+            JsonNode actual = JSON.readTree(response.body());
+            for (String member : new String[] {"type", "title", "detail", "code"}) assertThat(actual.path(member)).isEqualTo(expected.path(member));
+            assertThat(actual.path("instance").stringValue()).isEqualTo("/api/onboarding/sample-deck");
+        }
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck WHERE owner_id=:a").param("a", account).query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.command_receipt WHERE actor_id=:a").param("a", account).query(Long.class).single()).isZero();
+    }
+
+    @Test
     void theOwnerCanStillReadTheReportAfterARollback() {
         HttpResponse<String> response = HttpIdentityFixture.send(port, "GET", "/admin/onboarding/experiment?from=2024-01-01&to=2024-01-08",
                 HttpIdentityFixture.adminToken(CONSOLE), null, Map.of());

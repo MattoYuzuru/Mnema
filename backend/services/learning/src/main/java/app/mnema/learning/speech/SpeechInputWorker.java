@@ -6,6 +6,7 @@ import app.mnema.learning.ai.AiResult;
 import app.mnema.learning.ai.OpaqueUserKey;
 import app.mnema.learning.ai.Transcription;
 import app.mnema.learning.ai.UserKeys;
+import app.mnema.learning.onboarding.SampleChecks;
 import app.mnema.learning.platform.wake.WakeTarget;
 import app.mnema.learning.speech.SpeechInputRepository.Claim;
 import app.mnema.learning.usage.Bucket;
@@ -53,7 +54,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * {@code 409 USAGE_LIMIT_REACHED} of admission) instead of being delivered uncounted.
  *
  * <p>Settlement: the audio is deleted with the transition to DONE or FAILED, in the same transaction; DONE also counts the metered seconds in the STT
- * bucket ({@link UsageLedger#consume}); a failed input is not counted. A late settlement (the learner deleted the input meanwhile, or the sweeper failed
+ * bucket ({@link UsageLedger#consume}) unless it is the transcript of a spoken answer in the onboarding sample deck and the account still has a free check
+ * ({@link SampleChecks}, OB-203); a failed input is not counted. A late settlement (the learner deleted the input meanwhile, or the sweeper failed
  * it) changes nothing: it is fenced by the claim token.
  */
 @Component
@@ -70,6 +72,7 @@ class SpeechInputWorker implements DisposableBean, WakeTarget {
     private final Transcription transcription;
     private final UserKeys userKeys;
     private final UsageLedger ledger;
+    private final SampleChecks sampleChecks;
     private final MeterRegistry meters;
     private final TransactionTemplate transaction;
     private final Semaphore permits;
@@ -79,13 +82,14 @@ class SpeechInputWorker implements DisposableBean, WakeTarget {
     private volatile boolean stopping;
 
     SpeechInputWorker(SpeechInputRepository repository, SpeechHints hints, SpeechConsents consents, Transcription transcription, UserKeys userKeys, UsageLedger ledger,
-                      AiProperties ai, MeterRegistry meters, PlatformTransactionManager transactions) {
+                      SampleChecks sampleChecks, AiProperties ai, MeterRegistry meters, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.hints = hints;
         this.consents = consents;
         this.transcription = transcription;
         this.userKeys = userKeys;
         this.ledger = ledger;
+        this.sampleChecks = sampleChecks;
         this.meters = meters;
         this.transaction = new TransactionTemplate(transactions);
         this.transaction.setTimeout(10);
@@ -222,7 +226,10 @@ class SpeechInputWorker implements DisposableBean, WakeTarget {
         try {
             written = Boolean.TRUE.equals(transaction.execute(status -> {
                 if (!repository.done(claim, transcript.text(), seconds, transcript.lang(), transcript.garbled())) return false;
-                ledger.consume(claim.ownerId(), Bucket.STT, seconds, "stt:" + claim.ownerId() + ":" + claim.id(), claim.id().toString());
+                // the transcript of a spoken answer in the onboarding sample deck is one of the account's free checks (OB-203); every other transcript, and one past them, is metered
+                boolean free = claim.purpose() == Transcription.Purpose.STUDY_ANSWER && claim.deckId() != null
+                        && sampleChecks.consume(claim.ownerId(), claim.deckId(), "sample-check:stt:" + claim.id(), claim.id().toString());
+                if (!free) ledger.consume(claim.ownerId(), Bucket.STT, seconds, "stt:" + claim.ownerId() + ":" + claim.id(), claim.id().toString());
                 return true;
             }));
         } catch (UsageLimitReachedException | UsageContentionException overshoot) {

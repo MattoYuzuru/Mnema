@@ -5,6 +5,7 @@ import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredExcept
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.promo.PromoBodies;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 
 import java.io.InputStream;
 import java.util.Set;
@@ -22,6 +23,9 @@ final class OnboardingCommands {
     /** A preferences command: a field that is absent is untouched, one that is {@code null} in the body is cleared ({@code setX} with a null value). */
     record Preferences(UUID commandId, long rowVersion, boolean setExperience, OnboardingRepository.Experience experience,
                        boolean setWeeklyTarget, Integer weeklyTarget, JsonNode envelope) { }
+
+    /** The sample deck command: the command id and nothing else. */
+    record SampleDeck(UUID commandId, JsonNode envelope) { }
 
     private static final Set<String> JOURNEY_FIELDS = Set.of("commandId", "rowVersion", "action", "branch", "stepKey");
     private static final Set<String> PREFERENCE_FIELDS = Set.of("commandId", "rowVersion", "experience", "weeklyTarget");
@@ -56,6 +60,12 @@ final class OnboardingCommands {
         Integer weeklyTarget = PromoBodies.integer(body, "weeklyTarget");
         if (weeklyTarget != null && (weeklyTarget < 1 || weeklyTarget > 7)) throw new InvalidRequestException();
         return new Preferences(commandId, requireVersion(rowVersion), setExperience, experience, setWeeklyTarget, weeklyTarget, body);
+    }
+
+    static SampleDeck sampleDeck(InputStream input) {
+        JsonNode body = PromoBodies.object(input, Set.of("commandId"), Set.of("commandId"));
+        // The identity of the command is the actor and the type the receipt binds; the body has no other member, so the envelope is empty.
+        return new SampleDeck(commandId(body), JsonNodeFactory.instance.objectNode());
     }
 
     private static boolean allowed(JourneyAction.Presence presence, boolean present) {

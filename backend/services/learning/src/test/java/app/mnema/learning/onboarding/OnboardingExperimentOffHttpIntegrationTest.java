@@ -66,4 +66,21 @@ class OnboardingExperimentOffHttpIntegrationTest extends PostgresIntegrationTest
         }
         assertThat(JSON.readTree(report.body()).path("smallSample").booleanValue()).isTrue();
     }
+
+    @Test
+    void withTheSampleDeckSwitchOffTheCommandIs409TheViewSaysNotAvailableAndNothingIsCopied() {
+        UUID account = UUID.randomUUID();
+        HttpIdentityFixture.signals(account, false, true);
+        JsonNode sample = JSON.readTree(HttpIdentityFixture.send(port, "GET", "/onboarding", HttpIdentityFixture.reader(account), null, Map.of()).body()).path("sampleDeck");
+        assertThat(sample).isEqualTo(OnboardingFixture.CONTRACT.path("views").path("offered").path("sampleDeck"));
+
+        for (String body : new String[] {OnboardingFixture.CONTRACT.path("commands").path("sampleDeck").toString(), "{}", "not json"}) {
+            HttpResponse<String> response = HttpIdentityFixture.send(port, "POST", "/onboarding/sample-deck", HttpIdentityFixture.reader(account), body, Map.of());
+            assertThat(response.statusCode()).as(response.body()).isEqualTo(409);
+            JsonNode expected = OnboardingFixture.CONTRACT.path("problems").path("sampleUnavailable");
+            JsonNode actual = JSON.readTree(response.body());
+            for (String member : new String[] {"type", "title", "detail", "status", "instance", "code"}) assertThat(actual.path(member)).as(member).isEqualTo(expected.path(member));
+        }
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck WHERE owner_id=:a").param("a", account).query(Long.class).single()).isZero();
+    }
 }

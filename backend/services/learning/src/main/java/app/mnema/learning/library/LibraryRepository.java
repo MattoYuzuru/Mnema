@@ -83,6 +83,20 @@ class LibraryRepository {
                 """).param("deck", deck).query(DECK_ROW).optional();
     }
 
+    /** The purpose of a deck, deleted or not; empty when there is no such deck. */
+    Optional<DeckPurpose> purposeOf(UUID deck) {
+        return jdbc.sql("SELECT purpose FROM app_learning.deck WHERE deck_id = :deck").param("deck", deck)
+                .query((row, ignored) -> DeckPurpose.valueOf(row.getString("purpose"))).optional();
+    }
+
+    /** The purpose of the live deck behind a public code (one unique-index probe, then the deck key); empty when the code opens no deck. */
+    Optional<DeckPurpose> purposeOfCode(String code) {
+        return jdbc.sql("""
+                SELECT d.purpose FROM app_learning.deck_publication p JOIN app_learning.deck d ON d.deck_id = p.deck_id AND d.deleted_at IS NULL
+                 WHERE p.public_code = :code
+                """).param("code", code).query((row, ignored) -> DeckPurpose.valueOf(row.getString("purpose"))).optional();
+    }
+
     boolean hasGrant(UUID deck, UUID account) {
         return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.deck_access_grant WHERE deck_id = :deck AND grantee_id = :account)")
                 .param("deck", deck).param("account", account).query(Boolean.class).single();

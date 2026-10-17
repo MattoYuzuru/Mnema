@@ -57,9 +57,9 @@ class OnboardingRepository {
                 .optional();
     }
 
-    /** Whether the account owns a deck that is not deleted. */
+    /** Whether the account owns a deck of its own that is not deleted. Its onboarding sample deck (OB-201) is made by the tour, not by the account: it does not count. */
     boolean hasLiveDeck(UUID account) {
-        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.deck WHERE owner_id=:account AND deleted_at IS NULL)")
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.deck WHERE owner_id=:account AND deleted_at IS NULL AND purpose <> 'SAMPLE')")
                 .param("account", account).query(Boolean.class).single();
     }
 

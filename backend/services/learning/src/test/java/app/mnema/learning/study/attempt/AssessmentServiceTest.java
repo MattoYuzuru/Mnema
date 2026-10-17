@@ -62,7 +62,7 @@ class AssessmentServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AssessmentService(assessments, attempts, conclusion, capabilities, ledger,
+        service = new AssessmentService(assessments, attempts, conclusion, capabilities, ledger, mock(app.mnema.learning.onboarding.SampleChecks.class),
                 new AssessmentSettings(Duration.ofSeconds(20), Duration.ofSeconds(2), 16, "ru", 3), events,
                 mock(PlatformTransactionManager.class), meters);
         when(attempts.now()).thenReturn(NOW);

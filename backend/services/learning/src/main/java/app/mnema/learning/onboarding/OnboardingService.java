@@ -8,6 +8,7 @@ import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
+import app.mnema.learning.platform.security.IdentityClaims.AccountSignals;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -36,22 +37,27 @@ public class OnboardingService {
     /** @param replayed the answer was stored by an earlier execution of the same command */
     record Result(ObjectNode view, boolean replayed) { }
 
+    /** @param created this call made the copy (HTTP 201) @param replayed an earlier execution of the same command did */
+    record SampleResult(ObjectNode view, boolean created, boolean replayed) { }
+
     private final OnboardingRepository repository;
     private final OnboardingSettings settings;
     private final ExperimentAssignments assignments;
     private final ExperimentEvents experimentEvents;
     private final CommandReceiptService receipts;
     private final MeterRegistry meters;
+    private final SampleDeckService samples;
 
     @Autowired
     OnboardingService(OnboardingRepository repository, OnboardingSettings settings, ExperimentAssignments assignments, ExperimentEvents experimentEvents,
-                      CommandReceiptService receipts, MeterRegistry meters) {
+                      CommandReceiptService receipts, MeterRegistry meters, SampleDeckService samples) {
         this.repository = repository;
         this.settings = settings;
         this.assignments = assignments;
         this.experimentEvents = experimentEvents;
         this.receipts = receipts;
         this.meters = meters;
+        this.samples = samples;
     }
 
     /**
@@ -62,13 +68,43 @@ public class OnboardingService {
     @Transactional(timeout = 10)
     public ObjectNode read(UUID account, boolean newAccount) {
         UuidPolicy.requireEntityId(account, "account");
-        if (!settings.enabled()) return OnboardingView.disabled();
+        if (!settings.enabled()) return disabledView();
         Optional<OnboardingRepository.Row> row = repository.find(account);
         if (row.isEmpty() && newAccount) {
             Instant now = repository.now();
             if (settings.opens(now) && !repository.hasLiveDeck(account)) row = offer(account, now);
         }
-        return row.map(OnboardingView::of).orElseGet(OnboardingView::notOffered);
+        return view(account, row);
+    }
+
+    /** The view of a switched-off tour: no journey, no sample deck, and the free checks the configuration gives. Touches nothing. */
+    ObjectNode disabledView() {
+        return OnboardingView.disabled(samples.freeAiChecks());
+    }
+
+    private ObjectNode view(UUID account, Optional<OnboardingRepository.Row> row) {
+        SampleDeckState sample = samples.state(account);
+        return row.map(found -> OnboardingView.of(found, sample)).orElseGet(() -> OnboardingView.notOffered(sample));
+    }
+
+    /**
+     * The account's sample deck («Моя первая колода», OB-201): 201 with the new copy, 200 when the account has a live one (a repeat, a race, a second tab); idempotent by command
+     * id. It needs no journey row and creates none. The answer is the full view, read in the same transaction.
+     *
+     * @throws OnboardingUnavailableException the tour is turned off
+     * @throws SampleDeckUnavailableException the switch is off, or the template is not ready
+     */
+    @Transactional(timeout = 10)
+    SampleResult sampleDeck(UUID account, OnboardingCommands.SampleDeck command, AccountSignals signals) {
+        requireEnabled();
+        SampleDeckService.Created created = samples.create(account, command, signals);
+        return new SampleResult(view(account, repository.find(account)), created.created(), created.replayed());
+    }
+
+    /** Fails before the body is read when no sample deck can be made at all. */
+    void requireSampleDeck() {
+        requireEnabled();
+        samples.requireConfigured();
     }
 
     /** Applies a tour command. @throws OnboardingUnavailableException the tour is turned off */
@@ -184,7 +220,7 @@ public class OnboardingService {
                     replay ? Math.min(row.replayCount() + 1, MAX_REPLAYS) : row.replayCount(), row.rowVersion());
             if (!repository.update(account, next, command.rowVersion(), now)) throw new VersionConflictException();
         }
-        return OnboardingView.of(repository.find(account).orElseThrow());
+        return OnboardingView.of(repository.find(account).orElseThrow(), samples.state(account));
     }
 
     private ObjectNode applyPreferences(UUID account, OnboardingCommands.Preferences command) {
@@ -198,6 +234,6 @@ public class OnboardingService {
                 command.setWeeklyTarget() ? command.weeklyTarget() : row.weeklyTarget(), row.offeredAt(), row.finishedAt(), row.replayCount(),
                 row.rowVersion());
         if (!repository.update(account, next, command.rowVersion(), repository.now())) throw new VersionConflictException();
-        return OnboardingView.of(repository.find(account).orElseThrow());
+        return OnboardingView.of(repository.find(account).orElseThrow(), samples.state(account));
     }
 }

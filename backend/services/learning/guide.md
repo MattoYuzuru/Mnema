@@ -2719,3 +2719,68 @@ and `PUT /api/onboarding/preferences` follow the blanket scope rule (`learning.r
   (`command_receipt_onboarding_actor`); see `OnboardingRepository`.
 - **Tests.** `OnboardingContractTest` (fixture equality, strict parser), `OnboardingCohortTest` (cohort and the after-commit exposure), `OnboardingExperimentOffHttpIntegrationTest` (experiment off: `UNASSIGNED`, empty report groups), `OnboardingHttpIntegrationTest` (real servlet stack and PostgreSQL: eligibility, concurrent first
   reads, the whole table, idempotency, CAS races, ETag, report), `OnboardingDisabledHttpIntegrationTest` (flag off).
+
+## Onboarding sample deck and free AI checks (OB-201, OB-203 backend; migration `V73__deck_purpose.sql`)
+
+«Моя первая колода»: a private copy of an editorial template that cannot be shared and does not feed the community, plus AI answer checks the account gets for free in it. Wire
+contract: [`contracts/onboarding`](../../../contracts/onboarding/README.md) (`POST /api/onboarding/sample-deck`, `sampleDeck` of the view, `constants.sampleDeck`), decision
+[ADR-ONB-003](../../../docs/engineering/onboarding/adr/adr-onb-003-sample-deck.md). Packages `app.mnema.learning.onboarding`, `library` (`DeckPurposeGuard`), `fork`
+(`ForkService.copyTemplate`), `usage` (`SponsoredOperation`).
+
+- **Settings (`SampleDeckSettings`).** `learning.onboarding.sample-deck.enabled` (variable `LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED`, default `false`; the local stack turns it on),
+  `learning.onboarding.sample-deck.template-id` (variable `LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID`, a UUID or empty; anything else stops startup) and
+  `learning.onboarding.sample-deck.free-ai-checks` (default 3, 0-10, 0 switches the sponsorship off). Off or no template: `POST` is `409 SAMPLE_DECK_UNAVAILABLE` (checked
+  before the body is read, after `ONBOARDING_UNAVAILABLE`) and the view says `available=false`; a copy the account already has keeps working. Creation does not need the community
+  switches (`learning.community.forks.enabled`, `public-routes.enabled`): the copy is a system path, not the public route.
+- **Schema.** `deck.purpose` (`USER` default, `SAMPLE_TEMPLATE`, `SAMPLE`; CHECK), partial unique index `deck_one_live_sample (owner_id) WHERE purpose='SAMPLE' AND deleted_at IS NULL`,
+  and the partial index `usage_ledger_sample_check (owner_id) WHERE operation='ONBOARDING_SAMPLE_CHECK'`. `ADD COLUMN ... DEFAULT 'USER'` is metadata-only on PostgreSQL 18; the CHECK and
+  the index each read the table once under the migration's lock (`SET LOCAL lock_timeout = '5s'`). `deck_head_guard` (V3, V17) is replaced in V73: purpose stays immutable, with the one
+  exception of the `USER -> SAMPLE_TEMPLATE` mark of a live deck whose other columns do not change; `SAMPLE` exists only by insert (the copy). Rollback is the switch; the column stays.
+- **The template and its marking.** The editorial account builds the deck with the ordinary authoring API and publishes it at **`LINK`** (the only level a copy reads updates through
+  without a grant: `ForkReadModel` resolves the source by the code the copy stored; the catalogue lists only `PUBLIC`, so `LINK` keeps it out of the catalogue and the search). The
+  operator puts its id into `template-id`; when the application is ready (`SampleTemplateMarker`, every runtime role, idempotent, a database failure never stops startup) one
+  statement sets `purpose='SAMPLE_TEMPLATE'` if the deck exists, is not deleted and is still `USER` (the owner's `row_version` does not move). A missing, deleted, unpublished or non-`LINK`
+  template is logged with the id (configuration, not personal data) and stays unavailable; a deck already marked or a `SAMPLE` copy is never re-marked. A deck created after startup is
+  marked by the next restart (the id is deploy configuration, so the deck exists at deploy). `available` in the view and the copy both require: marked, live, not hidden by moderation,
+  published revision, visibility `LINK` (`ForkRepository.template`, one statement for both). The id of an old template that is no longer configured keeps its purpose; unmark it by hand
+  if it must be an ordinary deck again.
+- **Create (`SampleDeckService`).** `POST /api/onboarding/sample-deck {commandId}` (strict JSON, 400 otherwise; `learning.write`). One transaction (`OnboardingService.sampleDeck`): the receipt
+  (scope `onboarding`, type `sample-deck.create`, stores `{deckId, created}`; a repeat answers the stored status, `Idempotency-Replayed: true`, with the account's CURRENT view; the same
+  `commandId` from another account is `409 IDEMPOTENCY_CONFLICT`), the account's advisory lock (`sample-deck:{account}`), the live `SAMPLE` deck if there is one (200), else
+  `ForkService.copyTemplate` (201). `copyTemplate` is `ForkService.create` without the guest access decision: the same `write` (limits of the account's window and caps, storage pins, revision 0,
+  `deck_fork`, job `deck.copy.materialize`), the template's publication row locked `FOR SHARE`, the deck inserted with `purpose='SAMPLE'`. The editorial account that owns the template gets a
+  copy too (no `FORK_OWN_DECK` on the system path). Parallel requests of one account end with one live deck and the losers answer the winner's (200); `deck_one_live_sample` is the net.
+  A template that is not ready rolls the transaction back (no receipt) so a repeat after the operator fixed it works. A copy deleted by its owner is replaced by a new one on the next request.
+  The response is the full onboarding view read in the same transaction; no journey row is needed or created. Metric `mnema_onboarding_sample_deck_total{outcome=created|existing}`.
+- **View.** `sampleDeck` = `{available, deckId, updateAvailable, freeChecksLeft}` (`SampleDeckState`, in every view including the command answers; the strong `ETag` hashes it, so it
+  changes with it). `deckId` is the account's live `SAMPLE` deck (one probe of the partial index); `updateAvailable` is `fork.updateAvailable` of that deck's own read (`DeckService.read`, the
+  CD-5 read model, nothing recomputed); `freeChecksLeft` = `free-ai-checks` minus the account's `ONBOARDING_SAMPLE_CHECK` ledger entries, floor 0. A disabled tour answers the view without a
+  database read, `freeChecksLeft` being the configured number. Cost of `GET`: the existing journey probe plus three indexed probes (live sample deck, template readiness only when the switch is
+  on, ledger count) and, when the account has a copy, one deck read.
+- **Sharing bans (`DeckPurposeGuard`, `409 SAMPLE_DECK_NOT_SHAREABLE`).** One class decides; every command that WIDENS who can read or take a deck calls it after its ownership check (a stranger
+  still gets the opaque 404): `PublicationService.saveOnce` (a `SAMPLE` deck: every command; the template: only `visibility = LINK`, so its owner publishes new revisions and nothing else, which
+  is how an update reaches the copies), `DeckPublications.change/grant`, `InviteService.create`, `GrantService.grantByLogin`, `AccessRequestService.approve` and `send` (the latter by public code),
+  and `ForkService.copy` (the ordinary copy by code, after the access decision, so the template's owner still gets `FORK_OWN_DECK`). `InviteService.redeem` of a token of such a deck is the one
+  404 of every token that opens nothing. Narrowing commands (revoke, reject, withdraw, delete) stay open. `SharingInventoryIntegrationTest` lists every mutating route of the `library` and `fork`
+  packages from the live handler mapping and fails for one that is not classified, then runs each widening command against a sample copy and the template: a new sharing path cannot skip the guard.
+- **Exclusions (one condition each, all on `deck.purpose = 'USER'` of the SOURCE).** `DeckEngagement.forked/studied` (the two statements), `CatalogOutbox.publicationChanged` (no outbox row, no
+  projection job), `CatalogEvents.source` (every catalogue event: FORK, STUDY_START, DROP) and `InterestRepository.copyTopics` (the copy itself must be `USER`). The template is `LINK`, so it is
+  never in `public_deck`; the guards also hold for the worst case of a deck that the catalogue listed before it became the template (`SampleDeckExclusionsIntegrationTest`). Author milestones do not
+  exist yet (OB-E3): TODO(OB-E3 `MilestoneRecorder`): a sample deck and the template must not count as authoring (`purpose = 'USER'` in the one recorder), and `FIRST_DECK` is recorded by
+  `SampleDeckService.make` in the same transaction as the copy.
+- **Media (CD-6).** The copy is an ordinary copy: the owner reads the derived variants of the assets its heads reference through the lineage (`MediaCatalog.playback`, grant `COPY`), nothing about
+  the community switches (`SampleDeckHttpIntegrationTest.theTemplatesMediaIsReadableByTheCopyAndByNobodyElse`).
+- **Free AI checks (OB-203; `SampleChecks`, `UsageLedger.consumeSponsored`, `SponsoredOperation`).** An AI check is an `ai-semantic` grade (`AssessmentService`) or the transcript of a spoken study
+  answer (`SpeechInputService`/`SpeechInputWorker`, `purpose=STUDY_ANSWER` with `deckId` of the sample deck). The first `free-ai-checks` DELIVERED checks of the ACCOUNT in its live `SAMPLE` deck
+  do not consume the plan's buckets: a ledger `DEBIT` of 0 credits with `operation='ONBOARDING_SAMPLE_CHECK'` (no bucket, no counter; key `sample-check:assessment:{attemptId}` /
+  `sample-check:stt:{inputId}`; the `operation` is the row of the owner console report's `usage.features`) in the transaction that stores the grade or the transcript, exactly where the paid
+  `ledger.consume` was. The early admission (`covers`, a read) replaces `fairUseFits`/`requireFairUse` while a free check is left; the count is serialized per account by an advisory lock, so
+  parallel checks cannot exceed the limit, and a key repeats harmlessly. When the count is used up (or the deck is not the account's live sample deck) the ordinary path runs unchanged: the same
+  early refusal, the same `consume`, the same fall-back to self-check. A spoken answer is two checks (its transcript and its grade): nothing links a transcript to an attempt. Failed, uncertain,
+  self-checked and late checks cost nothing, free or paid. Count is per account for ever: deleting the copy and making another gives no more. `GET /api/usage` is unchanged (it describes the plan's
+  bars, which a free check does not touch); the free checks left are `sampleDeck.freeChecksLeft`.
+- **Purge.** TODO(#409; owner: Learning's account-purge epic): the sample deck is an ordinary deck of the account and goes with the others; delete the account's ledger entries with operation
+  `ONBOARDING_SAMPLE_CHECK` with the rest of the ledger and its receipts of scope `onboarding` (type `sample-deck.create`, `command_receipt_onboarding_actor`); see `SampleDeckRepository`.
+- **Tests.** `SampleDeckHttpIntegrationTest` (201/200, replay, parallel requests, deletion, not-ready template, marking, the head guard, update badge, media, ETag), `SharingInventoryIntegrationTest`,
+  `SampleDeckExclusionsIntegrationTest`, `DeckPurposeGuardIntegrationTest`, `SampleCheckAssessmentIntegrationTest` and the two sample tests of `SpeechInputIntegrationTest` (free checks), the flag-off
+  cases of `OnboardingDisabledHttpIntegrationTest` / `OnboardingExperimentOffHttpIntegrationTest`, `OnboardingContractTest` (fixture equality of the views, constants, command, settings).

@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,7 +24,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * The first-entry journey ({@code GET /api/onboarding}, {@code PUT /api/onboarding/journey}, {@code PUT /api/onboarding/preferences}; contract
+ * The first-entry journey ({@code GET /api/onboarding}, {@code PUT /api/onboarding/journey}, {@code PUT /api/onboarding/preferences}, {@code POST /api/onboarding/sample-deck}; contract
  * {@code contracts/onboarding/journey.json}). Reading needs {@code learning.read}, writing {@code learning.write}: the blanket rule of the security chain; the
  * owner is the token subject. Every answer is {@code private, no-store} and carries a strong {@code ETag}, the hash of the canonical JSON of the view, so the
  * tag changes exactly when the view does; a {@code GET} whose {@code If-None-Match} names it is a 304.
@@ -45,7 +46,7 @@ public final class OnboardingController {
         boolean newAccount = Boolean.TRUE.equals(IdentityClaims.signals(request).newAccount());
         UUID owner = PromoBodies.owner(identity);
         // The flag is checked here, before the transactional read: a switched-off tour must not cost a transaction or a query.
-        JsonNode view = service.enabled() ? service.read(owner, newAccount) : OnboardingView.disabled();
+        JsonNode view = service.enabled() ? service.read(owner, newAccount) : service.disabledView();
         String tag = etag(view);
         if (matches(request.getHeaders(HttpHeaders.IF_NONE_MATCH), tag)) {
             return ResponseEntity.status(HttpStatus.NOT_MODIFIED).headers(headers(tag)).build();
@@ -65,6 +66,17 @@ public final class OnboardingController {
         UUID owner = PromoBodies.owner(identity);
         service.requireEnabled();
         return answer(service.preferences(owner, OnboardingCommands.preferences(body)));
+    }
+
+    /** The sample deck: 201 with the new copy, 200 with the live one. A switched-off tour or sample deck is refused before the body is read. */
+    @PostMapping(value = "/sample-deck", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> sampleDeck(@AuthenticationPrincipal Jwt identity, InputStream body, HttpServletRequest request) {
+        UUID owner = PromoBodies.owner(identity);
+        service.requireSampleDeck();
+        OnboardingService.SampleResult result = service.sampleDeck(owner, OnboardingCommands.sampleDeck(body), IdentityClaims.signals(request));
+        var response = ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK).headers(headers(etag(result.view())));
+        if (result.replayed()) response.header("Idempotency-Replayed", "true");
+        return response.body(result.view());
     }
 
     private ResponseEntity<JsonNode> answer(OnboardingService.Result result) {

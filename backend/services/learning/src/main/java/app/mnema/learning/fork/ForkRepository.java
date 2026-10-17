@@ -3,6 +3,8 @@ package app.mnema.learning.fork;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+import app.mnema.learning.library.DeckPurpose;
+
 import java.util.Optional;
 import java.util.UUID;
 
@@ -89,11 +91,30 @@ class ForkRepository {
                 """).param("limit", limit).query(Integer.class).single();
     }
 
-    void insertDeck(UUID deck, UUID owner, UUID scope, UUID genesis) {
+    void insertDeck(UUID deck, UUID owner, UUID scope, UUID genesis, DeckPurpose purpose) {
         jdbc.sql("""
-                INSERT INTO app_learning.deck(deck_id, owner_id, reuse_scope_id, head_revision_id, row_version, created_at)
-                VALUES (:deck, :owner, :scope, :genesis, 0, statement_timestamp())
-                """).param("deck", deck).param("owner", owner).param("scope", scope).param("genesis", genesis).update();
+                INSERT INTO app_learning.deck(deck_id, owner_id, reuse_scope_id, head_revision_id, row_version, created_at, purpose)
+                VALUES (:deck, :owner, :scope, :genesis, 0, statement_timestamp(), :purpose)
+                """).param("deck", deck).param("owner", owner).param("scope", scope).param("genesis", genesis).param("purpose", purpose.name()).update();
+    }
+
+    /** The sample template as the system copy reads it: its lineage, public code and published revision. */
+    record Template(UUID deckId, UUID scopeId, String code, UUID publishedRevisionId) { }
+
+    /**
+     * The sample template when it is ready to be copied: a live deck marked {@code SAMPLE_TEMPLATE} that is not hidden by moderation, published at {@code LINK} with a published
+     * revision. One statement, so {@link #templateReady} and the copy agree. The publication row is locked {@code FOR SHARE} when {@code lock} is set (a republication or a level
+     * change waits for the copy's transaction, like the ordinary copy).
+     */
+    Optional<Template> template(UUID deck, boolean lock) {
+        return jdbc.sql("""
+                SELECT d.deck_id, d.reuse_scope_id, p.public_code, p.published_revision_id
+                  FROM app_learning.deck d JOIN app_learning.deck_publication p ON p.deck_id = d.deck_id
+                 WHERE d.deck_id = :deck AND d.deleted_at IS NULL AND d.purpose = 'SAMPLE_TEMPLATE'
+                   AND p.visibility = 'LINK' AND p.published_revision_id IS NOT NULL AND NOT p.hidden_by_moderation
+                """ + (lock ? " FOR SHARE OF p" : "")).param("deck", deck)
+                .query((row, ignored) -> new Template(row.getObject("deck_id", UUID.class), row.getObject("reuse_scope_id", UUID.class), row.getString("public_code"),
+                        row.getObject("published_revision_id", UUID.class))).optional();
     }
 
     void insertGenesis(UUID deck, UUID genesis, UUID scope, UUID owner, UUID command, Published source, UUID membersPin, UUID exercisesPin) {

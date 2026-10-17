@@ -31,6 +31,7 @@ class OnboardingCohortTest {
     private final OnboardingRepository repository = mock(OnboardingRepository.class);
     private final ExperimentAssignments assignments = mock(ExperimentAssignments.class);
     private final ExperimentEvents events = mock(ExperimentEvents.class);
+    private final SampleDeckService samples = mock(SampleDeckService.class);
     private OnboardingService service;
 
     @BeforeEach
@@ -38,8 +39,9 @@ class OnboardingCohortTest {
         when(repository.now()).thenReturn(NOW);
         when(repository.hasLiveDeck(account)).thenReturn(false);
         when(repository.insert(eq(account), any(), eq(NOW))).thenReturn(true);
+        when(samples.state(account)).thenReturn(SampleDeckState.unavailable(3));
         service = new OnboardingService(repository, new OnboardingSettings(true, "2026-10-16T00:00:00Z"), assignments, events, mock(CommandReceiptService.class),
-                new SimpleMeterRegistry());
+                new SimpleMeterRegistry(), samples);
     }
 
     private OnboardingRepository.Row created(OnboardingRepository.Cohort cohort) {

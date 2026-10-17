@@ -23,13 +23,14 @@ class OnboardingControllerDisabledTest {
     void aDisabledReadNeverReachesTheTransactionalService() {
         OnboardingService service = mock(OnboardingService.class);
         when(service.enabled()).thenReturn(false);
+        when(service.disabledView()).thenReturn(OnboardingView.disabled(3));
         OnboardingController controller = new OnboardingController(service, new CanonicalJsonHasher());
         Jwt identity = Jwt.withTokenValue("t").header("alg", "RS256").subject(UUID.randomUUID().toString()).build();
 
         ResponseEntity<JsonNode> response = controller.read(identity, new MockHttpServletRequest());
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody()).isEqualTo(OnboardingView.disabled());
+        assertThat(response.getBody()).isEqualTo(OnboardingFixture.CONTRACT.path("views").path("disabled"));
         verify(service, never()).read(any(), anyBoolean());
     }
 }

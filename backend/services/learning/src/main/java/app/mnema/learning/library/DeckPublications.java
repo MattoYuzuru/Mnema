@@ -34,6 +34,7 @@ public class DeckPublications {
     private static final int CODE_ATTEMPTS = 5;
 
     private final LibraryRepository repository;
+    private final DeckPurposeGuard purposes;
     private final TransactionTemplate transaction;
     private final SecureRandom random;
 
@@ -44,6 +45,7 @@ public class DeckPublications {
 
     DeckPublications(LibraryRepository repository, PlatformTransactionManager transactions, SecureRandom random) {
         this.repository = repository;
+        this.purposes = new DeckPurposeGuard(repository);
         this.random = random;
         this.transaction = new TransactionTemplate(transactions);
         this.transaction.setTimeout(10);
@@ -83,6 +85,7 @@ public class DeckPublications {
 
     private Optional<Publication> change(UUID owner, UUID deck, DeckVisibility level, long expected) {
         requireOwned(owner, deck);
+        purposes.requirePublication(deck, level);
         Optional<Publication> current = repository.lockPublication(deck);
         if (current.isEmpty()) {
             if (expected != UNPUBLISHED) throw new VersionConflictException();
@@ -103,6 +106,7 @@ public class DeckPublications {
         if (role != GrantRole.VIEWER || grantee.equals(owner)) throw new InvalidRequestException();
         transaction.executeWithoutResult(status -> {
             requireOwned(owner, deck);
+            purposes.requireShareable(deck);
             repository.grant(deck, grantee, role, owner);
         });
     }

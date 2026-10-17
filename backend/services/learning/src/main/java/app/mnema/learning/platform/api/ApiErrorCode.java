@@ -130,6 +130,16 @@ enum ApiErrorCode {
             "Journey transition not allowed",
             "The tour cannot take this action in its current state."
     ),
+    SAMPLE_DECK_UNAVAILABLE(
+            HttpStatus.CONFLICT,
+            "Sample deck unavailable",
+            "The sample deck is not available right now."
+    ),
+    SAMPLE_DECK_NOT_SHAREABLE(
+            HttpStatus.CONFLICT,
+            "Sample deck not shareable",
+            "A sample deck cannot be published, shared or copied."
+    ),
     ONBOARDING_UNAVAILABLE(
             HttpStatus.CONFLICT,
             "Onboarding unavailable",

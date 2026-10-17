@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static app.mnema.learning.onboarding.OnboardingFixture.CONTRACT;
 import static app.mnema.learning.onboarding.OnboardingFixture.bytes;
@@ -71,26 +72,86 @@ class OnboardingContractTest {
     @Test
     void theViewsAreTheFixtureViews() {
         JsonNode views = CONTRACT.path("views");
-        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.TOUR, JourneyState.OFFERED, null, null, null, null, 0))).isEqualTo(views.path("offered"));
-        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0))).isEqualTo(views.path("holdout"));
-        assertThat(OnboardingView.notOffered()).isEqualTo(views.path("notOffered"));
+        SampleDeckState none = SampleDeckState.unavailable(3);
+        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.TOUR, JourneyState.OFFERED, null, null, null, null, 0), none)).isEqualTo(views.path("offered"));
+        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0), none)).isEqualTo(views.path("holdout"));
+        assertThat(OnboardingView.notOffered(none)).isEqualTo(views.path("notOffered"));
         assertThat(OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.PAUSED, OnboardingRepository.Cohort.TOUR, JourneyBranch.OWN, "own.material",
-                OnboardingRepository.Experience.NEW, 3, OFFERED_AT, null, 0, 7))).isEqualTo(views.path("paused"));
-        assertThat(OnboardingView.disabled()).isEqualTo(views.path("disabled"));
+                OnboardingRepository.Experience.NEW, 3, OFFERED_AT, null, 0, 7), none)).isEqualTo(views.path("paused"));
+        assertThat(OnboardingView.disabled(3)).isEqualTo(views.path("disabled"));
+        // a sample deck that is ready, with its copy and two of the three free checks left
+        SampleDeckState ready = new SampleDeckState(true, UUID.fromString("33333333-3333-4333-8333-333333333333"), false, 2);
+        assertThat(OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.IN_PROGRESS, OnboardingRepository.Cohort.TOUR, JourneyBranch.SAMPLE, "sample.hub",
+                null, null, OFFERED_AT, null, 0, 6), ready)).isEqualTo(views.path("sampleReady"));
+    }
+
+    @Test
+    void theSampleDeckMemberCarriesEveryFieldOfTheFixtureAndTheUpdateFlag() {
+        JsonNode update = OnboardingView.notOffered(new SampleDeckState(true, UUID.randomUUID(), true, 0)).path("sampleDeck");
+        assertThat(members(update)).containsExactlyInAnyOrder("available", "deckId", "updateAvailable", "freeChecksLeft");
+        assertThat(update.path("updateAvailable").booleanValue()).isTrue();
+        assertThat(update.path("freeChecksLeft").intValue()).isZero();
+        // every view of the fixture has the same four members
+        CONTRACT.path("views").properties().forEach(view -> assertThat(members(view.getValue().path("sampleDeck"))).as(view.getKey())
+                .containsExactlyInAnyOrder("available", "deckId", "updateAvailable", "freeChecksLeft"));
+    }
+
+    @Test
+    void theSampleDeckConstantsAndCommandAreTheFixtureOnes() {
+        JsonNode sample = CONTRACT.path("constants").path("sampleDeck");
+        assertThat(sample.path("usageOperation").stringValue()).isEqualTo(app.mnema.learning.usage.SponsoredOperation.ONBOARDING_SAMPLE_CHECK.name());
+        assertThat(sample.path("freeAiChecks").intValue()).isEqualTo(3);
+        assertThat(new SampleDeckSettings(false, "", 3).freeAiChecks()).isEqualTo(sample.path("freeAiChecks").intValue());
+        OnboardingCommands.SampleDeck command = OnboardingCommands.sampleDeck(bytes(CONTRACT.path("commands").path("sampleDeck")));
+        assertThat(command.commandId()).hasToString(CONTRACT.path("commands").path("sampleDeck").path("commandId").stringValue());
+        assertThat(command.envelope().isEmpty()).isTrue();
+    }
+
+    @Test
+    void theSampleDeckCommandIsStrict() {
+        String id = "018f1d98-5c10-7abc-8abc-0123456789ab";
+        for (String json : new String[] {"{}", "{\"commandId\":\"" + id + "\",\"rowVersion\":\"0\"}", "{\"commandId\":\"" + id + "\",\"x\":1}",
+                "{\"commandId\":1}", "{\"commandId\":\"not-a-uuid\"}", "{\"commandId\":null}", "[]", "\"x\"", "{\"commandId\":\"" + id.toUpperCase(java.util.Locale.ROOT) + "x\"}"}) {
+            assertThatThrownBy(() -> OnboardingCommands.sampleDeck(new ByteArrayInputStream(json.getBytes(java.nio.charset.StandardCharsets.UTF_8)))).as(json)
+                    .isInstanceOf(InvalidRequestException.class);
+        }
+        for (MalformedJsonBodies.Body body : MalformedJsonBodies.all()) {
+            assertThatThrownBy(() -> OnboardingCommands.sampleDeck(new ByteArrayInputStream(body.bytes()))).as(body.name()).isInstanceOf(InvalidRequestException.class);
+        }
+    }
+
+    @Test
+    void theSampleDeckSettingsAreValidatedAtStartup() {
+        assertThat(new SampleDeckSettings(true, " 33333333-3333-4333-8333-333333333333 ", 0).templateId()).contains(UUID.fromString("33333333-3333-4333-8333-333333333333"));
+        assertThat(new SampleDeckSettings(true, "", 10).templateId()).isEmpty();
+        assertThat(new SampleDeckSettings(true, "", 10).configured()).isFalse();
+        assertThat(new SampleDeckSettings(false, "33333333-3333-4333-8333-333333333333", 3).configured()).isFalse();
+        assertThat(new SampleDeckSettings(true, "33333333-3333-4333-8333-333333333333", 3).configured()).isTrue();
+        for (String bad : new String[] {"nope", "33333333-3333-4333-8333", "00000000-0000-0000-0000-000000000000", "{33333333-3333-4333-8333-333333333333}"}) {
+            assertThatThrownBy(() -> new SampleDeckSettings(true, bad, 3)).as(bad).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("template-id");
+        }
+        assertThatThrownBy(() -> new SampleDeckSettings(true, "", -1)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("free-ai-checks");
+        assertThatThrownBy(() -> new SampleDeckSettings(true, "", 11)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("free-ai-checks");
+    }
+
+    private static List<String> members(JsonNode node) {
+        List<String> names = new ArrayList<>();
+        node.propertyNames().forEach(names::add);
+        return names;
     }
 
     @Test
     void anUnassignedAccountIsEligibleAndAutoOfferedButAHeldOutOneIsNot() {
-        JsonNode unassigned = OnboardingView.of(row(OnboardingRepository.Cohort.UNASSIGNED, JourneyState.OFFERED, null, null, null, null, 0)).path("journey");
+        JsonNode unassigned = OnboardingView.of(row(OnboardingRepository.Cohort.UNASSIGNED, JourneyState.OFFERED, null, null, null, null, 0), SampleDeckState.unavailable(3)).path("journey");
         assertThat(unassigned.path("eligible").booleanValue()).isTrue();
         assertThat(unassigned.path("autoOffer").booleanValue()).isTrue();
-        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0)).path("journey").path("autoOffer").booleanValue()).isFalse();
+        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0), SampleDeckState.unavailable(3)).path("journey").path("autoOffer").booleanValue()).isFalse();
     }
 
     @Test
     void aRowCreatedByReplayIsNotEligibleAndNeverAutoOffered() {
-        ObjectNode journey = (ObjectNode) OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.OFFERED, null, null, null, null, null, OFFERED_AT, null, 1, 0))
-                .path("journey");
+        ObjectNode journey = (ObjectNode) OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.OFFERED, null, null, null, null, null, OFFERED_AT, null, 1, 0),
+                SampleDeckState.unavailable(3)).path("journey");
         assertThat(journey.path("eligible").booleanValue()).isFalse();
         assertThat(journey.path("autoOffer").booleanValue()).isFalse();
     }

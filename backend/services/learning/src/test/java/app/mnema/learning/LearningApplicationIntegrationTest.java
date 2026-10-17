@@ -98,7 +98,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "51:lineage items:SUCCESS", "52:lineage exercises:SUCCESS", "53:deck access:SUCCESS", "54:deck publication:SUCCESS", "55:shared media:SUCCESS",
                         "56:deck invites and requests:SUCCESS", "57:deck forks:SUCCESS", "58:complaints and takedowns:SUCCESS",
                         "59:study snapshot retention:SUCCESS", "60:combined publication:SUCCESS", "61:fork unit decisions:SUCCESS", "63:apply update support:SUCCESS", "64:fork relink:SUCCESS", "65:fork update log:SUCCESS",
-                        "66:catalog search dictionaries:SUCCESS", "67:public deck:SUCCESS", "68:deck engagement and rank:SUCCESS", "69:editorial shelf:SUCCESS", "70:catalog events:SUCCESS", "71:topic interests:SUCCESS", "72:onboarding journey:SUCCESS");
+                        "66:catalog search dictionaries:SUCCESS", "67:public deck:SUCCESS", "68:deck engagement and rank:SUCCESS", "69:editorial shelf:SUCCESS", "70:catalog events:SUCCESS", "71:topic interests:SUCCESS", "72:onboarding journey:SUCCESS", "73:deck purpose:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name

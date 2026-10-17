@@ -81,6 +81,10 @@ x-learning-environment: &learning-environment
   LEARNING_ONBOARDING_ENABLED: ${LEARNING_ONBOARDING_ENABLED:-true}
   LEARNING_ONBOARDING_ELIGIBLE_FROM: ${LEARNING_ONBOARDING_ELIGIBLE_FROM:-2026-10-16T00:00:00Z}
   LEARNING_ONBOARDING_EXPERIMENT_ENABLED: ${LEARNING_ONBOARDING_EXPERIMENT_ENABLED:-true}
+  # The sample deck «Моя первая колода» (OB-201/OB-203): on locally, but nothing is copied until a template deck is named. Publish the editorial deck at the LINK level, put its id into
+  # LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID and restart Learning (it marks the deck as the template when it starts); production keeps the switch off.
+  LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED: ${LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED:-true}
+  LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID: ${LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID:-}
   # Billing (#389) against the owner's T-Bank DEMO terminal; names only, off by default (docs/deploy/selfhost-local.md). The bank cannot reach a
   # local NotificationURL, so a local order is confirmed by the return page's GetState refresh and the reconciler.
   MNEMA_BILLING_CHECKOUT: ${MNEMA_BILLING_CHECKOUT:-OFF}

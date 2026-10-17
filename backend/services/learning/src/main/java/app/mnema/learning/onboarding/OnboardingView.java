@@ -8,26 +8,27 @@ import java.time.temporal.ChronoUnit;
 
 /**
  * The answer of {@code GET /api/onboarding} and of both commands ({@code views} of {@code contracts/onboarding/journey.json}). Every member is always present:
- * {@code milestones}, {@code path}, {@code rhythm} and {@code sampleDeck} are reserved for OB-E2..E4 so that the client never changes shape.
+ * {@code milestones}, {@code path} and {@code rhythm} are reserved for OB-E3..E4 so that the client never changes shape; {@code sampleDeck} (OB-E2) is the
+ * {@link SampleDeckState} of the account, which is also part of the strong ETag (the tag hashes the whole view).
  */
 final class OnboardingView {
     private OnboardingView() { }
 
     /** The tour is turned off: no journey. */
-    static ObjectNode disabled() {
-        return envelope(false, null);
+    static ObjectNode disabled(int freeChecks) {
+        return envelope(false, null, SampleDeckState.unavailable(freeChecks));
     }
 
     /** No row: the account was never offered the tour and did not start it. */
-    static ObjectNode notOffered() {
-        return envelope(true, journey(JourneyState.NOT_OFFERED, false, false, JourneySteps.TOUR_VERSION, null, null, null, null, null, null, 0, 0));
+    static ObjectNode notOffered(SampleDeckState sample) {
+        return envelope(true, journey(JourneyState.NOT_OFFERED, false, false, JourneySteps.TOUR_VERSION, null, null, null, null, null, null, 0, 0), sample);
     }
 
-    static ObjectNode of(OnboardingRepository.Row row) {
+    static ObjectNode of(OnboardingRepository.Row row, SampleDeckState sample) {
         boolean eligible = row.cohort() != null;
         boolean autoOffer = eligible && row.cohort() != OnboardingRepository.Cohort.CONTROL && row.state() == JourneyState.OFFERED;
         return envelope(true, journey(row.state(), eligible, autoOffer, row.tourVersion(), row.branch(), row.stepKey(), row.experience(), row.weeklyTarget(),
-                row.offeredAt(), row.finishedAt(), row.replayCount(), row.rowVersion()));
+                row.offeredAt(), row.finishedAt(), row.replayCount(), row.rowVersion()), sample);
     }
 
     private static ObjectNode journey(JourneyState state, boolean eligible, boolean autoOffer, int tourVersion, JourneyBranch branch, String stepKey,
@@ -43,7 +44,7 @@ final class OnboardingView {
         return journey.put("replayCount", replayCount).put("rowVersion", Long.toString(rowVersion));
     }
 
-    private static ObjectNode envelope(boolean enabled, ObjectNode journey) {
+    private static ObjectNode envelope(boolean enabled, ObjectNode journey, SampleDeckState sample) {
         ObjectNode view = JsonNodeFactory.instance.objectNode();
         view.put("enabled", enabled);
         if (journey == null) view.putNull("journey");
@@ -51,7 +52,8 @@ final class OnboardingView {
         view.putArray("milestones");
         view.putNull("path");
         view.putNull("rhythm");
-        view.putObject("sampleDeck").put("available", false).putNull("deckId").put("updateAvailable", false);
+        view.putObject("sampleDeck").put("available", sample.available()).put("deckId", sample.deckId() == null ? null : sample.deckId().toString())
+                .put("updateAvailable", sample.updateAvailable()).put("freeChecksLeft", sample.freeChecksLeft());
         return view;
     }
 
