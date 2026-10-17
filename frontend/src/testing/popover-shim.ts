@@ -5,6 +5,9 @@
  * `afterEach`, so specs of components that probe `typeof showPopover` keep seeing the jsdom default.
  */
 const opened = new WeakSet<Element>();
+/** A closed popover is not rendered, so nothing in it can take focus (jsdom refuses focus under `display: none`). */
+const closedStyle = document.createElement('style');
+closedStyle.textContent = '[popover]:not(:popover-open):not(dialog[open]):not([data-popover-open]) { display: none; }';
 
 function queueToggle(element: Element, newState: 'open' | 'closed'): void {
     queueMicrotask(() => {
@@ -15,6 +18,7 @@ function queueToggle(element: Element, newState: 'open' | 'closed'): void {
 }
 
 export function installPopoverShim(): void {
+    document.head.append(closedStyle);
     Object.defineProperties(HTMLElement.prototype, {
         showPopover: {
             configurable: true,
@@ -38,6 +42,7 @@ export function installPopoverShim(): void {
 }
 
 export function removePopoverShim(): void {
+    closedStyle.remove();
     delete (HTMLElement.prototype as Partial<HTMLElement>).showPopover;
     delete (HTMLElement.prototype as Partial<HTMLElement>).hidePopover;
 }
