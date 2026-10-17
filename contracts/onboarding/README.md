@@ -58,7 +58,8 @@ Backend tests and the frontend contract spec both execute the fixture.
 
 - **Sample deck (OB-E2, [ADR-ONB-003](../../docs/engineering/onboarding/adr/adr-onb-003-sample-deck.md)).** The template is the
   editorial deck whose id is `learning.onboarding.sample-deck.template-id`; Learning marks it `purpose=SAMPLE_TEMPLATE` when it
-  starts, so the editorial account installs and updates it through the ordinary authoring API. `POST /sample-deck` copies its
+  starts, so the editorial account installs and updates it through the ordinary authoring API and publishes it at `LINK`
+  (not in the catalogue; the level copies need to follow updates of their source). `POST /sample-deck` copies its
   published revision with the existing copy (`ForkService`) as a system path, `purpose=SAMPLE`; one live copy per account (a
   repeat or a race returns the live one with 200; after the copy is deleted a new one is made). Idempotent by `commandId`. It
   does not need a journey row. `409 SAMPLE_DECK_UNAVAILABLE` when the flag is off or the template is missing, deleted or has no
