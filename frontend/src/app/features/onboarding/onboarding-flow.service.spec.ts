@@ -1,11 +1,12 @@
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
 import { TourHints } from '../../core/onboarding/tour-hints';
 import { BROWSE_HINT_MS, BROWSE_STUCK_MS, MINIMUM_CATALOGUE, OnboardingFlow } from './onboarding-flow.service';
 import { PATH_TARGET } from './onboarding-targets';
-import { Setup, setup } from './onboarding-test-data';
+import { SAMPLE_AVAILABLE, SAMPLE_DECK_ID, SAMPLE_MATERIALS, Setup, setup } from './onboarding-test-data';
 
 describe('OnboardingFlow', () => {
     afterEach(() => vi.useRealTimers());
@@ -233,7 +234,7 @@ describe('OnboardingFlow', () => {
         });
 
         it('offers the sample only when the server says the sample deck exists', async () => {
-            const { flow } = setup({ listed: 10, view: { sampleDeck: { available: true, deckId: 'e1b6bb58-3c0e-4f6a-8f11-4f2d66f6a1aa', updateAvailable: false } } });
+            const { flow } = setup({ listed: 10, view: { sampleDeck: SAMPLE_AVAILABLE } });
             flow.open('welcome');
             await vi.waitFor(() => expect(flow.branches()).toEqual(['SAMPLE', 'COMMUNITY', 'OWN']));
         });
@@ -256,14 +257,6 @@ describe('OnboardingFlow', () => {
             expect(engine.step()?.key).toBe('community.search');
         });
 
-        it('records the sample choice and starts no tour: the sample tour is OB-203', async () => {
-            const { flow, store, engine } = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false } });
-            flow.open('choose');
-            await flow.chooseBranch('SAMPLE');
-            expect(store.calls).toEqual([['STEP', { stepKey: 'sample.hub', branch: 'SAMPLE' }]]);
-            expect(engine.active()).toBe(false);
-        });
-
         it('keeps the card when the choice was not recorded', async () => {
             const { flow, store, engine } = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false } });
             flow.open('choose');
@@ -277,6 +270,175 @@ describe('OnboardingFlow', () => {
             flow.open('choose');
             await flow.chooseBranch('COMMUNITY');
             expect(engine.definition()?.steps.filter(step => step.external !== true).map(step => step.key)).toEqual(['community.search', 'community.add', 'community.study']);
+        });
+    });
+
+    describe('the sample branch («Посмотреть на примере»)', () => {
+        const atChoice = (options: Parameters<typeof setup>[0] = {}): Setup => {
+            const s = setup({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false }, view: { sampleDeck: SAMPLE_AVAILABLE }, ...options });
+            s.flow.open('choose');
+            return s;
+        };
+        const settle = async (): Promise<void> => { await new Promise(resolve => setTimeout(resolve, 0)); TestBed.tick(); await new Promise(resolve => setTimeout(resolve, 0)); };
+        const route = (s: Setup): string | null | undefined => { const value = s.engine.step()?.route; return typeof value === 'function' ? value() : value; };
+
+        it('makes the copy, then records the branch step, then starts the sample tour on the hub of the copy', async () => {
+            const s = atChoice();
+            const router = TestBed.inject(Router);
+            const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+            await s.flow.chooseBranch('SAMPLE');
+            expect(s.store.createSampleDeck).toHaveBeenCalledTimes(1);
+            expect(s.store.calls).toEqual([['STEP', { stepKey: 'sample.hub', branch: 'SAMPLE' }]]);
+            expect(s.store.createSampleDeck.mock.invocationCallOrder[0]).toBeLessThan(s.store.act.mock.invocationCallOrder[0]);
+            expect(s.flow.card()).toBeNull();
+            expect(s.engine.definition()?.id).toBe('sample-v1');
+            expect(s.engine.step()?.key).toBe('sample.hub');
+            expect(s.flow.currentDeck()).toBe(SAMPLE_DECK_ID);
+            expect(navigate).toHaveBeenCalledWith(`/decks/${SAMPLE_DECK_ID}`);
+        });
+
+        it('says «Готовим колоду…» on the choice while the copy is made, and stops saying it after', async () => {
+            const s = atChoice();
+            let finish: (value: Awaited<ReturnType<typeof s.store.createSampleDeck>>) => void = () => undefined;
+            s.store.createSampleDeck.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+            const choosing = s.flow.chooseBranch('SAMPLE');
+            expect(s.flow.preparingSample()).toBe(true);
+            expect(s.flow.busy()).toBe(true);
+            expect(s.store.calls).toEqual([]);
+            finish({ status: 'failed' });
+            await choosing;
+            expect(s.flow.preparingSample()).toBe(false);
+            expect(s.flow.busy()).toBe(false);
+        });
+
+        it('reuses the live copy on a repeat choice: the same deck, a new tour', async () => {
+            const s = atChoice();
+            await s.flow.chooseBranch('SAMPLE');
+            s.engine.stop();
+            await s.flow.replay();
+            await s.flow.chooseBranch('SAMPLE');
+            expect(s.store.createSampleDeck).toHaveBeenCalledTimes(2);
+            expect(s.flow.currentDeck()).toBe(SAMPLE_DECK_ID);
+            expect(s.engine.definition()?.id).toBe('sample-v1');
+            expect(s.store.view()?.sampleDeck.deckId).toBe(SAMPLE_DECK_ID);
+        });
+
+        it('keeps the card, records nothing and starts nothing when the copy could not be made (a lost answer)', async () => {
+            const s = atChoice();
+            s.store.failNext = true;
+            await s.flow.chooseBranch('SAMPLE');
+            expect(s.store.calls).toEqual([]);
+            expect(s.flow.card()).toBe('choose');
+            expect(s.engine.active()).toBe(false);
+            expect(s.flow.busy()).toBe(false);
+            await s.flow.chooseBranch('SAMPLE');
+            expect(s.engine.step()?.key).toBe('sample.hub');
+        });
+
+        it('hides the option and goes on when the server says the sample is unavailable (409 SAMPLE_DECK_UNAVAILABLE)', async () => {
+            const s = atChoice({ listed: 10 });
+            await vi.waitFor(() => expect(s.flow.branches()).toEqual(['SAMPLE', 'COMMUNITY', 'OWN']));
+            s.store.sample = 'unavailable';
+            await s.flow.chooseBranch('SAMPLE');
+            expect(s.flow.branches()).toEqual(['COMMUNITY', 'OWN']);
+            expect(s.store.calls).toEqual([]);
+            expect(s.flow.card()).toBe('choose');
+            expect(s.engine.active()).toBe(false);
+            // Another branch is chosen from the same card.
+            await s.flow.chooseBranch('OWN');
+            expect(s.engine.definition()?.id).toBe('own-v1');
+        });
+
+        it('closes the card and starts nothing when the server has the journey elsewhere (the branch step is refused)', async () => {
+            const s = atChoice({ journey: { state: 'SKIPPED', stepKey: null, autoOffer: false } });
+            await s.flow.chooseBranch('SAMPLE');
+            expect(s.store.rejections.at(-1)).toEqual({ action: 'STEP', reason: 'transition' });
+            expect(s.flow.card()).toBeNull();
+            expect(s.engine.active()).toBe(false);
+        });
+
+        it('looks up the first material of the copy by its order, passing over one that was taken down, and takes the next steps to it', async () => {
+            const s = atChoice();
+            await s.flow.chooseBranch('SAMPLE');
+            await settle();
+            expect(s.items.list).toHaveBeenCalledWith(SAMPLE_DECK_ID, { limit: 20 });
+            s.engine.next();
+            expect(s.engine.step()?.key).toBe('sample.material');
+            expect(route(s)).toBe(`/decks/${SAMPLE_DECK_ID}/materials/first-material`);
+            s.engine.next();
+            expect(s.engine.step()?.key).toBe('sample.exercises');
+            expect(route(s)).toBe(`/decks/${SAMPLE_DECK_ID}/materials/first-material/exercises/new`);
+            s.engine.next();
+            expect(route(s)).toBe(`/decks/${SAMPLE_DECK_ID}`);
+            expect(s.store.calls.map(([action, options]) => [action, options?.stepKey])).toEqual([
+                ['STEP', 'sample.hub'], ['STEP', 'sample.material'], ['STEP', 'sample.exercises'], ['STEP', 'sample.study']]);
+        });
+
+        it('does not look for the material while the copy is being prepared, and asks again when the hub says it is ready', async () => {
+            const s = atChoice();
+            s.engine.setPreparing(true);
+            await s.flow.chooseBranch('SAMPLE');
+            s.engine.setPreparing(true);
+            await settle();
+            expect(s.items.list).not.toHaveBeenCalled();
+            s.engine.setPreparing(false);
+            await settle();
+            expect(s.items.list).toHaveBeenCalledTimes(1);
+            s.engine.next();
+            expect(route(s)).toBe(`/decks/${SAMPLE_DECK_ID}/materials/first-material`);
+        });
+
+        it('asks again at the next step when the first answer had no list, and stays on the hub until the material is known', async () => {
+            const s = atChoice();
+            s.items.list.mockReturnValueOnce(throwError(() => new Error('preparing')));
+            await s.flow.chooseBranch('SAMPLE');
+            await settle();
+            expect(s.items.list).toHaveBeenCalledTimes(1);
+            s.engine.next();
+            expect(route(s)).toBe(`/decks/${SAMPLE_DECK_ID}`);
+            await settle();
+            expect(s.items.list).toHaveBeenCalledTimes(2);
+            expect(route(s)).toBe(`/decks/${SAMPLE_DECK_ID}/materials/first-material`);
+        });
+
+        it('keeps only the hub and «Учить» for a learner who knows flashcards', async () => {
+            const s = atChoice({ journey: { state: 'IN_PROGRESS', stepKey: 'choose', autoOffer: false, experience: 'CONFIDENT' } });
+            await s.flow.chooseBranch('SAMPLE');
+            expect(s.engine.definition()?.steps.filter(step => step.external !== true).map(step => step.key)).toEqual(['sample.hub', 'sample.study']);
+        });
+
+        it('pauses for the session on «Учить» and goes on at the finale when it is over', async () => {
+            const s = atChoice({ ai: true });
+            await s.flow.chooseBranch('SAMPLE');
+            for (let step = 0; step < 3; step++) s.engine.next();
+            expect(s.engine.step()?.key).toBe('sample.study');
+            s.events.emit('study.started');
+            expect(s.engine.paused()).toBe(true);
+            s.events.emit('study.completed');
+            expect(s.engine.step()?.key).toBe('finale.ai');
+            expect(s.engine.paused()).toBe(false);
+        });
+
+        it('picks a paused sample tour up on the copy of the account, with no search of its decks', async () => {
+            const s = setup({ journey: { state: 'PAUSED', stepKey: 'sample.material', branch: 'SAMPLE', autoOffer: false },
+                view: { sampleDeck: { ...SAMPLE_AVAILABLE, deckId: SAMPLE_DECK_ID } } });
+            await s.flow.resumeIfPaused('a');
+            await settle();
+            expect(s.engine.step()?.key).toBe('sample.material');
+            expect(s.engine.paused()).toBe(true);
+            expect(s.decks.list).not.toHaveBeenCalled();
+            expect(route(s)).toBe(`/decks/${SAMPLE_DECK_ID}/materials/first-material`);
+            expect(s.items.list).toHaveBeenCalledWith(SAMPLE_DECK_ID, { limit: 20 });
+        });
+
+        it('does not pick the tour up when the copy has been deleted', async () => {
+            const s = setup({ journey: { state: 'PAUSED', stepKey: 'sample.exercises', branch: 'SAMPLE', autoOffer: false }, view: { sampleDeck: SAMPLE_AVAILABLE } });
+            await s.flow.resumeIfPaused('a');
+            expect(s.engine.active()).toBe(false);
+        });
+
+        it('knows its materials list is the contract of the item API: the first page, in order', () => {
+            expect(SAMPLE_MATERIALS.items.map(item => item.ordinal)).toEqual([0, 1, 2]);
         });
     });
 

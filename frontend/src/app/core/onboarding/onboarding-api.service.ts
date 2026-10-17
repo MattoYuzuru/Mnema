@@ -19,7 +19,9 @@ import {
     OnboardingReadResult,
     OnboardingView,
     PreferencesCommand,
+    SAMPLE_FREE_AI_CHECKS,
     SampleDeck,
+    SampleDeckCommand,
     STEP_BRANCH,
     STEP_KEYS,
     STEP_KEY_RULE,
@@ -67,6 +69,20 @@ export class OnboardingApiService {
     command(body: JourneyCommand): Observable<OnboardingRead> {
         return defer(() => this.http.put<unknown>(`${this.baseUrl}/onboarding/journey`, validateJourneyCommand(body), { observe: 'response' }))
             .pipe(map(response => parseRead(response, false)));
+    }
+
+    /**
+     * `POST /api/onboarding/sample-deck`: makes the account's sample copy, or answers the live one (201 / 200); either way the answer is
+     * the whole view with the copy's `deckId`. Idempotent by `commandId`, so a retry after an unknown outcome sends the same one.
+     */
+    createSampleDeck(body: SampleDeckCommand): Observable<OnboardingRead> {
+        return defer(() => this.http.post<unknown>(`${this.baseUrl}/onboarding/sample-deck`, validateSampleDeckCommand(body), { observe: 'response' }))
+            .pipe(map(response => {
+                const read = parseRead(response, false, [200, 201]);
+                // An answer that names no copy is not an answer to this command.
+                if (read.view.sampleDeck.deckId === null) throw protocol('The sample deck is missing from the answer.');
+                return read;
+            }));
     }
 
     /** `PUT /api/onboarding/preferences`: the survey answers that belong to onboarding. */
@@ -146,12 +162,14 @@ function parseJourney(value: unknown): Journey {
 }
 
 function parseSampleDeck(value: unknown): SampleDeck {
-    const body = exact(value, ['available', 'deckId', 'updateAvailable']);
+    const body = exact(value, ['available', 'deckId', 'updateAvailable', 'freeChecksLeft']);
     const deckId = nullable(body['deckId'], item => {
         if (typeof item !== 'string' || !UUID.test(item)) throw protocol('Invalid deck id.');
         return item;
     });
-    return { available: bool(body['available']), deckId, updateAvailable: bool(body['updateAvailable']) };
+    const freeChecksLeft = count(body['freeChecksLeft']);
+    if (freeChecksLeft > SAMPLE_FREE_AI_CHECKS) throw protocol('Free checks out of range.');
+    return { available: bool(body['available']), deckId, updateAvailable: bool(body['updateAvailable']), freeChecksLeft };
 }
 
 /** Parses the strict envelope of the view. Exported for the contract spec. */
@@ -170,8 +188,8 @@ export function parseOnboardingView(value: unknown): OnboardingView {
     return { enabled, journey, milestones, path, rhythm, sampleDeck: parseSampleDeck(body['sampleDeck']) };
 }
 
-function parseRead(response: HttpResponse<unknown>, validatorRequired: boolean): OnboardingRead {
-    if (response.status !== 200) throw protocol('Unexpected onboarding status.');
+function parseRead(response: HttpResponse<unknown>, validatorRequired: boolean, statuses: readonly number[] = [200]): OnboardingRead {
+    if (!statuses.includes(response.status)) throw protocol('Unexpected onboarding status.');
     const directives = (response.headers.get('Cache-Control') ?? '').toLowerCase().split(',').map(value => value.trim());
     if (!directives.includes('private') || !directives.includes('no-store')) throw protocol('Onboarding response can be cached.');
     const validator = response.headers.get('ETag');
@@ -192,6 +210,12 @@ export function validateJourneyCommand(body: JourneyCommand): JourneyCommand {
     if (rule === 'forbidden' && stepKey !== null) throw protocol('The action takes no step.');
     if (branch !== null && !BRANCH_ACCEPTED[action]) throw protocol('The action takes no branch.');
     if (branch !== null && stepKey !== null && STEP_BRANCH[stepKey] !== null && STEP_BRANCH[stepKey] !== branch) throw protocol('The step belongs to another branch.');
+    return body;
+}
+
+export function validateSampleDeckCommand(body: SampleDeckCommand): SampleDeckCommand {
+    const command = within(body, ['commandId'], []);
+    if (!isCommandId(command['commandId'])) throw protocol('Invalid command id.');
     return body;
 }
 

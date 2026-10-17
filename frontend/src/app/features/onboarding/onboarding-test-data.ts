@@ -12,6 +12,7 @@ import { TOUR_PERSISTENCE, TourEngine } from '../../core/onboarding/tour-engine.
 import { TourEvents } from '../../core/onboarding/tour-events';
 import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from '../authoring/capabilities-api.service';
+import { ItemApiService } from '../authoring/item-api.service';
 import { CommunityApiService } from '../community/community-api.service';
 import { InterestStore } from '../community/interest-store.service';
 import { LearningGoalStore } from '../goal/learning-goal.store';
@@ -20,6 +21,10 @@ import { OnboardingFlow } from './onboarding-flow.service';
 
 /** Specs only. */
 export const OFFERED_VIEW = contract.views.offered as OnboardingView;
+/** The id of the sample copy the fake store makes (`views.sampleReady` of the contract). */
+export const SAMPLE_DECK_ID = contract.views.sampleReady.sampleDeck.deckId as string;
+/** The sample deck of a view where the learner may choose it. */
+export const SAMPLE_AVAILABLE = { available: true, deckId: null, updateAvailable: false, freeChecksLeft: 3 } as const;
 
 export function viewOf(journey: Partial<Journey> | null, overrides: Partial<OnboardingView> = {}): OnboardingView {
     return {
@@ -58,6 +63,8 @@ export class FakeJourneyStore {
     readonly rejections: Rejection[] = [];
     readonly preferences: unknown[] = [];
     failNext = false;
+    /** What the next `createSampleDeck` does: the copy is made, or the server says the sample is gone (409). */
+    sample: 'made' | 'unavailable' = 'made';
 
     constructor(journey: Partial<Journey> | null = null, overrides: Partial<OnboardingView> = {}) {
         this.view.set(viewOf(journey, overrides));
@@ -96,6 +103,18 @@ export class FakeJourneyStore {
         return Promise.resolve({ status: 'applied', view: next });
     });
 
+    /** The sample copy: made (or the live one) with the sample's id, or refused with the view where the sample is not available. */
+    createSampleDeck = vi.fn((): Promise<JourneyResult> => {
+        const current = this.view();
+        if (current === null || !current.enabled) return Promise.resolve({ status: 'failed' });
+        if (this.failNext) { this.failNext = false; return Promise.resolve({ status: 'failed' }); }
+        const next = this.sample === 'unavailable'
+            ? { ...current, sampleDeck: { ...current.sampleDeck, available: false, deckId: null } }
+            : { ...current, sampleDeck: { ...current.sampleDeck, available: true, deckId: SAMPLE_DECK_ID } };
+        this.view.set(next);
+        return Promise.resolve({ status: this.sample === 'unavailable' ? 'refused' : 'applied', view: next });
+    });
+
     setPreferences = vi.fn((changes: { experience?: Journey['experience']; weeklyTarget?: number | null }): Promise<JourneyResult> => {
         this.preferences.push(changes);
         const current = this.view();
@@ -130,7 +149,13 @@ export interface Setup {
     community: { facets: ReturnType<typeof vi.fn> };
     capabilities: { read: ReturnType<typeof vi.fn> };
     decks: { list: ReturnType<typeof vi.fn> };
+    /** The materials of the sample copy: the first by its order is the one the sample tour opens. */
+    items: { list: ReturnType<typeof vi.fn> };
 }
+
+/** The first page of the sample copy's materials, in their order. */
+export const SAMPLE_MATERIALS = { items: [{ memberKey: 'taken-down', ordinal: 0, unavailable: true }, { memberKey: 'first-material', ordinal: 1, unavailable: false },
+    { memberKey: 'second-material', ordinal: 2, unavailable: false }], total: 3 };
 
 export function setup(options: { journey?: Parameters<typeof viewOf>[0]; view?: Partial<typeof OFFERED_VIEW>; ai?: boolean; listed?: number | 'error'; launched?: boolean; goalAnswered?: boolean; interestsOpen?: boolean; providers?: Provider[] } = {}): Setup {
     const store = new FakeJourneyStore(options.journey === undefined ? {} : options.journey, options.view ?? {});
@@ -143,13 +168,14 @@ export function setup(options: { journey?: Parameters<typeof viewOf>[0]; view?: 
     const community = { facets: vi.fn(() => options.listed === 'error' ? throwError(() => new Error('down')) : of({ listedCount: options.listed ?? 10 })) };
     const capabilities = { read: vi.fn(() => of(options.ai === true ? AI_ON : CAPABILITIES_UNAVAILABLE)) };
     const decks = { list: vi.fn(() => of({ items: [], nextCursor: null })) };
+    const items = { list: vi.fn(() => of(SAMPLE_MATERIALS)) };
     TestBed.configureTestingModule({
         providers: [provideRouter([]),
             { provide: JourneyStore, useValue: store }, { provide: TOUR_PERSISTENCE, useExisting: JourneyStore },
             { provide: LearningGoalStore, useValue: goal }, { provide: InterestStore, useValue: interests },
             { provide: ToastService, useValue: toasts }, { provide: CommunityApiService, useValue: community },
-            { provide: CapabilitiesApiService, useValue: capabilities }, { provide: OwnDecksApiService, useValue: decks },
+            { provide: CapabilitiesApiService, useValue: capabilities }, { provide: OwnDecksApiService, useValue: decks }, { provide: ItemApiService, useValue: items },
             { provide: COMMUNITY_LAUNCH, useValue: options.launched ?? true }, { provide: AuthService, useValue: { status: signal('authenticated'), user: signal({ accountId: 'a' }) } }, ...(options.providers ?? [])]
     });
-    return { flow: TestBed.inject(OnboardingFlow), store, engine: TestBed.inject(TourEngine), events: TestBed.inject(TourEvents), goal, interests, toasts, community, capabilities, decks } as unknown as Setup;
+    return { flow: TestBed.inject(OnboardingFlow), store, engine: TestBed.inject(TourEngine), events: TestBed.inject(TourEvents), goal, interests, toasts, community, capabilities, decks, items } as unknown as Setup;
 }

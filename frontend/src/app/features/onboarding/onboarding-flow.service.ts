@@ -12,6 +12,7 @@ import { TourEngine } from '../../core/onboarding/tour-engine.service';
 import { TourEventPayload, TourEvents } from '../../core/onboarding/tour-events';
 import { TourHints } from '../../core/onboarding/tour-hints';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/capabilities-api.service';
+import { ItemApiService } from '../authoring/item-api.service';
 import { CommunityApiService } from '../community/community-api.service';
 import { InterestStore } from '../community/interest-store.service';
 import { LearningGoal } from '../goal/goal.models';
@@ -42,6 +43,8 @@ const REPLAY_DECKS = 6;
 
 /** The steps whose place is a page of a particular deck. */
 const DECK_STEPS: ReadonlySet<StepKey> = new Set<StepKey>(['own.material', 'own.exercise', 'own.study', 'community.study']);
+/** The steps of the sample tour that need the first material of the sample deck to be known before the learner is taken to their place. */
+const SAMPLE_MEMBER_STEPS: ReadonlySet<StepKey> = new Set<StepKey>(['sample.hub', 'sample.material', 'sample.exercises']);
 
 export interface ReplayDeck {
     readonly deckId: string;
@@ -79,9 +82,12 @@ export class OnboardingFlow {
     readonly aiAvailable = signal(false);
     private readonly catalogueListed = signal<number | null>(null);
     readonly replayDecks = signal<readonly ReplayDeck[]>([]);
+    /** The sample copy is being made or found (the branch choice says «Готовим колоду…» meanwhile). */
+    readonly preparingSample = signal(false);
     private readonly deck = signal<string | null>(null);
     private readonly member = signal<string | null>(null);
     private capabilities: Promise<void> | null = null;
+    private memberLookup: Promise<void> | null = null;
     private resumedFor: string | null = null;
 
     /** The card a learner should be on when the surface opens by itself: the welcome of a new account, or the card a reload interrupted. */
@@ -134,6 +140,14 @@ export class OnboardingFlow {
             const hint = setTimeout(() => this.hints.browse.set(true), BROWSE_HINT_MS);
             const stuck = setTimeout(() => this.hints.stuck.set(true), BROWSE_STUCK_MS);
             onCleanup(() => { clearTimeout(hint); clearTimeout(stuck); });
+        });
+        // The sample tour takes the learner to the first material of the copy: it is looked up as soon as the copy can be read, and again
+        // whenever the step or the copy's readiness changes while it is still unknown (a copy that is being prepared has no list yet).
+        effect(() => {
+            const step = this.engine.step();
+            const deckId = this.deck();
+            const waiting = this.engine.active() && step !== null && SAMPLE_MEMBER_STEPS.has(step.key) && this.member() === null && !this.engine.preparing();
+            if (waiting && deckId !== null) untracked(() => void this.findSampleMaterial(deckId));
         });
     }
 
@@ -305,6 +319,7 @@ export class OnboardingFlow {
     async chooseBranch(branch: Branch): Promise<void> {
         if (this.busy()) return;
         if (branch === 'OWN' && this.replaying() && this.replayDecks().length > 0) { this.card.set('replay.deck'); return; }
+        if (branch === 'SAMPLE') { await this.beginSample(); return; }
         await this.beginBranch(branch, FIRST_STEP[branch]);
     }
 
@@ -328,12 +343,33 @@ export class OnboardingFlow {
         } finally { this.busy.set(false); }
     }
 
-    /** Starts the tour of `branch` (at `from`, or at its first step). A branch without a tour (the sample, until OB-203) starts nothing. */
+    /**
+     * «Посмотреть на примере»: the learner's sample copy first (made, or the live one: the answer is the same), then the branch step, then
+     * the tour on the copy's hub. Nothing is recorded before the copy exists, so a sample that is not available (409: the option goes with
+     * the next view) or a lost answer leaves the journey at the choice and the card up for another try. A copy that is still being prepared
+     * is the hub's to show («Готовим колоду…» on the card of the tour, and «Повторить» when it failed).
+     */
+    private async beginSample(): Promise<void> {
+        this.busy.set(true);
+        this.preparingSample.set(true);
+        try {
+            const made = await this.store.createSampleDeck();
+            const deckId = isApplied(made) ? made.view.sampleDeck.deckId : null;
+            if (deckId === null) return;
+            const result = await this.store.act('STEP', { stepKey: FIRST_STEP.SAMPLE, branch: 'SAMPLE' });
+            if (result.status === 'failed') return;
+            this.close();
+            if (!isApplied(result)) return;
+            this.deck.set(deckId);
+            this.member.set(null);
+            await this.startTour('SAMPLE', FIRST_STEP.SAMPLE);
+        } finally { this.preparingSample.set(false); this.busy.set(false); }
+    }
+
+    /** Starts the tour of `branch` (at `from`, or at its first step). */
     async startTour(branch: Branch, from?: StepKey): Promise<void> {
         await this.ensureCapabilities();
-        const definition = tourFor(branch, this.context);
-        if (definition === null) return;
-        this.engine.start(definition, from);
+        this.engine.start(tourFor(branch, this.context), from);
     }
 
     /** «Не нашли подходящую?» → «Создать свою»: the tour moves to the own-deck branch. */
@@ -382,14 +418,20 @@ export class OnboardingFlow {
         const branch = journey.branch;
         if (branch === null) return;
         if (journey.state === 'IN_PROGRESS' && !isApplied(await this.store.act('PAUSE', { stepKey: key }))) return;
+        // The sample copy is the account's, wherever this page found it; a copy that is gone leaves nothing to resume the sample tour on.
+        if (branch === 'SAMPLE') {
+            const sample = this.store.view()?.sampleDeck.deckId ?? null;
+            if (sample === null) return;
+            this.deck.set(sample);
+        }
         await this.ensureCapabilities();
         const definition = tourFor(branch, this.context);
-        if (definition === null || this.engine.active()) return;
+        if (this.engine.active()) return;
         const onFinale = key === 'finale.ai' || key === 'finale.done';
         const known = definition.steps.some(step => step.key === key);
         const start = known ? key : onFinale ? finaleKey(false) : STUDY_STEP[branch];
         // Another device (or a reload) has no memory of the deck the tour works with: the steps that point at it need it found first.
-        if (DECK_STEPS.has(start)) await this.findDeckContext();
+        if (branch !== 'SAMPLE' && DECK_STEPS.has(start)) await this.findDeckContext();
         if (this.engine.active()) return;
         this.engine.start(definition, start, { paused: true });
     }
@@ -408,6 +450,19 @@ export class OnboardingFlow {
         } catch { /* Without the list the step shows its text variant. */ }
     }
 
+    /** The first material of the sample copy by its order (one a complaint took down is passed over); unknown when the list cannot be read yet. */
+    private findSampleMaterial(deckId: string): Promise<void> {
+        this.memberLookup ??= (async () => {
+            try {
+                const page = await firstValueFrom(this.injector.get(ItemApiService).list(deckId, { limit: 20 }));
+                const first = page.items.find(item => !item.unavailable);
+                if (first !== undefined && this.deck() === deckId && this.member() === null) this.member.set(first.memberKey);
+            } catch { /* A copy that is still being prepared has no list: the next change of step or of readiness asks again. */ }
+            finally { this.memberLookup = null; }
+        })();
+        return this.memberLookup;
+    }
+
     /** Signing out forgets the previous account's flow. */
     reset(): void {
         this.close();
@@ -416,6 +471,7 @@ export class OnboardingFlow {
         this.member.set(null);
         this.resumedFor = null;
         this.capabilities = null;
+        this.preparingSample.set(false);
         this.catalogueListed.set(null);
         this.replayDecks.set([]);
         this.store.reset();

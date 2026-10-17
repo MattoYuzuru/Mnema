@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, Injector, computed, inject, signal } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 
-import { OnboardingApiService, validateJourneyCommand, validatePreferencesCommand } from './onboarding-api.service';
+import { OnboardingApiService, validateJourneyCommand, validatePreferencesCommand, validateSampleDeckCommand } from './onboarding-api.service';
 import {
     ActionOptions,
     JourneyAction,
@@ -13,6 +13,7 @@ import {
     OnboardingView,
     PreferenceChanges,
     PreferencesCommand,
+    SampleDeckCommand,
     newCommandId
 } from './onboarding.models';
 
@@ -78,6 +79,15 @@ export class JourneyStore {
         }), command => this.api.preferences(command), validatePreferencesCommand);
     }
 
+    /**
+     * The account's sample copy («Посмотреть на примере»): `applied` with the view that names its `deckId` (made now, or the live one: the
+     * answer is the same), `refused` with the server's current view when the sample is not available (409), or `failed`. The command id is
+     * made once and kept across the retries of an unknown outcome, so a lost answer never makes a second copy.
+     */
+    createSampleDeck(): Promise<JourneyResult> {
+        return this.send(() => ({ commandId: newCommandId() }), command => this.api.createSampleDeck(command), validateSampleDeckCommand);
+    }
+
     /** Signing out: the next account starts with no view and no validator. */
     reset(): void {
         this.epoch++;
@@ -114,7 +124,7 @@ export class JourneyStore {
         this.error.set(null);
     }
 
-    private send<C extends JourneyCommand | PreferencesCommand>(build: (rowVersion: string) => C, call: (command: C) => Observable<OnboardingRead>,
+    private send<C extends JourneyCommand | PreferencesCommand | SampleDeckCommand>(build: (rowVersion: string) => C, call: (command: C) => Observable<OnboardingRead>,
         validate: (command: C) => unknown): Promise<JourneyResult> {
         const failed: JourneyResult = { status: 'failed' };
         // The account is the one that asked: a command queued behind others and started after a sign-out belongs to the previous account.

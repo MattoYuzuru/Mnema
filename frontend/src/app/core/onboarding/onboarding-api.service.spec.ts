@@ -10,6 +10,7 @@ import { OnboardingProtocolError } from './onboarding.models';
 const ID = '018f1d98-5c10-7abc-8abc-0123456789ab';
 const privateHeaders = (extra: Record<string, string> = {}): HttpHeaders => new HttpHeaders({ 'Cache-Control': 'private, no-store', ETag: '"onb-9"', ...extra });
 const view = contract.views.offered;
+const sampleReady = contract.views.sampleReady;
 
 describe('OnboardingApiService', () => {
     let api: OnboardingApiService;
@@ -54,7 +55,9 @@ describe('OnboardingApiService', () => {
         });
 
         it('refuses an envelope that does not match the contract', async () => {
-            for (const body of [{ ...view, enabled: 'yes' }, { ...view, sampleDeck: { available: true } }, { ...view, journey: { ...view.journey, state: 'DONE' } },
+            for (const body of [{ ...view, enabled: 'yes' }, { ...view, sampleDeck: { available: true } }, { ...view, sampleDeck: { ...view.sampleDeck, freeChecksLeft: 4 } },
+                { ...view, sampleDeck: { ...view.sampleDeck, freeChecksLeft: -1 } }, { ...view, sampleDeck: { ...view.sampleDeck, freeChecksLeft: 1.5 } },
+                { ...view, sampleDeck: { available: false, deckId: null, updateAvailable: false } }, { ...view, journey: { ...view.journey, state: 'DONE' } },
                 { ...view, journey: { ...view.journey, rowVersion: '01' } }, { ...view, journey: { ...view.journey, weeklyTarget: 8 } },
                 { ...view, journey: { ...view.journey, stepKey: 'sample.hub', branch: 'OWN' } }, [], null]) {
                 const result = firstValueFrom(api.read());
@@ -98,6 +101,47 @@ describe('OnboardingApiService', () => {
                 http.expectOne('/api/onboarding/journey').flush(view, { headers: privateHeaders() });
                 await result;
             }
+        });
+    });
+
+    describe('createSampleDeck', () => {
+        it('posts the command id alone and parses the view that names the copy, on 201 and on 200', async () => {
+            for (const status of [201, 200]) {
+                const result = firstValueFrom(api.createSampleDeck({ commandId: ID }));
+                const request = http.expectOne('/api/onboarding/sample-deck');
+                expect(request.request.method).toBe('POST');
+                expect(request.request.body).toEqual({ commandId: ID });
+                request.flush(sampleReady, { status, statusText: 'OK', headers: new HttpHeaders({ 'Cache-Control': 'private, no-store', 'Idempotency-Replayed': 'true' }) });
+                await expect(result).resolves.toEqual({ view: sampleReady, etag: null });
+            }
+        });
+
+        it('keeps the validator of the answer when there is one', async () => {
+            const result = firstValueFrom(api.createSampleDeck({ commandId: ID }));
+            http.expectOne('/api/onboarding/sample-deck').flush(sampleReady, { status: 201, statusText: 'Created', headers: privateHeaders() });
+            await expect(result).resolves.toEqual({ view: sampleReady, etag: '"onb-9"' });
+        });
+
+        it('refuses an answer that names no copy, another status, a cacheable answer or a bad envelope', async () => {
+            const cases: [unknown, { status: number; headers?: HttpHeaders }][] = [
+                [view, { status: 201 }], [sampleReady, { status: 202 }], [sampleReady, { status: 204 }],
+                [sampleReady, { status: 201, headers: new HttpHeaders({ 'Cache-Control': 'public' }) }],
+                [{ ...sampleReady, extra: 1 }, { status: 201 }], [null, { status: 201 }]
+            ];
+            for (const [body, init] of cases) {
+                const result = firstValueFrom(api.createSampleDeck({ commandId: ID }));
+                http.expectOne('/api/onboarding/sample-deck').flush(body as object | null, { statusText: 'x', headers: privateHeaders(), ...init });
+                await expect(result, JSON.stringify([body, init.status])).rejects.toBeInstanceOf(OnboardingProtocolError);
+            }
+        });
+
+        it('refuses a defective command without any request, and passes a failure on as the raw response', async () => {
+            for (const body of [{ commandId: 'x' }, { commandId: ID, rowVersion: '0' }, {}]) {
+                await expect(firstValueFrom(api.createSampleDeck(body as never)), JSON.stringify(body)).rejects.toBeInstanceOf(OnboardingProtocolError);
+            }
+            const result = firstValueFrom(api.createSampleDeck({ commandId: ID }));
+            http.expectOne('/api/onboarding/sample-deck').flush(contract.problems.sampleUnavailable, { status: 409, statusText: 'Conflict' });
+            await expect(result).rejects.toMatchObject({ status: 409, error: { code: 'SAMPLE_DECK_UNAVAILABLE' } });
         });
     });
 

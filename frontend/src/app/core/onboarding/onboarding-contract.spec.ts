@@ -4,7 +4,8 @@ import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
 
 import contract from '../../../../../contracts/onboarding/journey.json';
-import { OnboardingApiService, parseOnboardingView, validateJourneyCommand, validatePreferencesCommand } from './onboarding-api.service';
+import { isSampleNotShareable } from './sample-deck';
+import { OnboardingApiService, parseOnboardingView, validateJourneyCommand, validatePreferencesCommand, validateSampleDeckCommand } from './onboarding-api.service';
 import {
     BRANCHES,
     BRANCH_ACCEPTED,
@@ -13,6 +14,7 @@ import {
     JOURNEY_STATES,
     JourneyCommand,
     PreferencesCommand,
+    SAMPLE_FREE_AI_CHECKS,
     STEP_BRANCH,
     STEP_KEYS,
     STEP_KEY_RULE,
@@ -51,6 +53,14 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
             expect([...WEEKLY_TARGET.surveyOptions]).toEqual(contract.constants.weeklyTarget.surveyOptions);
         });
 
+        it('has the free AI checks of the sample deck of the contract', () => {
+            expect(SAMPLE_FREE_AI_CHECKS).toBe(contract.constants.sampleDeck.freeAiChecks);
+            for (const [name, view] of Object.entries(contract.views)) {
+                expect(view.sampleDeck.freeChecksLeft, name).toBeGreaterThanOrEqual(0);
+                expect(view.sampleDeck.freeChecksLeft, name).toBeLessThanOrEqual(contract.constants.sampleDeck.freeAiChecks);
+            }
+        });
+
         it('takes the step and branch rules of every action from the transition table', () => {
             const table = contract.transitions as unknown as Record<string, { stepKey: string; branch: string }>;
             for (const action of JOURNEY_ACTIONS) {
@@ -70,6 +80,12 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
             });
         }
 
+        it('names the sample copy only in a view where the sample is available', () => {
+            const ready = parseOnboardingView(contract.views.sampleReady);
+            expect(ready.sampleDeck).toEqual({ available: true, deckId: '33333333-3333-4333-8333-333333333333', updateAvailable: false, freeChecksLeft: 2 });
+            expect(ready.journey).toMatchObject({ branch: 'SAMPLE', stepKey: 'sample.hub' });
+        });
+
         it('rejects a view with an unknown member or a journey without enabled onboarding', () => {
             expect(() => parseOnboardingView({ ...contract.views.offered, extra: 1 })).toThrow();
             expect(() => parseOnboardingView({ ...contract.views.disabled, journey: contract.views.offered.journey })).toThrow();
@@ -77,8 +93,28 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
         });
     });
 
+    describe('problems', () => {
+        it('has the codes the client acts on: the sample copy cannot be made, and a sample deck cannot be shared', () => {
+            const { sampleUnavailable, sampleNotShareable } = contract.problems;
+            expect([sampleUnavailable.status, sampleUnavailable.code]).toEqual([409, 'SAMPLE_DECK_UNAVAILABLE']);
+            expect(isSampleNotShareable(sampleNotShareable.status, sampleNotShareable.code)).toBe(true);
+            expect(isSampleNotShareable(sampleUnavailable.status, sampleUnavailable.code)).toBe(false);
+            expect(isSampleNotShareable(403, sampleNotShareable.code)).toBe(false);
+        });
+    });
+
     describe('commands', () => {
-        for (const [name, command] of Object.entries(contract.commands)) {
+        it('sends the sampleDeck command as it is, by POST, and takes the copy from the 201 view', async () => {
+            const result = firstValueFrom(api.createSampleDeck(contract.commands.sampleDeck));
+            const request = http.expectOne('/api/onboarding/sample-deck');
+            expect(request.request.method).toBe('POST');
+            expect(request.request.body).toEqual(contract.commands.sampleDeck);
+            request.flush(contract.views.sampleReady, { status: 201, statusText: 'Created', headers });
+            await expect(result).resolves.toMatchObject({ view: { sampleDeck: { deckId: contract.views.sampleReady.sampleDeck.deckId } } });
+            expect(() => validateSampleDeckCommand(contract.commands.sampleDeck)).not.toThrow();
+        });
+
+        for (const [name, command] of Object.entries(contract.commands).filter(([name]) => name !== 'sampleDeck')) {
             it(`sends the ${name} command as it is`, async () => {
                 const preferences = !('action' in command);
                 const result = firstValueFrom(preferences ? api.preferences(command as PreferencesCommand) : api.command(command as JourneyCommand));

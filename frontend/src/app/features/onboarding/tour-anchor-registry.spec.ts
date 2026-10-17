@@ -46,6 +46,9 @@ describe('anchor registry', () => {
         expect(owner(TOUR_ANCHORS.ownMaterial)).toContain('new-material-page');
         expect(owner(TOUR_ANCHORS.ownExercise)).toContain('exercise-authoring-page');
         expect(owner(TOUR_ANCHORS.hubStart)).toContain('own-deck-detail-page');
+        expect(owner(TOUR_ANCHORS.hubHeader)).toContain('own-deck-detail-page');
+        expect(owner(TOUR_ANCHORS.materialRead)).toContain('browse-page');
+        expect(owner(TOUR_ANCHORS.materialExercises)).toContain('exercise-authoring-page');
     });
 
     it('has no repeated key or value', () => {

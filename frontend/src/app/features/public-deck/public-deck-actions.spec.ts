@@ -223,6 +223,7 @@ describe('the actions of the public deck view: copy, invitation, access request'
             api.summary.mockReturnValue(of(PUBLIC));
             const cases: readonly (readonly [HttpErrorResponse, string])[] = [
                 [problem(409, 'FORK_OWN_DECK'), 'Это ваша колода: добавлять её к себе не нужно.'],
+                [problem(409, 'SAMPLE_DECK_NOT_SHAREABLE'), 'Учебной колодой поделиться нельзя. Создайте свою — ею можно.'],
                 [problem(404, 'RESOURCE_NOT_FOUND'), 'Сейчас добавить колоду к себе нельзя. Попробуйте позже.'],
                 [problem(429, 'RATE_LIMITED', {}, { 'Retry-After': '37' }), 'Слишком много запросов. Подождите 37 с и повторите.'],
                 [problem(503, 'PUBLIC_READ_BUSY', {}, { 'Retry-After': '1' }), 'Сейчас много читателей. Повторите через секунду.'],
@@ -513,6 +514,7 @@ describe('the actions of the public deck view: copy, invitation, access request'
             await open(`/d/${INVITE.code}`);
             const cases: readonly (readonly [HttpErrorResponse, string])[] = [
                 [problem(422, 'RESOURCE_LIMIT_EXCEEDED', { limit: 20 }), 'У вас уже слишком много открытых запросов. Дождитесь ответов или отмените лишние.'],
+                [problem(409, 'SAMPLE_DECK_NOT_SHAREABLE'), 'Учебной колодой поделиться нельзя. Создайте свою — ею можно.'],
                 [problem(429, 'RATE_LIMITED', {}, { 'Retry-After': '3600' }), 'Слишком много запросов. Подождите 60 мин и повторите.'],
                 [problem(429, 'RATE_LIMITED', {}, { 'Retry-After': '45' }), 'Слишком много запросов. Подождите 45 с и повторите.'],
                 [problem(0, null), 'Не удалось отправить запрос. Проверьте соединение и повторите.']

@@ -278,6 +278,7 @@ export class PublicDeckPageComponent {
                 this.copying.set(false);
                 this.copyNotice.set(failure.kind === 'not-found' ? PUBLIC_ACTION_TEXT.copyNotFound
                     : failure.kind === 'own-deck' ? PUBLIC_ACTION_TEXT.copyOwn
+                    : failure.kind === 'sample' ? PUBLIC_ACTION_TEXT.copySample
                     : failure.kind === 'limit' ? PUBLIC_ACTION_TEXT.copyLimit(failure.limit)
                     : failure.kind === 'rate-limited' ? `Слишком много запросов. ${waitText(failure.retryAfter)}`
                     : failure.kind === 'busy' ? PUBLIC_ACTION_TEXT.copyBusy

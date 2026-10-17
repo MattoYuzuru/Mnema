@@ -93,6 +93,8 @@ export function daysLabel(count: number): string {
                     </label>
                   }
                 </fieldset>
+                <!-- Present before its text changes, so the wait for the sample copy is heard. -->
+                <p class="hint" role="status">{{ flow.preparingSample() ? text('tour.preparing') : '' }}</p>
                 <ng-container ngProjectAs="[actions]"><ng-container *ngTemplateOutlet="branchActions" /></ng-container>
               </app-survey-card>
             } @else {

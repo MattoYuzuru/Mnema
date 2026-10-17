@@ -42,8 +42,8 @@ describe('tour events', () => {
 
     it('has every gate of every definition emitted by a page', () => {
         const context = { experience: 'NEW' as const, aiAvailable: true, deckId: () => 'd', memberKey: () => 'm' };
-        for (const branch of ['COMMUNITY', 'OWN'] as const) {
-            for (const step of tourFor(branch, context)!.steps) {
+        for (const branch of ['COMMUNITY', 'OWN', 'SAMPLE'] as const) {
+            for (const step of tourFor(branch, context).steps) {
                 if (step.gate !== 'next') expect(emitted.has(step.gate.action), `${branch}/${step.key}: ${step.gate.action}`).toBe(true);
             }
         }

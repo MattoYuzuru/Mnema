@@ -18,7 +18,13 @@ export const TOUR_ANCHORS = {
     /** `/decks/:deckId/materials/:memberKey/exercises/new`: the exercise form. */
     ownExercise: 'own.exercise',
     /** `/decks/:deckId`: «Учить», the way into the first session of a branch. */
-    hubStart: 'hub.start'
+    hubStart: 'hub.start',
+    /** `/decks/:deckId`: the head of the hub: title, description and how fresh the deck is. */
+    hubHeader: 'hub.header',
+    /** `/decks/:deckId/materials/:memberKey`: the published text of a material. */
+    materialRead: 'material.read',
+    /** `/decks/:deckId/materials/:memberKey/exercises/new`: the list of the exercises the material already has. */
+    materialExercises: 'material.exercises'
 } as const;
 
 export type TourAnchorKey = typeof TOUR_ANCHORS[keyof typeof TOUR_ANCHORS];

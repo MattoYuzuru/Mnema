@@ -3,7 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { InterestProfile } from '../community/recommendations.models';
 import { FirstEntryComponent, daysLabel } from './first-entry.component';
 import { OnboardingFlow } from './onboarding-flow.service';
-import { Setup, setup } from './onboarding-test-data';
+import { SAMPLE_AVAILABLE, Setup, setup } from './onboarding-test-data';
 
 const PROFILE: InterestProfile = {
     rowVersion: '1', onboardingComplete: false, selectedTopics: [], inferredTopics: [], forYouEnabled: false, eventsEnabled: false,
@@ -322,7 +322,7 @@ describe('FirstEntryComponent', () => {
         });
 
         it('offers the sample with the stamp for a newcomer, and without it for a learner who knows flashcards', async () => {
-            const sample = { sampleDeck: { available: true, deckId: 'e1b6bb58-3c0e-4f6a-8f11-4f2d66f6a1aa', updateAvailable: false } };
+            const sample = { sampleDeck: SAMPLE_AVAILABLE };
             await atChoice({ view: sample, listed: 12 });
             expect(labels()).toEqual(['Посмотреть на примере', 'Найти готовую колоду', 'Создать свою']);
             expect(root.querySelector('.choice .stamp')!.textContent).toBe('Советуем для начала');
@@ -344,6 +344,41 @@ describe('FirstEntryComponent', () => {
             await atChoice({ listed: 12 });
             await click('Начать');
             expect(s.store.calls.at(-1)).toEqual(['STEP', { stepKey: 'community.search', branch: 'COMMUNITY' }]);
+        });
+
+        it('starts the sample branch with «Начать»: the copy, the step, the tour on the hub', async () => {
+            await atChoice({ view: { sampleDeck: SAMPLE_AVAILABLE }, listed: 12 });
+            await click('Начать');
+            expect(s.store.createSampleDeck).toHaveBeenCalledTimes(1);
+            expect(s.store.calls.at(-1)).toEqual(['STEP', { stepKey: 'sample.hub', branch: 'SAMPLE' }]);
+            expect(dialog()).toBeNull();
+            expect(s.engine.definition()?.id).toBe('sample-v1');
+        });
+
+        it('keeps a polite status line that says «Готовим колоду…» while the sample copy is made, and is empty before and after', async () => {
+            await atChoice({ view: { sampleDeck: SAMPLE_AVAILABLE }, listed: 12 });
+            const status = (): HTMLElement => root.querySelector<HTMLElement>('app-survey-card p[role=status]')!;
+            expect(status().textContent).toBe('');
+            let finish: (value: { status: 'failed' }) => void = () => undefined;
+            s.store.createSampleDeck.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+            const starting = click('Начать');
+            await settle();
+            expect(status().textContent).toBe('Готовим колоду…');
+            finish({ status: 'failed' });
+            await starting;
+            await settle();
+            expect(status().textContent).toBe('');
+            expect(dialog()).not.toBeNull();
+        });
+
+        it('drops the sample from the choice and stays on the card when the server says it is unavailable', async () => {
+            await atChoice({ view: { sampleDeck: SAMPLE_AVAILABLE }, listed: 12 });
+            s.store.sample = 'unavailable';
+            await click('Начать');
+            await settle();
+            expect(labels()).toEqual(['Найти готовую колоду', 'Создать свою']);
+            expect(dialog()).not.toBeNull();
+            expect(s.engine.active()).toBe(false);
         });
 
         it('names the radios by their group and shows the hint of each', async () => {

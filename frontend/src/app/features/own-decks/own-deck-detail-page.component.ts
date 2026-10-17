@@ -1,3 +1,5 @@
+import { JourneyStore } from '../../core/onboarding/journey.store';
+import { isSampleDeck } from '../../core/onboarding/sample-deck';
 import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
 import { TourEngine } from '../../core/onboarding/tour-engine.service';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -13,6 +15,7 @@ import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/c
 
 import { DeckMetadata, DeckVisibility, OwnDeck, STUDY_DECK_LABEL, validateDeckMetadata } from './own-deck.models';
 import { PaperDialogComponent } from '../../shared/paper-dialog.component';
+import { SamplePlaqueComponent } from '../../shared/sample-plaque.component';
 import { GlyphComponent, GlyphName } from '../../shared/glyph.component';
 import { ACCESS_LEVEL_LABELS, AccessLevelComponent } from '../../shared/access-level.component';
 import { ActionMenuComponent, ActionMenuItem } from '../../shared/action-menu.component';
@@ -54,7 +57,7 @@ import {
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
         PaperDialogComponent, GlyphComponent, DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent, AccessLevelComponent, PublicationBlockComponent, ActionMenuComponent, DeckModerationComponent,
-        CopyOriginComponent, CopyStatusComponent, ToggletipComponent, UnavailableNoteComponent, UpdateBadgeComponent, UpdateNewsComponent, TourAnchorDirective],
+        CopyOriginComponent, CopyStatusComponent, ToggletipComponent, UnavailableNoteComponent, UpdateBadgeComponent, UpdateNewsComponent, TourAnchorDirective, SamplePlaqueComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',
@@ -94,6 +97,8 @@ export class OwnDeckDetailPageComponent {
     readonly shareLevel = computed(() => this.publishedLevel() ?? this.store.detailState().deck?.visibility ?? 'private');
     readonly shareGlyph = computed<GlyphName>(() => this.shareLevel() === 'link' ? 'link' : this.shareLevel() === 'public' ? 'colonnade' : 'lock');
     readonly shareLabel = computed(() => `Поделиться. Доступ: ${ACCESS_LEVEL_LABELS[this.shareLevel()]}`);
+    /** This is the account's sample deck («Учебная»): marked as such, and with nothing to share or open to others. */
+    readonly sample = computed(() => isSampleDeck(this.journey.view(), this.store.detailState().deck?.deckId ?? null));
     /** The copy state of this deck (`null` for an ordinary deck, and while the first read is on its way). */
     readonly fork = computed(() => this.store.detailState().deck?.fork ?? null);
     /** `preparing` or `failed` while the copy is not ready: the hub then shows the state instead of the content. */
@@ -186,6 +191,7 @@ export class OwnDeckDetailPageComponent {
     private readonly capabilities = inject(CapabilitiesApiService);
     private readonly router = inject(Router);
     private readonly tourEngine = inject(TourEngine);
+    private readonly journey = inject(JourneyStore);
     protected readonly studyLabel = STUDY_DECK_LABEL;
     private readonly injector = inject(Injector);
     private readonly destroyRef = inject(DestroyRef);
@@ -281,7 +287,7 @@ export class OwnDeckDetailPageComponent {
             // Уведомление «Запрошен доступ» открывает окно, когда колода и настройки появились.
             const block = this.publication();
             const deckId = this.store.detailState().deck?.deckId ?? null;
-            if (block === undefined || deckId === null || this.fragment() !== 'access' || this.followedAccess === deckId) return;
+            if (block === undefined || deckId === null || this.fragment() !== 'access' || this.followedAccess === deckId || this.sample()) return;
             this.followedAccess = deckId;
             untracked(() => afterNextRender(() => this.sharingDialog()?.open(this.shareButton()?.nativeElement), { injector: this.injector }));
         });

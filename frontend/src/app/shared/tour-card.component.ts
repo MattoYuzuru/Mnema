@@ -127,6 +127,8 @@ export class TourCardComponent {
     protected readonly counter = computed(() => onboardingText('tour.counter', { n: this.position(), m: this.total() }));
     protected readonly announcement = signal('');
     private announced: string | null = null;
+    /** `null` before the first look at the mode: a card that opens already preparing is described by its body instead. */
+    private wasPreparing: boolean | null = null;
     protected readonly dots = computed(() => Array.from({ length: this.total() }, (_, index) => index < this.position()));
     protected readonly floating = computed(() => !this.sheet() && !this.inline());
     protected readonly actionLabel = computed(() => {
@@ -159,6 +161,16 @@ export class TourCardComponent {
                 const first = this.announced === null;
                 this.announced = counter;
                 if (!first) this.announcement.set(counter);
+            });
+        });
+        // The page being prepared under an open card (a copied deck) is said in the same status region: the body below is read with the
+        // dialog when it opens, but a body that changes under an open card is not announced by itself.
+        effect(() => {
+            const preparing = this.mode() === 'preparing';
+            untracked(() => {
+                const was = this.wasPreparing;
+                this.wasPreparing = preparing;
+                if (preparing && was === false) this.announcement.set(this.preparing);
             });
         });
         afterRenderEffect(() => {

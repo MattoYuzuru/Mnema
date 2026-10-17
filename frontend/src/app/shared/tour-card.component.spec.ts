@@ -53,6 +53,34 @@ describe('TourCardComponent', () => {
             expect(region.textContent!.trim()).toBe('Шаг 3 из 4');
         });
 
+        it('says «Готовим колоду…» in the live region when the page starts being prepared under the open card, and not twice', () => {
+            render();
+            const region = host.querySelector<HTMLElement>('dialog [role=status]')!;
+            fixture.componentRef.setInput('mode', 'preparing');
+            fixture.detectChanges();
+            TestBed.tick();
+            fixture.detectChanges();
+            expect(region.textContent!.trim()).toBe('Готовим колоду…');
+            expect(text()).toBe('Готовим колоду…');
+            // The step moves while the page is ready again: the region follows the counter, not the old sentence.
+            fixture.componentRef.setInput('mode', 'normal');
+            fixture.componentRef.setInput('position', 3);
+            fixture.detectChanges();
+            TestBed.tick();
+            fixture.detectChanges();
+            expect(region.textContent!.trim()).toBe('Шаг 3 из 4');
+        });
+
+        it('leaves the region silent for a card that opens already preparing: the dialog is described by its body then', () => {
+            render({ mode: 'preparing' });
+            const region = host.querySelector<HTMLElement>('dialog [role=status]')!;
+            TestBed.tick();
+            fixture.detectChanges();
+            expect(region.textContent!.trim()).toBe('');
+            expect(dialog().getAttribute('aria-describedby')).toContain(host.querySelector('.tour-body')!.id);
+            expect(text()).toBe('Готовим колоду…');
+        });
+
         it('gives every card its own ids', () => {
             render();
             const first = host.querySelector('h2')!.id;

@@ -69,10 +69,15 @@ export interface Journey {
     readonly rowVersion: string;
 }
 
+/** The AI checks of an account's sample deck that cost it nothing (`constants.sampleDeck.freeAiChecks`): per account, not per copy. */
+export const SAMPLE_FREE_AI_CHECKS = 3;
+
 export interface SampleDeck {
     readonly available: boolean;
     readonly deckId: string | null;
     readonly updateAvailable: boolean;
+    /** Free AI checks still left in the sample deck, `0..SAMPLE_FREE_AI_CHECKS`. */
+    readonly freeChecksLeft: number;
 }
 
 /**
@@ -104,6 +109,11 @@ export interface PreferencesCommand {
     readonly rowVersion: string;
     readonly experience?: Experience | null;
     readonly weeklyTarget?: number | null;
+}
+
+/** `POST /api/onboarding/sample-deck`: the one live sample copy of the account (made, or the existing one). Needs no row version. */
+export interface SampleDeckCommand {
+    readonly commandId: string;
 }
 
 /** What a caller adds to an action; the store supplies the command id and the row version. */

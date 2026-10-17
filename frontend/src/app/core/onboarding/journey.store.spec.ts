@@ -11,6 +11,9 @@ import { OnboardingProtocolError, OnboardingRead, OnboardingReadResult, Onboardi
 const offered = contract.views.offered as OnboardingView;
 const paused = contract.views.paused as OnboardingView;
 const disabled = contract.views.disabled as OnboardingView;
+const sampleReady = contract.views.sampleReady as OnboardingView;
+/** The offered view with the sample available but no copy yet: what the branch choice holds before the learner picks it. */
+const sampleReadyAvailable: OnboardingView = { ...offered, sampleDeck: { ...offered.sampleDeck, available: true } };
 const read = (view: OnboardingView, etag: string | null = '"v1"'): OnboardingRead => ({ view, etag });
 const failure = (status: number, code?: string): HttpErrorResponse => new HttpErrorResponse({ status, error: code === undefined ? null : { code } });
 const withVersion = (view: OnboardingView, rowVersion: string): OnboardingView =>
@@ -21,12 +24,13 @@ describe('JourneyStore', () => {
         read: ReturnType<typeof vi.fn<(etag?: string | null) => Observable<OnboardingReadResult>>>;
         command: ReturnType<typeof vi.fn<OnboardingApiService['command']>>;
         preferences: ReturnType<typeof vi.fn<OnboardingApiService['preferences']>>;
+        createSampleDeck: ReturnType<typeof vi.fn<OnboardingApiService['createSampleDeck']>>;
     };
     let store: JourneyStore;
 
     beforeEach(() => {
         vi.useFakeTimers();
-        api = { read: vi.fn(), command: vi.fn(), preferences: vi.fn() };
+        api = { read: vi.fn(), command: vi.fn(), preferences: vi.fn(), createSampleDeck: vi.fn() };
         TestBed.configureTestingModule({ providers: [{ provide: OnboardingApiService, useValue: spyObj<OnboardingApiService>(api) }] });
         store = TestBed.inject(JourneyStore);
     });
@@ -250,6 +254,78 @@ describe('JourneyStore', () => {
             api.preferences.mockReturnValue(throwError(() => failure(412)));
             api.read.mockReturnValueOnce(of({ kind: 'view', ...read(paused) }));
             await expect(store.setPreferences({ experience: 'NEW' })).resolves.toEqual({ status: 'refused', view: paused });
+        });
+    });
+
+    describe('createSampleDeck', () => {
+        it('asks for the copy with a canonical command id and no row version, and stores the view that names it', async () => {
+            await loaded();
+            api.createSampleDeck.mockReturnValue(of(read(sampleReady, '"v7"')));
+            await expect(store.createSampleDeck()).resolves.toEqual({ status: 'applied', view: sampleReady });
+            const body = api.createSampleDeck.mock.calls[0][0];
+            expect(Object.keys(body)).toEqual(['commandId']);
+            expect(body.commandId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+            expect(store.view()?.sampleDeck.deckId).toBe(sampleReady.sampleDeck.deckId);
+            expect(store.error()).toBeNull();
+        });
+
+        it('retries an unknown outcome with the same command id, so a lost answer never makes a second copy', async () => {
+            await loaded();
+            api.createSampleDeck.mockReturnValueOnce(throwError(() => failure(0))).mockReturnValueOnce(throwError(() => failure(503)))
+                .mockReturnValueOnce(of(read(sampleReady)));
+            const result = store.createSampleDeck();
+            await vi.advanceTimersByTimeAsync(5_000);
+            await expect(result).resolves.toEqual({ status: 'applied', view: sampleReady });
+            expect(new Set(api.createSampleDeck.mock.calls.map(call => call[0].commandId)).size).toBe(1);
+            expect(api.createSampleDeck).toHaveBeenCalledTimes(3);
+        });
+
+        it('uses a new command id for the next request (the repeat choice is its own command and gets the live copy)', async () => {
+            await loaded();
+            api.createSampleDeck.mockReturnValue(of(read(sampleReady)));
+            await store.createSampleDeck();
+            await store.createSampleDeck();
+            expect(api.createSampleDeck.mock.calls[0][0].commandId).not.toBe(api.createSampleDeck.mock.calls[1][0].commandId);
+        });
+
+        it('follows SAMPLE_DECK_UNAVAILABLE: the view is read again without the stale validator and says the sample is gone', async () => {
+            await loaded(sampleReadyAvailable);
+            api.createSampleDeck.mockReturnValue(throwError(() => failure(409, contract.problems.sampleUnavailable.code)));
+            api.read.mockReturnValueOnce(of({ kind: 'view', ...read(offered, '"fresh"') }));
+            await expect(store.createSampleDeck()).resolves.toEqual({ status: 'refused', view: offered });
+            expect(api.read).toHaveBeenLastCalledWith(null);
+            expect(store.view()?.sampleDeck.available).toBe(false);
+            expect(api.createSampleDeck).toHaveBeenCalledTimes(1);
+            expect(store.error()).toBeNull();
+        });
+
+        it('follows a switched-off onboarding the same way', async () => {
+            await loaded();
+            api.createSampleDeck.mockReturnValue(throwError(() => failure(409, 'ONBOARDING_UNAVAILABLE')));
+            api.read.mockReturnValueOnce(of({ kind: 'view', ...read(disabled) }));
+            await expect(store.createSampleDeck()).resolves.toEqual({ status: 'refused', view: disabled });
+            expect(store.enabled()).toBe(false);
+        });
+
+        it('does not retry a refusal of the request itself and flags the error', async () => {
+            await loaded();
+            api.createSampleDeck.mockReturnValue(throwError(() => failure(403)));
+            await expect(store.createSampleDeck()).resolves.toEqual({ status: 'failed' });
+            expect(api.createSampleDeck).toHaveBeenCalledTimes(1);
+            expect(store.error()).toBe('command');
+        });
+
+        it('drops the answer that was on its way when the account changed', async () => {
+            await loaded();
+            const answer = new Subject<OnboardingRead>();
+            api.createSampleDeck.mockReturnValue(answer);
+            const result = store.createSampleDeck();
+            await vi.advanceTimersByTimeAsync(0);
+            store.reset();
+            answer.next(read(sampleReady, '"previous"'));
+            answer.complete();
+            await expect(result).resolves.toEqual({ status: 'failed' });
+            expect(store.view()).toBeNull();
         });
     });
 
