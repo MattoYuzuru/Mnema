@@ -23,8 +23,10 @@ artifact:
    (0600); свежий токен — PKCE-вход по образцу `scripts/local-full-stack/smoke.py`, в файл 0600 для `MNEMA_ACCESS_TOKEN_FILE`.
    `studio whoami` должен вернуть UUID из `plan.json`.
 3. Студия: `validate` → `approve` (по решению владельца, с цитатой) → `prepare`/`submit`/`poll` (озвучка) → `publish` (PRIVATE).
-4. Публикация шаблона на `LINK` его владельцем (`PUT /api/decks/{deckId}/publication`), затем
-   `LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID=<deckId>` и перезапуск стека: Learning помечает колоду `SAMPLE_TEMPLATE`.
+4. `LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID=<deckId>` и перезапуск стека, пока колода ещё **PRIVATE**: Learning помечает
+   её `SAMPLE_TEMPLATE` (PUBLIC/INVITE-колоду не помечает и пишет ERROR). Затем владелец публикует шаблон на `LINK`
+   (`PUT /api/decks/{deckId}/publication`) — после пометки другие уровни и копия по коду запрещены, поэтому обычных копий
+   шаблона не появится.
 5. Проверка: `GET /api/onboarding` нового аккаунта даёт `sampleDeck.available=true`; `POST /api/onboarding/sample-deck` — копия;
    `runs/base-tech-shared/verify_live_generic.py` — readback, preview и настоящее PRACTICE по шаблону и копии.
 
@@ -34,6 +36,8 @@ artifact:
 пользователей получают обычное «Есть обновление» (CD-5) и сами решают, принять ли его; ничего не применяется
 автоматически. Новые копии делаются уже от новой ревизии. Сменить сам шаблон — новый `template-id` и перезапуск;
 прежний остаётся `SAMPLE_TEMPLATE` (не шарится), его копии продолжают работать.
+
+**Не удалять шаблон:** удаление необратимо, все копии теряют обновления, ветка «На примере» пропадает до нового шаблона.
 
 ## Факт установки
 
