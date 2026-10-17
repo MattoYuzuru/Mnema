@@ -25,7 +25,7 @@ The pinned digest is a multi-platform OCI index. The final column proves that it
 
 | Source | Path | Readable tag | Pinned index digest | `linux/amd64` child |
 | --- | --- | --- | --- | --- |
-| Backend build | `backend/Dockerfile` | `gradle:9.8.0-jdk25` | `sha256:7086a4cd10d568b35cafd6d5d30323865f3ce1f23ccddc9570ff3e3c9c8cd6e9` | `sha256:b7b9164dcd19fea3ddc6ef143159b056591f898c3ae32d3151a0f0fe0f22fe47` |
+| Backend build | `backend/Dockerfile` | `gradle:9.8.1-jdk25` | `sha256:e4f9e3d037cc0c7d8fc42cd97edb976dfd19a5b7314212b88b6de3807d13cd47` | `sha256:a21a38a8ef591aae91d04f497e498b2d8ae02eb259d9807f70004e10b123dafb` |
 | Backend runtime stages | `backend/Dockerfile` | `eclipse-temurin:25.0.4.1_1-jre-resolute` | `sha256:628f28c18211e8633d02cefb9698489abcbd43337c61fba67837e4ffb86d50d6` | `sha256:bcc1a99b4bc676717bdc9841c363072ce10e3f34462c4017f7df08e730f485b0` |
 | Frontend build | `frontend/Dockerfile` | `node:24.21.0-alpine` | `sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1` | `sha256:83f1c388c31fb2e51f7cbd4dea949b96260798c98f206e8e4696bc93bd964e3a` |
 | Frontend runtime | `frontend/Dockerfile` | `nginx:1.31.6-alpine` | `sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2` | `sha256:0530961ff0592b58c10f767535cc0abdfccf9e389ff7cc90f87320c1bc7e8506` |
@@ -36,7 +36,8 @@ The frontend's pinned nginx base is supplemented with security version floors
 from the stable Alpine 3.24 repository. Publication run `37217508523` found
 `CVE-2026-93990` in `libexpat 2.8.4-r0` and `CVE-2026-103111` in `pcre2 10.48-r0`.
 Publication run `37892843818` found `CVE-2026-4775` (HIGH) in `tiff 4.7.1-r0`.
-The image requires `libexpat>=2.8.5-r0`, `pcre2>=10.49-r0` and `tiff>=4.7.2-r0`, the first fixed builds
+Main CI run `39064534612` found `CVE-2026-77214` (HIGH) in `libexpat 2.8.5-r0`.
+The image requires `libexpat>=2.9.0-r0`, `pcre2>=10.49-r0` and `tiff>=4.7.2-r0`, the first fixed builds
 in [Alpine's security database](https://secdb.alpinelinux.org/v3.24/main.json).
 The existing OpenSSL floors remain. No edge repository or scan exception is added;
 provenance/SBOM and the HIGH/CRITICAL gate bind the actual derived release digest.

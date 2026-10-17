@@ -21,7 +21,7 @@ FROM nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426e
 RUN apk add --no-cache --upgrade \
     'libcrypto3>=3.5.8-r0' \
     'libssl3>=3.5.8-r0' \
-    'libexpat>=2.8.5-r0' \
+    'libexpat>=2.9.0-r0' \
     'pcre2>=10.49-r0' \
     'tiff>=4.7.2-r0'
 
