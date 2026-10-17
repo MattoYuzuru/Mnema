@@ -32,7 +32,7 @@ artifact:
 |---|---|---|---|---|
 | OB-001 | local complete, delivery pending | 0801bcb7, 386bc99f | `design/prototype/onboarding/`, [тексты](../evidence/onboarding/ob-prep/texts-for-approval.md), [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) | Утверждено владельцем 2026-10-16; PR #554 |
 | OB-002 | in progress | e8969264, 386bc99f | [раздел 1.7](../evidence/onboarding/ob-prep/ob-002-policy-draft.md) | Текст утверждён 2026-10-16; дата вступления — в PR включения флагов |
-| OB-003 | blocked: сборка по отдельному поручению владельца | — | [планы и digest](../evidence/onboarding/ob-prep/deck-plans.md); MnemaDeckStudio `runs/base-*` | Планы утверждены 2026-10-16; 10 колод; канон согласован |
+| OB-003 | in progress | — | [сборка и проверка](../evidence/onboarding/ob-prep/deck-plans.md#сборка-базовых-колод-2026-10-1617); MnemaDeckStudio `runs/base-*` | 2026-10-17: 8 новых колод собраны, ревью PASSED, опубликованы PRIVATE в production и проверены; вместе с 2 английскими — 10. Осталось AC 2 (local stack и ветка «Найти готовую») |
 | OB-101 | local complete, delivery pending | 4d824cc5, 9b2b69c5, a0d2bf3b, 70d6b537 | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), `contracts/onboarding/` | V72; флаги prod off |
 | OB-102 | local complete, delivery pending | 213d67c6, e034d361, 335e59bf | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) | Открыты AC: VoiceOver smoke, resize/scroll в браузере |
 | OB-103 | local complete, delivery pending | e5f30a26, e034d361, 062ed44b, 748043a2 | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md), [harness](../evidence/onboarding/ob-e1/onboarding-results.json) | |
@@ -56,6 +56,7 @@ artifact:
 | Дата | Сессия | Агент / модель | База → HEAD | Итог | Handoff |
 |---|---|---|---|---|---|
 | 2026-10-15/16 | S0 | Claude Opus 5.5 (lead), 2 × Opus 5.5 research, Opus 5.5 review | 42e35d0f → 0efe11d1 (+ handoff) | OB-001/002/003/202 подготовлены; 2026-10-16 утверждены владельцем, корейский перепланирован | [S0](../evidence/onboarding/ob-prep/handoff-session-0.md) |
+| 2026-10-16/17 | S0+ (колоды) | Claude Opus 5.5 (lead), Sonnet 5.5 high (авторы), Haiku 5.5 (картинки), Opus 5.5 high (ревью) | MnemaDeckStudio (вне git) | 8 базовых колод PRIVATE в production, TTS $0.30 | [сводка](../evidence/onboarding/ob-prep/deck-plans.md) |
 | 2026-10-16/17 | S1 | Claude Opus 5.5 (lead), 2 × Sonnet 5.5 high (backend, frontend), Sonnet 5.5 high (harness), 3 × Opus 5.5 high review | 71ab1c89 + merge b6f14df8 → 748043a2 (+ handoff) | OB-101…OB-105 local complete; полный gate и harness `--onboarding` зелёные | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) |
 
 Handoff-файлы кладутся в `docs/engineering/evidence/onboarding/<epic>/handoff-session-<N>.md` ветки
