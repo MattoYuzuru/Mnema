@@ -5,7 +5,7 @@ artifact:
   title: "Onboarding: session prompts, model policy and handoff protocol"
   status: current
   created_at: "2026-10-14"
-  updated_at: "2026-10-14"
+  updated_at: "2026-10-17"
   owners: ["project-owner"]
 ---
 
@@ -55,9 +55,9 @@ artifact:
    не выкатываются без утверждения владельца. Production-флаги онбординга включаются только после OB-002.
 
 6. Завершение (обязательно, даже если не всё успел). Независимое review диффа (ревьюер не автор кода),
-   исправь findings. Полный gate на точном commit:
-   (cd backend && ./gradlew clean quality); (cd frontend && npm ci && npm run lint && npm run test && npm run build);
-   python3 scripts/verify_docs.py. Обнови: AC-галочки в task/epic файлах со ссылками на evidence; раздел
+   исправь findings. Полный gate на точном commit: закоммить, затем python3 scripts/checks.py run и
+   python3 scripts/checks.py verify (отдельный worktree кандидата; правки во время прогона его не меняют).
+   Для быстрой обратной связи по ходу работы — run --affected, но не как итоговый gate. Обнови: AC-галочки в task/epic файлах со ссылками на evidence; раздел
    «Уточнено реализацией» в proposal/architecture, если поведение уточнилось; progress.md (статус, commit,
    evidence, журнал сессий). Напиши docs/engineering/evidence/onboarding/<epic>/handoff-session-<N>.md:
    база и HEAD, что сделано по ID, отклонения от канона и почему, результаты gate (команда, итог,

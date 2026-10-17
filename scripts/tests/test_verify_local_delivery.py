@@ -21,9 +21,11 @@ QUALITY = {'backend-tests', 'backend-security', 'backend-runtime', 'backend-qual
            'frontend-checks', 'frontend-tests', 'frontend-quality'}
 AGGREGATES = {'backend-quality': ['backend-tests', 'backend-security', 'backend-runtime'],
               'frontend-quality': ['frontend-checks', 'frontend-tests']}
+# Pull requests also build and scan every release image (unpublished); frontend-quality requires it there.
+PR_AGGREGATES = {**AGGREGATES, 'frontend-quality': [*AGGREGATES['frontend-quality'], 'release-images']}
 ACTIVE = {
     'deploy.yaml': {'validate-main-ref', 'release-scope'} | QUALITY,
-    'pull-request.yaml': QUALITY,
+    'pull-request.yaml': QUALITY | {'release-images'},
     'dependency-review.yaml': {'dependency-review'},
 }
 
@@ -104,8 +106,9 @@ def verify(contents):
                 if guards != [expected[name]]:
                     errors.append(f'{filename}/{name}: missing reviewed job guard')
             elif name in ACTIVE.get(filename, set()):
-                if name in AGGREGATES:
-                    if guards != ['    if: ${{ always() }}'] or '    needs: [' + ', '.join(AGGREGATES[name]) + ']' not in block:
+                aggregates = PR_AGGREGATES if filename == 'pull-request.yaml' else AGGREGATES
+                if name in aggregates:
+                    if guards != ['    if: ${{ always() }}'] or '    needs: [' + ', '.join(aggregates[name]) + ']' not in block:
                         errors.append(f'{filename}/{name}: aggregate must run and require every quality block')
                 elif guards:
                     errors.append(f'{filename}/{name}: quality job must stay enabled')
@@ -172,7 +175,7 @@ class LocalDeliveryContractTest(unittest.TestCase):
 
     def test_required_aggregates_reject_failure_cancellation_skipping_and_empty_results(self):
         for filename in ['pull-request.yaml', 'deploy.yaml']:
-            for name, dependencies in AGGREGATES.items():
+            for name, dependencies in (PR_AGGREGATES if filename == 'pull-request.yaml' else AGGREGATES).items():
                 block = '\n'.join(_job_blocks(self.contents[filename])[name])
                 program = textwrap.dedent(block.split("python3 - <<'PYCODE'\n", 1)[1].split('          PYCODE', 1)[0])
                 success = {key: {'result': 'success'} for key in dependencies}
@@ -188,7 +191,7 @@ class LocalDeliveryContractTest(unittest.TestCase):
 
     def test_aggregate_cannot_drop_a_required_dependency(self):
         for filename in ['pull-request.yaml', 'deploy.yaml']:
-            for name, dependencies in AGGREGATES.items():
+            for name, dependencies in (PR_AGGREGATES if filename == 'pull-request.yaml' else AGGREGATES).items():
                 changed = dict(self.contents)
                 before = '    needs: [' + ', '.join(dependencies) + ']'
                 after = '    needs: [' + ', '.join(dependencies[:-1]) + ']'

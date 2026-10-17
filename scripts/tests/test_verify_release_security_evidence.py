@@ -18,6 +18,7 @@ from verify_release_security_evidence import (  # noqa: E402
     VPS_SERVICES,
     aggregate,
     evaluate,
+    preflight,
     validate_workflow_contract,
     verify_release,
 )
@@ -301,6 +302,34 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
             encoding="utf-8",
         )
         return path
+
+    def preflight_args(self, service: str, vulnerabilities: list[dict[str, str]]) -> argparse.Namespace:
+        local = f"mnema-preflight/{service}:pr"
+        report = self.root / f"{service}-preflight.json"
+        self.write_json(report, {"SchemaVersion": 2, "ArtifactName": local, "Metadata": {},
+                                 "Results": [{"Target": "runtime", "Vulnerabilities": vulnerabilities}]})
+        return argparse.Namespace(service=service, image=local, report=report, exceptions=self.exceptions,
+                                  trivy_ignore=self.trivy_ignore, now="2026-08-29")
+
+    def test_preflight_blocks_an_unexcepted_high_finding_in_an_unpublished_image(self) -> None:
+        with self.assertRaisesRegex(EvidenceFailure, "HIGH:CVE-2026-12345:openssl"):
+            preflight(self.preflight_args("frontend", [self.vulnerability("HIGH")]))
+        preflight(self.preflight_args("frontend", [self.vulnerability("MEDIUM"), self.vulnerability("LOW")]))
+
+    def test_preflight_applies_a_valid_exception_of_the_same_service_only(self) -> None:
+        self.set_exception("frontend")
+        preflight(self.preflight_args("frontend", [self.vulnerability("CRITICAL")]))
+        with self.assertRaisesRegex(EvidenceFailure, "blocking vulnerabilities"):
+            preflight(self.preflight_args("learning", [self.vulnerability("CRITICAL")]))
+        self.set_exception("frontend", expires="2026-08-28")
+        with self.assertRaisesRegex(EvidenceFailure, "expired"):
+            preflight(self.preflight_args("frontend", []))
+
+    def test_preflight_rejects_a_report_for_another_image(self) -> None:
+        arguments = self.preflight_args("frontend", [])
+        arguments.image = "mnema-preflight/learning:pr"
+        with self.assertRaisesRegex(EvidenceFailure, "not bound"):
+            preflight(arguments)
 
     def test_low_and_medium_findings_are_reported_without_blocking(self) -> None:
         arguments = self.fixture(

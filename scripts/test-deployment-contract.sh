@@ -30,11 +30,20 @@ for quality_workflow in "$MAIN_WORKFLOW" "$PULL_REQUEST_WORKFLOW"; do
 done
 
 # Every job that pulls Docker Hub images routes them through mirror.gcr.io (anonymous hosted-runner limit, #411).
-test "$(grep -c 'uses: ./.github/actions/docker-hub-mirror' "$PULL_REQUEST_WORKFLOW")" -eq 4
+test "$(grep -c 'uses: ./.github/actions/docker-hub-mirror' "$PULL_REQUEST_WORKFLOW")" -eq 5
 test "$(grep -c 'uses: ./.github/actions/docker-hub-mirror' "$MAIN_WORKFLOW")" -eq 5
 build_job=$(sed -n '/^  build-and-push:/,/^  assemble-vps-candidate:/p' "$MAIN_WORKFLOW")
-printf '%s\n' "$build_job" | grep -Fq '[registry."docker.io"]'
-printf '%s\n' "$build_job" | grep -Fq 'mirrors = ["mirror.gcr.io"]'
+preflight_job=$(sed -n '/^  release-images:/,/^  backend-quality:/p' "$PULL_REQUEST_WORKFLOW")
+for job in "$build_job" "$preflight_job"; do
+  printf '%s\n' "$job" | grep -Fq '[registry."docker.io"]'
+  printf '%s\n' "$job" | grep -Fq 'mirrors = ["mirror.gcr.io"]'
+done
+# The pull-request image preflight never publishes and never writes the release cache scopes.
+printf '%s\n' "$preflight_job" | grep -Fq 'push: false'
+if printf '%s\n' "$preflight_job" | grep -Eq 'cache-to:|docker/login-action|packages: write|id-token'; then
+  echo "Pull-request image preflight must stay unpublished and read-only" >&2
+  exit 1
+fi
 
 if grep -Eq '^    uses:' "$MAIN_WORKFLOW" "$VPS_WORKFLOW"; then
   echo "Delivery workflows must not call other workflows" >&2

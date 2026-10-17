@@ -243,6 +243,8 @@ jobs:
           python3 scripts/verify_artifact_security_policy.py
           python3 scripts/verify_production_image_pins.py
           python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v
+          # The remaining script suites; tests/test_verify_checks.py fails when a new suite is owned by no job.
+          python3 -m unittest scripts.tests.test_ai_ops_metrics_snapshot scripts.tests.test_ai_worker_topology scripts.tests.test_local_full_stack_media scripts.tests.test_ranker_evaluation scripts.tests.test_require_no_skips -v
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -262,6 +264,10 @@ jobs:
       - name: Run frontend build
         working-directory: frontend
         run: npm run build
+
+      - name: Verify the dev-only styleguide is absent from production
+        working-directory: frontend
+        run: node scripts/verify-no-styleguide.mjs
 
       - name: Verify frontend release contract
         run: ./scripts/test-frontend-release-contract.sh

@@ -93,15 +93,19 @@ Add or update tests for non-trivial changes (backend unit + slice/integration; f
 tests for critical logic, e2e only when necessary); prefer deterministic tests over brittle timing.
 
 ```bash
-(cd backend && ./gradlew clean quality)                            # JDK 25 + Docker/Testcontainers
-(cd frontend && npm ci && npm run lint && npm run test && npm run build)
-python3 scripts/verify_docs.py
+python3 scripts/checks.py plan      # the checks, why each runs, and the hosted job that repeats it
+python3 scripts/checks.py run       # full gate on the committed HEAD, in its own validation worktree
+python3 scripts/checks.py verify    # before push: the run still belongs to this unchanged commit
 ```
 
-- Before presenting results or preparing a branch for review, run the full gate locally (backend
-  lint/static analysis if configured, backend tests, frontend lint, frontend tests). If anything
+The catalogue in [`scripts/checks.py`](scripts/checks.py) is the one list of checks; hosted jobs are tested
+against it. `plan --affected` / `run --affected` give fast feedback during work, never a final gate.
+
+- Before presenting results or preparing a branch for review, run the full gate locally. If anything
   cannot be run or is not configured, state what was blocked or missing and why.
-- Before any push, re-run the full relevant gate on the exact branch/commit being pushed.
+- Before any push, run the full gate on the exact commit being pushed and `verify` it. Commit first;
+  keep editing freely in the working checkout, because the gate runs in a detached worktree of that
+  commit. A changed candidate needs a new run; never reuse or relabel stale evidence.
 - If the gate fails for missing coverage or tests, add or update tests until the thresholds pass;
   do not push with a red gate. Coverage thresholds are a hard requirement of done.
 - Machine setup (default `java` may differ from JDK 25, Colima socket, Node 24) and the complete CI-equivalent
