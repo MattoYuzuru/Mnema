@@ -51,7 +51,7 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
         self.replace(
             "backend/Dockerfile",
             "gradle:9.8.1-jdk25@sha256:e4f9e3d037cc0c7d8fc42cd97edb976dfd19a5b7314212b88b6de3807d13cd47",
-            "gradle:9.8.0-jdk25",
+            "gradle:9.8.1-jdk25",
         )
         self.assertTrue(any("Dockerfile FROM" in finding.message for finding in self.findings()))
 
@@ -59,7 +59,7 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
         self.replace(
             "backend/Dockerfile",
             "FROM gradle:9.8.1-jdk25@sha256:e4f9e3d037cc0c7d8fc42cd97edb976dfd19a5b7314212b88b6de3807d13cd47 AS build",
-            "FROM --platform=linux/amd64 gradle:9.8.0-jdk25 AS build",
+            "FROM --platform=linux/amd64 gradle:9.8.1-jdk25 AS build",
         )
         self.assertTrue(any("Dockerfile FROM" in finding.message for finding in self.findings()))
 
