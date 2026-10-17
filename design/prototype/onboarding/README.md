@@ -39,7 +39,7 @@ node design/prototype/serve.mjs
 | Награда | `reward` | Поздравление 100 % с датой окончания текстом, без таймера (production после OB-002) |
 
 Тексты — только из [texts.js](texts.js); список на утверждение —
-[texts-for-approval](../../../docs/engineering/evidence/onboarding/ob-prep/texts-for-approval.md).
+[утверждённые тексты](../../../docs/engineering/evidence/onboarding/ob-prep/texts-for-approval.md) (2026-10-16).
 
 ## Для OB-102: новые токены и компоненты
 
@@ -75,7 +75,7 @@ node design/prototype/serve.mjs
 | рамка выреза `#b9a6ec` / страница под вуалью `#50476f` | 3.94:1 | 3 (не текст) |
 | знак «не начато» `--mn-muted` / `--mn-paper` | 5.62:1 | 3 (не текст) |
 
-## Уточнения дизайна (на решение владельца, см. handoff)
+## Уточнения дизайна (утверждены владельцем 2026-10-16)
 
 1. **Мерцание звёзд конечное.** Proposal: «медленное мерцание»; контракт бренда запрещает бесконечную
    анимацию. Прототип: у части звёзд три цикла по 3,6 с, затем покой; при reduced motion — статично.
