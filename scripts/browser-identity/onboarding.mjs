@@ -188,7 +188,9 @@ export async function runOnboarding(ctx) {
     }
     throw new SafeFailure(`${actor.label}: Tab did not reach ${what} in ${max} presses`);
   };
-  const buttonNamed = text => `(e, norm) => e.tagName === 'BUTTON' && norm(e.getAttribute('aria-label') || e.textContent) === ${JSON.stringify(text)}`;
+  // A JS string literal safe to embed in evaluated code: JSON plus escapes for characters JSON leaves raw (<, >, /, U+2028, U+2029).
+  const jsString = value => JSON.stringify(String(value)).replace(/[<>/\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+  const buttonNamed = text => `(e, norm) => e.tagName === 'BUTTON' && norm(e.getAttribute('aria-label') || e.textContent) === ${jsString(text)}`;
   const radioInput = '(e) => e.tagName === \'INPUT\' && e.type === \'radio\'';
   /**
    * A mouse click at the middle of an element, after checking that the element is what the mouse would hit there: when something else covers the

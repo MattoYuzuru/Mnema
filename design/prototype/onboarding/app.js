@@ -145,6 +145,8 @@ const TOURS = {
   ] },
 };
 
+const BRANCHES = Object.freeze(['sample', 'community', 'own']);
+
 // ---------- screens ----------
 const SCREENS = [
   ['welcome', 'Приветствие'], ['survey-1', 'Опрос 1: цель'], ['survey-2', 'Опрос 2: интересы'], ['survey-3', 'Опрос 3: опыт'], ['survey-4', 'Опрос 4: дни'],
@@ -163,7 +165,12 @@ function render() {
   const id = location.hash.slice(1) || 'welcome';
   document.querySelector('#screen').value = id;
   const tour = id.match(/^tour-(sample|community|own)-(\d)$/);
-  if (tour) return renderTour(tour[1], Number(tour[2]) - 1);
+  // The branch and step come from the address: map them onto constants so nothing typed into the URL reaches markup.
+  if (tour) {
+    const branch = BRANCHES[BRANCHES.indexOf(tour[1])];
+    const index = Math.min(Math.max(Number.parseInt(tour[2], 10) - 1, 0), TOURS[branch].steps.length - 1);
+    return renderTour(branch, index);
+  }
   const survey = id.match(/^survey-(\d)$/);
   if (survey) { app.innerHTML = pages.decks(); return renderSurvey(Number(survey[1])); }
   switch (id) {
