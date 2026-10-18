@@ -2856,8 +2856,9 @@ The milestones of an account that existed before OB-301 are restored from histor
 `app.mnema.learning.onboarding`: `OnboardingBackfill` (the `JobHandler`), `BackfillRepository` (the SQL), `BackfillSchedule` (the enqueuer), `BackfillSettings`.
 
 - **Switches.** `learning.onboarding.backfill.enabled` (default **false**) lets `BackfillSchedule` (roles `worker`/`all`, a tick like `CatalogSchedule`) enqueue queue `onboarding.backfill` with
-  the dedupe key `onboarding.backfill:v<registryVersion>` (`MilestoneKey.REGISTRY_VERSION`): one job per version however many instances; a new version runs it again, and so does a restart after the
-  finished job row was retained away (7 days) - harmless, a rerun writes nothing. `learning.jobs.onboarding.backfill.enabled` is the queue's kill switch. Knobs (`BackfillSettings`, bad values stop the
+  the dedupe key `onboarding.backfill:v<registryVersion>` (`MilestoneKey.REGISTRY_VERSION`): one job per version however many instances; a finished version is recorded in `onboarding_backfill_run` (V74), so it
+  does not run again after its job row is retained away; a new version runs it again. One batch per slice (one transaction), and only rows the history changes are offered
+  to the insert, so a rerun takes no row lock. `learning.jobs.onboarding.backfill.enabled` is the queue's kill switch. Knobs (`BackfillSettings`, bad values stop the
   start): `batch` [1000, 100-5000] accounts per statement, `slice-budget` [PT3S, PT0.5S-PT20S], `pause` [PT1S, 0-PT1M] between slices.
 - **Walk.** The cursor `{key, after}` is saved in the job row after every slice. For each key of `BackfillRepository.SOURCES` (registry order, `RHYTHM_WEEK` has no history) a batch is two statements:
   the last of the next `batch` owners by a loose index scan (one probe of the source's owner index per owner), then ONE `INSERT ... SELECT ... ON CONFLICT DO UPDATE` over `(after, last]`. A slice

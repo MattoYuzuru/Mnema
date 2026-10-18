@@ -978,7 +978,7 @@ export async function runOnboarding(ctx) {
     const forced = await read(A, `const m = document.querySelector('app-path-milestone .milestone'); const bar = document.querySelector('app-path-progress .track');
       return { active: matchMedia('(forced-colors: active)').matches, wordColor: getComputedStyle(m.querySelector('.word')).color, ground: getComputedStyle(document.body).backgroundColor,
         barBorder: bar ? getComputedStyle(bar).borderTopStyle : null, overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth };`);
-    A.need(forced.active && forced.wordColor !== forced.ground && !forced.overflow, 'the Path page in forced colors is ' + JSON.stringify(forced));
+    A.need(forced.active && forced.wordColor !== forced.ground && forced.barBorder !== null && forced.barBorder !== 'none' && !forced.overflow, 'the Path page in forced colors is ' + JSON.stringify(forced));
     await shoot(A, 'onboarding-path-forced-colors-1440.png');
     await motion(A, null);
     // A phone: nothing scrolls sideways, every chevron keeps a touch target of at least 44 px, the state words stay.
@@ -1060,8 +1060,11 @@ export async function runOnboarding(ctx) {
     const note = await saveNote(world.journeyBearer, world.deckId, 'Заметка для проверки «Пути»');
     await archiveNote(world.journeyBearer, note);
     const achieved = await waitFor('CAPTURE_NOTE done on the server', () => serverPath(A), view => view.milestones.find(item => item.key === 'CAPTURE_NOTE')?.state === 'DONE', 15_000);
+    const arrivalMark = A.wire.length;
     await pollNow(A);
-    // The center has had its look (a visible tab polls at once); nothing may speak while the answer is open, whatever the poll found.
+    // The client must have received the milestone before the quiet window counts: a PATH_MILESTONE makes the page re-read GET /api/onboarding (PathToasts.noteArrival).
+    await waitFor('the milestone notification received by the page', async () => A.wire.slice(arrivalMark).some(entry => entry.method === 'GET' && entry.path === '/api/onboarding'), Boolean, 20_000);
+    // Received and held: nothing may speak while the answer is open.
     const quiet = [];
     for (let look = 0; look < 12; look++) {
       await sleep(500);
@@ -1104,7 +1107,7 @@ export async function runOnboarding(ctx) {
     await realClick(A, 'app-quest-host button.primary', PATH.questStart);
     // The first step: its page is the material editor, its card is the same card as the tour's, anchored to the control that puts a picture in.
     const step = await awaitStep(A, PATH.milestones.MEDIA_IN_MATERIAL[1], 'Шаг 1 из 2', 30_000);
-    await waitFor('the material editor', () => location(A), path => new RegExp(`^/decks/${world.deckId}/materials/[0-9a-f-]{36}/edit(\\?ordinal=\\d+)?$`).test(path), 20_000);
+    await waitFor('the material editor', () => location(A), path => new RegExp(`^/decks/${world.deckId}/materials/[0-9a-f-]{36}/edit\\?ordinal=\\d+$`).test(path), 20_000);
     await waitFor('the media control on the page', () => exists('[data-tour-anchor="editor.media"]', A.tab), Boolean, 25_000);
     const placed = await waitFor('the step card with its target', () => tourState(A), s => s.card && s.frame !== null && s.body !== norm(T.missing), 15_000);
     A.need(placed.buttons.includes(PATH.questLeave) && !placed.buttons.includes(T.finish) && placed.hold === null, 'the card of a quest has these buttons: ' + JSON.stringify(placed.buttons));

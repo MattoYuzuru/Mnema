@@ -16,7 +16,8 @@ import java.util.UUID;
  * <p>A batch is two statements: {@link #upperBound} finds the last of the next {@code batch} owners by a loose index scan (one index probe per owner), and {@link #write} merges
  * the history of the owners in the range with one {@code INSERT ... SELECT ... ON CONFLICT DO UPDATE}. The merge never lowers a row: {@code progress = GREATEST(existing, history)},
  * {@code first_at = LEAST(...)}, an existing {@code achieved_at} is kept and {@code source} of an existing row is never touched (a LIVE row stays LIVE); a row that would not change
- * is not written. It publishes nothing. A rerun finds nothing to change.
+ * is not offered to the insert at all, so a rerun takes no row lock. It publishes nothing. A rerun finds nothing to change. A row a live writer commits after the
+ * statement's snapshot (a third exercise, a second date) may be under-counted by that batch; the next live event of the account corrects it.
  */
 @Repository
 class BackfillRepository {
@@ -106,7 +107,9 @@ class BackfillRepository {
             new Source(MilestoneKey.COMMUNITY_COPY, "deck_fork", "owner_id", """
                     SELECT f.owner_id AS account_id, 1 AS progress, min(f.forked_at) AS first_at, min(f.forked_at) AS achieved_at
                       FROM app_learning.deck_fork f
-                      CROSS JOIN LATERAL (SELECT 1 FROM app_learning.deck up WHERE up.deck_id = f.upstream_deck_id AND up.purpose = 'USER' AND up.owner_id <> f.owner_id) u
+                      -- the copy's own purpose (ForkService.copy writes USER, copyTemplate SAMPLE): the source may have become a template since the copy was made
+                      CROSS JOIN LATERAL (SELECT 1 FROM app_learning.deck c WHERE c.deck_id = f.deck_id AND c.purpose = 'USER') c
+                      CROSS JOIN LATERAL (SELECT 1 FROM app_learning.deck up WHERE up.deck_id = f.upstream_deck_id AND up.owner_id <> f.owner_id) u
                      WHERE f.owner_id > :from AND f.owner_id <= :to GROUP BY f.owner_id
                     """));
 
@@ -117,6 +120,17 @@ class BackfillRepository {
 
     BackfillRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
+    }
+
+    /** Whether the backfill of {@code version} has finished once (V74 {@code onboarding_backfill_run}): the enqueuer does not run it again. */
+    boolean finished(int version) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.onboarding_backfill_run WHERE registry_version = :v)").param("v", version).query(Boolean.class).single();
+    }
+
+    /** Records, in the last slice's transaction, that the backfill of {@code version} has finished. */
+    void markFinished(int version) {
+        jdbc.sql("INSERT INTO app_learning.onboarding_backfill_run(registry_version, finished_at) VALUES (:v, statement_timestamp()) ON CONFLICT (registry_version) DO NOTHING")
+                .param("v", version).update();
     }
 
     /** The first statement of a slice: one transaction-scoped try-lock, so that two workers never backfill at once. */
@@ -153,6 +167,11 @@ class BackfillRepository {
                     SELECT h.account_id, CAST(:key AS text), CAST(LEAST(h.progress, CAST(:target AS integer)) AS smallint),
                            CASE WHEN h.progress >= CAST(:target AS integer) THEN h.achieved_at END, h.first_at, 'BACKFILL'
                       FROM h
+                     -- a row the history would not change is not offered to the insert: ON CONFLICT DO UPDATE locks the conflicting row even when its WHERE is false,
+                     -- so a rerun (or a LIVE row already ahead) would hold row locks of the whole batch until the slice commits
+                     WHERE NOT EXISTS (SELECT 1 FROM app_learning.account_milestone o
+                                        WHERE o.account_id = h.account_id AND o.milestone_key = CAST(:key AS text)
+                                          AND o.progress >= LEAST(h.progress, CAST(:target AS integer)) AND o.first_at <= h.first_at)
                     ON CONFLICT (account_id, milestone_key) DO UPDATE
                        SET progress = GREATEST(m.progress, EXCLUDED.progress),
                            first_at = LEAST(m.first_at, EXCLUDED.first_at),

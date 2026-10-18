@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, inject, signal } from '@angular/core';
 
 import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
 import { onboardingText } from '../../core/onboarding/onboarding-texts';
@@ -65,6 +65,8 @@ let nextBlock = 0;
 })
 export class ProfileGoalComponent {
     protected readonly store = inject(LearningGoalStore);
+    private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+    private readonly injector = inject(Injector);
     protected readonly options = LEARNING_GOALS.map(goal => ({ value: goal, label: GOAL_COPY[goal].label }));
     protected readonly choice = signal<LearningGoal | null>(null);
     protected readonly editing = signal(false);
@@ -90,18 +92,31 @@ export class ProfileGoalComponent {
     protected edit(): void {
         this.choice.set(this.store.goal());
         this.editing.set(true);
+        // The button that was pressed is gone: the focus goes to the choice (the checked option, else the first one), not to the body.
+        this.focusAfterRender('form input:checked, form input');
     }
 
-    protected cancel(): void { this.editing.set(false); }
+    protected cancel(): void {
+        this.editing.set(false);
+        this.focusAfterRender('.actions button');
+    }
 
     protected async submit(event: Event): Promise<void> {
         event.preventDefault();
         const goal = this.choice();
         if (goal === null) return;
-        if (await this.store.answer(goal)) this.editing.set(false);
+        if (await this.store.answer(goal)) {
+            this.editing.set(false);
+            this.focusAfterRender('.actions button');
+        }
     }
 
     protected async skip(): Promise<void> {
-        await this.store.answer(null);
+        if (await this.store.answer(null)) this.focusAfterRender('.actions button');
+    }
+
+    /** After the next render, the first element matching `selector` in the block takes the focus (the control the learner's action replaced). */
+    private focusAfterRender(selector: string): void {
+        afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(selector)?.focus(), { injector: this.injector });
     }
 }

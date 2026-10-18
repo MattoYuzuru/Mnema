@@ -20,13 +20,20 @@ CREATE TABLE app_learning.account_milestone (
     CHECK (achieved_at IS NULL OR achieved_at >= first_at)
 );
 
+-- The study dates of an account: the TWO_DAYS probe (min/max of the completed SCHEDULED or PRACTICE dates, MilestoneRepository.studiedOnAnotherDay) and the weekly rhythm of
+-- OB-401 (architecture §7) read the account's completed dates by this index; without it the planner may scan study_session for an account with many sessions. Partial and
+-- narrow. Built in the migration's transaction (as V59 does), first, so the notification lock below is held as briefly as possible; study_session takes writes when a
+-- session starts, per batch, at completion and from retention, so lock_timeout makes the migration fail fast instead of queueing behind a long transaction.
+SET LOCAL lock_timeout = '5s';
+CREATE INDEX study_session_study_dates ON app_learning.study_session(account_id, local_study_date) WHERE status = 'COMPLETE' AND mode IN ('SCHEDULED', 'PRACTICE');
+
+-- The registry versions the backfill (OB-302) has finished: the enqueuer reads it, so a finished version is not run again after its job row is purged by retention.
+CREATE TABLE app_learning.onboarding_backfill_run (
+    registry_version SMALLINT    PRIMARY KEY CHECK (registry_version >= 1),
+    finished_at      TIMESTAMPTZ NOT NULL CHECK (isfinite(finished_at))
+);
+
 -- PATH_MILESTONE notifications (contracts/notifications) use the new route PATH, so the route CHECK of V24 is replaced. Adding it scans the notification table once under
 -- the table lock (bounded: at most 200 rows per account, 30-day retention); lock_timeout makes the migration fail fast instead of queueing behind a long transaction.
-SET LOCAL lock_timeout = '5s';
 ALTER TABLE app_learning.notification DROP CONSTRAINT notification_route_check;
 ALTER TABLE app_learning.notification ADD CONSTRAINT notification_route_check CHECK (route IN ('WORKSHOP', 'DECK', 'PLANS', 'PATH', 'NONE'));
-
--- The study dates of an account: the TWO_DAYS probe (a completed SCHEDULED or PRACTICE session on another local date, MilestoneRecorder.sessionCompleted) and the weekly rhythm of
--- OB-401 (architecture §7) read the account's completed dates by this index. Without it the planner may scan study_session for an account with many sessions. Partial and narrow:
--- only completed scheduled and practice sessions. Built in the migration's transaction under lock_timeout (the table is written by study completion only).
-CREATE INDEX study_session_study_dates ON app_learning.study_session(account_id, local_study_date) WHERE status = 'COMPLETE' AND mode IN ('SCHEDULED', 'PRACTICE');

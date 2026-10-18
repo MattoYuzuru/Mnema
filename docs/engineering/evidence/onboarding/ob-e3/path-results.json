@@ -1,6 +1,6 @@
 {
  "run": "2026-10-18",
- "command": "run.py --onboarding (disposable Identity/Learning/PostgreSQL, real Chrome)",
+ "command": "scripts/browser-identity/run.py --onboarding (disposable Identity/Learning/PostgreSQL 18, real Chrome)",
  "passed": true,
  "browser": "Chrome/155.0.8059.84",
  "browserRuntimeErrors": 0,
@@ -9,7 +9,7 @@
   {
    "scenario": "onboarding_welcome",
    "state": "passed",
-   "durationMs": 1622,
+   "durationMs": 1633,
    "stars": 30,
    "equalButtonHeightPx": 44,
    "serverState": "OFFERED",
@@ -27,7 +27,7 @@
   {
    "scenario": "onboarding_survey",
    "state": "passed",
-   "durationMs": 2186,
+   "durationMs": 2052,
    "cards": 4,
    "interestsAsked": true,
    "keyboardOnly": true,
@@ -50,7 +50,7 @@
   {
    "scenario": "onboarding_own_details",
    "state": "passed",
-   "durationMs": 1064,
+   "durationMs": 1033,
    "role": "dialog",
    "counter": "Шаг 1 из 4",
    "liveRegion": "",
@@ -68,7 +68,7 @@
   {
    "scenario": "onboarding_own_create_deck",
    "state": "passed",
-   "durationMs": 288,
+   "durationMs": 287,
    "deckCreated": true,
    "serverStep": "own.material",
    "tourBroughtTheLearnerToTheEditor": true
@@ -76,7 +76,7 @@
   {
    "scenario": "onboarding_pause_resume",
    "state": "passed",
-   "durationMs": 5952,
+   "durationMs": 5822,
    "escapePausedTheTour": true,
    "plaqueFocused": true,
    "serverPaused": "PAUSED",
@@ -97,7 +97,7 @@
   {
    "scenario": "onboarding_own_material",
    "state": "passed",
-   "durationMs": 1366,
+   "durationMs": 1360,
    "published": true,
    "serverStep": "own.exercise",
    "tourBroughtTheLearnerToTheExerciseForm": true
@@ -105,7 +105,7 @@
   {
    "scenario": "onboarding_own_exercise",
    "state": "passed",
-   "durationMs": 314,
+   "durationMs": 298,
    "created": true,
    "serverStep": "own.study",
    "tourBroughtTheLearnerToTheHub": true
@@ -113,7 +113,7 @@
   {
    "scenario": "onboarding_own_study",
    "state": "passed",
-   "durationMs": 1181,
+   "durationMs": 1186,
    "gateText": "→ Нажмите «Учить», чтобы продолжить",
    "serverPausedWhenTheSessionOpened": "PAUSED",
    "veilChecked": [
@@ -125,7 +125,7 @@
   {
    "scenario": "onboarding_own_finale",
    "state": "passed",
-   "durationMs": 1788,
+   "durationMs": 1773,
    "aiFinaleSkipped": true,
    "congratulation": "Начало положено",
    "focusOnHeading": true,
@@ -139,7 +139,7 @@
   {
    "scenario": "onboarding_path_page",
    "state": "passed",
-   "durationMs": 539,
+   "durationMs": 557,
    "milestones": [
     "GOAL_TOLD:DONE",
     "FIRST_DECK:DONE",
@@ -178,7 +178,7 @@
   {
    "scenario": "onboarding_path_hint",
    "state": "passed",
-   "durationMs": 438,
+   "durationMs": 451,
    "chevron": "Перейти: Сохраните заметку «На потом»",
    "hubRoute": "the newest own deck",
    "role": "dialog",
@@ -193,18 +193,19 @@
   {
    "scenario": "onboarding_path_study_quiet",
    "state": "passed",
-   "durationMs": 7051,
+   "durationMs": 7215,
    "milestone": "CAPTURE_NOTE",
    "achievedViaApiWhileAnswering": true,
    "noToastWhileAnswerOpen": true,
    "toast": "Путь: вы разобрали заметку «На потом» · 5 из 9",
-   "appearedAfterFeedbackMs": 73,
+   "appearedAfterFeedbackMs": 77,
    "quietLooks": 12,
    "link": "/profile/path"
   },
   {
    "scenario": "onboarding_path_quest",
-   "durationMs": 884,
+   "state": "passed",
+   "durationMs": 918,
    "quest": "MEDIA_IN_MATERIAL",
    "chooserModal": true,
    "deckChosen": "Мой первый набор",
@@ -216,15 +217,15 @@
    "left": true,
    "journeyWritesDuringQuest": 0,
    "rowVersion": "16",
-   "journeyState": "COMPLETED",
-   "state": "passed"
+   "journeyState": "COMPLETED"
   },
   {
    "scenario": "onboarding_replay",
    "state": "passed",
-   "durationMs": 1185,
+   "durationMs": 982,
    "surveySkipped": true,
    "branchChoice": [
+    "COMMUNITY",
     "OWN"
    ],
    "serverStep": "choose",
@@ -240,7 +241,7 @@
   {
    "scenario": "onboarding_hold",
    "state": "passed",
-   "durationMs": 11154,
+   "durationMs": 10984,
    "surveyPausedByEscape": true,
    "communityHint": "Не знаете, что выбрать? Начните с темы из вашего списка.",
    "ownDeckOffered": "Не нашли подходящую?",
@@ -258,7 +259,7 @@
   {
    "scenario": "onboarding_skip",
    "state": "passed",
-   "durationMs": 4250,
+   "durationMs": 4119,
    "toast": "Знакомство пропущено. Пройти его можно в профиле, а все возможности Mnema собраны в «Пути».",
    "link": "/profile/path",
    "serverFinal": "SKIPPED",
@@ -270,7 +271,7 @@
   {
    "scenario": "onboarding_community",
    "state": "passed",
-   "durationMs": 5689,
+   "durationMs": 5662,
    "seeded": 4,
    "branchOptions": [
     "COMMUNITY",
@@ -295,7 +296,7 @@
   {
    "scenario": "onboarding_a11y",
    "state": "passed",
-   "durationMs": 1,
+   "durationMs": 0,
    "surfaces": [
     "welcome",
     "survey",
@@ -313,7 +314,7 @@
   {
    "scenario": "onboarding_sign_out",
    "state": "passed",
-   "durationMs": 431,
+   "durationMs": 427,
    "signedOut": 2
   },
   {
@@ -321,7 +322,7 @@
    "state": "passed",
    "stages": 0,
    "findings": 0,
-   "durationMs": 47462
+   "durationMs": 46843
   }
  ]
 }

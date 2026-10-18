@@ -98,6 +98,30 @@ describe('ProfileGoalComponent (the «Цель» block of the profile)', () => {
         await vi.waitFor(async () => { await detect(); expect(root.querySelector('p')?.textContent).toBe('Ваша цель: Работа.'); });
     });
 
+    it('keeps the keyboard focus: «Изменить» moves it to the checked goal, «Отмена» and a saved answer return it to the block\'s button', async () => {
+        api.load.mockReturnValue(of({ goal: 'EXAMS', skipped: false, answeredAt: '2026-10-05T09:00:00Z' }));
+        const { root, detect } = await render();
+        document.body.appendChild(root);
+        try {
+            root.querySelector<HTMLButtonElement>('button')!.click();
+            await detect();
+            await vi.waitFor(() => expect(document.activeElement).toBe(root.querySelector('input[type=radio]:checked')));
+            [...root.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Отмена')!.click();
+            await detect();
+            await vi.waitFor(() => expect((document.activeElement as HTMLElement | null)?.textContent).toBe('Изменить'));
+            api.answer.mockReturnValue(of({ goal: 'SELF', skipped: false, answeredAt: '2026-10-06T09:00:00Z' }));
+            root.querySelector<HTMLButtonElement>('button')!.click();
+            await detect();
+            root.querySelectorAll<HTMLInputElement>('input[type=radio]')[4].click();
+            await detect();
+            root.querySelector<HTMLButtonElement>('button[type=submit]')!.click();
+            await detect();
+            await vi.waitFor(async () => { await detect(); expect((document.activeElement as HTMLElement | null)?.textContent).toBe('Изменить'); });
+        } finally {
+            root.remove();
+        }
+    });
+
     it('keeps the form and says so when the goal cannot be saved', async () => {
         api.answer.mockReturnValue(throwError(() => new Error('down')));
         const { root, detect } = await render();

@@ -117,10 +117,16 @@ class OnboardingBackfillJobIntegrationTest extends SampleDeckIntegrationTest {
                                md5('scope' || i || '-1')::uuid, gen_random_uuid(), decode(repeat('ab', 32), 'hex'), gen_random_uuid(), gen_random_uuid(), now() - i * interval '1 minute', '{}'
                           FROM a WHERE i % 15 = 7
                         """);
-                // copies of somebody else's deck (and of the sample template: they must not count)
+                // copies of somebody else's deck (and of the sample template: they must not count). A copy of the template is a SAMPLE deck of its own, as copyTemplate
+                // writes it (deleted here, so the one-live-sample index does not meet the sample decks above).
+                sql(A + """
+                        INSERT INTO app_learning.deck(deck_id, owner_id, reuse_scope_id, head_revision_id, row_version, created_at, deleted_at, purpose)
+                        SELECT md5('tcopy' || i)::uuid, id, md5('tscope' || i)::uuid, gen_random_uuid(), 0, now() - i * interval '1 hour', now(), 'SAMPLE' FROM a WHERE i % 55 = 0
+                        """);
                 sql(A + """
                         INSERT INTO app_learning.deck_fork(deck_id, reuse_scope_id, owner_id, upstream_deck_id, upstream_code, base_revision_id, forked_at, job_id)
-                        SELECT md5('deck' || i || '-1')::uuid, md5('scope' || i || '-1')::uuid, id,
+                        SELECT CASE WHEN i % 11 = 0 THEN md5('tcopy' || i)::uuid ELSE md5('deck' || i || '-1')::uuid END,
+                               CASE WHEN i % 11 = 0 THEN md5('tscope' || i)::uuid ELSE md5('scope' || i || '-1')::uuid END, id,
                                CASE WHEN i % 11 = 0 THEN md5('sample' || (i % 3 * 0 + 3 * ((i % 100) + 1)))::uuid ELSE md5('deck' || (i % :n + 1) || '-1')::uuid END,
                                'abcdefghjk', gen_random_uuid(), now() - i * interval '1 minute', gen_random_uuid()
                           FROM a WHERE i % 5 = 0
@@ -273,6 +279,8 @@ class OnboardingBackfillJobIntegrationTest extends SampleDeckIntegrationTest {
             state = jobs.status(job).orElseThrow().state();
         }
         assertThat(state).isEqualTo(JobState.SUCCEEDED);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.onboarding_backfill_run WHERE registry_version = :v").param("v", MilestoneKey.REGISTRY_VERSION).query(Long.class).single())
+                .as("the finished version is recorded for the enqueuer").isEqualTo(1L);
         assertThat(jdbc.sql("SELECT source FROM app_learning.account_milestone WHERE account_id = :a AND milestone_key = 'FIRST_DECK'").param("a", account).query(String.class).single())
                 .isEqualTo("BACKFILL");
         assertThat(deck).isNotNull();

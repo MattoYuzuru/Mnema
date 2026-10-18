@@ -27,8 +27,9 @@ import java.util.UUID;
  * ever lowering or re-sourcing a row, and without a notification.
  *
  * <p>A slice is time-bounded ({@code slice-budget}): it takes the job's try-lock (an advisory transaction lock, so two workers never backfill at once; a worker that does not get it
- * waits), runs batches until the budget is spent, and saves the cursor {@code {key, after}} in the job row, so a killed or restarted run continues where the last committed slice
- * stopped. Slices are paced by {@code pause}. The slice is the executor's transaction: its rows, its cursor and, after the commit, its metrics belong together.
+ * waits), runs ONE batch (the budget only bounds a slice that skips exhausted sources; one statement per transaction keeps its row locks short and never spans two
+ * keys), and saves the cursor {@code {key, after}} in the job row, so a killed or restarted run continues where the last committed slice
+ * stopped. Slices are paced by {@code pause}. The last slice records the version as finished ({@code onboarding_backfill_run}). The slice is the executor's transaction: its rows, its cursor and, after the commit, its metrics belong together.
  * Metrics: {@code mnema_onboarding_backfill_seconds} per slice, {@code mnema_onboarding_backfill_rows_total{key}} and {@code mnema_path_milestone_total{key,source="BACKFILL"}}
  * (the milestones the backfill achieved). Logs carry keys and counts, never an account.
  */
@@ -57,7 +58,8 @@ public class OnboardingBackfill implements JobHandler {
 
     @Override
     public Slice run(Job job) {
-        return run(job, Integer.MAX_VALUE);
+        // One batch per slice: a slice is the executor's transaction, so its row locks (rows that change) last one statement, and one transaction never spans two keys.
+        return run(job, 1);
     }
 
     /** One slice that also stops after {@code maxBatches} statements, whatever the clock says: how a test interrupts a run at a known place. */
@@ -93,7 +95,10 @@ public class OnboardingBackfill implements JobHandler {
         sample.stop(meters.timer("mnema_onboarding_backfill_seconds"));
         long total = job.progressCount() + rows;
         LOG.info("onboarding_backfill_slice key={} batches={} rows={} total_rows={}", index < BackfillRepository.SOURCES.size() ? BackfillRepository.SOURCES.get(index).key() : "none", batches, rows, total);
-        if (index >= BackfillRepository.SOURCES.size()) return Slice.done(total);
+        if (index >= BackfillRepository.SOURCES.size()) {
+            repository.markFinished(MilestoneKey.REGISTRY_VERSION);
+            return Slice.done(total);
+        }
         return Slice.proceedAfter(cursor(index, after), total, settings.pause);
     }
 

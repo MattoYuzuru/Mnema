@@ -20,6 +20,7 @@ import static org.mockito.Mockito.when;
 /** The switch and the knobs of the backfill, and the enqueuer that turns it into one job per registry version. */
 class OnboardingBackfillScheduleTest {
     private final LearningJobs jobs = mock(LearningJobs.class);
+    private final BackfillRepository repository = mock(BackfillRepository.class);
 
     private static BackfillSettings settings(boolean enabled) {
         return new BackfillSettings(enabled, 1000, Duration.ofSeconds(3), Duration.ofSeconds(1));
@@ -27,13 +28,13 @@ class OnboardingBackfillScheduleTest {
 
     @Test
     void offByDefaultItEnqueuesNothing() {
-        new BackfillSchedule(jobs, settings(false)).tick();
+        new BackfillSchedule(jobs, settings(false), repository).tick();
         verify(jobs, never()).enqueue(any(), any(), any(), any());
     }
 
     @Test
     void onItEnqueuesOneJobPerRegistryVersionAndRemembersItAndRetriesAFailure() {
-        BackfillSchedule schedule = new BackfillSchedule(jobs, settings(true));
+        BackfillSchedule schedule = new BackfillSchedule(jobs, settings(true), repository);
         when(jobs.enqueue(eq("onboarding.backfill"), eq("onboarding.backfill:v" + MilestoneKey.REGISTRY_VERSION), isNull(), any(ObjectNode.class)))
                 .thenThrow(new IllegalStateException("database down")).thenReturn(java.util.UUID.randomUUID());
         schedule.tick();
@@ -41,6 +42,16 @@ class OnboardingBackfillScheduleTest {
         schedule.tick();
         verify(jobs, times(2)).enqueue(eq("onboarding.backfill"), eq("onboarding.backfill:v1"), isNull(), any(ObjectNode.class));
         assertThat(BackfillSchedule.dedupeKey()).isEqualTo("onboarding.backfill:v1");
+    }
+
+    @Test
+    void aVersionRecordedAsFinishedIsNotEnqueuedAgainAfterItsJobRowIsGone() {
+        when(repository.finished(MilestoneKey.REGISTRY_VERSION)).thenReturn(true);
+        BackfillSchedule schedule = new BackfillSchedule(jobs, settings(true), repository);
+        schedule.tick();
+        schedule.tick();
+        verify(jobs, never()).enqueue(any(), any(), any(), any());
+        verify(repository, times(1)).finished(MilestoneKey.REGISTRY_VERSION);
     }
 
     @Test
