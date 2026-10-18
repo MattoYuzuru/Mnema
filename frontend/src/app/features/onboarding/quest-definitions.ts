@@ -21,6 +21,8 @@ export interface QuestContext {
     readonly sample: boolean;
     /** The material the editor opens, for the quest of the picture. */
     readonly memberKey: string | null;
+    /** Its position in the deck: the editor of an existing material opens only with it (`?ordinal=`), as from the material list. */
+    readonly ordinal?: number | null;
 }
 
 /** The label of the study button: the quest quotes the real control, like the main tour does. */
@@ -52,7 +54,7 @@ export function questDefinition(route: QuestRoute, context: QuestContext): TourD
             step('quest.voice.record', TOUR_ANCHORS.captureMic, 'quest.voice.record', { route: `${deck}/capture`, gate: { action: QUEST_EVENTS.voiceTranscribed, label: 'Начать запись' } }, text('quest.voice.record.body'))
         ]);
         case 'QUEST_MEDIA': return quest('media', [
-            step('quest.media.insert', TOUR_ANCHORS.editorMedia, 'quest.media.insert', { route: `${deck}/materials/${context.memberKey ?? ''}/edit`, gate: { action: QUEST_EVENTS.mediaInserted, label: null } }, text('quest.media.insert.body')),
+            step('quest.media.insert', TOUR_ANCHORS.editorMedia, 'quest.media.insert', { route: `${deck}/materials/${context.memberKey ?? ''}/edit?ordinal=${context.ordinal ?? ''}`, gate: { action: QUEST_EVENTS.mediaInserted, label: null } }, text('quest.media.insert.body')),
             step('quest.media.publish', TOUR_ANCHORS.editorPublish, 'quest.media.publish', { gate: { action: 'material.published', label: 'Опубликовать' } }, text('quest.media.publish.body'))
         ]);
         case 'QUEST_EXPLAIN': return quest('explain', [

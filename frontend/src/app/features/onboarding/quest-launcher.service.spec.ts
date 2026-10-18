@@ -55,7 +55,7 @@ describe('QuestLauncher (the start of a side quest)', () => {
         usage = vi.fn(() => of(plusUsage() as unknown as UsageSnapshot));
         list = vi.fn(() => of({ items: [deck(SAMPLE, 'Учебная колода'), deck(OWN, 'Японский'), deck(OTHER, 'Физика')], nextCursor: null }));
         insightsApi = vi.fn(() => of(insights(3, 2)));
-        items = vi.fn(() => of({ items: [{ memberKey: 'gone', unavailable: true }, { memberKey: 'first-material', unavailable: false }] }));
+        items = vi.fn(() => of({ items: [{ memberKey: 'gone', unavailable: true }, { memberKey: 'first-material', ordinal: 4, unavailable: false }] }));
         view.set(sampleView(2));
         card.set(null);
         pausedCard.set(null);
@@ -236,7 +236,7 @@ describe('QuestLauncher (the start of a side quest)', () => {
             await launcher.open('QUEST_MEDIA', 'MEDIA_IN_MATERIAL');
             await launcher.start();
             expect(engine.definition()?.id).toBe('quest.media');
-            expect(engine.definition()?.steps[0].route).toBe(`/decks/${OWN}/materials/first-material/edit`);
+            expect(engine.definition()?.steps[0].route).toBe(`/decks/${OWN}/materials/first-material/edit?ordinal=4`);
             engine.stop();
             items.mockReturnValue(of({ items: [{ memberKey: 'gone', unavailable: true }] }));
             await launcher.open('QUEST_MEDIA', 'MEDIA_IN_MATERIAL');

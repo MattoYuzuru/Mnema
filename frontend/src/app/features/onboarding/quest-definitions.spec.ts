@@ -9,7 +9,7 @@ import { plainText } from '../../core/onboarding/tour-rich-text';
 import { QUEST_EVENTS, QuestContext, questDefinition, questDefinitionProblems } from './quest-definitions';
 
 const DECK = '22222222-2222-4222-8222-222222222222';
-const own: QuestContext = { deckId: DECK, sample: false, memberKey: 'material-key' };
+const own: QuestContext = { deckId: DECK, sample: false, memberKey: 'material-key', ordinal: 2 };
 const sample: QuestContext = { deckId: DECK, sample: true, memberKey: null };
 
 describe('the side quests (OB-304)', () => {
@@ -85,7 +85,7 @@ describe('the side quests (OB-304)', () => {
     describe('the picture or the sound', () => {
         it('opens the material in the editor, waits for a medium in the text and then for the publication', () => {
             const steps = questDefinition('QUEST_MEDIA', own).steps;
-            expect(steps[0].route).toBe(`/decks/${DECK}/materials/material-key/edit`);
+            expect(steps[0].route).toBe(`/decks/${DECK}/materials/material-key/edit?ordinal=2`);
             expect(steps.map(item => item.anchor)).toEqual(['editor.media', 'editor.publish']);
             expect(steps.map(item => (item.gate === 'next' ? 'next' : item.gate.action))).toEqual([QUEST_EVENTS.mediaInserted, 'material.published']);
         });

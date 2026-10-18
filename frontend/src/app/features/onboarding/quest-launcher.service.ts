@@ -206,7 +206,7 @@ export class QuestLauncher {
             case 'QUEST_MEDIA': {
                 const page = await firstValueFrom(this.itemsApi.list(option.deckId, { limit: 20 }));
                 const material = page.items.find(item => !item.unavailable);
-                return material !== undefined ? { ...base, memberKey: material.memberKey } : { notice: { text: onboardingText('quest.nomaterial'),
+                return material !== undefined ? { ...base, memberKey: material.memberKey, ordinal: material.ordinal } : { notice: { text: onboardingText('quest.nomaterial'),
                     actions: [{ kind: 'link', label: onboardingText('quest.nomaterial.action'), commands: [...deck, 'materials', 'new'] }] } };
             }
             case 'QUEST_VOICE': return base;

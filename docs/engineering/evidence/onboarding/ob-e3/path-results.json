@@ -1,0 +1,327 @@
+{
+ "run": "2026-10-18",
+ "command": "run.py --onboarding (disposable Identity/Learning/PostgreSQL, real Chrome)",
+ "passed": true,
+ "browser": "Chrome/155.0.8059.84",
+ "browserRuntimeErrors": 0,
+ "onboardingFindings": [],
+ "scenarios": [
+  {
+   "scenario": "onboarding_welcome",
+   "state": "passed",
+   "durationMs": 1622,
+   "stars": 30,
+   "equalButtonHeightPx": 44,
+   "serverState": "OFFERED",
+   "autoOffer": true,
+   "axDialog": true,
+   "baselineRunningAnimations": 11,
+   "reducedMotionRunningAnimations": 0,
+   "forcedColors": true,
+   "noHorizontalScroll": [
+    "1440",
+    "390",
+    "320"
+   ]
+  },
+  {
+   "scenario": "onboarding_survey",
+   "state": "passed",
+   "durationMs": 2186,
+   "cards": 4,
+   "interestsAsked": true,
+   "keyboardOnly": true,
+   "reloadReopenedSameCard": true,
+   "progressbar": [
+    "0 из 4",
+    "1 из 4",
+    "2 из 4",
+    "3 из 4"
+   ],
+   "branchOptions": [
+    "OWN"
+   ],
+   "communityHidden": true,
+   "sampleHidden": true,
+   "starsOnlyOnWelcome": true,
+   "serverExperience": "NEW",
+   "serverWeeklyTarget": 3
+  },
+  {
+   "scenario": "onboarding_own_details",
+   "state": "passed",
+   "durationMs": 1064,
+   "role": "dialog",
+   "counter": "Шаг 1 из 4",
+   "liveRegion": "",
+   "gate": "→ Нажмите «Создать колоду», чтобы продолжить",
+   "focusOnHeading": true,
+   "inert": 22,
+   "targetLive": true,
+   "frameSurroundsTarget": true,
+   "serverStep": "own.details",
+   "serverBranch": "OWN",
+   "axDialog": true,
+   "forcedColorsOutline": "3px",
+   "sheetAt390and320": true
+  },
+  {
+   "scenario": "onboarding_own_create_deck",
+   "state": "passed",
+   "durationMs": 288,
+   "deckCreated": true,
+   "serverStep": "own.material",
+   "tourBroughtTheLearnerToTheEditor": true
+  },
+  {
+   "scenario": "onboarding_pause_resume",
+   "state": "passed",
+   "durationMs": 5952,
+   "escapePausedTheTour": true,
+   "plaqueFocused": true,
+   "serverPaused": "PAUSED",
+   "secondDevicePlaqueNoJump": true,
+   "secondDeviceVersionUntouched": "10",
+   "resumedOnSecondDevice": {
+    "step": "Первый материал",
+    "anchorFound": true,
+    "location": "/decks/{id}/materials/new?write=1"
+   },
+   "resumedOnFirstDevice": "Первый материал",
+   "serverAfterSecondDevice": "IN_PROGRESS",
+   "serverFinal": "IN_PROGRESS",
+   "axLinksBehindStep": 1,
+   "axLinksBehindPause": 17,
+   "editorPresent": true
+  },
+  {
+   "scenario": "onboarding_own_material",
+   "state": "passed",
+   "durationMs": 1366,
+   "published": true,
+   "serverStep": "own.exercise",
+   "tourBroughtTheLearnerToTheExerciseForm": true
+  },
+  {
+   "scenario": "onboarding_own_exercise",
+   "state": "passed",
+   "durationMs": 314,
+   "created": true,
+   "serverStep": "own.study",
+   "tourBroughtTheLearnerToTheHub": true
+  },
+  {
+   "scenario": "onboarding_own_study",
+   "state": "passed",
+   "durationMs": 1181,
+   "gateText": "→ Нажмите «Учить», чтобы продолжить",
+   "serverPausedWhenTheSessionOpened": "PAUSED",
+   "veilChecked": [
+    "setup",
+    "answering",
+    "feedback"
+   ]
+  },
+  {
+   "scenario": "onboarding_own_finale",
+   "state": "passed",
+   "durationMs": 1788,
+   "aiFinaleSkipped": true,
+   "congratulation": "Начало положено",
+   "focusOnHeading": true,
+   "stars": 30,
+   "serverAtFinale": "finale.done",
+   "serverFinal": "COMPLETED",
+   "finishedAt": true,
+   "inertAfterTheTour": 0,
+   "decks": 1
+  },
+  {
+   "scenario": "onboarding_path_page",
+   "state": "passed",
+   "durationMs": 539,
+   "milestones": [
+    "GOAL_TOLD:DONE",
+    "FIRST_DECK:DONE",
+    "FIRST_SESSION:DONE",
+    "OWN_MATERIAL:DONE",
+    "MEDIA_IN_MATERIAL:TODO",
+    "CAPTURE_NOTE:TODO",
+    "OWN_EXERCISES:PARTIAL",
+    "TWO_DAYS:PARTIAL",
+    "COMMUNITY_COPY:TODO"
+   ],
+   "done": 4,
+   "total": 9,
+   "hidden": [
+    "AI_EXPLANATION",
+    "VOICE_ANSWER",
+    "WORKSHOP_APPROVED",
+    "RHYTHM_WEEK"
+   ],
+   "pageMatchesServer": true,
+   "openChapters": [
+    "Материалы"
+   ],
+   "axHeadings": 12,
+   "axProgressbars": 1,
+   "axChevrons": 2,
+   "forcedColors": true,
+   "noHorizontalScroll": [
+    "1440",
+    "390",
+    "320"
+   ],
+   "chevronTouchTargetsPx": 44,
+   "profileBlock": "4 из 9"
+  },
+  {
+   "scenario": "onboarding_path_hint",
+   "state": "passed",
+   "durationMs": 438,
+   "chevron": "Перейти: Сохраните заметку «На потом»",
+   "hubRoute": "the newest own deck",
+   "role": "dialog",
+   "ariaModal": "false",
+   "text": "Сохраните сюда мысль или ссылку — разберёте её потом.",
+   "focusOnCard": true,
+   "nextToAnchor": true,
+   "anchorUncovered": true,
+   "noVeilNoInert": true,
+   "escapeReturnedFocus": true
+  },
+  {
+   "scenario": "onboarding_path_study_quiet",
+   "state": "passed",
+   "durationMs": 7051,
+   "milestone": "CAPTURE_NOTE",
+   "achievedViaApiWhileAnswering": true,
+   "noToastWhileAnswerOpen": true,
+   "toast": "Путь: вы разобрали заметку «На потом» · 5 из 9",
+   "appearedAfterFeedbackMs": 73,
+   "quietLooks": 12,
+   "link": "/profile/path"
+  },
+  {
+   "scenario": "onboarding_path_quest",
+   "durationMs": 884,
+   "quest": "MEDIA_IN_MATERIAL",
+   "chooserModal": true,
+   "deckChosen": "Мой первый набор",
+   "firstStep": "Добавьте картинку или звук",
+   "counter": "Шаг 1 из 2",
+   "leaveButton": "Выйти из задания",
+   "pausePlaque": "Задание на паузе",
+   "resumed": true,
+   "left": true,
+   "journeyWritesDuringQuest": 0,
+   "rowVersion": "16",
+   "journeyState": "COMPLETED",
+   "state": "passed"
+  },
+  {
+   "scenario": "onboarding_replay",
+   "state": "passed",
+   "durationMs": 1185,
+   "surveySkipped": true,
+   "branchChoice": [
+    "OWN"
+   ],
+   "serverStep": "choose",
+   "replayCount": 1,
+   "answersUnchanged": true,
+   "decksBefore": 1,
+   "decksAfter": 1,
+   "existingDeckOffered": true,
+   "startedAt": "Первый материал",
+   "escapePausedTheChoice": "PAUSED",
+   "plaqueReopenedTheChoice": true
+  },
+  {
+   "scenario": "onboarding_hold",
+   "state": "passed",
+   "durationMs": 11154,
+   "surveyPausedByEscape": true,
+   "communityHint": "Не знаете, что выбрать? Начните с темы из вашего списка.",
+   "ownDeckOffered": "Не нашли подходящую?",
+   "offerInert": false,
+   "armedName": "Удерживайте 2 секунды, чтобы завершить знакомство",
+   "armedGlyph": true,
+   "releasedEarlyDidNothing": true,
+   "heldEnterFinished": true,
+   "toast": "Знакомство завершено. Пройти его снова можно в профиле.",
+   "serverFinal": "COMPLETED",
+   "sheetAt390": true,
+   "skippedQuestionsStoredNothing": true,
+   "inertAfterTheTour": 0
+  },
+  {
+   "scenario": "onboarding_skip",
+   "state": "passed",
+   "durationMs": 4250,
+   "toast": "Знакомство пропущено. Пройти его можно в профиле, а все возможности Mnema собраны в «Пути».",
+   "link": "/profile/path",
+   "serverFinal": "SKIPPED",
+   "finishedAt": true,
+   "focusAfterSkip": "h1#own-decks-title «Мои колоды»",
+   "welcomeStaysClosedAfterReload": true,
+   "noHorizontalScrollAt320": true
+  },
+  {
+   "scenario": "onboarding_community",
+   "state": "passed",
+   "durationMs": 5689,
+   "seeded": 4,
+   "branchOptions": [
+    "COMMUNITY",
+    "OWN"
+   ],
+   "searched": true,
+   "informationalStepModal": true,
+   "copyStepAction": "→ Нажмите «Добавить к себе», чтобы продолжить",
+   "copyCreated": true,
+   "copyHub": "/decks/{id}",
+   "interestsSkipRequests": [
+    "GET /interests 200",
+    "PUT /interests 200"
+   ],
+   "interestsSkipMendedAStaleVersion": false,
+   "serverAtStudy": "PAUSED",
+   "studyWithoutVeil": true,
+   "studyStep": "Пройдите первое занятие",
+   "sessionStarted": true,
+   "sessionCompleted": false
+  },
+  {
+   "scenario": "onboarding_a11y",
+   "state": "passed",
+   "durationMs": 1,
+   "surfaces": [
+    "welcome",
+    "survey",
+    "keyboardSurvey",
+    "actionGatedStep",
+    "pause",
+    "inertRemoved",
+    "path",
+    "pathHint",
+    "pathQuest",
+    "informationalStep"
+   ],
+   "file": "onboarding-a11y.json"
+  },
+  {
+   "scenario": "onboarding_sign_out",
+   "state": "passed",
+   "durationMs": 431,
+   "signedOut": 2
+  },
+  {
+   "scenario": "onboarding_summary",
+   "state": "passed",
+   "stages": 0,
+   "findings": 0,
+   "durationMs": 47462
+  }
+ ]
+}

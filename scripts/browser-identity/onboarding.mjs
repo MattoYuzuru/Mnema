@@ -69,6 +69,25 @@ const T = {
 };
 const LOGIN = { journey: 'onb_journey', hold: 'onb_hold', skip: 'onb_skip', community: 'onb_community' };
 
+/** «Путь Mnema» (OB-E3): the registry as the client draws it (key, chapter, title), copied from `core/onboarding/path.models.ts` and `onboarding-texts.ts`. */
+const PATH = {
+  title: 'Путь Mnema', eyebrow: 'Профиль', open: 'Открыть «Путь»', hintOk: 'Понятно', questLeave: 'Выйти из задания', questStart: 'Начать',
+  questPause: 'Задание на паузе', questResume: 'Продолжить задание', goalBlock: 'Цель', goalSave: 'Сохранить', goalOption: 'Экзамены и сессия',
+  words: { DONE: 'Сделано', PARTIAL: 'Начато', TODO: 'Не начато' },
+  chapters: { start: 'Начало', materials: 'Материалы', exercises: 'Упражнения и ИИ', rhythm: 'Ритм и Сообщество' },
+  milestones: {
+    GOAL_TOLD: ['start', 'Расскажите о цели', 'вы рассказали о цели'], FIRST_DECK: ['start', 'Заведите первую колоду', 'у вас первая колода'],
+    FIRST_SESSION: ['start', 'Пройдите первое занятие', 'вы прошли первое занятие'], OWN_MATERIAL: ['materials', 'Напишите свой материал', 'вы написали свой материал'],
+    MEDIA_IN_MATERIAL: ['materials', 'Добавьте картинку или звук', 'вы добавили в материал картинку или звук'],
+    CAPTURE_NOTE: ['materials', 'Сохраните заметку «На потом»', 'вы разобрали заметку «На потом»'],
+    OWN_EXERCISES: ['exercises', 'Создайте три своих упражнения', 'вы создали три своих упражнения'],
+    AI_EXPLANATION: ['exercises', 'Объясните своими словами', 'ИИ проверил ваше объяснение'], VOICE_ANSWER: ['exercises', 'Ответьте голосом', 'вы ответили голосом'],
+    WORKSHOP_APPROVED: ['exercises', 'Соберите материалы в Мастерской', 'вы собрали материалы в Мастерской'],
+    RHYTHM_WEEK: ['rhythm', 'Проведите неделю в ритме', 'вы провели неделю в ритме'], TWO_DAYS: ['rhythm', 'Позанимайтесь в другой день', 'вы позанимались во второй день'],
+    COMMUNITY_COPY: ['rhythm', 'Возьмите готовую колоду', 'вы взяли готовую колоду']
+  }
+};
+
 /** Four decks of one author that the catalogue lists (ten materials each, an exercise, public): the branch choice needs four listed decks. */
 const SEEDED = [
   { title: 'Испанские глаголы', description: 'Сорок самых частых глаголов с примерами и упражнениями.', topicId: 'spanish', content: 'ru', target: 'es', level: 'A1', tags: ['глаголы'] },
@@ -307,6 +326,121 @@ export async function runOnboarding(ctx) {
     const answer = await actor.api('GET', '/api/decks?limit=50');
     need(answer.status === 200, `GET /api/decks answered ${answer.status}`);
     return answer.body?.items ?? answer.body?.decks ?? [];
+  };
+
+
+  // ---- «Путь Mnema» (OB-E3): what the page shows, the toasts, the hint, the quest ---------------------------------------------------------------
+  /** The Path page as it is drawn: the heading, the total with its bar, the chapters with their milestones, the buttons. */
+  const pathPage = actor => read(actor, `const page = document.querySelector('app-path-page');
+    if (!page) return null;
+    const bar = e => e ? { now: e.getAttribute('aria-valuenow'), max: e.getAttribute('aria-valuemax'), text: e.getAttribute('aria-valuetext'), name: e.getAttribute('aria-label') } : null;
+    const total = page.querySelector('.total');
+    return { h1: norm(page.querySelector('h1')?.textContent), eyebrow: norm(page.querySelector('a.eyebrow')?.textContent), eyebrowHref: page.querySelector('a.eyebrow')?.getAttribute('href'),
+      intro: norm(page.querySelector('.intro')?.textContent), notice: Boolean(page.querySelector('.path-new')), error: Boolean(page.querySelector('.notice.error')),
+      total: total ? { text: norm(total.querySelector('strong')?.textContent), textHiddenFromAt: total.querySelector('strong')?.getAttribute('aria-hidden') === 'true', bar: bar(total.querySelector('[role="progressbar"]')) } : null,
+      chapters: [...page.querySelectorAll('app-path-chapter details.chapter')].map(d => ({ name: norm(d.querySelector('summary h2')?.textContent), count: norm(d.querySelector('.count')?.textContent), open: d.open,
+        h2InSummary: Boolean(d.querySelector('summary > h2')) })),
+      milestones: [...page.querySelectorAll('app-path-milestone')].map(m => ({ title: norm(m.querySelector('h3')?.textContent), state: m.querySelector('.milestone')?.getAttribute('data-state'),
+        word: norm(m.querySelector('.word')?.textContent), benefit: norm(m.querySelector('.benefit')?.textContent), bar: bar(m.querySelector('.bar [role="progressbar"]')),
+        barText: norm(m.querySelector('.bar small')?.textContent) || null, link: m.querySelector('a.go') ? { label: m.querySelector('a.go').getAttribute('aria-label'), href: m.querySelector('a.go').getAttribute('href') } : null,
+        inOpenChapter: Boolean(m.closest('details')?.open) })),
+      buttons: [...page.querySelectorAll('.actions button')].map(b => norm(b.textContent)),
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, widths: { client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth } };`);
+  /** The view of the account's path as the server holds it (`GET /api/onboarding`): the visible milestones in order and the count. */
+  const serverPath = async actor => {
+    const answer = await actor.api('GET', '/api/onboarding');
+    need(answer.status === 200 && Array.isArray(answer.body?.milestones) && answer.body?.path, `GET /api/onboarding carries no path (${answer.status})`);
+    return { milestones: answer.body.milestones, path: answer.body.path, journey: answer.body.journey };
+  };
+  /** The page against the server, milestone by milestone: order, title, state word, the bar of a counted one, the chevron of an undone one, the totals, the open chapter. */
+  const assertPathMatches = (actor, view, server) => {
+    actor.need(view.h1 === PATH.title && view.eyebrow === PATH.eyebrow && view.eyebrowHref === '/profile', `the head of the page is ${JSON.stringify([view.h1, view.eyebrow, view.eyebrowHref])}`);
+    actor.need(view.milestones.length === server.milestones.length, `the page draws ${view.milestones.length} milestones, the server lists ${server.milestones.length}`);
+    for (const [index, expected] of server.milestones.entries()) {
+      const row = view.milestones[index];
+      const [, title] = PATH.milestones[expected.key] ?? [];
+      actor.need(title !== undefined, `the server names a milestone this harness does not know: ${expected.key}`);
+      actor.need(row.title === title, `row ${index} reads «${row.title}», the server has ${expected.key} («${title}»)`);
+      actor.need(row.state === expected.state && row.word === PATH.words[expected.state], `${expected.key}: the page says «${row.word}» (${row.state}), the server ${expected.state}`);
+      const counted = expected.state === 'PARTIAL' && expected.target > 1 && expected.key !== 'CAPTURE_NOTE';
+      if (counted) {
+        actor.need(row.bar && row.bar.now === String(expected.progress) && row.bar.max === String(expected.target) && row.bar.text === `${expected.progress} из ${expected.target}` && row.bar.name === title,
+          `${expected.key}: the progress bar is ${JSON.stringify(row.bar)} for ${expected.progress} of ${expected.target}`);
+        actor.need(row.barText === `${expected.progress} из ${expected.target}`, `${expected.key}: the bar's text is «${row.barText}»`);
+      } else actor.need(row.bar === null, `${expected.key}: a progress bar is drawn for a milestone that is not counted in progress`);
+      if (expected.key === 'CAPTURE_NOTE' && expected.state === 'PARTIAL') actor.need(row.benefit === 'Заметка сохранена, осталось её разобрать.', `CAPTURE_NOTE says «${row.benefit}» at its stage`);
+      if (expected.state === 'DONE') actor.need(row.link === null, `${expected.key}: a done milestone has a chevron`);
+      else actor.need(row.link !== null && row.link.label === `Перейти: ${title}`, `${expected.key}: the chevron is ${JSON.stringify(row.link)}`);
+    }
+    actor.need(view.total !== null && view.total.text === `${server.path.done} из ${server.path.total}` && view.total.textHiddenFromAt, `the total reads ${JSON.stringify(view.total)}, the server ${server.path.done} of ${server.path.total}`);
+    actor.need(view.total.bar.now === String(server.path.done) && view.total.bar.max === String(server.path.total) && view.total.bar.text === `${server.path.done} из ${server.path.total}` && view.total.bar.name === PATH.title,
+      'the total progress bar is ' + JSON.stringify(view.total.bar));
+    const done = server.milestones.filter(item => item.state === 'DONE').length;
+    actor.need(done === server.path.done && server.milestones.length === server.path.total, `the server's own counts disagree: ${done}/${server.milestones.length} against ${JSON.stringify(server.path)}`);
+    // The chapters: only those with visible milestones, in order, the first with something left open and the others folded, the name an h2 inside the summary.
+    const chapterOf = key => PATH.milestones[key][0];
+    const expectedChapters = Object.keys(PATH.chapters).filter(chapter => server.milestones.some(item => chapterOf(item.key) === chapter));
+    actor.need(JSON.stringify(view.chapters.map(chapter => chapter.name)) === JSON.stringify(expectedChapters.map(chapter => PATH.chapters[chapter])), 'the chapters are ' + JSON.stringify(view.chapters.map(chapter => chapter.name)));
+    actor.need(view.chapters.every(chapter => chapter.h2InSummary), 'a chapter name is not an h2 inside its summary');
+    for (const chapter of expectedChapters) {
+      const own = server.milestones.filter(item => chapterOf(item.key) === chapter);
+      const drawn = view.chapters.find(item => item.name === PATH.chapters[chapter]);
+      actor.need(drawn.count === `${own.filter(item => item.state === 'DONE').length} из ${own.length}`, `the chapter «${drawn.name}» counts «${drawn.count}»`);
+    }
+    const current = expectedChapters.find(chapter => server.milestones.some(item => chapterOf(item.key) === chapter && item.state !== 'DONE'));
+    const opened = view.chapters.filter(chapter => chapter.open).map(chapter => chapter.name);
+    actor.need(JSON.stringify(opened) === JSON.stringify(current === undefined ? [] : [PATH.chapters[current]]), `the open chapters are ${JSON.stringify(opened)}, the current one is ${current}`);
+  };
+  /** The toasts on the screen (the region of the page): text, link and its address. */
+  const toastsOf = actor => read(actor, `return [...document.querySelectorAll('app-toast-region .toast')].map(t => ({ text: norm(t.querySelector('.text')?.textContent), link: norm(t.querySelector('.action')?.textContent), href: t.querySelector('.action')?.getAttribute('href') }));`);
+  /** Waits for a toast of «Путь» that satisfies `accept`, noting every toast text seen on the way in `seen` (a Set). */
+  const awaitPathToast = async (actor, what, accept, seen, timeout) => {
+    await actor.front();
+    const deadline = Date.now() + timeout;
+    let last = [];
+    while (Date.now() < deadline) {
+      last = await toastsOf(actor);
+      for (const toast of last) if (toast.text.startsWith('Путь:')) seen.add(toast.text);
+      const hit = last.find(toast => toast.text.startsWith('Путь:') && accept(toast));
+      if (hit) return hit;
+      await sleep(400);
+    }
+    throw new SafeFailure(`${what} did not come within ${Math.round(timeout / 1000)} s (toasts seen: ${JSON.stringify([...seen])}; on screen now: ${JSON.stringify(last.map(toast => toast.text))})`);
+  };
+  /** Asks the notification center to look now: the same code path as the 45 s timer, which a tab that becomes visible runs at once. */
+  const pollNow = async actor => { await actor.front(); await actor.page(`document.dispatchEvent(new Event('visibilitychange')); return true;`); };
+  /** The in-place hint of «Путь»: the card, its place, its focus, and whether anything dims or blocks the page. */
+  const hintState = (actor, anchor) => read(actor, `const card = document.querySelector('app-path-hint app-path-hint-card');
+    if (!card) return null;
+    const dialog = card.querySelector('[role="dialog"]'); const heading = card.querySelector('h2');
+    const r = card.getBoundingClientRect();
+    const box = e => { const b = e.getBoundingClientRect(); return { left: Math.round(b.left), top: Math.round(b.top), right: Math.round(b.right), bottom: Math.round(b.bottom) }; };
+    const anchorElement = document.querySelector('[data-tour-anchor="' + args[0] + '"]');
+    const a = anchorElement ? anchorElement.getBoundingClientRect() : null;
+    const centre = a ? document.elementFromPoint(a.left + a.width / 2, a.top + a.height / 2) : null;
+    return { floating: card.classList.contains('floating'), role: dialog?.getAttribute('role') ?? null, modal: dialog?.getAttribute('aria-modal') ?? null, heading: norm(heading?.textContent), text: norm(card.querySelector('p')?.textContent),
+      name: norm(document.getElementById(dialog?.getAttribute('aria-labelledby') ?? '')?.textContent), described: norm(document.getElementById(dialog?.getAttribute('aria-describedby') ?? '')?.textContent),
+      button: norm(card.querySelector('button')?.textContent), headingFocused: document.activeElement === heading, active: describe(document.activeElement),
+      card: box(card), anchor: a ? box(anchorElement) : null, anchorUncovered: Boolean(anchorElement) && (centre === anchorElement || anchorElement.contains(centre)), anchorFocused: Boolean(anchorElement) && document.activeElement === anchorElement,
+      openDialogs: document.querySelectorAll('dialog[open]').length, veil: Boolean(document.querySelector('app-tour-scrim')), inert: document.querySelectorAll('[inert]').length, location: location.pathname,
+      inViewport: r.top >= 0 && r.bottom <= innerHeight + 1 && r.left >= 0 && r.right <= innerWidth + 1 };`, anchor);
+  const questDialog = actor => read(actor, `const d = document.querySelector('app-quest-host dialog.quest-dialog');
+    if (!d) return null;
+    return { open: d.open, modal: d.matches(':modal'), label: norm(d.getAttribute('aria-label')), heading: norm(d.querySelector('h2')?.textContent), headingFocused: document.activeElement === d.querySelector('h2'),
+      radios: [...d.querySelectorAll('input[type="radio"]')].map(r => ({ checked: r.checked, label: norm(r.closest('label')?.textContent) })), buttons: [...d.querySelectorAll('button')].map(b => norm(b.textContent)),
+      text: norm(d.querySelector('p')?.textContent) };`);
+  /** The requests this page sent to the journey since `mark` that change it (a quest must send none). */
+  const journeyWritesSince = (actor, mark) => actor.wire.slice(mark).filter(entry => entry.path.startsWith('/api/onboarding') && entry.method !== 'GET').map(entry => `${entry.method} ${entry.path} ${entry.status ?? '…'}`);
+  /** A note «На потом» in a deck, then archived (`POST …/archive` with the row version): the second step makes CAPTURE_NOTE done. */
+  const saveNote = async (bearer, deckId, text) => {
+    const created = await learning('POST', '/api/capture-notes', { bearer, payload: { commandId: crypto.randomUUID(), deckId, source: 'https://example.test/path', text } });
+    need(created.status === 201, `the capture note answered ${created.status}`);
+    return { noteId: created.body.capture.noteId, rowVersion: created.body.capture.rowVersion };
+  };
+  const archiveNote = async (bearer, note) => {
+    // Sorting a note out (CAPTURE_NOTE stage 2) is archiving or converting it; a deletion is not.
+    const archived = await learning('POST', `/api/capture-notes/${note.noteId}/archive`, { bearer, payload: { archived: true }, headers: { 'If-Match': `"${note.rowVersion}"` } });
+    need(archived.status === 200, `the capture note archive answered ${archived.status}`);
   };
 
   /** A device is a browser context of its own with a freshly registered (or signed-in) account. */
@@ -802,6 +936,201 @@ export async function runOnboarding(ctx) {
       inertAfterTheTour: 0, decks: total };
   });
 
+
+  // ==== 3b. «Путь Mnema» of the account that has just finished the own-deck branch (no tour on the screen, nothing paused) =================================
+  await stage('path_page', ['own_finale'], async () => {
+    const A = world.journeyActor;
+    await A.front();
+    await navigate('/profile/path', A.tab);
+    const view = await waitFor('the Path page with its milestones', () => pathPage(A), v => v !== null && v.milestones.length > 0 && v.total !== null, 25_000);
+    const server = await serverPath(A);
+    assertPathMatches(A, view, server);
+    // What the tour itself produced: the goal of the survey, the deck, the first material, the session; one exercise of three, one day of two.
+    const byKey = Object.fromEntries(server.milestones.map(item => [item.key, item]));
+    for (const key of ['GOAL_TOLD', 'FIRST_DECK', 'OWN_MATERIAL', 'FIRST_SESSION']) A.need(byKey[key]?.state === 'DONE', `${key} is ${byKey[key]?.state} after the own-deck branch, which made it`);
+    A.need(byKey.OWN_EXERCISES?.state === 'PARTIAL' && byKey.OWN_EXERCISES.progress === 1 && byKey.OWN_EXERCISES.target === 3, 'OWN_EXERCISES is ' + JSON.stringify(byKey.OWN_EXERCISES));
+    A.need(byKey.TWO_DAYS?.state === 'PARTIAL' && byKey.TWO_DAYS.progress === 1, 'TWO_DAYS is ' + JSON.stringify(byKey.TWO_DAYS));
+    A.need(byKey.CAPTURE_NOTE?.state === 'TODO' && byKey.MEDIA_IN_MATERIAL?.state === 'TODO', 'CAPTURE_NOTE and MEDIA_IN_MATERIAL are not untouched');
+    A.need(Object.keys(byKey).every(key => !['AI_EXPLANATION', 'VOICE_ANSWER', 'WORKSHOP_APPROVED', 'RHYTHM_WEEK'].includes(key)), 'a milestone of a switched-off feature is visible: ' + JSON.stringify(Object.keys(byKey)));
+    A.need(!view.notice, 'the «Новое» notice is shown to an account the tour was offered to');
+    A.need(!view.overflow, 'the Path page overflows at 1440 px');
+    // The keyboard reaches a chevron, and the accessibility tree says it once: the heading levels, the named progress bars, the chevrons by their names.
+    const tree = await axTree(A);
+    const headings = tree.filter(node => node.role === 'heading').map(node => `${node.level}:${node.name}`);
+    // The shell's footer has headings of its own; a closed chapter hides its milestones from the tree. So: the page's h1, every chapter an h2, every h3 a milestone of an open chapter.
+    const chapterNames = view.chapters.map(chapter => chapter.name);
+    const titles = Object.values(PATH.milestones).map(([, title]) => title);
+    const h3 = tree.filter(node => node.role === 'heading' && node.level === 3).map(node => node.name);
+    A.need(headings[0] === `1:${PATH.title}` && chapterNames.every(name => headings.includes(`2:${name}`)) && h3.length > 0 && h3.every(name => titles.includes(name)),
+      'the heading levels are ' + JSON.stringify(headings));
+    const bars = tree.filter(node => node.role === 'progressbar');
+    A.need(bars.length >= 1 && bars[0].name === PATH.title && bars.every(node => node.name !== ''), 'the progress bars are ' + JSON.stringify(bars));
+    const links = tree.filter(node => node.role === 'link' && node.name.startsWith('Перейти: ')).map(node => node.name);
+    // A closed chapter hides its rows from the tree: every chevron there is a «Перейти: …» of an undone milestone of an open chapter, and there is one.
+    const undone = server.milestones.filter(item => item.state !== 'DONE').map(item => `Перейти: ${PATH.milestones[item.key][1]}`);
+    A.need(links.length > 0 && links.every(name => undone.includes(name)) && new Set(links).size === links.length, 'the chevrons in the accessibility tree are ' + JSON.stringify(links));
+    A.need(!tree.some(node => node.role === 'StaticText' && node.name === view.total.text), 'the total is read twice: its text is not hidden from the accessibility tree');
+    a11y.path = { headings, progressbars: bars.map(node => ({ name: node.name, valuetext: node.valuetext, value: node.value })), chevrons: links, totalTextHidden: true, openChapters: view.chapters.filter(chapter => chapter.open).map(chapter => chapter.name) };
+    await shoot(A, 'onboarding-path-1440.png');
+    // Forced colors: the state is still words and glyphs, the chevrons and the bars keep a border or a fill of a system color.
+    await motion(A, ['forced-colors', 'active']);
+    await A.frames();
+    const forced = await read(A, `const m = document.querySelector('app-path-milestone .milestone'); const bar = document.querySelector('app-path-progress .track');
+      return { active: matchMedia('(forced-colors: active)').matches, wordColor: getComputedStyle(m.querySelector('.word')).color, ground: getComputedStyle(document.body).backgroundColor,
+        barBorder: bar ? getComputedStyle(bar).borderTopStyle : null, overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth };`);
+    A.need(forced.active && forced.wordColor !== forced.ground && !forced.overflow, 'the Path page in forced colors is ' + JSON.stringify(forced));
+    await shoot(A, 'onboarding-path-forced-colors-1440.png');
+    await motion(A, null);
+    // A phone: nothing scrolls sideways, every chevron keeps a touch target of at least 44 px, the state words stay.
+    await A.metrics(PHONE);
+    await A.frames();
+    const phone = await pathPage(A);
+    A.need(!phone.overflow, `the Path page overflows at 390 px: ${JSON.stringify(phone.widths)}`);
+    A.need(phone.milestones.every(row => row.word !== ''), 'a milestone has no state word at 390 px');
+    const targets = await read(A, `return [...document.querySelectorAll('app-path-milestone a.go')].map(a => a.getBoundingClientRect()).filter(r => r.width > 0).map(r => Math.round(Math.min(r.width, r.height)));`);
+    A.need(targets.length > 0 && targets.every(size => size >= 44), `a chevron is smaller than 44 px at 390 px: ${JSON.stringify(targets)}`);
+    await shoot(A, 'onboarding-path-390.png');
+    await A.metrics(NARROW);
+    await A.frames();
+    const narrow = await pathPage(A);
+    A.need(!narrow.overflow, `the Path page overflows at 320 px: ${JSON.stringify(narrow.widths)}`);
+    await shoot(A, 'onboarding-path-320-at-200-percent.png');
+    await A.metrics(DESKTOP);
+    await A.frames();
+    // The profile block of the same account: the count and the link to the page.
+    await navigate('/profile', A.tab);
+    const block = await waitFor('the Path block of the profile', () => read(A, `const s = document.querySelector('app-path-summary section'); return s ? { title: norm(s.querySelector('h2')?.textContent), total: norm(s.querySelector('.total')?.textContent), href: s.querySelector('a')?.getAttribute('href'), link: norm(s.querySelector('a')?.textContent) } : null;`), b => b !== null, 20_000);
+    A.need(block.title === PATH.title && block.total === `${server.path.done} из ${server.path.total}` && block.href === '/profile/path' && block.link === PATH.open, 'the profile block is ' + JSON.stringify(block));
+    return { milestones: server.milestones.map(item => `${item.key}:${item.state}`), done: server.path.done, total: server.path.total, hidden: server.path.hidden, pageMatchesServer: true, openChapters: view.chapters.filter(chapter => chapter.open).map(chapter => chapter.name),
+      axHeadings: headings.length, axProgressbars: bars.length, axChevrons: links.length, forcedColors: true, noHorizontalScroll: ['1440', '390', '320'], chevronTouchTargetsPx: Math.min(...targets), profileBlock: block.total };
+  });
+
+  await stage('path_hint', ['own_finale'], async () => {
+    const A = world.journeyActor;
+    await A.front();
+    await navigate('/profile/path', A.tab);
+    await waitFor('the Path page', () => pathPage(A), v => v !== null && v.milestones.length > 0, 25_000);
+    const clear = await noVeil(A);
+    A.need(clear.clear, 'something of a tour is on the screen before the chevron: ' + JSON.stringify(clear.state));
+    const label = `Перейти: ${PATH.milestones.CAPTURE_NOTE[1]}`;
+    await realClick(A, 'app-path-milestone a.go', label);
+    // The chevron leads to the hub of the learner's own deck (the newest, here the only one) and the hint stands at «На потом», with no veil.
+    await waitFor('the hub of the deck', () => location(A), path => path === `/decks/${world.deckId}`, 20_000);
+    const hint = await waitFor('the in-place hint at «На потом»', () => hintState(A, 'hub.capture'), h => h !== null && h.floating && h.anchor !== null, 20_000);
+    A.need(hint.role === 'dialog' && hint.modal === 'false', `the hint is role=${hint.role} aria-modal=${hint.modal}: it must be a non-modal dialog`);
+    A.need(hint.heading === PATH.milestones.CAPTURE_NOTE[1] && hint.name === hint.heading && hint.text === 'Сохраните сюда мысль или ссылку — разберёте её потом.' && hint.described === hint.text, 'the hint says ' + JSON.stringify([hint.heading, hint.name, hint.text, hint.described]));
+    A.need(hint.button === PATH.hintOk, `the hint's button is «${hint.button}»`);
+    A.need(hint.headingFocused, `the focus is not on the hint: ${hint.active}`);
+    A.need(hint.openDialogs === 0 && !hint.veil && hint.inert === 0, `the hint dims or blocks the page: ${JSON.stringify([hint.openDialogs, hint.veil, hint.inert])}`);
+    A.need(hint.anchorUncovered, 'the hint covers its anchor');
+    A.need(hint.inViewport, 'the hint is outside the window: ' + JSON.stringify(hint.card));
+    // Next to the anchor: touching or close below, above or to a side, within a card's width.
+    const nearX = hint.card.left <= hint.anchor.right + 24 && hint.card.right >= hint.anchor.left - 24;
+    const nearY = hint.card.top <= hint.anchor.bottom + 48 && hint.card.bottom >= hint.anchor.top - 48;
+    A.need(nearX && nearY, `the hint is not next to its anchor: card ${JSON.stringify(hint.card)}, anchor ${JSON.stringify(hint.anchor)}`);
+    const tree = await axTree(A);
+    A.need(named(tree, 'dialog').includes(PATH.milestones.CAPTURE_NOTE[1]), 'the accessibility tree has no dialog named by the hint: ' + JSON.stringify(named(tree, 'dialog')));
+    await shoot(A, 'onboarding-path-hint-1440.png');
+    // Escape closes it and the focus goes back to the anchor.
+    await A.press('Escape');
+    const closed = await waitFor('the hint gone after Escape', () => hintState(A, 'hub.capture'), h => h === null, 6_000).then(() => true);
+    const after = await read(A, `const a = document.querySelector('[data-tour-anchor="hub.capture"]'); return { focusedAnchor: document.activeElement === a, active: describe(document.activeElement) };`);
+    A.need(closed && after.focusedAnchor, `after Escape the focus is on ${after.active}, not on the anchor «На потом»`);
+    a11y.pathHint = { dialogName: hint.name, ariaModal: hint.modal, focusOnHeading: true, escapeReturnsFocusToAnchor: true, noVeil: true };
+    return { chevron: label, hubRoute: 'the newest own deck', role: hint.role, ariaModal: hint.modal, text: hint.text, focusOnCard: true, nextToAnchor: true, anchorUncovered: true, noVeilNoInert: true, escapeReturnedFocus: true };
+  });
+
+  await stage('path_study_quiet', ['own_finale'], async () => {
+    const A = world.journeyActor;
+    await A.front();
+    const before = await serverPath(A);
+    A.need(before.milestones.find(item => item.key === 'CAPTURE_NOTE')?.state === 'TODO', 'CAPTURE_NOTE is not untouched before the study scenario');
+    await navigate(`/decks/${world.deckId}/study`, A.tab);
+    await waitFor('the study page', () => exists('.session-setup, button', A.tab), Boolean, 25_000);
+    // A second session of the day: the setup offers the presets while something is due, practice when nothing is.
+    const preset = await waitFor('a way to start', () => read(A, `return [...document.querySelectorAll('button')].map(b => b.textContent.trim()).find(t => t === 'Начать короткую' || t === 'Начать практику') ?? null;`), Boolean, 25_000);
+    await realClick(A, 'button', preset);
+    // A preset can find the queue empty («На сейчас всё повторено»): practice is then offered on the same page.
+    const opened = await waitFor('a task or the practice offer', () => read(A, `return document.querySelector('#study-0-answer') ? 'task'
+      : [...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Начать практику') ? 'practice' : null;`), Boolean, 25_000);
+    if (opened === 'practice') await realClick(A, 'button', 'Начать практику');
+    await waitFor('the first task', () => exists('#study-0-answer', A.tab), Boolean, 25_000);
+    // An answer is open. Another request with the same token sorts a note out: the milestone is achieved on the server while the learner answers.
+    const seen = new Set();
+    const note = await saveNote(world.journeyBearer, world.deckId, 'Заметка для проверки «Пути»');
+    await archiveNote(world.journeyBearer, note);
+    const achieved = await waitFor('CAPTURE_NOTE done on the server', () => serverPath(A), view => view.milestones.find(item => item.key === 'CAPTURE_NOTE')?.state === 'DONE', 15_000);
+    await pollNow(A);
+    // The center has had its look (a visible tab polls at once); nothing may speak while the answer is open, whatever the poll found.
+    const quiet = [];
+    for (let look = 0; look < 12; look++) {
+      await sleep(500);
+      const toasts = await toastsOf(A);
+      quiet.push(...toasts.map(toast => toast.text));
+      A.need(!toasts.some(toast => toast.text.startsWith('Путь:')), `a milestone toast appeared while an answer was open: ${JSON.stringify(toasts)}`);
+      A.need(await exists('#study-0-answer', A.tab), 'the open answer left the screen while the toast was held');
+    }
+    const answering = await noVeil(A);
+    A.need(answering.clear, 'the study page has a veil or an open dialog: ' + JSON.stringify(answering.state));
+    await fill('#study-0-answer', 'memory', A.tab);
+    require_(await clickText('button', 'Проверить ответ', A.tab), 'the check action is absent');
+    await waitFor('the feedback', () => exists('#feedback-title', A.tab), Boolean, 20_000);
+    const feedbackAt = Date.now();
+    // At the pause the held toast is shown: one, with the sentence of the milestone, the count after it and the link to the page.
+    const expected = `Путь: ${PATH.milestones.CAPTURE_NOTE[2]} · ${achieved.path.done} из ${achieved.path.total}`;
+    const toast = await awaitPathToast(A, 'the held milestone toast', candidate => candidate.text === expected, seen, 30_000);
+    A.need(toast.link === PATH.open && toast.href === '/profile/path', 'the toast link is ' + JSON.stringify([toast.link, toast.href]));
+    A.need([...seen].length === 1, 'more than one milestone toast: ' + JSON.stringify([...seen]));
+    await shoot(A, 'onboarding-path-toast-after-study-answer-1440.png');
+    require_(await clickText('.feedback-card button.primary', 'Продолжить', A.tab), 'the continue action after the feedback is absent');
+    return { milestone: 'CAPTURE_NOTE', achievedViaApiWhileAnswering: true, noToastWhileAnswerOpen: true, toast: toast.text, appearedAfterFeedbackMs: Date.now() - feedbackAt, quietLooks: 12, link: toast.href };
+  });
+
+  await stage('path_quest', ['own_finale'], async () => {
+    const A = world.journeyActor;
+    await A.front();
+    await navigate('/profile/path', A.tab);
+    await waitFor('the Path page', () => pathPage(A), v => v !== null && v.milestones.length > 0, 25_000);
+    const serverBefore = (await serverPath(A)).journey;
+    const mark = A.wire.length;
+    const label = `Перейти: ${PATH.milestones.MEDIA_IN_MATERIAL[1]}`;
+    await realClick(A, 'app-path-milestone a.go', label);
+    // The chooser: a modal dialog named by the milestone, the learner's own deck chosen, «Начать».
+    const chooser = await waitFor('the quest chooser with a deck to choose', () => questDialog(A), d => d !== null && d.open && d.radios.length > 0, 20_000);
+    A.need(chooser.modal && chooser.label === PATH.milestones.MEDIA_IN_MATERIAL[1] && chooser.heading === chooser.label, 'the chooser is ' + JSON.stringify([chooser.modal, chooser.label, chooser.heading]));
+    A.need(chooser.radios.length === 1 && chooser.radios[0].checked && chooser.radios[0].label.includes('Мой первый набор'), 'the decks offered are ' + JSON.stringify(chooser.radios));
+    A.need(chooser.buttons.includes(PATH.questStart) && chooser.buttons.includes('Не сейчас'), 'the chooser buttons are ' + JSON.stringify(chooser.buttons));
+    await shoot(A, 'onboarding-path-quest-chooser-1440.png');
+    await realClick(A, 'app-quest-host button.primary', PATH.questStart);
+    // The first step: its page is the material editor, its card is the same card as the tour's, anchored to the control that puts a picture in.
+    const step = await awaitStep(A, PATH.milestones.MEDIA_IN_MATERIAL[1], 'Шаг 1 из 2', 30_000);
+    await waitFor('the material editor', () => location(A), path => new RegExp(`^/decks/${world.deckId}/materials/[0-9a-f-]{36}/edit(\\?ordinal=\\d+)?$`).test(path), 20_000);
+    await waitFor('the media control on the page', () => exists('[data-tour-anchor="editor.media"]', A.tab), Boolean, 25_000);
+    const placed = await waitFor('the step card with its target', () => tourState(A), s => s.card && s.frame !== null && s.body !== norm(T.missing), 15_000);
+    A.need(placed.buttons.includes(PATH.questLeave) && !placed.buttons.includes(T.finish) && placed.hold === null, 'the card of a quest has these buttons: ' + JSON.stringify(placed.buttons));
+    A.need(placed.headingFocused && placed.role === 'dialog', `the focus is on ${placed.active}, not on the quest card`);
+    const targetLive = await inertState(A, '[data-tour-anchor="editor.media"]');
+    A.need(targetLive.targetLive, 'the media control is inert behind the quest card');
+    await shoot(A, 'onboarding-path-quest-step-1440.png');
+    // Escape folds it into the quest's own plaque, «Продолжить задание» brings the card back, «Выйти из задания» ends it: nothing on the screen, nothing sent to the journey.
+    await A.press('Escape');
+    const folded = await waitFor('the plaque of the quest', () => tourState(A), s => s.plaque !== null, 8_000);
+    A.need(folded.plaque.label === PATH.questPause && folded.plaque.button === PATH.questResume, 'the plaque is ' + JSON.stringify(folded.plaque));
+    await realClick(A, 'app-tour-pause button', PATH.questResume);
+    await awaitStep(A, PATH.milestones.MEDIA_IN_MATERIAL[1], 'Шаг 1 из 2', 15_000);
+    await realClick(A, 'app-tour-card button.leave', PATH.questLeave);
+    const gone = await waitFor('the quest gone', () => noVeil(A), r => r.clear, 10_000);
+    const writes = journeyWritesSince(A, mark);
+    A.need(writes.length === 0, `the quest sent a request that changes the journey: ${JSON.stringify(writes)}`);
+    const serverAfter = (await serverPath(A)).journey;
+    A.need(serverAfter.rowVersion === serverBefore.rowVersion && serverAfter.state === serverBefore.state && serverAfter.stepKey === serverBefore.stepKey && serverAfter.branch === serverBefore.branch,
+      `the journey changed during the quest: ${JSON.stringify([serverBefore, serverAfter])}`);
+    A.need(!(await bodyHas(A, T.finishToast)), 'the quest said «Знакомство завершено»');
+    a11y.pathQuest = { chooserDialogName: chooser.label, cardButtons: placed.buttons, plaque: folded.plaque, journeyWrites: writes, rowVersionUnchanged: serverAfter.rowVersion };
+    return { quest: 'MEDIA_IN_MATERIAL', chooserModal: true, deckChosen: chooser.radios[0].label, firstStep: step.name, counter: step.counter, leaveButton: PATH.questLeave, pausePlaque: folded.plaque.label, resumed: true, left: gone.clear,
+      journeyWritesDuringQuest: writes.length, rowVersion: serverAfter.rowVersion, journeyState: serverAfter.state };
+  });
+
   // ==== 4. the replay from the profile ===========================================================================================================
   await stage('replay', ['own_finale'], async () => {
     const A = world.journeyActor;
@@ -952,7 +1281,7 @@ export async function runOnboarding(ctx) {
     await realClick(C, 'app-first-entry button', T.skipAll);
     const toast = await waitFor('the skip toast', () => read(C, `const t = document.querySelector('app-toast-region .toast');
       return t ? { text: norm(t.querySelector('.text')?.textContent), link: norm(t.querySelector('.action')?.textContent), href: t.querySelector('.action')?.getAttribute('href') } : null;`), t => t !== null, 10_000);
-    C.need(toast.text === T.skipToast && toast.link === T.skipToastLink && toast.href === '/profile', 'the skip toast is ' + JSON.stringify(toast));
+    C.need(toast.text === T.skipToast && toast.link === T.skipToastLink && toast.href === '/profile/path', 'the skip toast is ' + JSON.stringify(toast));
     const skipped = await serverJourney(C, 'is SKIPPED', j => j.state === 'SKIPPED' && j.finishedAt !== null);
     C.need((await firstEntry(C)) === null, 'the first entry stays open after the skip');
     const focus = await read(C, `return describe(document.activeElement);`);
