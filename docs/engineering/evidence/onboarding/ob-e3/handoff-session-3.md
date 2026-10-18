@@ -96,6 +96,8 @@ Colima), затем `python3 scripts/checks.py verify`. Прогоны S3:
 |---|---|---|
 | c9b30a26 | 7 из 8 проверок passed (docs, automation-policy, frontend-static, delivery-contracts, frontend-tests, backend-runtime, backend-security); `backend-quality` failed: 3385 тестов, 1 падение | `DeckEngagementIntegrationTest.theHotPathProbesTwoPrimaryKeysAndNothingElse`: на крошечной таблице новый частичный индекс V74 конкурировал с PK; тест уже убирал `study_session_resume` по той же причине — убирает и новый (73de065b) |
 | 73de065b | `backend-quality` failed: 3385 тестов, 2 падения (прогон пересёк полночь по Москве) | Два теста TWO_DAYS считали «вчера» через `LocalDate.now()` JVM (+03:00), а дата занятия у приложения — UTC; «другой день» теперь от сохранённой `local_study_date` занятия. Дефект тестов, не кода |
+| 3c96cccd | **PASSED** (9 checks), `verify` OK; запушен как первая голова PR #561 | CI PR: `release-images (frontend)` — новая HIGH CVE-2026-88806 в `libx11` базового nginx-alpine (не из диффа); исправлено floor `libx11>=1.8.14-r0` (1c23ae9d), как #557 |
+| 1c23ae9d | `backend-quality` failed: 1 падение (`parallelIncrementsOfACounterSaturateAtTheTargetAndAnnounceOnce`) | **Настоящий дефект гонки:** параллельный upsert, начавшийся раньше вставившей строку транзакции, ставил `achieved_at` раньше `first_at` → CHECK V74 откатывал доменное действие. Исправлено: `achieved_at = GREATEST(statement_timestamp(), first_at)`, детерминированный тест; recorder-тесты 3 раза подряд зелёные |
 | HEAD этого PR | см. описание PR (`checks.py run` + `verify` на точном коммите перед push) | — |
 
 Существенные предупреждения: сборка frontend — «is not ESM» из `mermaid` (как в main); backend — пропущено 24 opt-in теста по

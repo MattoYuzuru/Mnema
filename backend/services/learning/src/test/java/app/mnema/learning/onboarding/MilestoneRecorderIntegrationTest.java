@@ -106,6 +106,25 @@ class MilestoneRecorderIntegrationTest extends SampleDeckIntegrationTest {
     }
 
     @Test
+    void aStatementThatStartedBeforeTheRowWasWrittenStillAchievesItNoEarlierThanItsFirstFact() {
+        // A concurrent upsert can start before the transaction that inserts the row and wait for it; its statement time is then earlier than the row's first_at.
+        // Simulated deterministically: rows whose first_at lies ahead of the statement that reaches their target.
+        UUID account = UUID.randomUUID();
+        inTransaction(() -> {
+            jdbc.sql("INSERT INTO app_learning.account_milestone(account_id, milestone_key, progress, achieved_at, first_at, source) VALUES "
+                    + "(:a, 'OWN_EXERCISES', 2, NULL, statement_timestamp() + interval '1 minute', 'LIVE'), (:a, 'CAPTURE_NOTE', 1, NULL, statement_timestamp() + interval '1 minute', 'LIVE')")
+                    .param("a", account).update();
+        });
+        inTransaction(() -> recorder.increment(account, MilestoneKey.OWN_EXERCISES));
+        inTransaction(() -> recorder.reach(account, MilestoneKey.CAPTURE_NOTE, 2));
+        for (MilestoneKey key : new MilestoneKey[] {MilestoneKey.OWN_EXERCISES, MilestoneKey.CAPTURE_NOTE}) {
+            Stored row = stored(account, key);
+            assertThat(row.achievedAt()).as(key.name()).isNotNull();
+            assertThat(row.achievedAt()).as(key.name()).isEqualTo(row.firstAt());
+        }
+    }
+
+    @Test
     void anIncrementInsideOneTransactionCountsEveryStep() {
         UUID account = UUID.randomUUID();
         inTransaction(() -> {

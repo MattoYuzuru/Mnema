@@ -16,7 +16,9 @@ import java.util.UUID;
  * CONFLICT DO NOTHING}, which takes no lock on the row that is already there (a repeat of an achieved fact must not serialize the account's transactions or order their locks). A counter
  * or a staged milestone is an upsert whose {@code WHERE} leaves an achieved row alone; PostgreSQL locks the conflicting row for it even when nothing changes, which is why only the
  * milestones that need it use it. {@code achieved_at} is the database clock and is written once. No statement here has an external dependency or touches another account's row, so a failure can only roll back the
- * caller's own transaction; reads use the primary key {@code (account_id, milestone_key)}.
+ * caller's own transaction; reads use the primary key {@code (account_id, milestone_key)}. An update that reaches the target sets {@code achieved_at} to its
+ * statement time but never before the row's {@code first_at}: a concurrent statement can start before the transaction that inserted the row and wait for it, and the
+ * V74 CHECK {@code achieved_at >= first_at} would otherwise fail the caller's action.
  *
  * <p>TODO(account-deletion task; owner: Learning's account-purge epic #409): delete the rows by {@code account_id} together with {@code onboarding_journey}
  * ({@link OnboardingRepository}); the key, a counter and two times are personal data tied to the account. Learning has no account purge path yet; see "Retention" in the Learning
@@ -55,7 +57,7 @@ class MilestoneRepository {
             %s
             ON CONFLICT (account_id, milestone_key) DO UPDATE
                SET progress = EXCLUDED.progress,
-                   achieved_at = CASE WHEN EXCLUDED.progress >= CAST(:target AS smallint) THEN statement_timestamp() END
+                   achieved_at = CASE WHEN EXCLUDED.progress >= CAST(:target AS smallint) THEN GREATEST(statement_timestamp(), m.first_at) END
              WHERE m.achieved_at IS NULL AND m.progress < EXCLUDED.progress
             RETURNING (achieved_at IS NOT NULL) AS achieved
             """;
@@ -67,7 +69,7 @@ class MilestoneRepository {
             %s
             ON CONFLICT (account_id, milestone_key) DO UPDATE
                SET progress = LEAST(m.progress + 1, CAST(:target AS smallint)),
-                   achieved_at = CASE WHEN m.progress + 1 >= CAST(:target AS smallint) THEN statement_timestamp() END
+                   achieved_at = CASE WHEN m.progress + 1 >= CAST(:target AS smallint) THEN GREATEST(statement_timestamp(), m.first_at) END
              WHERE m.achieved_at IS NULL
             RETURNING (achieved_at IS NOT NULL) AS achieved
             """;
