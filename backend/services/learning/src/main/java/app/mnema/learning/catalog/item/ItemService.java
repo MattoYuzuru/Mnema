@@ -407,7 +407,12 @@ public class ItemService {
                             command.commandId(), save.contentRoot(), save.descriptorRoot(), time);
                     mediaCatalog.attachRevision(actor, deckId, save.member(), save.revision(), save.mediaReferences());
                     repository.updateHead(deckId, save.member(), save.revision(), save.itemSequence(), time);
-                    withMedia |= !save.mediaReferences().isEmpty();
+                    // media APPEARS: the new revision references an asset the one it was built on did not (a save that keeps the same pictures is not a new fact); looked at only for
+                    // a USER deck and only when the revision has media at all
+                    if (!withMedia && before.purpose() == DeckPurpose.USER && !save.mediaReferences().isEmpty()) {
+                        List<UUID> known = repository.mediaAssets(prepared.before().scopeId(), save.member(), save.expectedRevision());
+                        withMedia = save.mediaReferences().stream().anyMatch(reference -> !known.contains(reference.assetId()));
+                    }
                     pendingChanges.add(new PendingChange("save", save.member(), current.revisionId(), save.revision(),
                             save.revision(), save.itemSequence(), save.fromOrdinal()));
                 }

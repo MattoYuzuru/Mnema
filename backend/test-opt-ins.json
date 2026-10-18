@@ -51,5 +51,8 @@
   "app.mnema.identityaccount.avatar.S3LiveParityTest": [
     "versionedAvatarFlowMatchesTheProductionContract()",
     "exactEraseRemovesEveryVersionOfTheOwnedAvatar()"
+  ],
+  "app.mnema.learning.onboarding.MilestoneHotPathEvidenceTest": [
+    "measure()"
   ]
 }

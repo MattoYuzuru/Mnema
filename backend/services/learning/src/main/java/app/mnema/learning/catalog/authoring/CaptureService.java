@@ -155,7 +155,11 @@ public class CaptureService {
         boolean[] applied = {false};
         JsonNode publication = items.create(actor, note.deckId(), command.expectedDeckVersion(), command.commandId(),
                 command.expectedDeckRevisionId(), command.ordinal(), command.document(),
-                result -> applied[0] = commitConversion(actor, noteId, expected, command.commandId(), hash, result));
+                result -> {
+                    applied[0] = commitConversion(actor, noteId, expected, command.commandId(), hash, result);
+                    // «Путь Mnema»: stage 2 (sorted out) by turning the note into a material, in the transaction of the publication
+                    if (applied[0]) milestones.reachInUserDeck(actor, note.deckId(), MilestoneKey.CAPTURE_NOTE, 2);
+                });
         CaptureRecord converted = own(actor, noteId);
         requireSameConversion(converted, command.commandId(), hash);
         if (!converted.conversionResult().path("publication").equals(publication)) {
@@ -184,8 +188,6 @@ public class CaptureService {
         result.set("publication", publication.deepCopy());
         cas.updateOne(expected, () -> repository.convertCapture(actor, noteId, expected, commandId, hash,
                 member, revision, result, repository.now()));
-        // «Путь Mnema»: stage 2 (sorted out) by turning the note into a material, in the transaction of the publication
-        milestones.reachInUserDeck(actor, note.deckId(), MilestoneKey.CAPTURE_NOTE, 2);
         return true;
     }
 

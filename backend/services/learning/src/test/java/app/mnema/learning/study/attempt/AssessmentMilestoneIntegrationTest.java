@@ -47,6 +47,29 @@ class AssessmentMilestoneIntegrationTest extends AssessmentIntegrationTest {
     }
 
     @Test
+    void aGradeOfAReplayIsNotTheMilestone() {
+        Case learner = issued();
+        UUID first = UUID.randomUUID();
+        submit(learner, first, "Он перебирает планы, потом берёт самый дешёвый [[stub:assess-complete]]");
+        settled(learner, first);
+        assertThat(reached(learner.actor())).isTrue();
+        // the facts of the first study are removed, so that only the replay is left to count
+        jdbc.sql("DELETE FROM app_learning.account_milestone WHERE account_id=:a").param("a", learner.actor()).update();
+        jdbc.sql("DELETE FROM app_learning.notification WHERE owner_id=:a").param("a", learner.actor()).update();
+
+        JsonNode replay = fixtures.session(learner.material(), "REPLAY", learner.session());
+        UUID session = UUID.fromString(replay.path("sessionId").stringValue(null));
+        JsonNode presentation = replay.path("presentations").get(0);
+        assertThat(presentation.path("evaluator").path("id").stringValue(null)).isEqualTo("ai-semantic");
+        Case replayed = new Case(learner.material(), new app.mnema.learning.support.StudyFixtures.Issued(session, presentation));
+        UUID second = UUID.randomUUID();
+        submit(replayed, second, "Он перебирает планы, потом берёт самый дешёвый [[stub:assess-complete]]");
+        assertThat(settled(replayed, second).path("status").stringValue(null)).isEqualTo("ASSESSED");
+        assertThat(reached(learner.actor())).as("a replay is feedback only").isFalse();
+        assertThat(announced(learner.actor())).isEmpty();
+    }
+
+    @Test
     void aPracticeSessionCountsToo() {
         Case first = issued();
         Case practice = another(first, "PRACTICE");

@@ -126,6 +126,8 @@ class MilestoneInventoryIntegrationTest extends SampleDeckIntegrationTest {
                 "POST /decks/{deckId}/update-history/{deckRevisionId}/units/{kind}/{key}:revert"}) {
             routes.put(route, NONE);
         }
+        // ---- the framework's error page answers every method ----
+        routes.put("ANY /error", NONE);
         // ---- the rest of the platform ----
         for (String route : new String[] {
                 "DELETE /admin/events/{eventId}", "POST /admin/events", "PUT /admin/events/{eventId}", "PATCH /admin/promo-codes/{codeId}", "POST /admin/promo-codes",
@@ -147,7 +149,10 @@ class MilestoneInventoryIntegrationTest extends SampleDeckIntegrationTest {
         Set<String> live = new TreeSet<>();
         for (Map.Entry<RequestMappingInfo, HandlerMethod> entry : mapping.getHandlerMethods().entrySet()) {
             Set<String> patterns = entry.getKey().getPathPatternsCondition().getPatternValues();
-            for (RequestMethod method : entry.getKey().getMethodsCondition().getMethods()) {
+            Set<RequestMethod> methods = entry.getKey().getMethodsCondition().getMethods();
+            // a mapping without a method condition answers every method, the mutating ones included
+            if (methods.isEmpty()) patterns.forEach(pattern -> live.add("ANY " + pattern));
+            for (RequestMethod method : methods) {
                 if (MUTATING.contains(method.name())) patterns.forEach(pattern -> live.add(method.name() + " " + pattern));
             }
         }

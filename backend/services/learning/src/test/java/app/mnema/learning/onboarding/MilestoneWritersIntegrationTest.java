@@ -9,6 +9,7 @@ import app.mnema.learning.support.StudyFixtures.Issued;
 import app.mnema.learning.support.StudyFixtures.Material;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 
 import java.net.http.HttpResponse;
@@ -114,6 +115,26 @@ class MilestoneWritersIntegrationTest extends SampleDeckIntegrationTest {
         UUID refused = UUID.randomUUID();
         assertThat(worlds.send("PUT", "/learning-profile", refused, "{\"goal\":\"NOPE\"}", null).statusCode()).isEqualTo(400);
         assertThat(rows(refused)).isEmpty();
+    }
+
+    @Test
+    void aDomainActionThatFailsAfterItsMilestoneWasRecordedLeavesNeitherTheDeckNorTheMilestoneNorTheNotification() {
+        UUID owner = UUID.randomUUID();
+        long decksBefore = count("SELECT count(*) FROM app_learning.deck WHERE owner_id = :p0", owner);
+        // the real writer joins the caller's transaction; the caller fails after it returned (its milestone and, at the commit, its notification are in that transaction)
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            worlds.shared.deck(owner, "Не будет");
+            profile.answer(owner, LearningGoal.SELF);
+            assertThat(rows(owner)).containsKeys(MilestoneKey.FIRST_DECK, MilestoneKey.GOAL_TOLD);
+            throw new IllegalStateException("the rest of the action failed");
+        })).isInstanceOf(IllegalStateException.class);
+        assertThat(rows(owner)).isEmpty();
+        assertThat(count("SELECT count(*) FROM app_learning.deck WHERE owner_id = :p0", owner)).isEqualTo(decksBefore);
+        assertThat(count("SELECT count(*) FROM app_learning.notification WHERE owner_id = :p0", owner)).isZero();
+        // and the same action afterwards is the first one
+        worlds.shared.deck(owner, "Будет");
+        assertThat(rows(owner).get(MilestoneKey.FIRST_DECK).achieved()).isTrue();
+        assertThat(count("SELECT count(*) FROM app_learning.notification WHERE owner_id = :p0", owner)).isOne();
     }
 
     // ---- FIRST_DECK, COMMUNITY_COPY ----
@@ -281,6 +302,17 @@ class MilestoneWritersIntegrationTest extends SampleDeckIntegrationTest {
         MediaFixtures.saveImages(decks, items, saved, savedDeck, text.member(), text.itemRevision(), image(saved));
         assertThat(rows(saved).get(MilestoneKey.MEDIA_IN_MATERIAL).achieved()).isTrue();
         assertThat(rows(saved).get(MilestoneKey.OWN_MATERIAL).achievedAt()).isNotNull();
+
+        // media APPEARS: saving the same picture again is not a new fact, a different one is
+        UUID picture = image(saved);
+        UUID withPicture = MediaFixtures.saveImages(decks, items, saved, savedDeck, text.member(), jdbc.sql(
+                "SELECT revision_id FROM app_learning.item_revision WHERE owner_id=:a AND member_key=:m ORDER BY item_sequence DESC LIMIT 1").param("a", saved).param("m", text.member())
+                .query(UUID.class).single(), picture);
+        forget(saved, MilestoneKey.MEDIA_IN_MATERIAL);
+        UUID again = worlds.edit(saved, savedDeck, text.member(), withPicture, "то же изображение, другой текст");
+        assertThat(rows(saved)).as("the previous revision already had the picture").doesNotContainKey(MilestoneKey.MEDIA_IN_MATERIAL);
+        MediaFixtures.saveImages(decks, items, saved, savedDeck, text.member(), again, picture, image(saved));
+        assertThat(rows(saved).get(MilestoneKey.MEDIA_IN_MATERIAL).achieved()).as("a second picture appears").isTrue();
     }
 
     @Test

@@ -25,3 +25,8 @@ CREATE TABLE app_learning.account_milestone (
 SET LOCAL lock_timeout = '5s';
 ALTER TABLE app_learning.notification DROP CONSTRAINT notification_route_check;
 ALTER TABLE app_learning.notification ADD CONSTRAINT notification_route_check CHECK (route IN ('WORKSHOP', 'DECK', 'PLANS', 'PATH', 'NONE'));
+
+-- The study dates of an account: the TWO_DAYS probe (a completed SCHEDULED or PRACTICE session on another local date, MilestoneRecorder.sessionCompleted) and the weekly rhythm of
+-- OB-401 (architecture §7) read the account's completed dates by this index. Without it the planner may scan study_session for an account with many sessions. Partial and narrow:
+-- only completed scheduled and practice sessions. Built in the migration's transaction under lock_timeout (the table is written by study completion only).
+CREATE INDEX study_session_study_dates ON app_learning.study_session(account_id, local_study_date) WHERE status = 'COMPLETE' AND mode IN ('SCHEDULED', 'PRACTICE');

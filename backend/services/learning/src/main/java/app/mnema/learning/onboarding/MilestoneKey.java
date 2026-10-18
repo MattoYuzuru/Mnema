@@ -29,6 +29,9 @@ public enum MilestoneKey {
     /** The condition under which a milestone is shown (the fixture's {@code visibility} table); {@link PathVisibility} evaluates it. */
     public enum Visibility { ALWAYS, AI_ASSESSMENT, SPEECH_TO_TEXT, AI_GENERATION, COMMUNITY_CATALOG, RHYTHM }
 
+    /** The version of the registry ({@code registryVersion} of the fixture): the backfill runs once per version. */
+    public static final int REGISTRY_VERSION = 1;
+
     private final Chapter chapter;
     private final int target;
     private final Visibility visibility;

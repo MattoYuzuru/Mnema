@@ -82,6 +82,17 @@ class MilestoneContractTest {
         assertThat(view.path("path")).isEqualTo(example.path("path"));
     }
 
+
+    @Test
+    void theBackfillReadsExactlyTheMilestonesTheFixtureCallsRestorableAtTheRegistryVersionOfTheFixture() {
+        assertThat(MilestoneKey.REGISTRY_VERSION).isEqualTo(REGISTRY.path("registryVersion").intValue());
+        List<String> restorable = new ArrayList<>();
+        for (JsonNode milestone : REGISTRY.path("milestones")) {
+            if (!"none".equals(milestone.path("backfill").path("restorable").stringValue())) restorable.add(milestone.path("key").stringValue());
+        }
+        assertThat(BackfillRepository.SOURCES.stream().map(source -> source.key().name())).containsExactlyElementsOf(restorable);
+    }
+
     private static List<String> names(JsonNode array) {
         List<String> names = new ArrayList<>();
         array.forEach(name -> names.add(name.stringValue()));

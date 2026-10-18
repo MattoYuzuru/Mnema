@@ -55,6 +55,12 @@ class ItemRepository {
                 """).param("actor", actor).param("deck", deck).query(DECK).optional();
     }
 
+    /** The assets a revision of a material references (a primary-key prefix probe; a handful of rows). */
+    List<UUID> mediaAssets(UUID scope, UUID member, UUID revision) {
+        return jdbc.sql("SELECT asset_id FROM app_learning.content_media_ref WHERE reuse_scope_id=:scope AND member_key=:member AND revision_id=:revision")
+                .param("scope", scope).param("member", member).param("revision", revision).query(UUID.class).list();
+    }
+
     /** Whether the deck is a copy whose heads the materialization job has not completed (Share/10): its member list is empty until it is ready. */
     boolean preparing(UUID deck) {
         return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck_fork WHERE deck_id=:deck AND materialized_at IS NULL)")

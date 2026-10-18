@@ -2812,8 +2812,9 @@ on the public `MilestoneRecorder` only.
 - **Recorder (`MilestoneRecorder`).** Every method is `@Transactional(MANDATORY)`, one statement per call, no external call: `reach(account, key, level)` (progress = max(old, level) capped at
   the target: target-1 milestones, the two stages of `CAPTURE_NOTE`, the dates of `TWO_DAYS`), `increment(account, key)` (`OWN_EXERCISES`), `reachInUserDeck(account, deck, key, level)` (the same
   statement guarded by `EXISTS` of the account's own deck of purpose `USER`, for a writer that has only a deck id) and `sessionCompleted(account, mode, studyDate)`. The statement is an
-  `INSERT ... ON CONFLICT DO UPDATE ... WHERE achieved_at IS NULL AND progress < new RETURNING achieved`: an achieved row, a repeat and a lower level write nothing, so a parallel pair of identical
-  events ends in one row and exactly one statement sees `achieved = true`. A caller that already read the deck's purpose (`ItemRepository.DeckHead`, `ExerciseRepository.DeckHead` now carry
+  `INSERT ... ON CONFLICT DO NOTHING RETURNING true` for a milestone of target 1 (it is never partial, and `DO NOTHING` takes no lock on the row that is there) and an
+  `ON CONFLICT DO UPDATE ... WHERE achieved_at IS NULL AND progress < new` for a counter or a stage (PostgreSQL locks the conflicting row of an upsert even when the `WHERE` fails, so only those two
+  keys pay it): an achieved row, a repeat and a lower level write nothing, so a parallel pair of identical events ends in one row and exactly one statement sees `achieved`. A caller that already read the deck's purpose (`ItemRepository.DeckHead`, `ExerciseRepository.DeckHead` now carry
   `purpose`) calls `reach`/`increment` with no extra query.
 - **Notification.** The recorder remembers what the transaction reached and registers ONE `TransactionSynchronization` (found among the transaction's synchronizations, so a `REQUIRES_NEW`
   inside the action has its own). In `beforeCommit` (the last write of the transaction, as `NotificationPublisher` asks, whatever order the writers ran in) it publishes one `PATH_MILESTONE` per
@@ -2821,25 +2822,61 @@ on the public `MilestoneRecorder` only.
   milestone the configuration hides. A publisher failure fails the commit (and the action); a rolled-back action publishes nothing. After the commit
   `mnema_path_milestone_total{key,source="LIVE"}` counts the milestones reached (also for a hidden one, also with the tour off). No log line carries an account or a parameter.
 - **Visibility (`PathVisibility`).** Hidden by the operator's switches, never by a breaker or a budget: `learning.features.ai-assessment.enabled` (`AI_EXPLANATION`),
-  `speech-to-text` (`VOICE_ANSWER`), `ai-generation` (`WORKSHOP_APPROVED`), `learning.community.catalog.enabled` AND at least one listed deck (`COMMUNITY_COPY`; `CatalogAvailability`: one
+  `speech-to-text` (`VOICE_ANSWER`), `ai-generation` (`WORKSHOP_APPROVED`), `learning.community.catalog.enabled` AND `learning.community.public-routes.enabled` AND `learning.community.forks.enabled` (a copy must be possible) AND at least one listed deck (`COMMUNITY_COPY`; `CatalogAvailability`: one
   `EXISTS` over the partial index of listed decks, kept per instance for `facets-ttl`, nothing when the catalogue is off), and `RHYTHM_WEEK` always (OB-401 writes it).
 - **View.** `OnboardingService` reads `milestones` and `path` with ONE primary-key range read of the account's rows (`MilestoneRepository.all`) in every view and command answer while the tour is
   on (`PathState`: visible milestones in registry order, `DONE`/`PARTIAL`/`TODO`, `achievedAt` cut to seconds, `path.hidden` by registry order); the disabled view stays `[]`/`null` and reads nothing.
   The command receipt stores the view of the first execution, so a replayed command answers its milestones as they were; a `GET` is always current.
 - **Writers** (conditions are the registry's `counts`): `LearningProfileService.answer` (`GOAL_TOLD`); `DeckService.create` and `ForkService.write` (`FIRST_DECK`, any purpose, so the sample deck
   counts; a relink or an existing copy never reaches `write`); `ForkService.copy` (`COMMUNITY_COPY`, only the public path: the source is somebody else's `USER` deck); `ItemService.apply`
-  (`OWN_MATERIAL` for a create, `MEDIA_IN_MATERIAL` for a create or save with media references, both once per publication and only in a `USER` deck); `CaptureService.create` (stage 1),
+  (`OWN_MATERIAL` for a create, `MEDIA_IN_MATERIAL` when media APPEARS: a create with media references, or a save that references an asset the revision it was built on did not - one probe of
+  `ItemRepository.mediaAssets`, only when the save has media in a `USER` deck - both once per publication); `CaptureService.create` (stage 1),
   `.convert` and `.archive(archived=true)` (stage 2, `reachInUserDeck`; the Workshop's archiving goes through the same `archive`); `ExerciseService.apply` (`OWN_EXERCISES` +1 for a new
   exercise in a `USER` deck); `AssessmentService.resolve` (`AI_EXPLANATION` after the model's grade is concluded, SCHEDULED or PRACTICE; a self-check, an uncertain or unavailable grade
   never gets there); `SpeechInputWorker.done` (`VOICE_ANSWER`, in the transaction that stores and pays for the transcript); `ReviewService.apply` (`WORKSHOP_APPROVED`, `reachInUserDeck`);
   `StudySessionRepository.complete` and `AttemptRepository.completeSessionIfTerminal` (`FIRST_SESSION`, `TWO_DAYS` through `sessionCompleted`, in the branch of `DeckEngagement.studied`;
   the latter gets the mode and date from `RETURNING`).
 - **Session completion cost.** REPLAY: nothing. Otherwise ONE read of the account's two rows (`FIRST_SESSION`, `TWO_DAYS`, primary-key range). After both are achieved that is all. Before: an upsert
-  for each milestone that grows and, only for `TWO_DAYS` below 2, one `EXISTS` of a completed SCHEDULED/PRACTICE session on another `local_study_date` (index range of the account). Measured by
-  `MilestoneHotPathIntegrationTest` (statements counted at the JDBC connection, 300 completions of an account with 2000 sessions): 0 / 1 / 2 / 4 statements for replay / both achieved / second day
-  still missing / first completion; steady state median about 0.26 ms and p95 about 0.35 ms on the local container, against about 0.30 ms for the existing `DeckEngagement.studied` of the same transaction.
+  for each milestone that grows and, only for `TWO_DAYS` below 2, one `EXISTS` of a completed SCHEDULED/PRACTICE session on another `local_study_date` (index range of the account). The
+  gate asserts 0 / 1 / 2 / 4 statements for replay / both achieved / second day still missing / first completion (`MilestoneHotPathIntegrationTest`, counted at the JDBC connection, small fixtures);
+  the latency (steady state about 0.26 ms median, 0.35 ms p95 on the local container, against about 0.30 ms for the existing `DeckEngagement.studied` of the same transaction) and the plans on a 100,000-row
+  `study_session` are the opt-in `MilestoneHotPathEvidenceTest` (`MNEMA_PATH_EVIDENCE=1`, listed in `backend/test-opt-ins.json`).
+- **Known benign races.** Two sessions of one account that complete concurrently on two different dates leave `TWO_DAYS` at 1 until the next completion; two transactions that achieve
+  milestones of one account at once may announce the same `done`/`total`. Neither loses a fact.
 - **Net for a new writer.** `MilestoneInventoryIntegrationTest` lists every mutating route of the live handler mapping and requires each to be classified by the milestones it can write (an empty set
   is an explicit decision); `MilestoneWriterScanTest` requires the `writer` of every fixture row to exist and call the recorder for its key, and no other class to call it. Real-database tests per
   writer: `MilestoneWritersIntegrationTest` (positives and the cases that must not count), `MilestoneRecorderIntegrationTest` (saturation, stages, rollback, parallel events, notification order
   and gate), `MilestoneViewIntegrationTest`, `MilestoneOnboardingOffIntegrationTest`, `AssessmentMilestoneIntegrationTest`, `GenerationMilestoneIntegrationTest`, and assertions in
   `SpeechInputIntegrationTest` and `CombinedPublicationIntegrationTest` (an accepted update counts nothing for the copy's owner).
+
+## Onboarding path backfill (OB-302)
+
+The milestones of an account that existed before OB-301 are restored from history by a bounded background job. Contract: `backfill` per key in
+[`milestones.json`](../../../contracts/onboarding/milestones.json) and the «Backfill (OB-302)» bullet of [`contracts/onboarding`](../../../contracts/onboarding/README.md). Classes in
+`app.mnema.learning.onboarding`: `OnboardingBackfill` (the `JobHandler`), `BackfillRepository` (the SQL), `BackfillSchedule` (the enqueuer), `BackfillSettings`.
+
+- **Switches.** `learning.onboarding.backfill.enabled` (default **false**) lets `BackfillSchedule` (roles `worker`/`all`, a tick like `CatalogSchedule`) enqueue queue `onboarding.backfill` with
+  the dedupe key `onboarding.backfill:v<registryVersion>` (`MilestoneKey.REGISTRY_VERSION`): one job per version however many instances; a new version runs it again, and so does a restart after the
+  finished job row was retained away (7 days) - harmless, a rerun writes nothing. `learning.jobs.onboarding.backfill.enabled` is the queue's kill switch. Knobs (`BackfillSettings`, bad values stop the
+  start): `batch` [1000, 100-5000] accounts per statement, `slice-budget` [PT3S, PT0.5S-PT20S], `pause` [PT1S, 0-PT1M] between slices.
+- **Walk.** The cursor `{key, after}` is saved in the job row after every slice. For each key of `BackfillRepository.SOURCES` (registry order, `RHYTHM_WEEK` has no history) a batch is two statements:
+  the last of the next `batch` owners by a loose index scan (one probe of the source's owner index per owner), then ONE `INSERT ... SELECT ... ON CONFLICT DO UPDATE` over `(after, last]`. A slice
+  takes `pg_try_advisory_xact_lock(hashtextextended('onboarding.backfill', 0))` (a worker that does not get it waits 30 s with the same cursor), runs batches until `slice-budget` is spent, and is
+  one transaction with its cursor, so an interrupted run continues where the last committed slice stopped.
+- **Merge.** `progress = GREATEST(existing, LEAST(history, target))`, `first_at = LEAST(existing, history)`, `achieved_at = COALESCE(existing, the fact time if the merged progress reaches the target)`,
+  `source` of an existing row never touched (LIVE stays LIVE), a row that would not change is not written. It never publishes a notification. Idempotent: the times come from history, not the clock.
+- **Sources** (conditions mirror the live writers): `learning_profile` (GOAL_TOLD); `deck` of the owner, any purpose and deleted ones too (FIRST_DECK); completed SCHEDULED/PRACTICE `study_session` (FIRST_SESSION;
+  TWO_DAYS = the first completion of each distinct `local_study_date`, progress capped at 2, achieved at the second); `learning_item` / `item_revision` / `exercise_definition` whose ORIGIN deck is a `USER`
+  deck of the owner (OWN_MATERIAL, MEDIA_IN_MATERIAL when the revision references an asset its parent revision did not or is a first revision with any, OWN_EXERCISES = the first three; a copy's inherited rows belong to the origin deck and an accepted
+  update writes heads only, so neither counts); `capture_note` in a `USER` deck (stage 1 any note, stage 2 converted or archived; hard-deleted notes are lost); `study_evidence.evaluator_id =
+  'ai-semantic'` (AI_EXPLANATION, SCHEDULED answers: practice outcomes past retention are lost); `study_assessment.answer_source = 'SPEECH'` (VOICE_ANSWER; the transcripts themselves live 15 minutes);
+  `generation_provenance` (WORKSHOP_APPROVED; a session already purged by retention cannot say which deck it targeted and counts); `deck_fork` of a `USER` deck of another owner (COMMUNITY_COPY; a copy of the
+  sample template is not one). Conservative readings: a deck that was later named the template stops counting what it held, and no history row is guessed.
+- **Cost.** The statements are index-driven on the owners of their source (`deck_owner_page`, `study_session` primary key / `study_session_resume`, `capture_note_owner_page`, `deck_fork_owner_window`,
+  `study_evidence_objective_history`, the unique key of `study_assessment`, `generation_provenance_owner`, the key of `learning_profile`) and reach the per-deck tables by their deck-leading keys through
+  `LATERAL` probes, so a batch costs its owners' history and not the table; `OnboardingBackfillJobIntegrationTest` prints the plans (`BFPLAN`) with sequential scans switched off and asserts none appears.
+- **Metrics.** `mnema_onboarding_backfill_seconds` (timer per slice), `mnema_onboarding_backfill_rows_total{key}` (rows written) and `mnema_path_milestone_total{key,source="BACKFILL"}` (milestones the backfill
+  achieved), all counted after the slice commits; logs carry keys and counts, never an account.
+- **Tests.** `OnboardingBackfillSemanticsIntegrationTest` (each key's positive and negative cases through the real writers, the merge with LIVE rows, a live event after the backfill),
+  `OnboardingBackfillJobIntegrationTest` (3000 synthetic accounts: rerun changes nothing, an interrupted run ends in the same table, no notification, the executor runs the queue, the lock, the plans),
+  `OnboardingBackfillScheduleTest`.

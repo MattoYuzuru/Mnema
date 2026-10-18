@@ -21,8 +21,14 @@ import java.util.UUID;
 /**
  * Writes the facts of the «Путь Mnema» in the transaction of the domain action that makes them true (OB-301, ADR-ONB-002, {@code contracts/onboarding/milestones.json}). The domain
  * writers call it and know nothing else of the path. Every method is {@link Propagation#MANDATORY}: a milestone is never written outside the action's transaction, so a rolled-back
- * action leaves no milestone and no notification. Each call is ONE statement (an upsert, {@link MilestoneRepository}) with no external call; an already achieved milestone costs that
- * statement and nothing else.
+ * action leaves no milestone and no notification. Each call is ONE statement ({@link MilestoneRepository}) with no external call; an already achieved milestone costs that
+ * statement and writes nothing: a milestone of target 1 is an {@code INSERT ... ON CONFLICT DO NOTHING} that takes no lock on the existing row, while a counter or a stage is an
+ * upsert, which PostgreSQL runs with a lock on the conflicting row (so two transactions of one account that advance counters serialize on it, briefly).
+ *
+ * <p><b>Known benign races</b> (accepted, each self-heals or only blurs a number): two sessions of one account that complete concurrently on two different dates both read
+ * {@code TWO_DAYS} at its old progress and the existence probe sees neither of them (their transactions are not yet committed), so each writes level 1 and the second date is
+ * counted only by the next completion; two transactions that achieve different milestones of one account at the same moment each count the milestones committed when they publish,
+ * so their notifications may carry the same {@code done}/{@code total}; the cursor row of the notification center serializes the publications themselves.
  *
  * <p><b>Notification.</b> When a call reaches the target of a milestone the recorder remembers it for the transaction and registers, once, a {@link TransactionSynchronization} that
  * publishes one {@code PATH_MILESTONE} per milestone reached ({@code path:<key>}, params {@code key}, {@code done}, {@code total}) in {@code beforeCommit}: the notification

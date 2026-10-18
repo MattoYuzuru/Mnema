@@ -52,36 +52,66 @@ class MilestoneWriterScanTest {
         }
     }
 
-    /** Fixture writer text to its {@code Class.method} pairs: "ItemService.apply (create)" is one, "A.x, B.y" two. */
-    private static Map<String, String> writers(JsonNode milestone) {
-        Map<String, String> writers = new LinkedHashMap<>();
+    /** Fixture writer text to its {@code Class.method} pairs, per class: "ItemService.apply (create)" is one, "CaptureService.create, CaptureService.archive" two methods of one class. */
+    private static Map<String, List<String>> writers(JsonNode milestone) {
+        Map<String, List<String>> writers = new LinkedHashMap<>();
         String text = milestone.path("writer").stringValue(null);
         if (text == null) return writers;
         for (String part : text.split(",")) {
             Matcher matcher = WRITER.matcher(part.strip());
             assertThat(matcher.find()).as("writer %s of %s is Class.method", part, milestone.path("key").stringValue()).isTrue();
-            writers.put(matcher.group(1), matcher.group(2));
+            writers.computeIfAbsent(matcher.group(1), type -> new ArrayList<>()).add(matcher.group(2));
         }
         return writers;
     }
 
+    /** The bodies of every declaration of a method called {@code name} in {@code source} (overloads included), found by matching braces. */
+    private static List<String> bodies(String source, String name) {
+        List<String> bodies = new ArrayList<>();
+        Matcher declaration = Pattern.compile("(?m)^[ \\t]+(?:(?:public|private|protected|static|final|synchronized)\\s+)*[\\w.<>\\[\\], ?]+\\s+" + name + "\\s*\\([^;{}]*\\)\\s*(?:throws [\\w., ]+)?\\s*\\{").matcher(source);
+        while (declaration.find()) {
+            int depth = 1;
+            int index = declaration.end();
+            while (depth > 0 && index < source.length()) {
+                char each = source.charAt(index++);
+                if (each == '{') depth++;
+                else if (each == '}') depth--;
+            }
+            bodies.add(source.substring(declaration.end(), index));
+        }
+        return bodies;
+    }
+
     @Test
-    void everyWriterOfTheFixtureExistsAndCallsTheRecorderForItsKey() {
+    void everyWriterOfTheFixtureExistsAndCallsTheRecorderForItsKeyInsideTheNamedMethod() {
         for (JsonNode milestone : MilestoneFixture.REGISTRY.path("milestones")) {
             String key = milestone.path("key").stringValue();
-            Map<String, String> writers = writers(milestone);
-            writers.forEach((type, method) -> {
+            Map<String, List<String>> writers = writers(milestone);
+            writers.forEach((type, methods) -> {
                 String source = source(type);
-                assertThat(source).as("%s names %s.%s", key, type, method).containsPattern("\\b" + method + "\\(");
-                if (SESSION_KEYS.contains(key)) {
-                    assertThat(source).as("%s calls the recorder for the key %s", type, key).contains(".sessionCompleted(");
-                } else {
-                    assertThat(source).as("%s calls the recorder for the key %s", type, key).contains("MilestoneKey." + key);
-                    assertThat(source).as("%s holds the recorder", type).contains("MilestoneRecorder");
+                for (String method : methods) {
+                    List<String> bodies = bodies(source, method);
+                    assertThat(bodies).as("%s names %s.%s, which must be declared", key, type, method).isNotEmpty();
+                    String call = SESSION_KEYS.contains(key) ? ".sessionCompleted(" : "MilestoneKey." + key;
+                    // a method may be overloaded; one of its bodies is the writer
+                    assertThat(bodies).as("%s.%s must call the recorder for %s in its own body", type, method, key).anyMatch(body -> body.contains(call));
                 }
+                if (!SESSION_KEYS.contains(key)) assertThat(source).as("%s holds the recorder", type).contains("MilestoneRecorder");
             });
             if (SESSION_KEYS.contains(key)) assertThat(source("MilestoneRecorder")).contains("MilestoneKey." + key);
             if (writers.isEmpty()) assertThat(milestone.path("writer").isNull()).as("%s has no writer in registry version 1", key).isTrue();
+        }
+    }
+
+    @Test
+    void theScanTellsTheMethodsOfOneClassApart() {
+        String capture = source("CaptureService");
+        for (String writer : List.of("create", "convert", "archive")) {
+            assertThat(bodies(capture, writer)).as(writer).anyMatch(body -> body.contains("MilestoneKey.CAPTURE_NOTE"));
+        }
+        // a method that is not a writer of the note is not credited with the writers' calls, so a call deleted from `create` could not hide behind `archive`
+        for (String other : List.of("update", "delete", "read", "list")) {
+            assertThat(bodies(capture, other)).as(other).isNotEmpty().noneMatch(body -> body.contains("MilestoneKey."));
         }
     }
 
