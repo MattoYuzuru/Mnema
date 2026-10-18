@@ -7,7 +7,7 @@ import { ActionOptions, JourneyAction, OnboardingView, STEP_BRANCH, isRefused } 
 import { onboardingText } from './onboarding-texts';
 import { TourAnchors } from './tour-anchors';
 import { TourEvents } from './tour-events';
-import { TourDefinition, TourEnd, TourStep, isActionGate } from './tour.models';
+import { TourDefinition, TourEnd, TourStep, isActionGate, isServerStep } from './tour.models';
 
 /** How long the engine waits for a step's anchor before the step shows its text variant. */
 export const ANCHOR_WAIT_MS = 4_000;
@@ -75,12 +75,14 @@ export class TourEngine {
     /** The tour in progress records into the account's journey (not a demonstration with its own persistence, like the styleguide's). */
     readonly recordsJourney = computed(() => {
         const run = this.run();
-        return run !== null && run.persistence === this.injector.get(TOUR_PERSISTENCE);
+        return run !== null && run.definition.quest !== true && run.persistence === this.injector.get(TOUR_PERSISTENCE);
     });
+    /** A side quest is running (client-only, see {@link TourDefinition.quest}). */
+    readonly isQuest = computed(() => this.run()?.definition.quest === true);
     /** The element of the current step's anchor, once registered. */
     readonly target = computed(() => {
         const step = this.step();
-        return step === null ? null : this.anchors.lookup(step.anchor);
+        return step === null || step.screen === true ? null : this.anchors.lookup(step.anchor);
     });
     /** Changes whenever focus should return to the card heading: a new step, or the tour resumed. */
     readonly focusRequest = this.focusCounter.asReadonly();
@@ -97,6 +99,7 @@ export class TourEngine {
 
     private waitTimer: ReturnType<typeof setTimeout> | null = null;
     private stopGate: (() => void) | null = null;
+    private stopCompletes: (() => void) | null = null;
     private gateMetWhilePaused = false;
 
     constructor() {
@@ -142,7 +145,7 @@ export class TourEngine {
         if (run === null || step === null || this.pausedState()) return;
         this.pausedState.set(true);
         this.pauseCounter.update(count => count + 1);
-        this.record(run, 'PAUSE', { stepKey: step.key });
+        if (isServerStep(step.key)) this.record(run, 'PAUSE', { stepKey: step.key });
     }
 
     resume(): void {
@@ -150,7 +153,7 @@ export class TourEngine {
         const step = this.step();
         if (run === null || step === null || !this.pausedState()) return;
         this.pausedState.set(false);
-        this.record(run, 'RESUME', { stepKey: step.key });
+        if (isServerStep(step.key)) this.record(run, 'RESUME', { stepKey: step.key });
         this.focusCounter.update(count => count + 1);
         // The plaque brings the learner back to the place of the step, wherever the pause left them.
         this.navigateTo(step);
@@ -171,7 +174,7 @@ export class TourEngine {
         if (index < 0) return;
         this.position.set(index);
         this.enterStep();
-        this.record(run, 'RESUME', { stepKey: key });
+        if (isServerStep(key)) this.record(run, 'RESUME', { stepKey: key });
     }
 
     /**
@@ -218,8 +221,10 @@ export class TourEngine {
         if (run === null) return;
         this.position.set(index);
         const step = run.definition.steps[index];
-        const branch = STEP_BRANCH[step.key];
-        this.record(run, 'STEP', { stepKey: step.key, ...(run.definition.branch !== null && branch === run.definition.branch ? { branch } : {}) });
+        if (isServerStep(step.key)) {
+            const branch = STEP_BRANCH[step.key];
+            this.record(run, 'STEP', { stepKey: step.key, ...(run.definition.branch !== null && branch === run.definition.branch ? { branch } : {}) });
+        }
         this.enterStep();
     }
 
@@ -245,12 +250,19 @@ export class TourEngine {
         this.clearWait();
         this.stopGate?.();
         this.stopGate = null;
+        this.stopCompletes?.();
+        this.stopCompletes = null;
         this.gateMetWhilePaused = false;
         this.phaseState.set('locating');
         this.pausedState.set(false);
         this.focusCounter.update(count => count + 1);
         if (step === null) return;
         if (navigate) this.navigateTo(step);
+        if (step.completes !== undefined) {
+            const completing = step.completes;
+            // Heard whether or not the tour is folded: the thing was done where no card is drawn (the study session).
+            this.stopCompletes = this.events.listen(event => { if (event === completing) this.end('completed'); });
+        }
         if (isActionGate(step.gate)) {
             const { action, pauses } = step.gate;
             this.stopGate = this.events.listen(event => {
@@ -277,6 +289,8 @@ export class TourEngine {
     }
 
     private record(run: Run, action: JourneyAction, options: ActionOptions): void {
+        // A quest is client-only: nothing of it reaches the journey.
+        if (run.definition.quest === true) return;
         Promise.resolve(run.persistence.act(action, options)).then(result => {
             if (isRefused(result) && this.run() === run) this.follow(result.view);
         }).catch(() => undefined);
@@ -300,6 +314,8 @@ export class TourEngine {
 
     private reconcile(step: TourStep | null, target: HTMLElement | null, paused: boolean, preparing: boolean): void {
         if (step === null || paused) { this.clearWait(); return; }
+        // A screen of its own has no place on a page to wait for.
+        if (step.screen === true) { this.clearWait(); this.phaseState.set('ready'); return; }
         if (target !== null) {
             this.clearWait();
             this.phaseState.set('ready');
@@ -325,6 +341,8 @@ export class TourEngine {
         this.clearWait();
         this.stopGate?.();
         this.stopGate = null;
+        this.stopCompletes?.();
+        this.stopCompletes = null;
         this.gateMetWhilePaused = false;
         this.run.set(null);
         this.position.set(0);

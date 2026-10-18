@@ -76,8 +76,12 @@ export type TourCardMode = 'normal' | 'missing' | 'preparing';
             @if (canBack()) { <button type="button" class="button quiet" (click)="back.emit()">{{ backLabel }}</button> }
             @if (showNext()) { <button type="button" class="button primary" (click)="next.emit()">{{ nextLabel }}</button> }
           </div>
-          <app-hold-to-delete-button [label]="finishLabel" [holdMs]="holdMs" armedGlyph="finger-hold" [armedName]="finishArmedName" tone="ink"
-            [steppedFill]="calm()" (confirmed)="finish.emit()" />
+          @if (leaveLabel(); as leaving) {
+            <button type="button" class="button quiet leave" (click)="leave.emit()">{{ leaving }}</button>
+          } @else {
+            <app-hold-to-delete-button [label]="finishLabel" [holdMs]="holdMs" armedGlyph="finger-hold" [armedName]="finishArmedName" tone="ink"
+              [steppedFill]="calm()" (confirmed)="finish.emit()" />
+          }
         </div>
       </ng-template>
     `,
@@ -103,9 +107,12 @@ export class TourCardComponent {
     readonly inline = input(false);
     /** The calm fill of the finish gesture regardless of the system setting (the styleguide preview switch). */
     readonly calm = input(false);
+    /** A side quest leaves with a plain button of this name instead of the hold gesture of «Завершить знакомство»; `null` for the main tour. */
+    readonly leaveLabel = input<string | null>(null);
     readonly back = output<void>();
     readonly next = output<void>();
     readonly finish = output<void>();
+    readonly leave = output<void>();
     /** Escape was pressed on the card. */
     readonly pauseRequest = output<void>();
 

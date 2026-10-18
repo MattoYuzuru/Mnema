@@ -1,3 +1,5 @@
+import { QUEST_ROUTES } from '../../core/onboarding/path-places';
+import { QUEST_EVENTS, questDefinition } from './quest-definitions';
 import { TOUR_EVENTS, tourFor } from './tour-definitions';
 
 interface NodeFs {
@@ -30,7 +32,7 @@ describe('tour events', () => {
         walk(root);
     });
 
-    const values = Object.values(TOUR_EVENTS) as string[];
+    const values = [...Object.values(TOUR_EVENTS), ...Object.values(QUEST_EVENTS)] as string[];
 
     it('has no page that emits an event the tours do not know', () => {
         expect([...emitted.keys()].filter(event => !values.includes(event))).toEqual([]);
@@ -47,6 +49,27 @@ describe('tour events', () => {
                 if (step.gate !== 'next') expect(emitted.has(step.gate.action), `${branch}/${step.key}: ${step.gate.action}`).toBe(true);
             }
         }
+    });
+
+    it('has every gate and every completing event of every side quest emitted by a page', () => {
+        for (const route of QUEST_ROUTES) {
+            for (const sample of [false, true]) {
+                for (const step of questDefinition(route, { deckId: 'd', sample, memberKey: 'm' }).steps) {
+                    if (step.gate !== 'next') expect(emitted.has(step.gate.action), `${route}/${step.key}: ${step.gate.action}`).toBe(true);
+                    if (step.completes !== undefined) expect(emitted.has(step.completes), `${route}/${step.key}: ${step.completes}`).toBe(true);
+                }
+            }
+        }
+    });
+
+    it('names the right page for the events of the side quests', () => {
+        const owner = (event: string): string => (emitted.get(event) ?? []).join(',');
+        expect(owner(QUEST_EVENTS.notesPicked)).toContain('capture-page');
+        expect(owner(QUEST_EVENTS.notesAssembled)).toContain('capture-page');
+        expect(owner(QUEST_EVENTS.workshopOpened)).toContain('new-material-page');
+        expect(owner(QUEST_EVENTS.mediaInserted)).toContain('item-editor-page');
+        expect(owner(QUEST_EVENTS.voiceTranscribed)).toContain('mic-button');
+        expect(owner(QUEST_EVENTS.answerChecked)).toContain('study-session-page');
     });
 
     it('names the right page for the main events', () => {

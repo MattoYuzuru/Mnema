@@ -49,6 +49,18 @@ describe('anchor registry', () => {
         expect(owner(TOUR_ANCHORS.hubHeader)).toContain('own-deck-detail-page');
         expect(owner(TOUR_ANCHORS.materialRead)).toContain('browse-page');
         expect(owner(TOUR_ANCHORS.materialExercises)).toContain('exercise-authoring-page');
+        // The in-place hints of «Путь» (OB-E3) stand at these.
+        expect(owner(TOUR_ANCHORS.navNewDeck)).toContain('app-shell');
+        expect(owner(TOUR_ANCHORS.profileGoal)).toContain('goal-onboarding');
+        expect(owner(TOUR_ANCHORS.hubAddMaterial)).toContain('own-deck-detail-page');
+        expect(owner(TOUR_ANCHORS.hubCapture)).toContain('own-deck-detail-page');
+        expect(owner(TOUR_ANCHORS.hubMaterials)).toContain('deck-materials');
+        // The side quests (OB-304) point at these.
+        expect(owner(TOUR_ANCHORS.captureNotes)).toContain('capture-page');
+        expect(owner(TOUR_ANCHORS.captureAssemble)).toContain('capture-page');
+        expect(owner(TOUR_ANCHORS.captureMic)).toContain('capture-page');
+        expect(owner(TOUR_ANCHORS.editorMedia)).toContain('item-editor-page');
+        expect(owner(TOUR_ANCHORS.editorPublish)).toContain('item-editor-page');
     });
 
     it('has no repeated key or value', () => {

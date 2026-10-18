@@ -358,5 +358,6 @@ describe('StyleguidePageComponent', () => {
         expect(semantic).toContain('Текст на ночи');
         expect(semantic).toContain('Заливка удержания');
         expect(root.querySelector('section#tour app-tour-card')).not.toBeNull();
+        expect(root.querySelector('section#path app-path-milestone')).not.toBeNull();
     });
 });

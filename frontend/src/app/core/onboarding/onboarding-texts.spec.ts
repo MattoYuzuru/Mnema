@@ -11,7 +11,8 @@ describe('onboarding texts', () => {
         const { readFileSync } = await import('node:fs' as string) as NodeFs;
         const root = (globalThis as unknown as { process: { cwd(): string } }).process.cwd();
         const texts = readFileSync(`${root}/../design/prototype/onboarding/texts.js`, 'utf8');
-        for (const match of texts.matchAll(/^\s*'([\w.]+)':\s*'((?:[^'\\]|\\.)*)',?\s*$/gmu)) approved.set(match[1], match[2].replace(/\\'/gu, '\''));
+        // An entry is `'key': 'text'`; the milestone lines of the prototype carry two entries each (title and benefit).
+        for (const match of texts.matchAll(/'([\w.]+)':\s*'((?:[^'\\]|\\.)*)'/gu)) approved.set(match[1], match[2].replace(/\\'/gu, '\''));
         prototypeScript = readFileSync(`${root}/../design/prototype/onboarding/app.js`, 'utf8');
     });
 
@@ -31,6 +32,23 @@ describe('onboarding texts', () => {
         expect(onboardingText('tour.gate', { action: 'Добавить к себе' })).toBe('Нажмите «Добавить к себе», чтобы продолжить');
         expect(onboardingText('tour.counter', { n: 2 })).toBe('Шаг 2 из {m}');
         expect(onboardingText('tour.back')).toBe('Назад');
+    });
+
+    it('has the approved texts of «Путь» verbatim and lists the new ones for approval', () => {
+        for (const key of ['path.title', 'path.intro', 'path.total', 'path.hide', 'path.replay', 'path.state.done', 'path.state.todo', 'path.state.partial', 'path.open',
+            'path.new.stamp', 'path.go', 'path.error', 'path.retry', 'path.new', 'path.toast', 'hint.capture', 'hint.ok', 'm.CAPTURE_NOTE.partial', 'm.COMMUNITY_COPY.b'] as const) {
+            expect(approved.get(key), key).toBe(ONBOARDING_TEXTS[key]);
+            expect(UNLISTED_TEXT_KEYS, key).not.toContain(key);
+        }
+        const fresh = Object.keys(ONBOARDING_TEXTS).filter(key => !approved.has(key)).sort();
+        expect(fresh).toEqual([...UNLISTED_TEXT_KEYS].sort());
+        expect(fresh).toContain('path.toast.many');
+        expect(fresh).toContain('hint.STUDY');
+    });
+
+    it('fills the toast of a milestone', () => {
+        expect(onboardingText('path.toast', { event: onboardingText('path.event.MEDIA_IN_MATERIAL'), done: 6, total: 12 })).toBe('Путь: вы добавили в материал картинку или звук · 6 из 12');
+        expect(onboardingText('path.go', { title: onboardingText('m.TWO_DAYS') })).toBe('Перейти: Позанимайтесь в другой день');
     });
 
     it('says what the finish button needs to say', () => {

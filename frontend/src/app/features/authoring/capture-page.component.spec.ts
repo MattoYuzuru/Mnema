@@ -1,5 +1,6 @@
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
@@ -191,6 +192,22 @@ describe('CapturePageComponent', () => {
             box.click();
             fixture.detectChanges();
         }
+
+        it('tells a waiting side quest when a note is picked and when the picked notes are taken to the composer', async () => {
+            const seen: string[] = [];
+            TestBed.inject(TourEvents).listen(event => { seen.push(event); });
+            await load(3);
+            vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+            pick(boxes()[0]);
+            expect(seen).toEqual(['capture.selected']);
+            // Dropping a pick is not a pick.
+            pick(boxes()[0]);
+            expect(seen).toEqual(['capture.selected']);
+            pick(headerBox());
+            expect(seen).toEqual(['capture.selected', 'capture.selected']);
+            fixture.componentInstance.createMaterials();
+            expect(seen).toEqual(['capture.selected', 'capture.selected', 'capture.assembled']);
+        });
 
         it('gives every note a real checkbox with its own name, a counter and no bar until something is picked', async () => {
             await load(3);

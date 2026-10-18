@@ -1,3 +1,5 @@
+import { onboardingText } from '../onboarding/onboarding-texts';
+import { MilestoneKey, isMilestoneKey } from '../onboarding/path.models';
 import { AppNotification, NotificationSeverity } from './notification.models';
 
 /** A destination the client derives from the route key; the server never sends a URL. */
@@ -19,6 +21,7 @@ type Plural = readonly [one: string, few: string, many: string];
 const MATERIALS: Plural = ['материал', 'материала', 'материалов'];
 const EXERCISES: Plural = ['упражнение', 'упражнения', 'упражнений'];
 const ACCESS_REQUESTS: Plural = ['запрос', 'запроса', 'запросов'];
+const PATH_ITEMS: Plural = ['пункт', 'пункта', 'пунктов'];
 const PUBLIC_CODE = /^[A-Za-z0-9_-]{4,64}$/u;
 const NBSP = ' ';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -103,8 +106,27 @@ function sentence(notification: AppNotification): string | null {
         case 'DECK_ACCESS_GRANTED': return text(params, 'code') === null ? null : 'Автор принял ваш запрос: колода теперь доступна вам';
         case 'DECK_HIDDEN': return text(params, 'deckId') === null ? null : 'Ваша колода скрыта из Сообщества после жалобы. Вам она доступна как раньше';
         case 'DECK_CONTENT_TAKEN_DOWN': return takenDown(params);
+        case 'PATH_MILESTONE': return pathMilestone(params);
         default: return null;
     }
+}
+
+/** The count of «Путь» in a notification: `key` of the registry, `done` of `total` visible milestones. Anything else shows nothing. */
+export function pathMilestoneParams(params: Readonly<Record<string, unknown>>): { readonly key: MilestoneKey; readonly done: number; readonly total: number } | null {
+    const key = params['key'];
+    const done = integer(params, 'done');
+    const total = integer(params, 'total');
+    return isMilestoneKey(key) && done !== null && total !== null && total >= 1 && done <= total ? { key, done, total } : null;
+}
+
+function pathMilestone(params: Readonly<Record<string, unknown>>): string | null {
+    const milestone = pathMilestoneParams(params);
+    return milestone === null ? null : onboardingText('path.toast', { event: onboardingText(`path.event.${milestone.key}`), done: milestone.done, total: milestone.total });
+}
+
+/** One toast for several milestones that arrived together: «Путь: отмечено 3 пункта · 8 из 12». */
+export function pathMilestonesSummary(count: number, done: number, total: number): string {
+    return onboardingText('path.toast.many', { n: count, noun: plural(count, PATH_ITEMS), done, total });
 }
 
 function usageLow(params: Readonly<Record<string, unknown>>): string | null {
@@ -167,10 +189,11 @@ function mediaFailed(params: Readonly<Record<string, unknown>>): string | null {
  * Route key to a client destination. WORKSHOP opens the Workshop of `sessionId` (`/decks/:deckId/workshop/:sessionId`); a
  * WORKSHOP notification without a usable session falls back to the deck page; DECK_ACCESS_REQUESTED opens the access section of the deck hub,
  * DECK_HIDDEN and DECK_CONTENT_TAKEN_DOWN its «Модерация» notice, and DECK_ACCESS_GRANTED opens `/d/{code}`. PLANS has no plans page yet (paywall:
- * AI-19 #301), so it opens the «ИИ-бюджет» block of the profile (`/profile#ai-budget`); NONE stays a plain sentence.
+ * AI-19 #301), so it opens the «ИИ-бюджет» block of the profile (`/profile#ai-budget`); PATH opens «Путь Mnema» (`/profile/path`); NONE stays a plain sentence.
  */
 function routeLink(notification: AppNotification): NotificationLink | null {
     if (notification.route === 'PLANS') return { label: 'Открыть ИИ-бюджет', commands: ['/profile'], fragment: 'ai-budget' };
+    if (notification.route === 'PATH') return { label: onboardingText('path.open'), commands: ['/profile', 'path'] };
     if (notification.route !== 'WORKSHOP' && notification.route !== 'DECK') return null;
     // A reader never learns the deck id: the approval opens the deck by its public code (the public view owns the route `/d/{code}`).
     if (notification.kind === 'DECK_ACCESS_GRANTED') {

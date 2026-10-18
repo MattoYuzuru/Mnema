@@ -323,4 +323,24 @@ describe('TourCardComponent', () => {
             expect(specimen.element).toBe(host);
         });
     });
+
+    describe('a side quest', () => {
+        it('leaves with a plain named button instead of the hold gesture of «Завершить знакомство»', () => {
+            const card = render({ leaveLabel: 'Выйти из задания' });
+            let left = 0;
+            card.leave.subscribe(() => left++);
+            expect(host.querySelector('app-hold-to-delete-button')).toBeNull();
+            const leave = host.querySelector<HTMLButtonElement>('button.leave')!;
+            expect(leave.textContent).toBe('Выйти из задания');
+            leave.click();
+            expect(left).toBe(1);
+            expect(host.textContent).not.toContain('Завершить знакомство');
+        });
+
+        it('keeps the hold gesture for the main tour', () => {
+            render();
+            expect(host.querySelector('app-hold-to-delete-button')).not.toBeNull();
+            expect(host.querySelector('button.leave')).toBeNull();
+        });
+    });
 });

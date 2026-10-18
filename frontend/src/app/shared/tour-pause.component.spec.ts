@@ -35,4 +35,14 @@ describe('TourPauseComponent', () => {
         TestBed.resetTestingModule();
         expect(render(false).host.classList.contains('inline')).toBe(false);
     });
+
+    it('says «Задание на паузе» and «Продолжить задание» for a side quest', () => {
+        TestBed.configureTestingModule({ imports: [TourPauseComponent] });
+        const fixture = TestBed.createComponent(TourPauseComponent);
+        fixture.componentRef.setInput('quest', true);
+        fixture.detectChanges();
+        const host = fixture.nativeElement as HTMLElement;
+        expect(host.querySelector('[role=region]')?.getAttribute('aria-label')).toBe('Задание на паузе');
+        expect(host.querySelector('button')?.textContent).toBe('Продолжить задание');
+    });
 });

@@ -1,5 +1,5 @@
 import { AppNotification } from './notification.models';
-import { plural, presentNotification } from './notification-presenter';
+import { pathMilestoneParams, pathMilestonesSummary, plural, presentNotification } from './notification-presenter';
 
 const DECK = '11111111-1111-4111-8111-111111111111';
 const make = (kind: string, params: Record<string, unknown>, extra: Partial<AppNotification> = {}): AppNotification => ({
@@ -134,5 +134,39 @@ describe('notification presenter', () => {
         expect(link('NONE', { deckId: DECK })).toBeNull();
         expect(link('DECK', { deckId: '../x' })).toBeNull();
         expect(link('DECK', {})).toBeNull();
+    });
+
+    describe('PATH_MILESTONE («Путь»)', () => {
+        const milestone = (params: Record<string, unknown>, route: AppNotification['route'] = 'PATH'): AppNotification => make('PATH_MILESTONE', params, { route });
+
+        it('says what was done, how far the path is, and links to the page', () => {
+            const presented = presentNotification(milestone({ key: 'MEDIA_IN_MATERIAL', done: 6, total: 12 }));
+            expect(presented?.text).toBe('Путь: вы добавили в материал картинку или звук · 6 из 12');
+            expect(presented?.severity).toBe('INFO');
+            expect(presented?.link).toEqual({ label: 'Открыть «Путь»', commands: ['/profile', 'path'] });
+        });
+
+        it('has a phrase for every milestone of the registry', () => {
+            for (const key of ['GOAL_TOLD', 'FIRST_DECK', 'FIRST_SESSION', 'OWN_MATERIAL', 'MEDIA_IN_MATERIAL', 'CAPTURE_NOTE', 'OWN_EXERCISES', 'AI_EXPLANATION',
+                'VOICE_ANSWER', 'WORKSHOP_APPROVED', 'RHYTHM_WEEK', 'TWO_DAYS', 'COMMUNITY_COPY']) {
+                expect(text(milestone({ key, done: 1, total: 8 })), key).toMatch(/^Путь: .+ · 1 из 8$/u);
+            }
+        });
+
+        it('shows nothing for params that do not fit, but still routes a known PATH notification', () => {
+            for (const params of [{}, { key: 'NEW_ONE', done: 1, total: 8 }, { key: 'GOAL_TOLD', done: 1 }, { key: 'GOAL_TOLD', done: '1', total: 8 }, { key: 'GOAL_TOLD', done: 9, total: 8 },
+                { key: 'GOAL_TOLD', done: 0, total: 0 }, { key: 'GOAL_TOLD', done: -1, total: 8 }]) {
+                expect(presentNotification(milestone(params)), JSON.stringify(params)).toBeNull();
+            }
+            expect(pathMilestoneParams({ key: 'GOAL_TOLD', done: 3, total: 8 })).toEqual({ key: 'GOAL_TOLD', done: 3, total: 8 });
+            // A route the older list sent as NONE shows the sentence without a link.
+            expect(presentNotification(milestone({ key: 'GOAL_TOLD', done: 1, total: 8 }, 'NONE'))?.link).toBeNull();
+        });
+
+        it('sums several milestones in one sentence with the plural of the count', () => {
+            expect(pathMilestonesSummary(2, 7, 12)).toBe('Путь: отмечено 2 пункта · 7 из 12');
+            expect(pathMilestonesSummary(5, 9, 12)).toBe('Путь: отмечено 5 пунктов · 9 из 12');
+            expect(pathMilestonesSummary(21, 9, 12)).toBe('Путь: отмечено 21 пункт · 9 из 12');
+        });
     });
 });

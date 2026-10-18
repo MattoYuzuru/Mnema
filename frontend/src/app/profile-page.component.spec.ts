@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { WritableSignal, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { NEVER, Subject, of, throwError } from 'rxjs';
@@ -14,6 +14,9 @@ import type { UsageSnapshot } from './features/usage/usage.models';
 import { plusUsage } from './features/usage/usage-test-data';
 import { spyObj, type SpyObj } from '../testing/mocks';
 import fixture from '../../../contracts/identity/public-profile.json';
+import journey from '../../../contracts/onboarding/journey.json';
+import { JourneyStore } from './core/onboarding/journey.store';
+import type { OnboardingView } from './core/onboarding/onboarding.models';
 import type { PublicProfileConsent } from './public-profile';
 
 const profile: AccountProfile = { accountId: 'd2815e20-ea25-4dce-977a-66ee086f294d',
@@ -204,6 +207,24 @@ describe('ProfilePageComponent', () => {
         expect(section.querySelector('app-usage-meter .summary')?.textContent).toContain('Использовано 14');
         expect(root.querySelector('#speech-consent-heading')?.textContent).toBe('Распознавание речи');
         expect(root.querySelector('#speech-consent app-speech-consent-settings button')?.textContent).toContain('Отозвать согласие');
+    });
+
+    it('shows the «Путь Mnema» block with the count and the link to the page only while onboarding is on', async () => {
+        const state = (TestBed.inject(JourneyStore) as unknown as { state: WritableSignal<OnboardingView | null> }).state;
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        const root = fixture.nativeElement as HTMLElement;
+        const settle = async (): Promise<void> => { fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges(); };
+        await settle();
+        expect(root.querySelector('app-path-summary section')).toBeNull();
+        state.set(journey.views.pathMidway as OnboardingView);
+        await settle();
+        const block = root.querySelector('app-path-summary section')!;
+        expect(block.querySelector('h2')?.textContent).toBe('Путь Mnema');
+        expect(block.querySelector('.total')?.textContent).toBe('5 из 12');
+        expect(block.querySelector('a')?.getAttribute('href')).toBe('/profile/path');
+        state.set(journey.views.disabled as OnboardingView);
+        await settle();
+        expect(root.querySelector('app-path-summary section')).toBeNull();
     });
 
     it('keeps the profile working when the usage request fails', async () => {

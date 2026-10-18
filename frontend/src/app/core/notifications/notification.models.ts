@@ -3,7 +3,8 @@
 export const NOTIFICATION_SEVERITIES = ['INFO', 'WARNING', 'ERROR'] as const;
 export type NotificationSeverity = (typeof NOTIFICATION_SEVERITIES)[number];
 
-export const NOTIFICATION_ROUTES = ['WORKSHOP', 'DECK', 'PLANS', 'NONE'] as const;
+/** The route keys of the contract. A client treats a route it does not know as `NONE` (`routeOf` in the api parser), so a new route never breaks an older list. */
+export const NOTIFICATION_ROUTES = ['WORKSHOP', 'DECK', 'PLANS', 'PATH', 'NONE'] as const;
 export type NotificationRoute = (typeof NOTIFICATION_ROUTES)[number];
 
 /**

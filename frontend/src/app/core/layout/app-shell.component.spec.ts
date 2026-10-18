@@ -11,6 +11,7 @@ import { LearningProfileApiService } from '../../features/goal/learning-profile-
 import { AppShellComponent } from './app-shell.component';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
+import { PathHint } from '../onboarding/path-hint.service';
 
 @Component({ template: '<h1 tabindex="-1">Мои колоды</h1>' })
 class TestPageComponent {
@@ -124,10 +125,31 @@ describe('AppShellComponent', () => {
         expect(document.activeElement?.textContent).toBe('Мои колоды');
     });
 
+    it('leaves the focus to the in-place hint of «Путь» that is on its way to the page, and takes it to the page heading once the card has the focus', async () => {
+        const hint = TestBed.inject(PathHint);
+        (document.activeElement as HTMLElement | null)?.blur();
+        expect(hint.begin({ title: 'Т', text: 'Ф', anchor: 'nav.newDeck' })).toBe(true);
+        fixture.componentInstance.focusPageHeading();
+        await Promise.resolve();
+        expect(document.activeElement?.textContent).not.toBe('Мои колоды');
+        hint.focused();
+        fixture.componentInstance.focusPageHeading();
+        await Promise.resolve();
+        expect(document.activeElement?.textContent).toBe('Мои колоды');
+        hint.dismiss();
+    });
+
+    it('hosts the hint of «Путь» at the top of the main content and marks the masthead link of a new deck as its anchor', () => {
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('main app-path-hint')).not.toBeNull();
+        expect(root.querySelector('.primary-nav a[data-tour-anchor="nav.newDeck"]')?.textContent).toBe('Новая колода');
+    });
+
     it('suppresses learner prompts, public footer and notification polling in the owner console', async () => {
         await TestBed.inject(Router).navigateByUrl('/manage'); fixture.detectChanges(); await fixture.whenStable();
         const root = fixture.nativeElement as HTMLElement;
         expect(root.querySelector('app-goal-onboarding')).toBeNull();
+        expect(root.querySelector('app-path-hint')).toBeNull();
         expect(root.querySelector('app-promo-popup-host')).toBeNull();
         expect(root.querySelector('app-notification-bell')).toBeNull();
         expect(root.querySelector('app-public-footer')).toBeNull();

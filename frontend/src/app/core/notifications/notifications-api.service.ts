@@ -11,6 +11,7 @@ import {
     NotificationPage,
     NotificationProtocolError,
     NotificationQuery,
+    NotificationRoute,
     ReadCursorResult
 } from './notification.models';
 
@@ -122,6 +123,12 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T {
     return value as T;
 }
 
+/** A route this client does not know is `NONE`: the notification still renders by its kind (contract: «a client treats an unknown route as NONE»). */
+function routeOf(value: unknown): NotificationRoute {
+    if (typeof value !== 'string' || value.length > 64) throw protocol('Invalid route.');
+    return (NOTIFICATION_ROUTES as readonly string[]).includes(value) ? value as NotificationRoute : 'NONE';
+}
+
 function parseItem(value: unknown): AppNotification {
     const item = exact(value, ITEM_KEYS);
     const kind = item['kind'];
@@ -129,7 +136,7 @@ function parseItem(value: unknown): AppNotification {
     return {
         notificationId: uuid(item['notificationId']), seq: seq(item['seq']), kind,
         severity: oneOf(item['severity'], NOTIFICATION_SEVERITIES), params: record(item['params']),
-        route: oneOf(item['route'], NOTIFICATION_ROUTES), createdAt: instant(item['createdAt']),
+        route: routeOf(item['route']), createdAt: instant(item['createdAt']),
         expiresAt: instant(item['expiresAt'])
     };
 }

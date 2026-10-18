@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, forwardRef, input, output } from '@angular/core';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
@@ -134,6 +135,16 @@ describe('NewMaterialPageComponent', () => {
         expect(decks.detail).toHaveBeenLastCalledWith(other);
         expect(capabilities.read).toHaveBeenCalledTimes(2);
         expect(fixture.componentInstance.deckId()).toBe(other);
+    });
+
+    it('tells a waiting side quest that the generation began, and moves on all the same', () => {
+        create();
+        const seen: string[] = [];
+        TestBed.inject(TourEvents).listen(event => { seen.push(event); });
+        const session = parseSessionDetail(examples['sessionDetailCreated']);
+        fixture.debugElement.query(el => el.name === 'app-generation-composer').componentInstance.created.emit(session);
+        expect(seen).toEqual(['workshop.opened']);
+        expect(transition.navigate).toHaveBeenCalledWith(['/decks', ids.deckId, 'workshop', ids.sessionId]);
     });
 
     it('moves on to the Workshop of a session the composer created', () => {

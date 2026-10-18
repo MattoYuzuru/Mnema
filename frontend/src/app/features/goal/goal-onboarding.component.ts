@@ -7,6 +7,7 @@ import { filter, map } from 'rxjs';
 import { AuthService } from '../../auth.service';
 import { JourneyStore } from '../../core/onboarding/journey.store';
 import { Journey } from '../../core/onboarding/onboarding.models';
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
 import { GOAL_COPY } from './goal-copy';
 import { LEARNING_GOALS, LearningGoal } from './goal.models';
 import { LearningGoalStore } from './learning-goal.store';
@@ -47,7 +48,7 @@ export function surveyAsksTheGoal(enabled: boolean, journey: Journey | null): bo
     selector: 'app-goal-onboarding',
     template: `
       @if (visible()) {
-        <form class="goal-onboarding paper-surface ruled" (submit)="submit($event)">
+        <form class="goal-onboarding paper-surface ruled" mnTourAnchor="profile.goal" (submit)="submit($event)">
           <app-segmented-choice legend="Для чего вам Mnema?" [options]="options" [(value)]="choice" [name]="groupName" />
           <p class="hint">Подстроим подсказки и подскажем подходящий тариф. Ответ можно пропустить; ИИ он не передаётся.</p>
           @if (store.saveFailed()) {
@@ -67,7 +68,7 @@ export function surveyAsksTheGoal(enabled: boolean, journey: Journey | null): bo
       .actions { display: flex; flex-wrap: wrap; gap: .75rem; }
       .actions .button { flex: 1 1 10rem; }
     `],
-    imports: [SegmentedChoiceComponent],
+    imports: [SegmentedChoiceComponent, TourAnchorDirective],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class GoalOnboardingComponent {

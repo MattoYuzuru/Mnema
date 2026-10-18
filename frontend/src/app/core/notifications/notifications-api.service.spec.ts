@@ -76,12 +76,17 @@ describe('NotificationsApiService', () => {
             envelope({ readUpto: 40 }), envelope({ readUpto: '040' }), envelope({ activeWork: '0' }),
             envelope({ nextCursor: 'a/b' }), envelope({ nextCursor: 7 }),
             envelope({ items: [item({ seq: 41 })] }), envelope({ items: [item({ severity: 'FATAL' })] }),
-            envelope({ items: [item({ route: 'URL' })] }), envelope({ items: [item({ kind: 'lower' })] }),
+            envelope({ items: [item({ route: 7 as unknown as 'NONE' })] }), envelope({ items: [item({ kind: 'lower' })] }),
             envelope({ items: [item({ notificationId: 'nope' })] }), envelope({ items: [item({ createdAt: 'yesterday' })] }),
             envelope({ items: [item({ params: [] })] }), envelope({ items: [{ ...item(), url: '/x' }] }),
             envelope({ items: [item(), item()] }), null, []
         ];
         for (const body of bad) await expect(list(body)).rejects.toBeInstanceOf(NotificationProtocolError);
+    });
+
+    it('treats a route it does not know as NONE, so a new route never breaks the list', async () => {
+        const result = await list(envelope({ items: [item({ route: 'SOMEWHERE_NEW' as unknown as 'NONE' }), item({ notificationId: '0a000000-0000-4000-8000-000000000030', seq: '42', route: 'PATH' })] }));
+        expect(result).toMatchObject({ kind: 'page', page: { items: [{ route: 'NONE' }, { route: 'PATH' }] } });
     });
 
     it('requires private no-store and an ETag on a 200', async () => {

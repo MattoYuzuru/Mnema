@@ -4,6 +4,8 @@ import { TestBed } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
 
 import { AuthService, AuthStatus } from '../../auth.service';
+import { JourneyStore } from '../onboarding/journey.store';
+import { TourEngine } from '../onboarding/tour-engine.service';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { ACTIVE_POLL_MS, IDLE_POLL_MS, NotificationCenter } from './notification-center';
 import { AppNotification, NotificationListResult, NotificationPage } from './notification.models';
@@ -28,6 +30,7 @@ describe('NotificationCenter', () => {
     let status: WritableSignal<AuthStatus>;
     let center: NotificationCenter;
     let toasts: ToastService;
+    let journeyLoad: ReturnType<typeof vi.fn>;
 
     /** Queues the answers of consecutive `list` calls. */
     const answers = (...results: (NotificationListResult | Error)[]): void => {
@@ -51,9 +54,12 @@ describe('NotificationCenter', () => {
             list: vi.fn().mockName('list'), setReadCursor: vi.fn().mockName('setReadCursor'), dismiss: vi.fn().mockName('dismiss')
         });
         status = signal<AuthStatus>('anonymous');
+        journeyLoad = vi.fn(() => Promise.resolve(null));
         TestBed.configureTestingModule({ providers: [
             { provide: NotificationsApiService, useValue: api },
-            { provide: AuthService, useValue: { status } }
+            { provide: AuthService, useValue: { status, user: signal({ accountId: 'acc-1' }) } },
+            { provide: JourneyStore, useValue: { load: journeyLoad, view: signal(null), error: signal(null), journey: signal(null) } },
+            { provide: TourEngine, useValue: spyObj<TourEngine>({ active: signal(false), paused: signal(false) }) }
         ] });
         center = TestBed.inject(NotificationCenter);
         toasts = TestBed.inject(ToastService);
@@ -268,6 +274,69 @@ describe('NotificationCenter', () => {
         quiet.set(false);
         TestBed.tick();
         expect(toasts.visible()).toHaveLength(1);
+    });
+
+    describe('milestones of «Путь»', () => {
+        const milestone = (seq: number, key: string, done: number): AppNotification => note(seq, { kind: 'PATH_MILESTONE', route: 'PATH', params: { key, done, total: 12 } });
+
+        it('toasts a milestone with its own sentence and the link to the page, and makes the journey read again', async () => {
+            await signIn(page([note(1)], { readUpto: '1' }));
+            answers(page([milestone(2, 'MEDIA_IN_MATERIAL', 6)], { unreadCount: 1, readUpto: '1' }));
+            await settle(IDLE_POLL_MS);
+            expect(toasts.visible().map(toast => [toast.text, toast.link])).toEqual([
+                ['Путь: вы добавили в материал картинку или звук · 6 из 12', { label: 'Открыть «Путь»', commands: ['/profile', 'path'] }]
+            ]);
+            expect(journeyLoad).toHaveBeenCalledExactlyOnceWith({ refresh: true });
+        });
+
+        it('shows one summary for several milestones that arrive in one poll, not a toast each', async () => {
+            await signIn(page([note(1)], { readUpto: '1' }));
+            answers(page([milestone(4, 'CAPTURE_NOTE', 8), milestone(3, 'OWN_MATERIAL', 7), milestone(2, 'FIRST_DECK', 6)], { unreadCount: 3, readUpto: '1' }));
+            await settle(IDLE_POLL_MS);
+            expect(toasts.visible().map(toast => toast.text)).toEqual(['Путь: отмечено 3 пункта · 8 из 12']);
+        });
+
+        it('holds a milestone through the quiet zone whatever the preference says, and lets other kinds follow their own rule', async () => {
+            await signIn(page([note(1)], { readUpto: '1' }));
+            const quiet = TestBed.inject(QuietZone);
+            quiet.set(true);
+            TestBed.tick();
+            answers(page([milestone(3, 'FIRST_SESSION', 6), note(2)], { unreadCount: 2, readUpto: '1' }));
+            await settle(IDLE_POLL_MS);
+            expect(toasts.visible()).toEqual([]);
+            quiet.set(false);
+            TestBed.tick();
+            await settle();
+            expect(toasts.visible().map(toast => toast.text)).toEqual(['Путь: вы прошли первое занятие · 6 из 12', 'Готово: 2 материала ждут проверки']);
+        });
+
+        it('does not toast a milestone that arrives while the panel is open, but still reads the journey again', async () => {
+            await signIn(page([note(1)], { readUpto: '1' }));
+            center.open();
+            api.list.mockReturnValue(of(page([note(1)], { readUpto: '1' })));
+            await settle();
+            answers(page([milestone(2, 'GOAL_TOLD', 1)], { unreadCount: 1, readUpto: '1' }));
+            api.setReadCursor.mockReturnValue(of({ readUpto: '2', unreadCount: 0 }));
+            await settle(IDLE_POLL_MS);
+            expect(toasts.visible()).toEqual([]);
+            expect(journeyLoad).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not toast a milestone the learner already read elsewhere', async () => {
+            await signIn(page([note(1)], { readUpto: '1' }));
+            answers(page([milestone(2, 'GOAL_TOLD', 1)], { unreadCount: 0, readUpto: '2' }));
+            await settle(IDLE_POLL_MS);
+            expect(toasts.visible()).toEqual([]);
+            expect(journeyLoad).toHaveBeenCalledTimes(1);
+        });
+
+        it('lists a milestone in the inbox with its link, and an older client\'s unknown route as a plain sentence', async () => {
+            await signIn(page([milestone(2, 'TWO_DAYS', 5), note(1, { kind: 'PATH_MILESTONE', route: 'NONE', params: { key: 'GOAL_TOLD', done: 1, total: 12 } })], { unreadCount: 2 }));
+            expect(center.entries().map(entry => [entry.presented.text, entry.presented.link?.commands])).toEqual([
+                ['Путь: вы позанимались во второй день · 5 из 12', ['/profile', 'path']],
+                ['Путь: вы рассказали о цели · 1 из 12', undefined]
+            ]);
+        });
     });
 
     it('opening the panel reloads, then moves the read cursor once with the newest seq on screen', async () => {

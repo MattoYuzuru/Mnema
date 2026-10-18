@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
 import { createEmptyNativeDocument } from '../../content/editing/native-editor-adapter';
+import { NativeDocument, NativeNode } from '../../content/native-document';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { AuthoringApiService } from './authoring-api.service';
@@ -113,6 +114,27 @@ describe('ItemEditorPageComponent recovery', () => {
         component.saveDraft();
         expect(vi.mocked(authoring.updateDraft).mock.calls[1][3]).not.toBe(rejectedCommand);
         expect(component.phase()).toBe('ready');
+    });
+
+    it('tells a waiting side quest when a medium is put into the text, and not for other edits or a medium that was already there', () => {
+        configure();
+        const seen: string[] = [];
+        TestBed.inject(TourEvents).listen(event => { seen.push(event); });
+        const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
+        const empty = createEmptyNativeDocument();
+        const media = (type: string): NativeNode => ({ id: `n-${type}`, type, version: 1, attrs: {}, content: [] });
+        const withMedia = (...types: string[]): NativeDocument => ({ ...empty, root: { ...empty.root, content: [...empty.root.content, ...types.map(media)] } });
+        // Nothing to compare with before the document is read: not a gain.
+        component.changeDocument(empty);
+        expect(seen).toEqual([]);
+        component.changeDocument(withMedia('image'));
+        expect(seen).toEqual(['media.inserted']);
+        component.changeDocument(withMedia('image'));
+        expect(seen).toEqual(['media.inserted']);
+        component.changeDocument(withMedia('image', 'audio'));
+        expect(seen).toEqual(['media.inserted', 'media.inserted']);
+        component.changeDocument(empty);
+        expect(seen).toHaveLength(2);
     });
 
     it('marks a replayed draft mismatch as an explicit draft conflict', () => {

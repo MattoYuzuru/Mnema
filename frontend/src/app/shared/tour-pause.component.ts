@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, input, output, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, computed, input, output, viewChild } from '@angular/core';
 
 import { onboardingText } from '../core/onboarding/onboarding-texts';
 
@@ -11,9 +11,9 @@ import { onboardingText } from '../core/onboarding/onboarding-texts';
     selector: 'app-tour-pause',
     host: { '[class.inline]': 'inline()' },
     template: `
-      <div class="plaque" role="region" [attr.aria-label]="label">
-        <span>{{ label }}</span>
-        <button #resume type="button" class="button primary" (click)="resumed.emit()">{{ resumeLabel }}</button>
+      <div class="plaque" role="region" [attr.aria-label]="label()">
+        <span>{{ label() }}</span>
+        <button #resume type="button" class="button primary" (click)="resumed.emit()">{{ resumeLabel() }}</button>
       </div>
     `,
     styles: [`
@@ -27,9 +27,11 @@ import { onboardingText } from '../core/onboarding/onboarding-texts';
 })
 export class TourPauseComponent {
     readonly inline = input(false);
+    /** The plaque of a side quest says «Задание на паузе» and «Продолжить задание». */
+    readonly quest = input(false);
     readonly resumed = output<void>();
-    protected readonly label = onboardingText('tour.pause.label');
-    protected readonly resumeLabel = onboardingText('tour.pause.resume');
+    protected readonly label = computed(() => onboardingText(this.quest() ? 'quest.pause.label' : 'tour.pause.label'));
+    protected readonly resumeLabel = computed(() => onboardingText(this.quest() ? 'quest.pause.resume' : 'tour.pause.resume'));
     private readonly resumeButton = viewChild.required<ElementRef<HTMLButtonElement>>('resume');
 
     focusResume(): void {

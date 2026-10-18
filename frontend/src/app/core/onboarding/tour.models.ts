@@ -1,4 +1,14 @@
-import { Branch, StepKey } from './onboarding.models';
+import { Branch, STEP_BRANCH, StepKey } from './onboarding.models';
+
+/**
+ * The key of a step of a side quest (OB-304): `quest.<name>.<step>`, outside the server's registry of steps. A quest is client-only: it
+ * never sends a command to the journey, so its keys are never validated by, or sent to, the server.
+ */
+export type QuestStepKey = `quest.${string}`;
+
+export function isServerStep(key: TourStep['key']): key is StepKey {
+    return key in STEP_BRANCH;
+}
 
 /** A run of text; `key` marks a highlighted key word (bold, ink, underlined in forced colours), never colour alone. */
 export interface TextSegment {
@@ -33,8 +43,8 @@ export interface TourActionGate {
 export type TourPlacement = 'top' | 'bottom' | 'start' | 'end';
 
 export interface TourStep {
-    /** The key the server records (`journey.json` registry). */
-    readonly key: StepKey;
+    /** The key the server records (`journey.json` registry), or the client-only key of a quest step. */
+    readonly key: StepKey | QuestStepKey;
     /** A key of `TOUR_ANCHOR_KEYS`: the element registered with `mnTourAnchor`. */
     readonly anchor: string;
     readonly title: string;
@@ -57,6 +67,16 @@ export interface TourStep {
      * pause and the record. Such steps come last and do not count in «Шаг N из M».
      */
     readonly external?: boolean;
+    /**
+     * A screen of its own with no place on a page (the quest's talk about the microphone): no anchor is looked for, the card stands in the
+     * middle on the veil, and the step is ready at once. `anchor` is `''`.
+     */
+    readonly screen?: boolean;
+    /**
+     * An event that ends the run (a quest) whenever it arrives while this step is current, even while the tour is paused: the learner
+     * does the thing in a place where no card is drawn (the study session) and the quest is over when it was done.
+     */
+    readonly completes?: string;
 }
 
 export interface TourDefinition {
@@ -64,6 +84,11 @@ export interface TourDefinition {
     /** The branch of the journey the steps belong to; `null` for a tour of shared steps only. */
     readonly branch: Branch | null;
     readonly steps: readonly TourStep[];
+    /**
+     * A side quest (OB-304): the same engine, but client-only. It records nothing (no `PUT /api/onboarding/journey`: the journey keeps its
+     * state, step and branch), and its steps are not the steps of the main tour.
+     */
+    readonly quest?: boolean;
 }
 
 /** How a run ended. */

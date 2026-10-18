@@ -1,10 +1,7 @@
 import { Branch, STEP_BRANCH, StepKey } from '../../core/onboarding/onboarding.models';
 
-/**
- * Where «Путь» lives. Until the Path page exists (OB-E3) the link of the skip toast and of the congratulation goes to the profile: one
- * constant, so that the epic changes one line.
- */
-export const PATH_TARGET = '/profile';
+/** Where «Путь» lives: the page of the path (OB-E3); the skip toast and the congratulation link to it. */
+export const PATH_TARGET = '/profile/path';
 
 /** The cards of the first entry, in the order they come. Their keys are step keys of the contract. */
 export const FIRST_ENTRY_KEYS = ['welcome', 'survey.goal', 'survey.interests', 'survey.experience', 'survey.days', 'choose'] as const;

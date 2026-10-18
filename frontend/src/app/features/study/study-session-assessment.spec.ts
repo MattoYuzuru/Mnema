@@ -5,6 +5,7 @@ import { Subject, of, throwError } from 'rxjs';
 
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { QuietZone } from '../../core/notifications/quiet-zone';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
@@ -156,6 +157,24 @@ describe('StudySessionPageComponent, AI assessment', () => {
         const polls = api.attempt.mock.calls.length;
         tick(60_000);
         expect(api.attempt).toHaveBeenCalledTimes(polls);
+    });
+
+    it('tells a waiting side quest that the AI checked an answer, but not for a self-rating (no AI result)', () => {
+        const seen: string[] = [];
+        TestBed.inject(TourEvents).listen(event => { seen.push(event); });
+        api.attempt.mockReturnValue(of(resultOf('resultComplete')));
+        answer();
+        tick(700);
+        expect(seen).toContain('study.ai-checked');
+    });
+
+    it('does not tell the quest of an answer the learner rated themselves', () => {
+        const seen: string[] = [];
+        TestBed.inject(TourEvents).listen(event => { seen.push(event); });
+        answer(polled('selfCheckUsageLimit'));
+        api.selfRate.mockReturnValue(of({ value: resultOf('selfRatingOutcome'), replayed: false }));
+        click('Вспомнил частично');
+        expect(seen).not.toContain('study.ai-checked');
     });
 
     it('completes the same attempt with the learner rating and shows the reference without an AI result', () => {

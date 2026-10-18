@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 
+import { TourAnchorDirective } from '../../../core/onboarding/tour-anchor.directive';
 import { SegmentedChoiceComponent, SegmentedOption } from '../../../shared/segmented-choice.component';
 import { ExemplarBudget, ItemPage, ItemSort, ItemSummary, newCommandId } from '../../authoring/authoring.models';
 import { ItemApiService } from '../../authoring/item-api.service';
@@ -65,7 +66,7 @@ const SORT_OPTIONS: readonly SegmentedOption<ItemSort>[] = [
  */
 @Component({
     selector: 'app-deck-materials',
-    imports: [RouterLink, SegmentedChoiceComponent, SelectableMaterialListComponent, BulkActionBarComponent],
+    imports: [RouterLink, SegmentedChoiceComponent, SelectableMaterialListComponent, BulkActionBarComponent, TourAnchorDirective],
     host: { '(keydown.escape)': 'clearSelectionFromKeyboard()' },
     templateUrl: './deck-materials.component.html',
     styleUrl: './deck-materials.component.css',

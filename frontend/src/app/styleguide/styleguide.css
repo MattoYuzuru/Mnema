@@ -169,3 +169,13 @@
 @media (forced-colors: active) { .sg-veil-stage, .sg-hold-states figure, .sg-mock-hub, .sg-mock-hub > header, .sg-mock-hub > section { border-color: CanvasText; } }
 .sg-survey-forward { display: flex; flex-wrap: wrap; gap: .5rem; }
 .sg-root app-night-sky app-survey-card { margin-block: 1rem; }
+
+/* «Путь Mnema»: specimens of the milestone list. */
+.sg-path-list { list-style: none; margin: 0; padding: 0; max-inline-size: 42rem; }
+.sg-path-narrow { inline-size: min(100%, 320px); border: 1px solid var(--mn-rule); padding-inline: .75rem; background: var(--mn-paper); }
+.sg-path-total { display: grid; gap: .35rem; max-inline-size: 16rem; margin-block-end: 1rem; }
+.sg-path-total strong { color: var(--mn-ink); font-size: 1.3rem; }
+.sg-path-hint-live { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-block-start: 1.5rem; }
+@media (forced-colors: active) { .sg-path-narrow { border-color: CanvasText; } }
+.sg-quest-pair { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); align-items: start; }
+.sg-quest-pair app-quest-chooser { border: 1px solid var(--mn-rule); border-block-start: 3px solid var(--mn-ink); padding: 1.1rem 1.2rem 1rem; background: var(--mn-sheet); }

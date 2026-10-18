@@ -9,9 +9,10 @@ import { TourEngine } from './tour-engine.service';
 
 /**
  * The loud surfaces of the app, highest priority first (architecture §8): a system error, the study session, the guided tour, the first
- * entry (welcome, survey, branch choice), the promo window, the toasts of milestones. Only the highest of those on the screen speaks.
+ * entry (welcome, survey, branch choice), the in-place hint of «Путь» (the learner asked for it), the promo window, the toasts of
+ * milestones. Only the highest of those on the screen speaks.
  */
-export const SURFACES = ['system-error', 'study', 'tour', 'first-entry', 'promo', 'milestone'] as const;
+export const SURFACES = ['system-error', 'study', 'tour', 'first-entry', 'hint', 'promo', 'milestone'] as const;
 export type Surface = typeof SURFACES[number];
 
 /**

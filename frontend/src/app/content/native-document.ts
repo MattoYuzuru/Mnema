@@ -20,3 +20,11 @@ export interface NativeDocument {
   readonly formatVersion: 1;
   readonly root: NativeNode;
 }
+
+const MEDIA_NODE_TYPES: readonly string[] = ['image', 'audio', 'video'];
+
+/** How many image, audio and video nodes the document holds (the editor tells a side quest when a medium was put in). */
+export function nativeMediaCount(document: NativeDocument): number {
+  const count = (node: NativeNode): number => (MEDIA_NODE_TYPES.includes(node.type) ? 1 : 0) + node.content.reduce((sum, child) => sum + count(child), 0);
+  return count(document.root);
+}

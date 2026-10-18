@@ -1,3 +1,4 @@
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
 import { TourEvents } from '../../core/onboarding/tour-events';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, inject, signal, viewChild } from '@angular/core';
@@ -5,7 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subject, catchError, debounceTime, forkJoin, of, throwError } from 'rxjs';
 
-import { NativeDocument } from '../../content/native-document';
+import { NativeDocument, nativeMediaCount } from '../../content/native-document';
 import { createEmptyNativeDocument } from '../../content/editing/native-editor-adapter';
 import { NativeEditorComponent } from '../../content/editing/native-editor.component';
 import { NativeStructuralEdit, planNativeStructuralEdits } from '../../content/editing/native-structural-edits';
@@ -21,7 +22,7 @@ type EditorPhase = 'loading' | 'ready' | 'saving-draft' | 'publishing' | 'confli
 
 @Component({
     selector: 'app-item-editor-page',
-    imports: [RouterLink, NativeEditorComponent, NativeMediaSurfaceComponent, NativeMediaUploadComponent],
+    imports: [RouterLink, NativeEditorComponent, NativeMediaSurfaceComponent, NativeMediaUploadComponent, TourAnchorDirective],
     templateUrl: './item-editor-page.component.html',
     styleUrl: './authoring-page.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -125,7 +126,11 @@ export class ItemEditorPageComponent {
     }
 
     changeDocument(document: NativeDocument): void {
+        const before = this.document();
+        const gained = before !== null && nativeMediaCount(document) > nativeMediaCount(before);
         this.document.set(document);
+        // A medium was put into the text: a side quest waiting for it moves on.
+        if (gained) this.tour.emit('media.inserted');
         this.dirty.set(true);
         this.message.set(null);
         if (this.phase() === 'error' || this.phase() === 'rejected') this.phase.set('ready');

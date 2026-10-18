@@ -148,7 +148,7 @@ export class OnboardingFlow {
         effect(() => {
             const step = this.engine.step();
             const deckId = this.deck();
-            const waiting = this.engine.active() && step !== null && SAMPLE_MEMBER_STEPS.has(step.key) && this.member() === null && !this.engine.preparing();
+            const waiting = this.engine.active() && step !== null && (SAMPLE_MEMBER_STEPS as ReadonlySet<string>).has(step.key) && this.member() === null && !this.engine.preparing();
             if (waiting && deckId !== null) untracked(() => void this.findSampleMaterial(deckId));
         });
     }
@@ -501,7 +501,7 @@ export class OnboardingFlow {
     /** The session is over: a tour that paused for it goes on at the finale (a tour the learner resumed meanwhile is left alone). */
     private onStudyCompleted(): void {
         const step = this.engine.step();
-        if (this.engine.active() && this.engine.paused() && step !== null && Object.values(STUDY_STEP).includes(step.key)) {
+        if (this.engine.active() && this.engine.paused() && step !== null && (Object.values(STUDY_STEP) as readonly string[]).includes(step.key)) {
             this.engine.resumeAt(finaleKey(this.aiAvailable()));
         }
     }

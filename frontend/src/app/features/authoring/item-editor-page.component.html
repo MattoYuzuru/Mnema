@@ -24,7 +24,7 @@
       <section class="paper-surface editor-mobile-panel material-editor-panel" [class.is-active]="mobilePanel() === 'material'" aria-labelledby="material-editor-heading">
         <h2 id="material-editor-heading">Материал</h2>
         <app-native-editor [document]="currentDocument" [disabled]="phase() === 'publishing' || phase() === 'error' || phase() === 'conflict'" (documentChange)="changeDocument($event)" (filesAdded)="uploadFromEditor($event)">
-          <app-native-media-upload [document]="currentDocument" [disabled]="phase() === 'publishing' || phase() === 'conflict'"
+          <app-native-media-upload mnTourAnchor="editor.media" [document]="currentDocument" [disabled]="phase() === 'publishing' || phase() === 'conflict'"
             (chooseAsset)="prepareMedia($event.kind, $event.assetId)" />
         </app-native-editor>
       </section>
@@ -41,7 +41,7 @@
     </div>
     <section class="save-panel" aria-label="Сохранение">
       <p class="muted" aria-live="polite">@switch (phase()) { @case ('saving-draft') { Сохраняем… } @case ('publishing') { Публикуем… } @case ('error') { Сохранение не подтверждено } @case ('conflict') { Нужно выбрать версию } @default { {{ dirty() ? 'Сохраним изменения автоматически' : 'Все изменения сохранены' }} } }</p>
-      <button class="button primary" type="button" [disabled]="dirty() || phase() !== 'ready'" (click)="publish()">Опубликовать</button>
+      <button class="button primary" type="button" mnTourAnchor="editor.publish" [disabled]="dirty() || phase() !== 'ready'" (click)="publish()">Опубликовать</button>
     </section>
   }
 </section>
