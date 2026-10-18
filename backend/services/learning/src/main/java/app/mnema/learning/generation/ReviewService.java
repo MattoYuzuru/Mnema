@@ -10,6 +10,8 @@ import app.mnema.learning.generation.Rows.Revision;
 import app.mnema.learning.generation.Rows.Session;
 import app.mnema.learning.generation.Rows.Slot;
 import app.mnema.learning.generation.SourceDrift.Drift;
+import app.mnema.learning.onboarding.MilestoneKey;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ProblemExtension;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
@@ -94,13 +96,15 @@ class ReviewService {
     private final CandidateRepository candidates;
     private final ResearchSteps research;
     private final ResearchRepository researchRows;
+    private final MilestoneRecorder milestones;
 
     ReviewService(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, SessionViews views,
                   CommandReceiptService receipts, GeneratedItemPublisher publisher, GeneratedExercisePublisher exercisePublisher,
                   ExerciseRepin repins, GeneratedDraftOpener drafts,
                   SourceDrift drift, NoteArchival notes, UsageLedger ledger, AdmissionPricing pricing, GenerationGate gate,
                   ObjectProvider<StepDispatcher> dispatcher, PlatformTransactionManager transactions, GenerationSettings settings, Plans plans,
-                  CandidateRepository candidates, ResearchSteps research, ResearchRepository researchRows) {
+                  CandidateRepository candidates, ResearchSteps research, ResearchRepository researchRows, MilestoneRecorder milestones) {
+        this.milestones = milestones;
         this.candidates = candidates;
         this.research = research;
         this.researchRows = researchRows;
@@ -555,6 +559,8 @@ class ReviewService {
             tx.events.add(SessionLifecycle.artifactEvent(done));
             listed.addObject().put("artifactId", artifact.artifactId().toString()).put("state", "PUBLISHED").set("publishedRef", result.reference());
         }
+        // «Путь Mnema»: something generated was approved and published into the owner's deck; the one statement checks that the deck is a deck of purpose USER
+        if (!plans.isEmpty()) milestones.reachInUserDeck(tx.session.ownerId(), tx.session.deckId(), MilestoneKey.WORKSHOP_APPROVED, 1);
         lifecycle.closeIfDone(tx);
         lifecycle.flush(tx);
         return acknowledgement;

@@ -6,6 +6,8 @@ import app.mnema.learning.ai.AiResult;
 import app.mnema.learning.ai.OpaqueUserKey;
 import app.mnema.learning.ai.Transcription;
 import app.mnema.learning.ai.UserKeys;
+import app.mnema.learning.onboarding.MilestoneKey;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.onboarding.SampleChecks;
 import app.mnema.learning.platform.wake.WakeTarget;
 import app.mnema.learning.speech.SpeechInputRepository.Claim;
@@ -73,6 +75,7 @@ class SpeechInputWorker implements DisposableBean, WakeTarget {
     private final UserKeys userKeys;
     private final UsageLedger ledger;
     private final SampleChecks sampleChecks;
+    private final MilestoneRecorder milestones;
     private final MeterRegistry meters;
     private final TransactionTemplate transaction;
     private final Semaphore permits;
@@ -82,7 +85,7 @@ class SpeechInputWorker implements DisposableBean, WakeTarget {
     private volatile boolean stopping;
 
     SpeechInputWorker(SpeechInputRepository repository, SpeechHints hints, SpeechConsents consents, Transcription transcription, UserKeys userKeys, UsageLedger ledger,
-                      SampleChecks sampleChecks, AiProperties ai, MeterRegistry meters, PlatformTransactionManager transactions) {
+                      SampleChecks sampleChecks, MilestoneRecorder milestones, AiProperties ai, MeterRegistry meters, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.hints = hints;
         this.consents = consents;
@@ -90,6 +93,7 @@ class SpeechInputWorker implements DisposableBean, WakeTarget {
         this.userKeys = userKeys;
         this.ledger = ledger;
         this.sampleChecks = sampleChecks;
+        this.milestones = milestones;
         this.meters = meters;
         this.transaction = new TransactionTemplate(transactions);
         this.transaction.setTimeout(10);
@@ -230,6 +234,8 @@ class SpeechInputWorker implements DisposableBean, WakeTarget {
                 boolean free = claim.purpose() == Transcription.Purpose.STUDY_ANSWER && claim.deckId() != null
                         && sampleChecks.consume(claim.ownerId(), claim.deckId(), "sample-check:stt:" + claim.id(), claim.id().toString());
                 if (!free) ledger.consume(claim.ownerId(), Bucket.STT, seconds, "stt:" + claim.ownerId() + ":" + claim.id(), claim.id().toString());
+                // «Путь Mnema»: a successful transcription of any purpose, in the transaction that stores it and pays for it
+                milestones.reach(claim.ownerId(), MilestoneKey.VOICE_ANSWER, 1);
                 return true;
             }));
         } catch (UsageLimitReachedException | UsageContentionException overshoot) {

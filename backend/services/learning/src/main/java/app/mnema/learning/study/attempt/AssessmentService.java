@@ -7,6 +7,8 @@ import app.mnema.learning.capability.SemanticAssessmentProvider.GradeRequest;
 import app.mnema.learning.catalog.exercise.EvaluatorPolicy;
 import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.catalog.exercise.Rubric;
+import app.mnema.learning.onboarding.MilestoneKey;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.onboarding.SampleChecks;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
@@ -83,10 +85,13 @@ public class AssessmentService {
     private final ApplicationEventPublisher events;
     private final MeterRegistry meters;
     private final TransactionTemplate transaction;
+    private final MilestoneRecorder milestones;
 
     public AssessmentService(AssessmentRepository assessments, AttemptRepository attempts, AttemptConclusion conclusion,
                              LearningCapabilities capabilities, UsageLedger ledger, SampleChecks sampleChecks,
-                             AssessmentSettings settings, ApplicationEventPublisher events, PlatformTransactionManager transactions, MeterRegistry meters) {
+                             AssessmentSettings settings, ApplicationEventPublisher events, PlatformTransactionManager transactions, MeterRegistry meters,
+                             MilestoneRecorder milestones) {
+        this.milestones = milestones;
         this.assessments = assessments;
         this.attempts = attempts;
         this.conclusion = conclusion;
@@ -354,6 +359,8 @@ public class AssessmentService {
         AttemptEvaluation evaluation = evaluation(graded, strictness, rubric, presentation, row, now);
         conclusion.conclude(row.accountId(), row.deckId(), row.sessionId(), command(row, presentation), presentation, evaluation,
                 presentation.evaluator(), row.payloadHash(), now);
+        // «Путь Mnema»: an answer concluded by the model in a scheduled or practice session (a self-check, an uncertain or unavailable assessment and a replay never get here)
+        if (!"REPLAY".equals(presentation.mode())) milestones.reach(row.accountId(), MilestoneKey.AI_EXPLANATION, 1);
         assessments.finish(attemptId, now);
         count("GRADED", strictness.name());
         Timer.builder("mnema_assessment_seconds").description("From the accepted answer to its stored grade").publishPercentiles(0.5, 0.95)

@@ -15,6 +15,9 @@ import app.mnema.learning.catalog.content.storage.NativeSnapshotDecoder;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
 import app.mnema.learning.catalog.content.storage.NativeStorageFailure;
 import app.mnema.learning.catalog.content.storage.NativeStructuralEditor;
+import app.mnema.learning.library.DeckPurpose;
+import app.mnema.learning.onboarding.MilestoneKey;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
@@ -68,10 +71,13 @@ public class ItemService {
     private final TransactionTemplate preparationBoundary;
     private final TransactionTemplate publicationTransaction;
     private final TransactionTemplate cleanupTransaction;
+    private final MilestoneRecorder milestones;
 
     public ItemService(ItemRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                       ImmutableStorage storage, MediaCatalog mediaCatalog, PlatformTransactionManager transactions, ItemPreviews previews) {
+                       ImmutableStorage storage, MediaCatalog mediaCatalog, PlatformTransactionManager transactions, ItemPreviews previews,
+                       MilestoneRecorder milestones) {
         this.repository = repository;
+        this.milestones = milestones;
         this.previews = previews;
         this.receipts = receipts;
         this.cas = cas;
@@ -374,6 +380,8 @@ public class ItemService {
                 () -> repository.advance(actor, deckId, prepared.deckRevision(), expectedDeckVersion));
         Instant time = repository.now();
         List<PendingChange> pendingChanges = new ArrayList<>();
+        boolean created = false;
+        boolean withMedia = false;
         for (PreparedChange change : prepared.changes()) {
             switch (change) {
                 case PreparedCreate create -> {
@@ -384,6 +392,8 @@ public class ItemService {
                             create.descriptorRoot(), time);
                     mediaCatalog.attachRevision(actor, deckId, create.member(), create.revision(), create.mediaReferences());
                     repository.insertHead(deckId, before.scopeId(), create.member(), create.revision(), 0, time);
+                    created = true;
+                    withMedia |= !create.mediaReferences().isEmpty();
                     pendingChanges.add(new PendingChange("create", create.member(), null, create.revision(),
                             create.revision(), 0, null));
                 }
@@ -397,6 +407,7 @@ public class ItemService {
                             command.commandId(), save.contentRoot(), save.descriptorRoot(), time);
                     mediaCatalog.attachRevision(actor, deckId, save.member(), save.revision(), save.mediaReferences());
                     repository.updateHead(deckId, save.member(), save.revision(), save.itemSequence(), time);
+                    withMedia |= !save.mediaReferences().isEmpty();
                     pendingChanges.add(new PendingChange("save", save.member(), current.revisionId(), save.revision(),
                             save.revision(), save.itemSequence(), save.fromOrdinal()));
                 }
@@ -412,6 +423,12 @@ public class ItemService {
                             current.revisionId(), reorder.itemSequence(), reorder.fromOrdinal()));
                 }
             }
+        }
+
+        // «Путь Mnema»: a new material, and a revision with a picture or a sound, in a deck of the author's own (the sample deck teaches the path, it does not complete it)
+        if (before.purpose() == DeckPurpose.USER) {
+            if (created) milestones.reach(actor, MilestoneKey.OWN_MATERIAL, 1);
+            if (withMedia) milestones.reach(actor, MilestoneKey.MEDIA_IN_MATERIAL, 1);
         }
 
         PinOwner pinOwner = new PinOwner("deck.revision", prepared.deckRevision(), actor);

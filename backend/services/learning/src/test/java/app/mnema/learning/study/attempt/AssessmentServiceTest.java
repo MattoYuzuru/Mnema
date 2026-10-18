@@ -64,7 +64,7 @@ class AssessmentServiceTest {
     void setUp() {
         service = new AssessmentService(assessments, attempts, conclusion, capabilities, ledger, mock(app.mnema.learning.onboarding.SampleChecks.class),
                 new AssessmentSettings(Duration.ofSeconds(20), Duration.ofSeconds(2), 16, "ru", 3), events,
-                mock(PlatformTransactionManager.class), meters);
+                mock(PlatformTransactionManager.class), meters, mock(app.mnema.learning.onboarding.MilestoneRecorder.class));
         when(attempts.now()).thenReturn(NOW);
         when(capabilities.aiAssessment()).thenReturn(new LearningCapabilities.Status(true, null));
         when(ledger.fairUseFits(any(), eq(Bucket.ASSESSMENT), anyLong())).thenReturn(true);

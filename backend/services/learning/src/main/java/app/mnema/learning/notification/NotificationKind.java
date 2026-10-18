@@ -47,7 +47,9 @@ public enum NotificationKind {
     /** To the owner of a deck the console hid from the Community after a complaint (Share/15, #437): the deck is still his, readers get the answer of an unknown deck. */
     DECK_HIDDEN(NotificationSeverity.WARNING, NotificationRoute.DECK, param("deckId", UUID)),
     /** To the owner of a deck when a legal takedown named units of it (Share/15): the number of NEW materials and exercises taken down by that decision. */
-    DECK_CONTENT_TAKEN_DOWN(NotificationSeverity.WARNING, NotificationRoute.DECK, param("deckId", UUID), param("materialCount", COUNT), param("exerciseCount", COUNT));
+    DECK_CONTENT_TAKEN_DOWN(NotificationSeverity.WARNING, NotificationRoute.DECK, param("deckId", UUID), param("materialCount", COUNT), param("exerciseCount", COUNT)),
+    /** To the owner of an account when a «Путь Mnema» milestone is reached (OB-301): {@code key} is a key of {@code contracts/onboarding/milestones.json}, {@code done}/{@code total} count the visible milestones. */
+    PATH_MILESTONE(NotificationSeverity.INFO, NotificationRoute.PATH, param("key", TOKEN), param("done", COUNT), param("total", COUNT));
 
     /** Value type of one params field. */
     enum ParamType { UUID, TOKEN, COUNT, TIMESTAMP }

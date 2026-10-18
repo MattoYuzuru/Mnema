@@ -1,6 +1,7 @@
 package app.mnema.learning.catalog.item;
 
 import app.mnema.learning.catalog.content.pages.CountedPageTypes.Profile;
+import app.mnema.learning.library.DeckPurpose;
 import app.mnema.learning.moderation.ContentTakedowns;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -26,14 +27,14 @@ class ItemRepository {
     ItemRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
 
     record DeckHead(UUID deckId, UUID scopeId, UUID revisionId, long version, String title, String description,
-                    Instant createdAt, UUID membersRootId, UUID exercisesRootId, int memberCount, int exerciseCount) { }
+                    Instant createdAt, UUID membersRootId, UUID exercisesRootId, int memberCount, int exerciseCount, DeckPurpose purpose) { }
 
     private static final RowMapper<DeckHead> DECK = (row, ignored) -> new DeckHead(
             row.getObject("deck_id", UUID.class), row.getObject("reuse_scope_id", UUID.class),
             row.getObject("head_revision_id", UUID.class), row.getLong("row_version"), row.getString("title"),
             row.getString("description"), row.getTimestamp("deck_created_at").toInstant(),
             row.getObject("members_root_id", UUID.class), row.getObject("exercises_root_id", UUID.class),
-            row.getInt("member_count"), row.getInt("exercise_count"));
+            row.getInt("member_count"), row.getInt("exercise_count"), DeckPurpose.valueOf(row.getString("purpose")));
 
     private static final RowMapper<ItemRecord> ITEM = (row, ignored) -> new ItemRecord(
             row.getObject("deck_id", UUID.class), row.getObject("member_key", UUID.class),
@@ -46,7 +47,7 @@ class ItemRepository {
 
     Optional<DeckHead> deck(UUID actor, UUID deck) {
         return jdbc.sql("""
-                SELECT d.deck_id,d.reuse_scope_id,d.head_revision_id,d.row_version,d.created_at AS deck_created_at,
+                SELECT d.deck_id,d.reuse_scope_id,d.head_revision_id,d.row_version,d.created_at AS deck_created_at,d.purpose,
                        r.title,r.description,r.members_root_id,r.exercises_root_id,r.member_count,r.exercise_count
                   FROM app_learning.deck d JOIN app_learning.deck_revision r
                     ON r.deck_id=d.deck_id AND r.revision_id=d.head_revision_id
@@ -278,7 +279,7 @@ class ItemRepository {
     Optional<DeckHead> deckAtRevision(UUID actor, UUID deck, UUID revision) {
         return jdbc.sql("""
                 SELECT d.deck_id,d.reuse_scope_id,r.revision_id AS head_revision_id,r.sequence AS row_version,
-                       d.created_at AS deck_created_at,r.title,r.description,r.members_root_id,r.exercises_root_id,
+                       d.created_at AS deck_created_at,d.purpose,r.title,r.description,r.members_root_id,r.exercises_root_id,
                        r.member_count,r.exercise_count
                   FROM app_learning.deck d JOIN app_learning.deck_revision r ON r.deck_id=d.deck_id
                  WHERE d.owner_id=:actor AND d.deck_id=:deck AND d.deleted_at IS NULL AND r.revision_id=:revision

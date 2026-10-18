@@ -1,6 +1,7 @@
 package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.community.DeckEngagement;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.moderation.ContentTakedowns;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -21,10 +23,12 @@ class AttemptRepository {
     private final JdbcClient jdbc;
 
     private final DeckEngagement engagement;
+    private final MilestoneRecorder milestones;
 
-    AttemptRepository(JdbcClient jdbc, DeckEngagement engagement) {
+    AttemptRepository(JdbcClient jdbc, DeckEngagement engagement, MilestoneRecorder milestones) {
         this.jdbc = jdbc;
         this.engagement = engagement;
+        this.milestones = milestones;
     }
 
     record Presentation(UUID accountId, UUID sessionId, UUID presentationId, UUID deckId, String mode,
@@ -264,7 +268,8 @@ class AttemptRepository {
     }
 
     void completeSessionIfTerminal(UUID actor, UUID deck, UUID session, Instant now) {
-        int completed = jdbc.sql("""
+        // RETURNING hands the mode and the study date of the row that changed to the milestone recorder, which would otherwise read them back
+        Optional<CompletedSession> completed = jdbc.sql("""
                 UPDATE app_learning.study_session s
                    SET status='COMPLETE',completed_at=:now,batch_start=issued_count,batch_size=0,
                        row_version=row_version+1
@@ -281,11 +286,19 @@ class AttemptRepository {
                                  AND t.presentation_id=p.presentation_id
                           )
                    )
+                RETURNING s.mode,s.local_study_date
                 """).param("actor", actor).param("deck", deck).param("session", session)
-                .param("now", Timestamp.from(now)).update();
+                .param("now", Timestamp.from(now))
+                .query((row, ignored) -> new CompletedSession(row.getString("mode"), row.getObject("local_study_date", LocalDate.class))).optional();
         // Community/3: the completion of a scheduled session of a copy is an engagement of its source, in this transaction (a non-copy deck costs two primary-key probes).
-        if (completed == 1) engagement.studied(actor, session);
+        if (completed.isPresent()) {
+            engagement.studied(actor, session);
+            // «Путь Mnema»: FIRST_SESSION and TWO_DAYS (SCHEDULED or PRACTICE; the recorder ignores a replay)
+            milestones.sessionCompleted(actor, completed.get().mode(), completed.get().studyDate());
+        }
     }
+
+    private record CompletedSession(String mode, LocalDate studyDate) { }
 
     Instant now() { return jdbc.sql("SELECT statement_timestamp()")
             .query(Timestamp.class).single().toInstant(); }

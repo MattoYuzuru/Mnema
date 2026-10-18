@@ -1,5 +1,6 @@
 package app.mnema.learning.catalog.exercise;
 
+import app.mnema.learning.library.DeckPurpose;
 import app.mnema.learning.moderation.ContentTakedowns;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -25,7 +26,7 @@ class ExerciseRepository {
 
     record DeckHead(UUID deckId, UUID ownerId, UUID scopeId, UUID revisionId, long version, String title,
                     String description, UUID membersRootId, UUID exercisesRootId, int memberCount,
-                    int exerciseCount) { }
+                    int exerciseCount, DeckPurpose purpose) { }
     record ObjectiveRow(UUID objectiveId, UUID objectiveKey, UUID memberKey, UUID revisionId, long sequence,
                         String title, Instant createdAt, Instant updatedAt) { }
     record ExerciseRow(UUID exerciseId, UUID revisionId, long sequence, int ordinal, String type, boolean enabled,
@@ -44,7 +45,7 @@ class ExerciseRepository {
             row.getObject("reuse_scope_id", UUID.class), row.getObject("head_revision_id", UUID.class),
             row.getLong("row_version"), row.getString("title"), row.getString("description"),
             row.getObject("members_root_id", UUID.class), row.getObject("exercises_root_id", UUID.class),
-            row.getInt("member_count"), row.getInt("exercise_count"));
+            row.getInt("member_count"), row.getInt("exercise_count"), DeckPurpose.valueOf(row.getString("purpose")));
     private static final RowMapper<ObjectiveRow> OBJECTIVE = (row, ignored) -> new ObjectiveRow(
             row.getObject("objective_id", UUID.class), row.getObject("objective_key", UUID.class),
             row.getObject("member_key", UUID.class), row.getObject("revision_id", UUID.class),
@@ -66,7 +67,7 @@ class ExerciseRepository {
 
     Optional<DeckHead> deck(UUID actor, UUID deck) {
         return jdbc.sql("""
-                SELECT d.deck_id,d.owner_id,d.reuse_scope_id,d.head_revision_id,d.row_version,
+                SELECT d.deck_id,d.owner_id,d.reuse_scope_id,d.head_revision_id,d.row_version,d.purpose,
                        r.title,r.description,r.members_root_id,r.exercises_root_id,r.member_count,r.exercise_count
                   FROM app_learning.deck d JOIN app_learning.deck_revision r
                     ON r.deck_id=d.deck_id AND r.revision_id=d.head_revision_id

@@ -2,6 +2,7 @@ package app.mnema.learning.study.session;
 
 import app.mnema.learning.catalog.item.ItemRevisionVisibility;
 import app.mnema.learning.community.DeckEngagement;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.moderation.ContentTakedowns;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -58,10 +59,12 @@ class StudySessionRepository {
     private final JdbcClient jdbc;
 
     private final DeckEngagement engagement;
+    private final MilestoneRecorder milestones;
 
-    StudySessionRepository(JdbcClient jdbc, DeckEngagement engagement) {
+    StudySessionRepository(JdbcClient jdbc, DeckEngagement engagement, MilestoneRecorder milestones) {
         this.jdbc = jdbc;
         this.engagement = engagement;
+        this.milestones = milestones;
     }
 
     record DeckHead(UUID deckId, UUID ownerId, UUID scopeId, UUID revisionId, long sequence, UUID exercisesRootId,
@@ -626,7 +629,11 @@ class StudySessionRepository {
                 """).param("now", Timestamp.from(now)).param("actor", session.accountId())
                 .param("session", session.sessionId()).param("version", session.rowVersion()).update();
         // Community/3: the completion of a scheduled session of a copy is an engagement of its source, in this transaction (a non-copy deck costs two primary-key probes).
-        if (completed == 1) engagement.studied(session.accountId(), session.sessionId());
+        if (completed == 1) {
+            engagement.studied(session.accountId(), session.sessionId());
+            // «Путь Mnema»: FIRST_SESSION and TWO_DAYS; a replay completes through here too and counts for nothing
+            milestones.sessionCompleted(session.accountId(), session.mode().name(), session.localStudyDate());
+        }
     }
 
     Instant now() { return jdbc.sql("SELECT statement_timestamp()").query(Timestamp.class).single().toInstant(); }

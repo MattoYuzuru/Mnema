@@ -1,0 +1,167 @@
+{
+  "contract": "onboarding-milestones-v1",
+  "description": "The closed registry of «Путь Mnema» milestones (OB-E3, #531; ADR-ONB-002). Backend (MilestoneKey, the V74 CHECK, the inventory test) and frontend (path registry, texts, route keys) execute this fixture. Order is the display order. Authority: docs/engineering/onboarding/proposal.md layer 5 and architecture.md section 5.",
+  "registryVersion": 1,
+  "chapters": ["start", "materials", "exercises", "rhythm"],
+  "states": ["DONE", "PARTIAL", "TODO"],
+  "sources": ["LIVE", "BACKFILL"],
+  "visibility": {
+    "ALWAYS": "Always visible.",
+    "AI_ASSESSMENT": "Visible while the operator switch learning.features.ai-assessment.enabled is on (CapabilityFlags), not the runtime circuit breaker or budget.",
+    "SPEECH_TO_TEXT": "Visible while learning.features.speech-to-text.enabled is on.",
+    "AI_GENERATION": "Visible while learning.features.ai-generation.enabled is on.",
+    "COMMUNITY_CATALOG": "Visible while learning.community.catalog.enabled is on and the catalogue lists at least one deck.",
+    "RHYTHM": "Visible once the weekly rhythm (OB-401) writes its milestone; registry version 1 has no writer, so the milestone is hidden."
+  },
+  "milestones": [
+    {
+      "key": "GOAL_TOLD", "chapter": "start", "target": 1, "visibility": "ALWAYS", "route": "PROFILE_GOAL",
+      "counts": "PUT /api/learning-profile: an answer or the deliberate skip (goal null).",
+      "writer": "LearningProfileService.answer",
+      "backfill": {"restorable": "full", "source": "learning_profile row of the owner (answered_at)"}
+    },
+    {
+      "key": "FIRST_DECK", "chapter": "start", "target": 1, "visibility": "ALWAYS", "route": "DECKS",
+      "counts": "A deck of the account is created: its own (DeckService.create), a copy (ForkService.copy) or the sample deck (ForkService.copyTemplate). A relink or an existing sample deck does not count again.",
+      "writer": "DeckService.create, ForkService.write",
+      "backfill": {"restorable": "full", "source": "deck.owner_id, created_at (deleted decks included: the fact happened)"}
+    },
+    {
+      "key": "FIRST_SESSION", "chapter": "start", "target": 1, "visibility": "ALWAYS", "route": "STUDY",
+      "counts": "A study session of mode SCHEDULED or PRACTICE completes (the row that changed to COMPLETE); REPLAY never counts. Any deck purpose counts, the sample deck included.",
+      "writer": "StudySessionRepository.complete, AttemptRepository.completeSessionIfTerminal",
+      "backfill": {"restorable": "full", "source": "study_session status COMPLETE, mode SCHEDULED|PRACTICE"}
+    },
+    {
+      "key": "OWN_MATERIAL", "chapter": "materials", "target": 1, "visibility": "ALWAYS", "route": "MATERIAL_NEW",
+      "counts": "A NEW material is published in a deck of purpose USER (manual, capture conversion, Workshop approval: every create of ItemService.apply). A new revision, accepting an update of a copy and materializing a copy do not count; a SAMPLE deck does not count.",
+      "writer": "ItemService.apply (create)",
+      "backfill": {"restorable": "full", "source": "learning_item / item_revision created by the owner in a USER deck, excluding heads materialized from a copy"}
+    },
+    {
+      "key": "MEDIA_IN_MATERIAL", "chapter": "materials", "target": 1, "visibility": "ALWAYS", "route": "QUEST_MEDIA",
+      "counts": "A material revision (create or save) with at least one media reference is published in a USER deck by the owner.",
+      "writer": "ItemService.apply (create or save with mediaReferences)",
+      "backfill": {"restorable": "full", "source": "content_media_ref of the owner joined to a USER deck"}
+    },
+    {
+      "key": "CAPTURE_NOTE", "chapter": "materials", "target": 2, "visibility": "ALWAYS", "route": "CAPTURE",
+      "counts": "Stages, not a counter: 1 when a note «На потом» is saved in a USER deck (CaptureService.create), 2 (done) when a note is sorted out: converted into a material (CaptureService.convert) or archived (CaptureService.archive).",
+      "stages": {"1": "saved", "2": "sorted out"},
+      "writer": "CaptureService.create, CaptureService.convert, CaptureService.archive",
+      "backfill": {"restorable": "partial", "source": "capture_note: any row is stage 1, converted_at or archived is stage 2; hard-deleted notes are lost"}
+    },
+    {
+      "key": "OWN_EXERCISES", "chapter": "exercises", "target": 3, "visibility": "ALWAYS", "route": "EXERCISE_NEW",
+      "counts": "Counter: +1 for every NEW exercise published in a USER deck (manual create or Workshop create; a revision, an accepted update or a copy does not count), saturating at the target.",
+      "writer": "ExerciseService.apply (insertExercise)",
+      "backfill": {"restorable": "full", "source": "exercise_definition of the owner in USER decks, excluding copied definitions; progress = least(count, 3)"}
+    },
+    {
+      "key": "AI_EXPLANATION", "chapter": "exercises", "target": 1, "visibility": "AI_ASSESSMENT", "route": "QUEST_EXPLAIN",
+      "counts": "An answer is concluded by the effective evaluator ai-semantic in a SCHEDULED or PRACTICE session (any deck, the sample deck's free checks included). Self-check, an uncertain or unavailable assessment and REPLAY do not count.",
+      "writer": "AssessmentService.resolve",
+      "backfill": {"restorable": "partial", "source": "study_evidence.evaluator_id = 'ai-semantic' (SCHEDULED); practice answers whose outcome is gone after retention are lost"}
+    },
+    {
+      "key": "VOICE_ANSWER", "chapter": "exercises", "target": 1, "visibility": "SPEECH_TO_TEXT", "route": "QUEST_VOICE",
+      "counts": "A speech transcription of the account succeeds (any purpose: answer, editor field, note).",
+      "writer": "SpeechInputWorker.done",
+      "backfill": {"restorable": "partial", "source": "speech_input lives 15 minutes; only study_assessment.answer_source = 'SPEECH' survives"}
+    },
+    {
+      "key": "WORKSHOP_APPROVED", "chapter": "exercises", "target": 1, "visibility": "AI_GENERATION", "route": "QUEST_WORKSHOP",
+      "counts": "At least one generated artifact is approved and published from the Workshop into a USER deck.",
+      "writer": "ReviewService.apply (GenerationRepository.publish)",
+      "backfill": {"restorable": "full", "source": "generation_provenance of the owner (outlives the session)"}
+    },
+    {
+      "key": "RHYTHM_WEEK", "chapter": "rhythm", "target": 1, "visibility": "RHYTHM", "route": "PROFILE_RHYTHM",
+      "counts": "The weekly rhythm target is met (OB-401 writes it). No writer in registry version 1.",
+      "writer": null,
+      "backfill": {"restorable": "none", "source": "OB-401"}
+    },
+    {
+      "key": "TWO_DAYS", "chapter": "rhythm", "target": 2, "visibility": "ALWAYS", "route": "STUDY",
+      "counts": "Progress is the number of different local study dates (capped at 2) with a completed SCHEDULED or PRACTICE session; REPLAY never counts.",
+      "writer": "StudySessionRepository.complete, AttemptRepository.completeSessionIfTerminal",
+      "backfill": {"restorable": "full", "source": "study_session.local_study_date, distinct, capped at 2"}
+    },
+    {
+      "key": "COMMUNITY_COPY", "chapter": "rhythm", "target": 1, "visibility": "COMMUNITY_CATALOG", "route": "COMMUNITY",
+      "counts": "A copy of someone else's deck (ForkService.copy from a USER source: the catalogue or a public link). The sample deck does not count.",
+      "writer": "ForkService.copy",
+      "backfill": {"restorable": "full", "source": "deck_fork of the owner whose upstream deck is USER and owned by another account"}
+    }
+  ],
+  "routes": {
+    "PROFILE_GOAL": "The goal block of the profile (in-place hint).",
+    "DECKS": "The deck list, the «Новая колода» control (in-place hint).",
+    "STUDY": "The account's most recent deck hub, the study control; the deck list when there is none (in-place hint).",
+    "MATERIAL_NEW": "New material in a USER deck of the account (deck chooser when there are several; the deck list when there is none).",
+    "QUEST_MEDIA": "Side quest «Добавить картинку или звук».",
+    "CAPTURE": "The «На потом» control (in-place hint hint.capture).",
+    "EXERCISE_NEW": "New exercise in a USER deck of the account (deck chooser).",
+    "QUEST_EXPLAIN": "Side quest «Объяснить своими словами».",
+    "QUEST_VOICE": "Side quest «Ответить голосом».",
+    "QUEST_WORKSHOP": "Side quest «Мастерская из заметок «На потом»».",
+    "PROFILE_RHYTHM": "The rhythm block of the profile (OB-401).",
+    "COMMUNITY": "The community catalogue /community."
+  },
+  "notification": {
+    "kind": "PATH_MILESTONE",
+    "severity": "INFO",
+    "route": "PATH",
+    "params": {"key": "a milestone key of this registry", "done": "visible milestones done after this one", "total": "visible milestones"},
+    "dedupeKey": "path:{key}",
+    "when": "Only a LIVE record whose achieved_at was set by this very statement, and only while learning.onboarding.enabled is on. BACKFILL never notifies; a milestone achieved while the flag was off is never announced later."
+  },
+  "examples": {
+    "fresh": {
+      "milestones": [
+        {"key": "GOAL_TOLD", "state": "TODO", "progress": 0, "target": 1, "achievedAt": null},
+        {"key": "FIRST_DECK", "state": "TODO", "progress": 0, "target": 1, "achievedAt": null},
+        {"key": "FIRST_SESSION", "state": "TODO", "progress": 0, "target": 1, "achievedAt": null},
+        {"key": "OWN_MATERIAL", "state": "TODO", "progress": 0, "target": 1, "achievedAt": null},
+        {"key": "MEDIA_IN_MATERIAL", "state": "TODO", "progress": 0, "target": 1, "achievedAt": null},
+        {"key": "CAPTURE_NOTE", "state": "TODO", "progress": 0, "target": 2, "achievedAt": null},
+        {"key": "OWN_EXERCISES", "state": "TODO", "progress": 0, "target": 3, "achievedAt": null},
+        {"key": "TWO_DAYS", "state": "TODO", "progress": 0, "target": 2, "achievedAt": null}
+      ],
+      "path": {"done": 0, "total": 8, "hidden": ["AI_EXPLANATION", "VOICE_ANSWER", "WORKSHOP_APPROVED", "RHYTHM_WEEK", "COMMUNITY_COPY"]}
+    },
+    "midway": {
+      "milestones": [
+        {"key": "GOAL_TOLD", "state": "DONE", "progress": 1, "target": 1, "achievedAt": "2026-10-20T09:01:00Z"},
+        {"key": "FIRST_DECK", "state": "DONE", "progress": 1, "target": 1, "achievedAt": "2026-10-20T09:03:00Z"},
+        {"key": "FIRST_SESSION", "state": "DONE", "progress": 1, "target": 1, "achievedAt": "2026-10-20T09:10:00Z"},
+        {"key": "OWN_MATERIAL", "state": "DONE", "progress": 1, "target": 1, "achievedAt": "2026-10-21T18:00:00Z"},
+        {"key": "MEDIA_IN_MATERIAL", "state": "TODO", "progress": 0, "target": 1, "achievedAt": null},
+        {"key": "CAPTURE_NOTE", "state": "PARTIAL", "progress": 1, "target": 2, "achievedAt": null},
+        {"key": "OWN_EXERCISES", "state": "PARTIAL", "progress": 2, "target": 3, "achievedAt": null},
+        {"key": "AI_EXPLANATION", "state": "TODO", "progress": 0, "target": 1, "achievedAt": null},
+        {"key": "VOICE_ANSWER", "state": "TODO", "progress": 0, "target": 1, "achievedAt": null},
+        {"key": "WORKSHOP_APPROVED", "state": "TODO", "progress": 0, "target": 1, "achievedAt": null},
+        {"key": "TWO_DAYS", "state": "DONE", "progress": 2, "target": 2, "achievedAt": "2026-10-21T18:30:00Z"},
+        {"key": "COMMUNITY_COPY", "state": "TODO", "progress": 0, "target": 1, "achievedAt": null}
+      ],
+      "path": {"done": 5, "total": 12, "hidden": ["RHYTHM_WEEK"]}
+    },
+    "notification": {
+      "notificationId": "0a000000-0000-4000-8000-000000000060",
+      "seq": "61",
+      "kind": "PATH_MILESTONE",
+      "severity": "INFO",
+      "params": {"key": "MEDIA_IN_MATERIAL", "done": 6, "total": 12},
+      "route": "PATH",
+      "createdAt": "2026-10-22T10:00:00Z",
+      "expiresAt": "2026-11-21T10:00:00Z"
+    }
+  },
+  "rules": [
+    "milestones lists the visible milestones in registry order; a hidden one is only named in path.hidden, whatever its stored state, and counts in neither done nor total.",
+    "state: DONE when achievedAt is set, PARTIAL when 0 < progress < target, TODO when there is no row. progress never exceeds target and achievedAt is set once.",
+    "Replaying the tour never resets the path: the rows are facts of the account's history.",
+    "Account purge (#409) deletes account_milestone by account_id."
+  ]
+}

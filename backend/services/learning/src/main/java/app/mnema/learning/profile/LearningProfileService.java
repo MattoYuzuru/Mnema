@@ -2,6 +2,8 @@ package app.mnema.learning.profile;
 
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.community.InterestService;
+import app.mnema.learning.onboarding.MilestoneKey;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,11 +19,13 @@ import java.util.UUID;
 public class LearningProfileService {
     private final LearningProfileRepository repository;
     private final InterestService interests;
+    private final MilestoneRecorder milestones;
 
     @Autowired
-    LearningProfileService(LearningProfileRepository repository, InterestService interests) {
+    LearningProfileService(LearningProfileRepository repository, InterestService interests, MilestoneRecorder milestones) {
         this.repository = repository;
         this.interests = interests;
+        this.milestones = milestones;
     }
 
     @Transactional(readOnly = true)
@@ -37,6 +41,8 @@ public class LearningProfileService {
         interests.lockSignal(owner);
         repository.upsert(owner, goal, repository.now());
         interests.changed(owner);
+        // «Путь Mnema»: telling the goal and the deliberate skip are the same milestone
+        milestones.reach(owner, MilestoneKey.GOAL_TOLD, 1);
         return read(owner);
     }
 

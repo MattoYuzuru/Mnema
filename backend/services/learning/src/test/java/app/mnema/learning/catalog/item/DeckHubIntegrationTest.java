@@ -695,6 +695,7 @@ class DeckHubIntegrationTest extends PostgresIntegrationTest {
     @Autowired private app.mnema.learning.storage.ImmutableStorage storageBean;
     @Autowired private org.springframework.transaction.PlatformTransactionManager transactionBean;
     @Autowired private app.mnema.learning.catalog.content.ItemPreviews previewBean;
+    @Autowired private app.mnema.learning.onboarding.MilestoneRecorder milestoneBean;
 
     private ItemRepository itemRepository() { return repositoryBean; }
 
@@ -702,7 +703,7 @@ class DeckHubIntegrationTest extends PostgresIntegrationTest {
 
     /** A real ItemService whose {@code publish} runs {@code afterPublish} once each publication has committed. */
     private ItemService interfering(Runnable afterPublish) {
-        return new ItemService(repositoryBean, receiptBean, casBean, storageBean, media, transactionBean, previewBean) {
+        return new ItemService(repositoryBean, receiptBean, casBean, storageBean, media, transactionBean, previewBean, milestoneBean) {
             @Override
             public WriteResult publish(UUID owner, UUID deckId, long expected, ItemPublicationCommand command) {
                 WriteResult result = super.publish(owner, deckId, expected, command);

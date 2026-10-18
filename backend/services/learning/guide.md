@@ -2796,3 +2796,50 @@ contract: [`contracts/onboarding`](../../../contracts/onboarding/README.md) (`PO
   replacement is a new deck with a new id and does not update existing copies.
 - Account purge of sample decks, `ONBOARDING_SAMPLE_CHECK` ledger rows and `sample-deck.create` receipts is deferred to #409 (see the TODOs above).
 - V73's two indexes are built without `CONCURRENTLY` (they read `deck` and `usage_ledger_entry` once under the migration's lock); acceptable while the tables are small, so revisit before a large production table.
+
+## Onboarding path milestones (OB-301; migration `V74__account_milestone.sql`)
+
+«Путь Mnema»: a ledger of the facts that make the path, written in the transaction of the domain action that makes each true. Wire contract and registry:
+[`contracts/onboarding/milestones.json`](../../../contracts/onboarding/milestones.json) (and the `milestones`/`path` members of the view in [`contracts/onboarding`](../../../contracts/onboarding/README.md)),
+decision [ADR-ONB-002](../../../docs/engineering/onboarding/adr/adr-onb-002-milestones.md). Package `app.mnema.learning.onboarding`; the writers live in their own domain packages and depend
+on the public `MilestoneRecorder` only.
+
+- **Registry.** `MilestoneKey` is the closed list (13 keys, display order, chapter, target 1..3, visibility, client route key). `MilestoneContractTest` holds the enum, the fixture and the
+  CHECK of `account_milestone.milestone_key` to one list; a new key means the enum, the fixture row, a new migration for the CHECK and a recorder call in its writer.
+- **Ledger.** `account_milestone(account_id, milestone_key, progress, achieved_at, first_at, source)`, primary key `(account_id, milestone_key)`, at most 13 rows per account. `progress` never
+  passes the target; `achieved_at` is the database clock and is written once (when progress reaches the target) and never cleared; `source` is `LIVE` here (`BACKFILL` is OB-302). Rows are written
+  whatever `learning.onboarding.enabled` says and read only while it is on. Purge: TODO(#409) in `MilestoneRepository`, with `onboarding_journey`.
+- **Recorder (`MilestoneRecorder`).** Every method is `@Transactional(MANDATORY)`, one statement per call, no external call: `reach(account, key, level)` (progress = max(old, level) capped at
+  the target: target-1 milestones, the two stages of `CAPTURE_NOTE`, the dates of `TWO_DAYS`), `increment(account, key)` (`OWN_EXERCISES`), `reachInUserDeck(account, deck, key, level)` (the same
+  statement guarded by `EXISTS` of the account's own deck of purpose `USER`, for a writer that has only a deck id) and `sessionCompleted(account, mode, studyDate)`. The statement is an
+  `INSERT ... ON CONFLICT DO UPDATE ... WHERE achieved_at IS NULL AND progress < new RETURNING achieved`: an achieved row, a repeat and a lower level write nothing, so a parallel pair of identical
+  events ends in one row and exactly one statement sees `achieved = true`. A caller that already read the deck's purpose (`ItemRepository.DeckHead`, `ExerciseRepository.DeckHead` now carry
+  `purpose`) calls `reach`/`increment` with no extra query.
+- **Notification.** The recorder remembers what the transaction reached and registers ONE `TransactionSynchronization` (found among the transaction's synchronizations, so a `REQUIRES_NEW`
+  inside the action has its own). In `beforeCommit` (the last write of the transaction, as `NotificationPublisher` asks, whatever order the writers ran in) it publishes one `PATH_MILESTONE` per
+  milestone reached (`path:<key>`, params `key`, `done`, `total`, route `PATH`), with the same `done`/`total` for all of them, only while `learning.onboarding.enabled` is on and never for a
+  milestone the configuration hides. A publisher failure fails the commit (and the action); a rolled-back action publishes nothing. After the commit
+  `mnema_path_milestone_total{key,source="LIVE"}` counts the milestones reached (also for a hidden one, also with the tour off). No log line carries an account or a parameter.
+- **Visibility (`PathVisibility`).** Hidden by the operator's switches, never by a breaker or a budget: `learning.features.ai-assessment.enabled` (`AI_EXPLANATION`),
+  `speech-to-text` (`VOICE_ANSWER`), `ai-generation` (`WORKSHOP_APPROVED`), `learning.community.catalog.enabled` AND at least one listed deck (`COMMUNITY_COPY`; `CatalogAvailability`: one
+  `EXISTS` over the partial index of listed decks, kept per instance for `facets-ttl`, nothing when the catalogue is off), and `RHYTHM_WEEK` always (OB-401 writes it).
+- **View.** `OnboardingService` reads `milestones` and `path` with ONE primary-key range read of the account's rows (`MilestoneRepository.all`) in every view and command answer while the tour is
+  on (`PathState`: visible milestones in registry order, `DONE`/`PARTIAL`/`TODO`, `achievedAt` cut to seconds, `path.hidden` by registry order); the disabled view stays `[]`/`null` and reads nothing.
+  The command receipt stores the view of the first execution, so a replayed command answers its milestones as they were; a `GET` is always current.
+- **Writers** (conditions are the registry's `counts`): `LearningProfileService.answer` (`GOAL_TOLD`); `DeckService.create` and `ForkService.write` (`FIRST_DECK`, any purpose, so the sample deck
+  counts; a relink or an existing copy never reaches `write`); `ForkService.copy` (`COMMUNITY_COPY`, only the public path: the source is somebody else's `USER` deck); `ItemService.apply`
+  (`OWN_MATERIAL` for a create, `MEDIA_IN_MATERIAL` for a create or save with media references, both once per publication and only in a `USER` deck); `CaptureService.create` (stage 1),
+  `.convert` and `.archive(archived=true)` (stage 2, `reachInUserDeck`; the Workshop's archiving goes through the same `archive`); `ExerciseService.apply` (`OWN_EXERCISES` +1 for a new
+  exercise in a `USER` deck); `AssessmentService.resolve` (`AI_EXPLANATION` after the model's grade is concluded, SCHEDULED or PRACTICE; a self-check, an uncertain or unavailable grade
+  never gets there); `SpeechInputWorker.done` (`VOICE_ANSWER`, in the transaction that stores and pays for the transcript); `ReviewService.apply` (`WORKSHOP_APPROVED`, `reachInUserDeck`);
+  `StudySessionRepository.complete` and `AttemptRepository.completeSessionIfTerminal` (`FIRST_SESSION`, `TWO_DAYS` through `sessionCompleted`, in the branch of `DeckEngagement.studied`;
+  the latter gets the mode and date from `RETURNING`).
+- **Session completion cost.** REPLAY: nothing. Otherwise ONE read of the account's two rows (`FIRST_SESSION`, `TWO_DAYS`, primary-key range). After both are achieved that is all. Before: an upsert
+  for each milestone that grows and, only for `TWO_DAYS` below 2, one `EXISTS` of a completed SCHEDULED/PRACTICE session on another `local_study_date` (index range of the account). Measured by
+  `MilestoneHotPathIntegrationTest` (statements counted at the JDBC connection, 300 completions of an account with 2000 sessions): 0 / 1 / 2 / 4 statements for replay / both achieved / second day
+  still missing / first completion; steady state median about 0.26 ms and p95 about 0.35 ms on the local container, against about 0.30 ms for the existing `DeckEngagement.studied` of the same transaction.
+- **Net for a new writer.** `MilestoneInventoryIntegrationTest` lists every mutating route of the live handler mapping and requires each to be classified by the milestones it can write (an empty set
+  is an explicit decision); `MilestoneWriterScanTest` requires the `writer` of every fixture row to exist and call the recorder for its key, and no other class to call it. Real-database tests per
+  writer: `MilestoneWritersIntegrationTest` (positives and the cases that must not count), `MilestoneRecorderIntegrationTest` (saturation, stages, rollback, parallel events, notification order
+  and gate), `MilestoneViewIntegrationTest`, `MilestoneOnboardingOffIntegrationTest`, `AssessmentMilestoneIntegrationTest`, `GenerationMilestoneIntegrationTest`, and assertions in
+  `SpeechInputIntegrationTest` and `CombinedPublicationIntegrationTest` (an accepted update counts nothing for the copy's owner).

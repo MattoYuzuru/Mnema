@@ -1,6 +1,8 @@
 package app.mnema.learning.catalog.authoring;
 
 import app.mnema.learning.fork.ForkGuard;
+import app.mnema.learning.onboarding.MilestoneKey;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
@@ -30,9 +32,12 @@ public class CaptureService {
     private final CanonicalJsonHasher canonical;
     private final AuthoringSettings settings;
     private final ForkGuard forkGuard;
+    private final MilestoneRecorder milestones;
 
     public CaptureService(AuthoringRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                          CaptureItemPublisher items, CanonicalJsonHasher canonical, AuthoringSettings settings, ForkGuard forkGuard) {
+                          CaptureItemPublisher items, CanonicalJsonHasher canonical, AuthoringSettings settings, ForkGuard forkGuard,
+                          MilestoneRecorder milestones) {
+        this.milestones = milestones;
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
@@ -86,6 +91,8 @@ public class CaptureService {
             requireCaptureCapacity(actor, null, bytes(command.source(), command.text()), true);
             UUID id = UuidPolicy.newPortableId();
             repository.insertCapture(id, actor, command, repository.now());
+            // «Путь Mnema»: stage 1 (saved) of the note «На потом», in a deck of the author's own
+            milestones.reachInUserDeck(actor, command.deckId(), MilestoneKey.CAPTURE_NOTE, 1);
             ObjectNode acknowledgement = JsonNodeFactory.instance.objectNode()
                     .put("commandId", command.commandId().toString());
             acknowledgement.set("capture", repository.capture(actor, id).orElseThrow().summary());
@@ -109,9 +116,11 @@ public class CaptureService {
 
     @Transactional(timeout = 10)
     public ObjectNode archive(UUID actor, UUID noteId, long expected, AuthoringCommands.CaptureArchive command) {
-        own(actor, noteId);
+        CaptureRecord note = own(actor, noteId);
         cas.updateOne(expected, () -> repository.archiveCapture(actor, noteId, expected,
                 command.archived(), repository.now()));
+        // «Путь Mnema»: stage 2 (sorted out); the Workshop's archiving of the notes it used goes through here too
+        if (command.archived()) milestones.reachInUserDeck(actor, note.deckId(), MilestoneKey.CAPTURE_NOTE, 2);
         return own(actor, noteId).summary();
     }
 
@@ -175,6 +184,8 @@ public class CaptureService {
         result.set("publication", publication.deepCopy());
         cas.updateOne(expected, () -> repository.convertCapture(actor, noteId, expected, commandId, hash,
                 member, revision, result, repository.now()));
+        // «Путь Mnema»: stage 2 (sorted out) by turning the note into a material, in the transaction of the publication
+        milestones.reachInUserDeck(actor, note.deckId(), MilestoneKey.CAPTURE_NOTE, 2);
         return true;
     }
 

@@ -10,6 +10,8 @@ import tools.jackson.databind.node.ObjectNode;
 import java.io.ByteArrayInputStream;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +25,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** The Java side of {@code contracts/onboarding/journey.json}: the step registry, the transition table, the views and the command parser all equal the fixture. */
 class OnboardingContractTest {
     private static final Instant OFFERED_AT = Instant.parse("2026-10-20T09:00:00Z");
+    /** The path of an account with no record when the default configuration hides what it hides (the AI capabilities and the catalogue are off): the fixture's {@code fresh}. */
+    private static final PathState FRESH = PathState.of(Map.of(), EnumSet.of(MilestoneKey.AI_EXPLANATION, MilestoneKey.VOICE_ANSWER, MilestoneKey.WORKSHOP_APPROVED,
+            MilestoneKey.RHYTHM_WEEK, MilestoneKey.COMMUNITY_COPY));
 
     @Test
     void theStepRegistryIsTheFixtureRegistryInOrder() {
@@ -73,21 +78,68 @@ class OnboardingContractTest {
     void theViewsAreTheFixtureViews() {
         JsonNode views = CONTRACT.path("views");
         SampleDeckState none = SampleDeckState.unavailable(3);
-        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.TOUR, JourneyState.OFFERED, null, null, null, null, 0), none)).isEqualTo(views.path("offered"));
-        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0), none)).isEqualTo(views.path("holdout"));
-        assertThat(OnboardingView.notOffered(none)).isEqualTo(views.path("notOffered"));
+        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.TOUR, JourneyState.OFFERED, null, null, null, null, 0), none, FRESH)).isEqualTo(views.path("offered"));
+        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0), none, FRESH)).isEqualTo(views.path("holdout"));
+        assertThat(OnboardingView.notOffered(none, FRESH)).isEqualTo(views.path("notOffered"));
         assertThat(OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.PAUSED, OnboardingRepository.Cohort.TOUR, JourneyBranch.OWN, "own.material",
-                OnboardingRepository.Experience.NEW, 3, OFFERED_AT, null, 0, 7), none)).isEqualTo(views.path("paused"));
+                OnboardingRepository.Experience.NEW, 3, OFFERED_AT, null, 0, 7), none, FRESH)).isEqualTo(views.path("paused"));
         assertThat(OnboardingView.disabled(3)).isEqualTo(views.path("disabled"));
         // a sample deck that is ready, with its copy and two of the three free checks left
         SampleDeckState ready = new SampleDeckState(true, UUID.fromString("33333333-3333-4333-8333-333333333333"), false, 2);
         assertThat(OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.IN_PROGRESS, OnboardingRepository.Cohort.TOUR, JourneyBranch.SAMPLE, "sample.hub",
-                null, null, OFFERED_AT, null, 0, 6), ready)).isEqualTo(views.path("sampleReady"));
+                null, null, OFFERED_AT, null, 0, 6), ready, FRESH)).isEqualTo(views.path("sampleReady"));
+    }
+
+    @Test
+    void theMidwayPathViewIsTheFixtureViewForAnAccountThatIsFarAlong() {
+        JsonNode midway = CONTRACT.path("views").path("pathMidway");
+        Map<MilestoneKey, MilestoneRepository.Row> records = new EnumMap<>(MilestoneKey.class);
+        midway.path("milestones").forEach(milestone -> {
+            int progress = milestone.path("progress").intValue();
+            if (progress == 0) return;
+            String achieved = milestone.path("achievedAt").stringValue(null);
+            records.put(MilestoneKey.valueOf(milestone.path("key").stringValue()), new MilestoneRepository.Row(progress, achieved == null ? null : Instant.parse(achieved)));
+        });
+        // every capability and the catalogue are on; only the rhythm, which nothing writes yet, is hidden
+        PathState path = PathState.of(records, EnumSet.of(MilestoneKey.RHYTHM_WEEK));
+        OnboardingRepository.Row journey = new OnboardingRepository.Row(1, JourneyState.COMPLETED, OnboardingRepository.Cohort.TOUR, JourneyBranch.OWN, "finale.done",
+                OnboardingRepository.Experience.NEW, 3, OFFERED_AT, Instant.parse("2026-10-20T09:12:00Z"), 0, 9);
+        assertThat(OnboardingView.of(journey, SampleDeckState.unavailable(3), path)).isEqualTo(midway);
+        assertThat(path.done()).isEqualTo(5);
+        assertThat(path.total()).isEqualTo(12);
+    }
+
+    @Test
+    void aHiddenMilestoneIsOnlyNamedAndCountsInNeitherDoneNorTotalWhateverItsStoredState() {
+        Map<MilestoneKey, MilestoneRepository.Row> records = new EnumMap<>(MilestoneKey.class);
+        records.put(MilestoneKey.COMMUNITY_COPY, new MilestoneRepository.Row(1, Instant.parse("2026-10-21T10:00:00Z")));
+        records.put(MilestoneKey.GOAL_TOLD, new MilestoneRepository.Row(1, Instant.parse("2026-10-21T10:00:00Z")));
+        PathState path = PathState.of(records, EnumSet.of(MilestoneKey.COMMUNITY_COPY));
+        assertThat(path.done()).isOne();
+        assertThat(path.total()).isEqualTo(12);
+        assertThat(path.hidden()).containsExactly(MilestoneKey.COMMUNITY_COPY);
+        assertThat(path.milestones()).extracting(PathState.Milestone::key).doesNotContain(MilestoneKey.COMMUNITY_COPY);
+    }
+
+    @Test
+    void aMilestoneBelowItsTargetIsPartialAndANeverWrittenOneIsTodoWithZeroProgress() {
+        Map<MilestoneKey, MilestoneRepository.Row> records = new EnumMap<>(MilestoneKey.class);
+        records.put(MilestoneKey.OWN_EXERCISES, new MilestoneRepository.Row(2, null));
+        records.put(MilestoneKey.TWO_DAYS, new MilestoneRepository.Row(2, Instant.parse("2026-10-21T10:00:00.789Z")));
+        PathState path = PathState.of(records, EnumSet.noneOf(MilestoneKey.class));
+        assertThat(path.milestones()).filteredOn(m -> m.key() == MilestoneKey.OWN_EXERCISES).singleElement()
+                .satisfies(m -> { assertThat(m.state()).isEqualTo(PathState.State.PARTIAL); assertThat(m.progress()).isEqualTo(2); assertThat(m.achievedAt()).isNull(); });
+        assertThat(path.milestones()).filteredOn(m -> m.key() == MilestoneKey.GOAL_TOLD).singleElement()
+                .satisfies(m -> { assertThat(m.state()).isEqualTo(PathState.State.TODO); assertThat(m.progress()).isZero(); });
+        // the time is cut to whole seconds in the view like every other time of the contract
+        JsonNode view = OnboardingView.notOffered(SampleDeckState.unavailable(3), path);
+        assertThat(view.path("milestones").get(MilestoneKey.TWO_DAYS.ordinal()).path("achievedAt").stringValue()).isEqualTo("2026-10-21T10:00:00Z");
+        assertThat(view.path("path").path("hidden")).isEmpty();
     }
 
     @Test
     void theSampleDeckMemberCarriesEveryFieldOfTheFixtureAndTheUpdateFlag() {
-        JsonNode update = OnboardingView.notOffered(new SampleDeckState(true, UUID.randomUUID(), true, 0)).path("sampleDeck");
+        JsonNode update = OnboardingView.notOffered(new SampleDeckState(true, UUID.randomUUID(), true, 0), FRESH).path("sampleDeck");
         assertThat(members(update)).containsExactlyInAnyOrder("available", "deckId", "updateAvailable", "freeChecksLeft");
         assertThat(update.path("updateAvailable").booleanValue()).isTrue();
         assertThat(update.path("freeChecksLeft").intValue()).isZero();
@@ -148,16 +200,16 @@ class OnboardingContractTest {
 
     @Test
     void anUnassignedAccountIsEligibleAndAutoOfferedButAHeldOutOneIsNot() {
-        JsonNode unassigned = OnboardingView.of(row(OnboardingRepository.Cohort.UNASSIGNED, JourneyState.OFFERED, null, null, null, null, 0), SampleDeckState.unavailable(3)).path("journey");
+        JsonNode unassigned = OnboardingView.of(row(OnboardingRepository.Cohort.UNASSIGNED, JourneyState.OFFERED, null, null, null, null, 0), SampleDeckState.unavailable(3), FRESH).path("journey");
         assertThat(unassigned.path("eligible").booleanValue()).isTrue();
         assertThat(unassigned.path("autoOffer").booleanValue()).isTrue();
-        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0), SampleDeckState.unavailable(3)).path("journey").path("autoOffer").booleanValue()).isFalse();
+        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0), SampleDeckState.unavailable(3), FRESH).path("journey").path("autoOffer").booleanValue()).isFalse();
     }
 
     @Test
     void aRowCreatedByReplayIsNotEligibleAndNeverAutoOffered() {
         ObjectNode journey = (ObjectNode) OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.OFFERED, null, null, null, null, null, OFFERED_AT, null, 1, 0),
-                SampleDeckState.unavailable(3)).path("journey");
+                SampleDeckState.unavailable(3), FRESH).path("journey");
         assertThat(journey.path("eligible").booleanValue()).isFalse();
         assertThat(journey.path("autoOffer").booleanValue()).isFalse();
     }

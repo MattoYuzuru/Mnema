@@ -123,6 +123,11 @@ class CatalogQueries {
 
     // ---- facets ----
 
+    /** Whether at least one deck is listed: one probe of the partial index of listed decks. */
+    boolean anyListed() {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.public_deck WHERE listed)").query(Boolean.class).single();
+    }
+
     /** One pass over the listed rows: grouping sets for the topics, the target languages, the levels and the total. */
     Counted counts() {
         Map<String, Integer> topics = new LinkedHashMap<>();

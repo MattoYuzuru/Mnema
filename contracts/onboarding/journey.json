@@ -236,8 +236,75 @@
         "replayCount": 0,
         "rowVersion": "0"
       },
-      "milestones": [],
-      "path": null,
+      "milestones": [
+        {
+          "key": "GOAL_TOLD",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "FIRST_DECK",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "FIRST_SESSION",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "MEDIA_IN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "CAPTURE_NOTE",
+          "state": "TODO",
+          "progress": 0,
+          "target": 2,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_EXERCISES",
+          "state": "TODO",
+          "progress": 0,
+          "target": 3,
+          "achievedAt": null
+        },
+        {
+          "key": "TWO_DAYS",
+          "state": "TODO",
+          "progress": 0,
+          "target": 2,
+          "achievedAt": null
+        }
+      ],
+      "path": {
+        "done": 0,
+        "total": 8,
+        "hidden": [
+          "AI_EXPLANATION",
+          "VOICE_ANSWER",
+          "WORKSHOP_APPROVED",
+          "RHYTHM_WEEK",
+          "COMMUNITY_COPY"
+        ]
+      },
       "rhythm": null,
       "sampleDeck": {
         "available": false,
@@ -262,8 +329,75 @@
         "replayCount": 0,
         "rowVersion": "0"
       },
-      "milestones": [],
-      "path": null,
+      "milestones": [
+        {
+          "key": "GOAL_TOLD",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "FIRST_DECK",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "FIRST_SESSION",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "MEDIA_IN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "CAPTURE_NOTE",
+          "state": "TODO",
+          "progress": 0,
+          "target": 2,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_EXERCISES",
+          "state": "TODO",
+          "progress": 0,
+          "target": 3,
+          "achievedAt": null
+        },
+        {
+          "key": "TWO_DAYS",
+          "state": "TODO",
+          "progress": 0,
+          "target": 2,
+          "achievedAt": null
+        }
+      ],
+      "path": {
+        "done": 0,
+        "total": 8,
+        "hidden": [
+          "AI_EXPLANATION",
+          "VOICE_ANSWER",
+          "WORKSHOP_APPROVED",
+          "RHYTHM_WEEK",
+          "COMMUNITY_COPY"
+        ]
+      },
       "rhythm": null,
       "sampleDeck": {
         "available": false,
@@ -288,8 +422,75 @@
         "replayCount": 0,
         "rowVersion": "0"
       },
-      "milestones": [],
-      "path": null,
+      "milestones": [
+        {
+          "key": "GOAL_TOLD",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "FIRST_DECK",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "FIRST_SESSION",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "MEDIA_IN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "CAPTURE_NOTE",
+          "state": "TODO",
+          "progress": 0,
+          "target": 2,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_EXERCISES",
+          "state": "TODO",
+          "progress": 0,
+          "target": 3,
+          "achievedAt": null
+        },
+        {
+          "key": "TWO_DAYS",
+          "state": "TODO",
+          "progress": 0,
+          "target": 2,
+          "achievedAt": null
+        }
+      ],
+      "path": {
+        "done": 0,
+        "total": 8,
+        "hidden": [
+          "AI_EXPLANATION",
+          "VOICE_ANSWER",
+          "WORKSHOP_APPROVED",
+          "RHYTHM_WEEK",
+          "COMMUNITY_COPY"
+        ]
+      },
       "rhythm": null,
       "sampleDeck": {
         "available": false,
@@ -314,8 +515,75 @@
         "replayCount": 0,
         "rowVersion": "7"
       },
-      "milestones": [],
-      "path": null,
+      "milestones": [
+        {
+          "key": "GOAL_TOLD",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "FIRST_DECK",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "FIRST_SESSION",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "MEDIA_IN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "CAPTURE_NOTE",
+          "state": "TODO",
+          "progress": 0,
+          "target": 2,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_EXERCISES",
+          "state": "TODO",
+          "progress": 0,
+          "target": 3,
+          "achievedAt": null
+        },
+        {
+          "key": "TWO_DAYS",
+          "state": "TODO",
+          "progress": 0,
+          "target": 2,
+          "achievedAt": null
+        }
+      ],
+      "path": {
+        "done": 0,
+        "total": 8,
+        "hidden": [
+          "AI_EXPLANATION",
+          "VOICE_ANSWER",
+          "WORKSHOP_APPROVED",
+          "RHYTHM_WEEK",
+          "COMMUNITY_COPY"
+        ]
+      },
       "rhythm": null,
       "sampleDeck": {
         "available": false,
@@ -353,14 +621,198 @@
         "replayCount": 0,
         "rowVersion": "6"
       },
-      "milestones": [],
-      "path": null,
+      "milestones": [
+        {
+          "key": "GOAL_TOLD",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "FIRST_DECK",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "FIRST_SESSION",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "MEDIA_IN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "CAPTURE_NOTE",
+          "state": "TODO",
+          "progress": 0,
+          "target": 2,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_EXERCISES",
+          "state": "TODO",
+          "progress": 0,
+          "target": 3,
+          "achievedAt": null
+        },
+        {
+          "key": "TWO_DAYS",
+          "state": "TODO",
+          "progress": 0,
+          "target": 2,
+          "achievedAt": null
+        }
+      ],
+      "path": {
+        "done": 0,
+        "total": 8,
+        "hidden": [
+          "AI_EXPLANATION",
+          "VOICE_ANSWER",
+          "WORKSHOP_APPROVED",
+          "RHYTHM_WEEK",
+          "COMMUNITY_COPY"
+        ]
+      },
       "rhythm": null,
       "sampleDeck": {
         "available": true,
         "deckId": "33333333-3333-4333-8333-333333333333",
         "updateAvailable": false,
         "freeChecksLeft": 2
+      }
+    },
+    "pathMidway": {
+      "enabled": true,
+      "journey": {
+        "state": "COMPLETED",
+        "eligible": true,
+        "autoOffer": false,
+        "tourVersion": 1,
+        "branch": "OWN",
+        "stepKey": "finale.done",
+        "experience": "NEW",
+        "weeklyTarget": 3,
+        "offeredAt": "2026-10-20T09:00:00Z",
+        "finishedAt": "2026-10-20T09:12:00Z",
+        "replayCount": 0,
+        "rowVersion": "9"
+      },
+      "milestones": [
+        {
+          "key": "GOAL_TOLD",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-10-20T09:01:00Z"
+        },
+        {
+          "key": "FIRST_DECK",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-10-20T09:03:00Z"
+        },
+        {
+          "key": "FIRST_SESSION",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-10-20T09:10:00Z"
+        },
+        {
+          "key": "OWN_MATERIAL",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-10-21T18:00:00Z"
+        },
+        {
+          "key": "MEDIA_IN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "CAPTURE_NOTE",
+          "state": "PARTIAL",
+          "progress": 1,
+          "target": 2,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_EXERCISES",
+          "state": "PARTIAL",
+          "progress": 2,
+          "target": 3,
+          "achievedAt": null
+        },
+        {
+          "key": "AI_EXPLANATION",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "VOICE_ANSWER",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "WORKSHOP_APPROVED",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "TWO_DAYS",
+          "state": "DONE",
+          "progress": 2,
+          "target": 2,
+          "achievedAt": "2026-10-21T18:30:00Z"
+        },
+        {
+          "key": "COMMUNITY_COPY",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        }
+      ],
+      "path": {
+        "done": 5,
+        "total": 12,
+        "hidden": [
+          "RHYTHM_WEEK"
+        ]
+      },
+      "rhythm": null,
+      "sampleDeck": {
+        "available": false,
+        "deckId": null,
+        "updateAvailable": false,
+        "freeChecksLeft": 3
       }
     }
   },
