@@ -74,6 +74,11 @@ class OnboardingBackfillSemanticsIntegrationTest extends SampleDeckIntegrationTe
         return issued.getFirst().session();
     }
 
+    /** The local study date the application stored for {@code session}: «another day» is counted from it, never from the JVM's clock (another time zone near midnight). */
+    private LocalDate studyDateOf(UUID session) {
+        return jdbc.sql("SELECT local_study_date FROM app_learning.study_session WHERE session_id = :s").param("s", session).query(LocalDate.class).single();
+    }
+
     private void completedOn(UUID session, LocalDate date, String mode) {
         String columns = jdbc.sql("SELECT column_name FROM information_schema.columns WHERE table_schema = 'app_learning' AND table_name = 'study_session' ORDER BY ordinal_position")
                 .query(String.class).list().stream().collect(Collectors.joining(","));
@@ -89,7 +94,7 @@ class OnboardingBackfillSemanticsIntegrationTest extends SampleDeckIntegrationTe
                 }).collect(Collectors.joining(","));
         jdbc.sql("INSERT INTO app_learning.study_session(" + columns + ") SELECT " + selected + " FROM app_learning.study_session WHERE session_id = :source")
                 .param("id", UUID.randomUUID()).param("command", UUID.randomUUID()).param("date", date).param("mode", mode).param("source", session)
-                .param("shift", (int) java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), date)).update();
+                .param("shift", (int) java.time.temporal.ChronoUnit.DAYS.between(studyDateOf(session), date)).update();
     }
 
     private UUID image(UUID owner) {
@@ -160,14 +165,14 @@ class OnboardingBackfillSemanticsIntegrationTest extends SampleDeckIntegrationTe
         assertThat(one.get(MilestoneKey.TWO_DAYS).achievedAt()).as("one study day is progress, not the milestone").isNull();
 
         // a practice session on another day, and a third day: the second distinct date makes the milestone, a third changes nothing
-        completedOn(scheduled, LocalDate.now().minusDays(1), "PRACTICE");
+        completedOn(scheduled, studyDateOf(scheduled).minusDays(1), "PRACTICE");
         Map<MilestoneKey, Stored> two = history(learner);
         assertThat(two.get(MilestoneKey.TWO_DAYS).progress()).isEqualTo(2);
         Instant second = two.get(MilestoneKey.TWO_DAYS).achievedAt();
         assertThat(second).isNotNull();
         // the second date to appear is the later of the two completions (the clone of "yesterday" completed a day earlier than the original)
         assertThat(second).isEqualTo(instant("SELECT max(completed_at) FROM app_learning.study_session WHERE account_id = :a", learner));
-        completedOn(scheduled, LocalDate.now().minusDays(5), "SCHEDULED");
+        completedOn(scheduled, studyDateOf(scheduled).minusDays(5), "SCHEDULED");
         assertThat(history(learner).get(MilestoneKey.TWO_DAYS).progress()).isEqualTo(2);
 
         // a replay never counts; the sessions that are not complete do not either

@@ -68,6 +68,11 @@ class MilestoneWritersIntegrationTest extends SampleDeckIntegrationTest {
         return session;
     }
 
+    /** The local study date the application stored for {@code session}: «another day» is counted from it, never from the JVM's clock (another time zone near midnight). */
+    private LocalDate studyDateOf(UUID session) {
+        return jdbc.sql("SELECT local_study_date FROM app_learning.study_session WHERE session_id = :s").param("s", session).query(LocalDate.class).single();
+    }
+
     /** A COMPLETE copy of a session row with another id, local date and mode, as a study on another day would be. */
     private void completedOn(UUID session, LocalDate date, String mode) {
         String columns = jdbc.sql("SELECT column_name FROM information_schema.columns WHERE table_schema = 'app_learning' AND table_name = 'study_session' ORDER BY ordinal_position")
@@ -213,7 +218,7 @@ class MilestoneWritersIntegrationTest extends SampleDeckIntegrationTest {
         assertThat(rows(learner).get(MilestoneKey.FIRST_SESSION)).isEqualTo(first);
         assertThat(rows(learner).get(MilestoneKey.TWO_DAYS).progress()).isOne();
         // a study on another day (the previous one, as the clock of the database has it) and then a session today reach the second date
-        completedOn(session, LocalDate.now().minusDays(1), "SCHEDULED");
+        completedOn(session, studyDateOf(session).minusDays(1), "SCHEDULED");
         study(material, "PRACTICE", null);
         Stored days = rows(learner).get(MilestoneKey.TWO_DAYS);
         assertThat(days.progress()).isEqualTo(2);

@@ -89,7 +89,19 @@ artifact:
 
 ## Результаты gate
 
-См. раздел ниже (заполнен после прогона на точном коммите).
+Команда: `python3 scripts/checks.py run` (кандидат в отдельном worktree, `agent-dev` под блокировкой `heavy`, JDK 25.0.4.1, Node 24.21.0,
+Colima), затем `python3 scripts/checks.py verify`. Прогоны S3:
+
+| Кандидат | Итог | Что нашёл |
+|---|---|---|
+| c9b30a26 | 7 из 8 проверок passed (docs, automation-policy, frontend-static, delivery-contracts, frontend-tests, backend-runtime, backend-security); `backend-quality` failed: 3385 тестов, 1 падение | `DeckEngagementIntegrationTest.theHotPathProbesTwoPrimaryKeysAndNothingElse`: на крошечной таблице новый частичный индекс V74 конкурировал с PK; тест уже убирал `study_session_resume` по той же причине — убирает и новый (73de065b) |
+| 73de065b | `backend-quality` failed: 3385 тестов, 2 падения (прогон пересёк полночь по Москве) | Два теста TWO_DAYS считали «вчера» через `LocalDate.now()` JVM (+03:00), а дата занятия у приложения — UTC; «другой день» теперь от сохранённой `local_study_date` занятия. Дефект тестов, не кода |
+| HEAD этого PR | см. описание PR (`checks.py run` + `verify` на точном коммите перед push) | — |
+
+Существенные предупреждения: сборка frontend — «is not ESM» из `mermaid` (как в main); backend — пропущено 24 opt-in теста по
+инвентарю (live/eval и новый `MilestoneHotPathEvidenceTest`). Покрытие — пороги `coverage-baseline.json` выполнены в обоих прогонах
+(frontend-tests passed; backend-quality падал только на тестах выше). Harness `--onboarding` — зелёный на коде f13283f5 (кроме тестов
+изменения те же).
 
 ## Миграции и rollback
 
