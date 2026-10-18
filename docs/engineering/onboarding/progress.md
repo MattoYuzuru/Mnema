@@ -5,7 +5,7 @@ artifact:
   title: "Onboarding: progress ledger and handoff index"
   status: current
   created_at: "2026-10-14"
-  updated_at: "2026-10-17"
+  updated_at: "2026-10-18"
   owners: ["project-owner"]
 ---
 
@@ -22,11 +22,14 @@ artifact:
 | Поле | Значение |
 |---|---|
 | Пакет документов | `docs/engineering/onboarding/` (в main) |
-| Ветка реализации | `feat/517-onboarding` влита в main squash-коммитом 1e4f764e (MattoYuzuru/Mnema#554, 2026-10-17), за выключенными флагами; E3/E4 — новой веткой от main |
-| База ветки | `origin/main` 42e35d0f (S0), в S1 влит `origin/main` b6f14df8 (a29b7301, 2026-10-16) |
-| Последний handoff | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) (ветка не запушена: PR #554 показывает только S0) |
+| Ветка реализации | E1/E2: `feat/517-onboarding` влита в main squash-коммитом 1e4f764e (MattoYuzuru/Mnema#554, 2026-10-17) за выключенными флагами, ветка удалена. E3: `feat/531-onboarding-path` от `origin/main` 5c432a9b (S3) |
+| База ветки | E1/E2: `origin/main` 42e35d0f (S0) + b6f14df8 (S1). E3: 5c432a9b (после #557, #497–#499, #555, #559, #560) |
+| Последний handoff | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md); S2 запушена и влита в #554 (1e4f764e) — пометка «ветка не запушена» в S2 устарела |
 
 ## Статус задач
+
+Коммиты в столбце «Commit» для OB-0xx…OB-2xx — исходные коммиты ветки `feat/517-onboarding`; в main они входят одним
+squash-коммитом 1e4f764e (ветка удалена после merge, исходные SHA в истории main не встречаются).
 
 | ID | Статус | Commit | Evidence / handoff | Заметки |
 |---|---|---|---|---|
