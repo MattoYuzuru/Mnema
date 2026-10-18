@@ -47,10 +47,12 @@ public class OnboardingService {
     private final CommandReceiptService receipts;
     private final MeterRegistry meters;
     private final SampleDeckService samples;
+    private final MilestoneRepository milestones;
+    private final PathVisibility visibility;
 
     @Autowired
     OnboardingService(OnboardingRepository repository, OnboardingSettings settings, ExperimentAssignments assignments, ExperimentEvents experimentEvents,
-                      CommandReceiptService receipts, MeterRegistry meters, SampleDeckService samples) {
+                      CommandReceiptService receipts, MeterRegistry meters, SampleDeckService samples, MilestoneRepository milestones, PathVisibility visibility) {
         this.repository = repository;
         this.settings = settings;
         this.assignments = assignments;
@@ -58,6 +60,8 @@ public class OnboardingService {
         this.receipts = receipts;
         this.meters = meters;
         this.samples = samples;
+        this.milestones = milestones;
+        this.visibility = visibility;
     }
 
     /**
@@ -84,7 +88,13 @@ public class OnboardingService {
 
     private ObjectNode view(UUID account, Optional<OnboardingRepository.Row> row) {
         SampleDeckState sample = samples.state(account);
-        return row.map(found -> OnboardingView.of(found, sample)).orElseGet(() -> OnboardingView.notOffered(sample));
+        PathState path = path(account);
+        return row.map(found -> OnboardingView.of(found, sample, path)).orElseGet(() -> OnboardingView.notOffered(sample, path));
+    }
+
+    /** The «Путь» of the account: one primary-key range read of its records, over the milestones the configuration shows. */
+    private PathState path(UUID account) {
+        return PathState.of(milestones.all(account), visibility.hidden());
     }
 
     /**
@@ -220,7 +230,7 @@ public class OnboardingService {
                     replay ? Math.min(row.replayCount() + 1, MAX_REPLAYS) : row.replayCount(), row.rowVersion());
             if (!repository.update(account, next, command.rowVersion(), now)) throw new VersionConflictException();
         }
-        return OnboardingView.of(repository.find(account).orElseThrow(), samples.state(account));
+        return OnboardingView.of(repository.find(account).orElseThrow(), samples.state(account), path(account));
     }
 
     private ObjectNode applyPreferences(UUID account, OnboardingCommands.Preferences command) {
@@ -234,6 +244,6 @@ public class OnboardingService {
                 command.setWeeklyTarget() ? command.weeklyTarget() : row.weeklyTarget(), row.offeredAt(), row.finishedAt(), row.replayCount(),
                 row.rowVersion());
         if (!repository.update(account, next, command.rowVersion(), repository.now())) throw new VersionConflictException();
-        return OnboardingView.of(repository.find(account).orElseThrow(), samples.state(account));
+        return OnboardingView.of(repository.find(account).orElseThrow(), samples.state(account), path(account));
     }
 }

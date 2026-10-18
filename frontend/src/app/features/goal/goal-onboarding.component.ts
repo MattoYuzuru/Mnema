@@ -15,11 +15,11 @@ import { SegmentedChoiceComponent } from '../../shared/segmented-choice.componen
 let nextOnboarding = 0;
 
 /**
- * The only places the question appears: the deck list, the profile and the plans page. An allowlist, not a blocklist:
+ * The only places the question appears: the deck list and the plans page (the profile has its own «Цель» block). An allowlist, not a blocklist:
  * every other route (authoring, capture, the workshop, the study session, privacy and terms, the home page, sign-in and
  * any page added later) stays free of it by default. Query and fragment are ignored; a deeper path is not the list.
  */
-const ONBOARDING_PATHS: ReadonlySet<string> = new Set(['/decks', '/profile', '/plans']);
+const ONBOARDING_PATHS: ReadonlySet<string> = new Set(['/decks', '/plans']);
 
 export function onboardingSuppressed(url: string): boolean {
     const path = url.split(/[?#]/u)[0].replace(/\/+$/u, '');

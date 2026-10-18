@@ -44,5 +44,5 @@ public final class ForkSettings {
     }
 
     /** Whether the creation route exists: its own switch AND the public routes' switch are on (otherwise 404 as if absent, before anything is read). */
-    boolean creation() { return enabled && publicRoutes; }
+    public boolean creation() { return enabled && publicRoutes; }
 }

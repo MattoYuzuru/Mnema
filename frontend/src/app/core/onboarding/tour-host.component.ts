@@ -5,6 +5,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, afterRenderEffect, comp
 import { TourCardComponent } from '../../shared/tour-card.component';
 import { TourPauseComponent } from '../../shared/tour-pause.component';
 import { TourScrimComponent } from '../../shared/tour-scrim.component';
+import { onboardingText } from './onboarding-texts';
 import { currentUrl, isStudyUrl } from './study-route';
 import { Box, CardPlacement, Point, Size, cutoutBox, isBottomSheet, makeRoomDelta, placeCard, revealDelta, sameBox } from './tour-geometry';
 import { TourEngine } from './tour-engine.service';
@@ -26,11 +27,11 @@ import { TourStep, isActionGate } from './tour.models';
       @if (shown(); as step) {
         <app-tour-scrim [viewport]="viewport()" [hole]="hole()" [radius]="radius()" />
         <app-tour-card [position]="engine.index() + 1" [total]="engine.total()" [title]="step.title" [body]="step.body" [gate]="step.gate"
-          [mode]="mode()" [canBack]="engine.canGoBack()" [modal]="modal()" [sheet]="sheet()" [at]="at()"
-          (back)="engine.back()" (next)="engine.next()" (finish)="engine.finish()" (pauseRequest)="engine.pause()" />
+          [mode]="mode()" [canBack]="engine.canGoBack()" [modal]="modal()" [sheet]="sheet()" [at]="at()" [leaveLabel]="engine.isQuest() ? leaveLabel : null"
+          (back)="engine.back()" (next)="engine.next()" (finish)="engine.finish()" (leave)="engine.stop()" (pauseRequest)="engine.pause()" />
       }
       @if (engine.active() && engine.paused() && !studying()) {
-        <app-tour-pause (resumed)="engine.resume()" />
+        <app-tour-pause [quest]="engine.isQuest()" (resumed)="engine.resume()" />
       }
     `,
     styles: [`:host { display: contents; }`],
@@ -38,6 +39,7 @@ import { TourStep, isActionGate } from './tour.models';
 })
 export class TourHostComponent {
     protected readonly engine = inject(TourEngine);
+    protected readonly leaveLabel = onboardingText('quest.leave');
     private readonly document = inject(DOCUMENT);
     private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly card = viewChild(TourCardComponent);

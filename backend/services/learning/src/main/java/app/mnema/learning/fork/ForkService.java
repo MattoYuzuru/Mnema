@@ -12,6 +12,8 @@ import app.mnema.learning.library.DeckPurposeGuard;
 import app.mnema.learning.library.Denial;
 import app.mnema.learning.library.Resolution;
 import app.mnema.learning.library.Viewer;
+import app.mnema.learning.onboarding.MilestoneKey;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.platform.api.CapabilityUnavailableException;
 import app.mnema.learning.platform.api.ProblemExtension;
 import app.mnema.learning.platform.api.RateLimitedException;
@@ -65,10 +67,11 @@ public class ForkService {
     private final CatalogEvents events;
     private final InterestService interests;
     private final DeckPurposeGuard purposes;
+    private final MilestoneRecorder milestones;
 
     ForkService(ForkRepository repository, ForkSettings settings, DeckAccess access, CommandReceiptService receipts, ImmutableStorage storage,
                 LearningJobs jobs, MeterRegistry meters, DeckEngagement engagement, CatalogEvents events, InterestService interests,
-                DeckPurposeGuard purposes) {
+                DeckPurposeGuard purposes, MilestoneRecorder milestones) {
         this.repository = repository;
         this.settings = settings;
         this.access = access;
@@ -80,6 +83,7 @@ public class ForkService {
         this.events = events;
         this.interests = interests;
         this.purposes = purposes;
+        this.milestones = milestones;
     }
 
     /** The acknowledgement of a copy command; {@code replayed} is an exact retry of an earlier command. */
@@ -133,6 +137,8 @@ public class ForkService {
             return acknowledgement(command, live.get().deckId(), live.get().preparing(), true);
         }
         UUID deck = write(actor, command.commandId(), source.deckId(), source.scopeId(), command.sourceCode(), frozen, signals, DeckPurpose.USER);
+        // «Путь Mnema»: the source is somebody else's deck of purpose USER (the guard above, FORK_OWN_DECK), so this is the community copy; the sample template takes copyTemplate
+        milestones.reach(actor, MilestoneKey.COMMUNITY_COPY, 1);
         return acknowledgement(command, deck, true, false);
     }
 
@@ -175,6 +181,8 @@ public class ForkService {
         // Community/3: the metric of the direct source, in this very transaction (the first copy of an account counts; the owner never does).
         engagement.forked(sourceDeck, actor, signals);
         events.forked(actor, sourceDeck);
+        // «Путь Mnema»: a new deck of the account, whatever its purpose (the sample deck counts); a relink or an existing copy never gets here
+        milestones.reach(actor, MilestoneKey.FIRST_DECK, 1);
         meters.counter("mnema_deck_forks_total", "outcome", "created").increment();
         return deck;
     }

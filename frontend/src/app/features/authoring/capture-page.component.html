@@ -7,7 +7,7 @@
     <form class="paper-surface" [formGroup]="form" (ngSubmit)="capture()">
       <div class="field"><label for="capture-text">Заметка</label><textarea #noteField id="capture-text" maxlength="32768" formControlName="text" [readonly]="recovery() === 'retry'" placeholder="Что важно не потерять?" aria-describedby="capture-help capture-error"></textarea>
         <p class="muted" id="capture-help">Пробелы без текста не сохраняются.</p>
-        @if (speechAvailable()) { <app-mic-button purpose="CAPTURE" [deckId]="deck()?.deckId ?? null" [field]="noteTarget" /> }
+        @if (speechAvailable()) { <app-mic-button mnTourAnchor="capture.mic" purpose="CAPTURE" [deckId]="deck()?.deckId ?? null" [field]="noteTarget" /> }
         @if (form.controls.text.dirty && form.controls.text.invalid) { <p id="capture-error" class="field-error">Введите текст или сократите заметку.</p> }
       </div>
       <div class="actions"><button class="button primary" type="submit" [disabled]="busy() || form.invalid || recovery() === 'retry'">{{ busy() ? 'Сохраняем…' : 'Сохранить на потом' }}</button></div>
@@ -22,7 +22,7 @@
       <!-- The one status region of the selection: it speaks only when a pick is refused or cut short. -->
       <p class="selection-limit" role="status">{{ limitText() }}</p>
     }
-    <ul #captureRows class="capture-list">
+    <ul #captureRows class="capture-list" mnTourAnchor="capture.notes">
       @for (note of notes(); track note.noteId) {
         <li class="capture-card" [class.is-selected]="isSelected(note)">
           @if (generationAvailable()) {
@@ -37,7 +37,7 @@
       } @empty { <li class="notice">Заметок для этой колоды пока нет.</li> }
     </ul>
     @if (generationAvailable() && selectedCount() > 0) {
-      <section #selectionBar class="selection-bar" aria-label="Действия с выбранными заметками">
+      <section #selectionBar class="selection-bar" mnTourAnchor="capture.assemble" aria-label="Действия с выбранными заметками">
         <p class="selection-bar-count"><strong>Выбрано: {{ selectedCount() }}</strong></p>
         <div class="actions">
           <button class="button primary" type="button" (click)="createMaterials()">Создать материалы с ИИ</button>

@@ -15,6 +15,9 @@ import { ToastRegionComponent } from '../notifications/toast-region.component';
 import { GoalOnboardingComponent } from '../../features/goal/goal-onboarding.component';
 import { PromoPopupHostComponent } from '../../features/promo/promo-popup-host.component';
 import { OnboardingHostComponent } from '../../features/onboarding/onboarding-host.component';
+import { PathHintComponent } from '../../features/onboarding/path-hint.component';
+import { PathHint } from '../onboarding/path-hint.service';
+import { TourAnchorDirective } from '../onboarding/tour-anchor.directive';
 import { TourEngine } from '../onboarding/tour-engine.service';
 import { TourHostComponent } from '../onboarding/tour-host.component';
 
@@ -22,7 +25,7 @@ import { TourHostComponent } from '../onboarding/tour-host.component';
     selector: 'app-shell',
     host: { '(pointerover)': 'setWaveOrigin($event)' },
     imports: [RouterLink, RouterLinkActive, RouterOutlet, DeckConstellationComponent, NotificationBellComponent, ToastRegionComponent,
-        GoalOnboardingComponent, PromoPopupHostComponent, PublicFooterComponent, TourHostComponent, OnboardingHostComponent],
+        GoalOnboardingComponent, PromoPopupHostComponent, PublicFooterComponent, TourHostComponent, OnboardingHostComponent, PathHintComponent, TourAnchorDirective],
     templateUrl: './app-shell.component.html',
     styleUrl: './app-shell.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -33,6 +36,7 @@ export class AppShellComponent {
     readonly user = toSignal(this.auth.user$, { initialValue: this.auth.user() });
     private readonly router = inject(Router);
     private readonly tour = inject(TourEngine);
+    private readonly pathHint = inject(PathHint);
 
     readonly routeUrl = toSignal(this.router.events.pipe(
         filter(event => event instanceof NavigationEnd), map(event => event.urlAfterRedirects)
@@ -77,6 +81,8 @@ export class AppShellComponent {
         queueMicrotask(() => {
             // A running tour step owns the focus: the card heading takes it back after the page is activated, instead of the page heading.
             if (this.tour.holdsFocus) { this.tour.refocus(); return; }
+            // The in-place hint of «Путь» is on its way to the page (or already there): its card takes the focus, not the heading.
+            if (this.pathHint.awaitingFocus()) return;
             const heading = document.querySelector<HTMLElement>('#main-content h1');
             heading?.focus();
         });

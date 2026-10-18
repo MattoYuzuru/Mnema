@@ -21,7 +21,7 @@ p { margin: 0; }
 .dots span.on { background: var(--mn-ink); }
 .tour-nav { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; align-items: center; border-block-start: 1px solid var(--mn-rule); padding-block-start: .75rem; }
 .steps { display: flex; flex-wrap: wrap; gap: .5rem; }
-app-hold-to-delete-button { margin-inline-start: auto; }
+app-hold-to-delete-button, .leave { margin-inline-start: auto; }
 .slider { display: grid; gap: .5rem; border: 1px solid var(--mn-rule); padding: .75rem; background: var(--mn-paper); }
 .slider-controls { display: flex; justify-content: space-between; align-items: center; }
 .slider-controls .button { min-inline-size: var(--mn-touch-min); padding-inline: .5rem; }

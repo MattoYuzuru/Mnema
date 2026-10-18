@@ -1,4 +1,5 @@
 import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import {
     ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild
 } from '@angular/core';
@@ -77,6 +78,7 @@ export class NewMaterialPageComponent {
     private readonly decks = inject(OwnDecksApiService);
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
+    private readonly tour = inject(TourEvents);
     private readonly params = toSignal(this.route.paramMap, { initialValue: this.route.snapshot.paramMap });
     readonly deckId = computed(() => this.params().get('deckId') ?? '');
     private readonly query = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
@@ -147,6 +149,8 @@ export class NewMaterialPageComponent {
 
     /** The composer made a session: the page becomes its Workshop. */
     open(session: SessionDetail): void {
+        // A side quest waiting for the generation to start moves on to the Workshop; the page goes there all the same.
+        this.tour.emit('workshop.opened');
         void this.transition.navigate(['/decks', this.deckId(), 'workshop', session.sessionId]);
     }
 

@@ -7,6 +7,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription, catchError, forkJoin, of } from 'rxjs';
 
 import { NativeDocument } from '../../content/native-document';
+import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { MicButtonComponent } from '../speech/mic-button.component';
@@ -17,7 +19,7 @@ import { CaptureNote, newCommandId } from './authoring.models';
 
 @Component({
     selector: 'app-capture-page',
-    imports: [ReactiveFormsModule, RouterLink, MicButtonComponent, AutoLoadComponent],
+    imports: [ReactiveFormsModule, RouterLink, MicButtonComponent, AutoLoadComponent, TourAnchorDirective],
     templateUrl: './capture-page.component.html',
     styleUrls: ['./authoring-page.css', './capture-page.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush,
@@ -45,6 +47,7 @@ export class CapturePageComponent {
     private readonly selectAllBox = viewChild<ElementRef<HTMLInputElement>>('selectAll');
     private readonly selectionBar = viewChild<ElementRef<HTMLElement>>('selectionBar');
     private readonly hostElement = inject<ElementRef<HTMLElement>>(ElementRef);
+    private readonly tour = inject(TourEvents);
     private readonly injector = inject(Injector);
     readonly busy = signal(false);
     readonly error = signal<string | null>(null);
@@ -258,6 +261,7 @@ export class CapturePageComponent {
         }
         this.selected.update(held => new Set(held).add(note.noteId));
         this.selectionNote.set(null);
+        this.tour.emit('capture.selected');
     }
 
     /** The header checkbox: picks the loaded notes (the first {@link MAX_NOTES} of them), or clears them when all are picked. */
@@ -266,6 +270,7 @@ export class CapturePageComponent {
         if (this.allState() === 'checked') { this.clearSelection(); return; }
         const picked = notes.slice(0, MAX_NOTES);
         this.selected.set(new Set(picked.map(note => note.noteId)));
+        if (picked.length > 0) this.tour.emit('capture.selected');
         this.selectionNote.set(notes.length > MAX_NOTES
             ? `Выбрали первые ${MAX_NOTES} из ${notes.length} загруженных: за один раз можно не больше ${MAX_NOTES} заметок.` : null);
     }
@@ -304,6 +309,8 @@ export class CapturePageComponent {
         const deck = this.deck();
         const notes = this.selectedNotes();
         if (deck === null || !this.generationAvailable() || notes.length === 0 || notes.length > MAX_NOTES) return;
+        // A side quest that waits for this press moves on; the page goes to the composer all the same.
+        this.tour.emit('capture.assembled');
         void this.router.navigate(['/decks', deck.deckId, 'materials', 'new'], {
             queryParams: { [NOTES_QUERY_PARAM]: serializeNoteIds(notes.map(note => note.noteId)) }
         });

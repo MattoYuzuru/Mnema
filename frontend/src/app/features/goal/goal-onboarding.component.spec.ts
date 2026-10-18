@@ -69,8 +69,8 @@ describe('GoalOnboardingComponent', () => {
         expect((await render()).root.querySelector('form')).toBeNull();
     });
 
-    it('asks only on the deck list, the profile and the plans page', async () => {
-        for (const url of ['/decks', '/decks/?x=1', '/profile', '/plans#plus']) {
+    it('asks only on the deck list and the plans page (the profile has its own «Цель» block)', async () => {
+        for (const url of ['/decks', '/decks/?x=1', '/plans#plus']) {
             TestBed.inject(LearningGoalStore).reset();
             expect((await render(url)).root.querySelector('form'), url).not.toBeNull();
         }
@@ -87,6 +87,8 @@ describe('GoalOnboardingComponent', () => {
             expect((await render(url)).root.querySelector('form'), url).toBeNull();
             expect(onboardingSuppressed(url), url).toBe(true);
         }
+        expect(onboardingSuppressed('/profile')).toBe(true);
+        expect((await render('/profile')).root.querySelector('form')).toBeNull();
         expect(onboardingSuppressed('/decks')).toBe(false);
     });
 

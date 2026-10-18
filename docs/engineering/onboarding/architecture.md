@@ -12,7 +12,7 @@ artifact:
 # Архитектура онбординга
 
 Поведение — [proposal](proposal.md); выбор и отвергнутые варианты — [RFC](rfc.md) и ADR в
-[adr/](adr/). Статус: accepted (решения владельца 2026-10-14), ничего не реализовано. Числа нагрузки ниже — оценки по модели
+[adr/](adr/). Статус: accepted (решения владельца 2026-10-14); OB-E1 и OB-E2 реализованы и влиты за выключенными флагами (§12–13), OB-E3 — §14. Числа нагрузки ниже — оценки по модели
 H из [community architecture §12](../../architecture/community-decks.md), не измерения.
 
 ## 1. Требования
@@ -339,3 +339,46 @@ upsert только на первых событиях (после `achieved_at`
   `GET /api/usage` не меняется: клиент читает `sampleDeck.freeChecksLeft`; кабинет показывает операцию в отчёте.
 - **Редакция на local stack** — отдельный локальный аккаунт (учётные данные в state dir стека, 0600); в production
   аккаунт редакции и установка — отдельное поручение.
+
+## 14. Уточнено реализацией (S3, OB-E3, 2026-10-18)
+
+Контракт — [`contracts/onboarding/milestones.json`](../../../contracts/onboarding/milestones.json) (реестр) и
+[`README`](../../../contracts/onboarding/README.md) («Путь Mnema»).
+
+- **Схема (V74).** `account_milestone` как в §3, `progress` 1–3 (`CHECK` по реестру версии 1). В той же миграции CHECK
+  `notification.route` (V24) заменён на список с `PATH` — без этого `PATH_MILESTONE` нарушал бы ограничение.
+- **Recorder.** `MilestoneRecorder.reach(level)` (стадии и даты: `progress = max`), `increment` (счётчик `OWN_EXERCISES`),
+  `reachInUserDeck` (условие `purpose='USER'` в том же выражении для writer'а, у которого есть только id колоды) и
+  `sessionCompleted(mode, localStudyDate)`. Веха с целью 1 — `INSERT … ON CONFLICT DO NOTHING` (без блокировки существующей строки); стадии и счётчики — выражение §5, уточнённое: `WHERE achieved_at IS NULL AND progress < новый`, так что
+  повтор ничего не пишет; «достигнуто этим выражением» = вернулась строка с `achieved_at`.
+- **Уведомление в `beforeCommit`.** Recorder копит достигнутые вехи транзакции и публикует `PATH_MILESTONE` одной
+  синхронизацией перед commit — последней записью транзакции, как требует `NotificationPublisher` (lock строки курсора), независимо
+  от порядка writer'ов. Только при `learning.onboarding.enabled`; вехи, скрытые конфигурацией, записываются, но не объявляются.
+  Вехи, достигнутые при выключенном флаге, позже не объявляются.
+- **Стадии и даты.** `CAPTURE_NOTE` — цель 2: заметка сохранена (1), разобрана — превращена в материал или в архиве (2).
+  `TWO_DAYS` — цель 2: число разных `local_study_date`; второй день — min/max дат по новому частичному индексу `study_session_study_dates`
+  (V74, он же для ритма §7), только пока веха не достигнута.
+  `RHYTHM_WEEK` в реестре v1 без writer'а и скрыта до OB-401.
+- **Видимость** — операторские флаги (`learning.features.ai-assessment|speech-to-text|ai-generation.enabled`), не circuit breaker
+  и не бюджет; `COMMUNITY_COPY` — копия из каталога возможна: `learning.community.catalog.enabled`, `public-routes` и `forks` включены и в каталоге хотя бы одна колода (кешированный счётчик).
+- **Горячий путь** — [evidence](../evidence/onboarding/ob-e3/hot-path.md): после достижения обеих вех занятия — одно PK-чтение
+  на завершение занятия (≈ 0,26 мс); ответы не платят ничего, кроме `AI_EXPLANATION` для оценки `ai-semantic`.
+- **Backfill (OB-302)** — задача `onboarding.backfill` (`learning.onboarding.backfill.enabled`, по умолчанию выключено; пачка,
+  бюджет slice и пауза — `learning.onboarding.backfill.*`), ставится раз на версию реестра (`onboarding.backfill:v1`). Курсор
+  `{key, after}` по вехам и владельцам; граница пачки — loose index scan по индексу владельцев источника; слияние — одно
+  `INSERT … SELECT … ON CONFLICT DO UPDATE` с `GREATEST(progress)`, `LEAST(first_at)`, сохранением `achieved_at` и `source` строки
+  (§5 предполагал `DO NOTHING`, но тогда LIVE-строка с меньшим прогрессом не догнала бы историю); строки, которые история не меняет, в
+  вставку не попадают (иначе `DO UPDATE` держал бы их блокировки), одна пачка — одна транзакция slice; пройденная версия реестра
+  записывается в `onboarding_backfill_run` (V74), поэтому после очистки строки задачи она не запускается снова. Advisory try-lock, метрики
+  `mnema_onboarding_backfill_seconds`, `…_rows_total{key}`, `mnema_path_milestone_total{source="BACKFILL"}`; уведомлений нет.
+  [Evidence](../evidence/onboarding/ob-e3/backfill.md).
+- **Inventory.** Тест классифицирует все изменяющие маршруты (маршрут → ожидаемые вехи) и падает на новом неклассифицированном;
+  второй тест сверяет `writer` фикстуры с упоминаниями `MilestoneKey` в коде.
+- **Frontend.** `AttentionCoordinator` получил поверхность `hint` между `first-entry` и `promo` (подсказка ждёт занятие, тур и
+  «Начало пути»; промо и тосты вех ждут подсказку). «Путь» — `/profile/path` и блок в профиле; виден, пока `enabled`.
+  Скрытие «Пути» и заметка «Новое» — настройки клиента (localStorage), не сервера. Тосты вех — сервис `PathToasts`: держит тост,
+  пока активна QuietZone (независимо от настройки «Во время занятия», `BADGE_ONLY` — не показывает), не чаще одного за 30 с, сводный
+  для нескольких. Неизвестный клиенту `route` уведомления читается как `NONE`.
+- **Квесты** — определения того же движка с `quest: true`: шаги `quest.*` вне серверного реестра, `PUT /api/onboarding/journey`
+  не отправляется; добавлены шаг-экран без якоря и событие завершения `completes`. Бюджет перед стартом клиент считает по
+  `GET /api/usage` (своего «нет бюджета» у клиента не было).

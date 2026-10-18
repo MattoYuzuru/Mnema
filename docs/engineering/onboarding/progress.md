@@ -5,7 +5,7 @@ artifact:
   title: "Onboarding: progress ledger and handoff index"
   status: current
   created_at: "2026-10-14"
-  updated_at: "2026-10-17"
+  updated_at: "2026-10-18"
   owners: ["project-owner"]
 ---
 
@@ -22,11 +22,14 @@ artifact:
 | Поле | Значение |
 |---|---|
 | Пакет документов | `docs/engineering/onboarding/` (в main) |
-| Ветка реализации | `feat/517-onboarding` влита в main squash-коммитом 1e4f764e (MattoYuzuru/Mnema#554, 2026-10-17), за выключенными флагами; E3/E4 — новой веткой от main |
-| База ветки | `origin/main` 42e35d0f (S0), в S1 влит `origin/main` b6f14df8 (a29b7301, 2026-10-16) |
-| Последний handoff | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) (ветка не запушена: PR #554 показывает только S0) |
+| Ветка реализации | E1/E2: `feat/517-onboarding` влита в main squash-коммитом 1e4f764e (MattoYuzuru/Mnema#554, 2026-10-17) за выключенными флагами, ветка удалена. E3: `feat/531-onboarding-path` от `origin/main` 5c432a9b (S3) |
+| База ветки | E1/E2: `origin/main` 42e35d0f (S0) + b6f14df8 (S1). E3: 5c432a9b (после #557, #497–#499, #555, #559, #560) |
+| Последний handoff | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) (E3, ветка `feat/531-onboarding-path`); S2 влита в #554 (1e4f764e) — пометка «ветка не запушена» в S2 устарела |
 
 ## Статус задач
+
+Коммиты в столбце «Commit» для OB-0xx…OB-2xx — исходные коммиты ветки `feat/517-onboarding`; в main они входят одним
+squash-коммитом 1e4f764e (ветка удалена после merge, исходные SHA в истории main не встречаются).
 
 | ID | Статус | Commit | Evidence / handoff | Заметки |
 |---|---|---|---|---|
@@ -42,11 +45,11 @@ artifact:
 | OB-202 | merged (шаблон только на local stack) | студия вне git; ea723063, c9eb70c5 | [runbook](../evidence/onboarding/ob-e2/sample-template-runbook.md), [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | Шаблон на local stack (deck d59520c8-…, LINK); production — отдельное поручение |
 | OB-203 | merged | 691d1919, 96c15aaf, 729e6fd4 | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md), [снимки](../evidence/onboarding/ob-e2/) | «ИИ-бюджет» не показывает бесплатные проверки |
 | OB-204 | merged | 3ecff102 (gate) | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | |
-| OB-301 | not started | — | — | |
-| OB-302 | not started | — | — | |
-| OB-303 | not started | — | — | |
-| OB-304 | not started | — | — | |
-| OB-305 | not started | — | — | |
+| OB-301 | local complete, delivery pending | 09953172, 870a8117 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md), [hot path](../evidence/onboarding/ob-e3/hot-path.md), `contracts/onboarding/milestones.json` | V74; `PATH_MILESTONE` только при `learning.onboarding.enabled`; RHYTHM_WEEK скрыта до OB-401 |
+| OB-302 | local complete, delivery pending | 870a8117 | [backfill](../evidence/onboarding/ob-e3/backfill.md) | `learning.onboarding.backfill.enabled=false` по умолчанию; объём H не измерен |
+| OB-303 | local complete, delivery pending | d0519bdd, d550caa4 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md), [browser](../evidence/onboarding/ob-e3/path-results.json) | Открыт AC «скринридер» (VoiceOver не проверялся); 72 строки на утверждение |
+| OB-304 | local complete, delivery pending | d0519bdd, d550caa4, 181794c1 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) | Открыты AC «end-to-end с вехой в браузере», «a11y/mobile» |
+| OB-305 | local complete, delivery pending | 181794c1 (+ handoff) | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) | 2 review, harness `--onboarding`, полный gate |
 | OB-401 | not started | — | — | |
 | OB-402 | not started | — | — | Флаг в production после OB-002 |
 | OB-403 | not started | — | — | |
@@ -59,6 +62,7 @@ artifact:
 | 2026-10-16/17 | S0+ (колоды) | Claude Opus 5.5 (lead), Sonnet 5.5 high (авторы), Haiku 5.5 (картинки), Opus 5.5 high (ревью) | MnemaDeckStudio (вне git) | 8 базовых колод PRIVATE в production, TTS $0.30 | [сводка](../evidence/onboarding/ob-prep/deck-plans.md) |
 | 2026-10-16/17 | S1 | Claude Opus 5.5 (lead), 2 × Sonnet 5.5 high (backend, frontend), Sonnet 5.5 high (harness), 3 × Opus 5.5 high review | 71ab1c89 + merge b6f14df8 → 748043a2 (+ handoff) | OB-101…OB-105 local complete; полный gate и harness `--onboarding` зелёные | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) |
 | 2026-10-17 | S2 | Claude Opus 5.5 (lead), Sonnet 5.5 high: backend, frontend, импортёр студии, автор pack; Opus 5.5 high: review кода и содержания | 05c1d45c → 3ecff102 (+ handoff) | OB-201…204 local complete; шаблон установлен на local stack; gate зелёный | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) |
+| 2026-10-18 | S3 | Claude Opus 5.5 (lead), Opus 5.5 medium (research), 2 × Sonnet 5.5 high (backend, frontend), 2 × Opus 5.5 high (review) | 5c432a9b → 181794c1 (+ handoff) | OB-301…OB-305 local complete; harness `--onboarding` и полный gate зелёные | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) |
 
 Handoff-файлы кладутся в `docs/engineering/evidence/onboarding/<epic>/handoff-session-<N>.md` ветки
 реализации и перечисляются здесь.

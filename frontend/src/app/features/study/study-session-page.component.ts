@@ -605,6 +605,8 @@ export class StudySessionPageComponent {
         this.feedback.set(outcome);
         this.phase.set('feedback');
         this.focusAfterRender('#feedback-title');
+        // An answer in the learner's own words that the AI checked: a side quest waiting for it is over.
+        if (isFreeResponseFeedback(outcome.feedback) && outcome.feedback.assessment !== undefined) this.tour.emit('study.ai-checked');
     }
 
     /** «Оспорить оценку», step 1: ask in place (not a modal) what taking the grade back means. */

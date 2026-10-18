@@ -37,7 +37,8 @@ from the stable Alpine 3.24 repository. Publication run `37217508523` found
 `CVE-2026-93990` in `libexpat 2.8.4-r0` and `CVE-2026-103111` in `pcre2 10.48-r0`.
 Publication run `37892843818` found `CVE-2026-4775` (HIGH) in `tiff 4.7.1-r0`.
 Main CI run `39064534612` found `CVE-2026-77214` (HIGH) in `libexpat 2.8.5-r0`.
-The image requires `libexpat>=2.9.0-r0`, `pcre2>=10.49-r0` and `tiff>=4.7.2-r0`, the first fixed builds
+PR #561 preflight run `39168802476` found `CVE-2026-88806` (HIGH) in `libx11` (fixed in `1.8.14-r0` with CVE-2026-94283…94285).
+The image requires `libexpat>=2.9.0-r0`, `pcre2>=10.49-r0`, `tiff>=4.7.2-r0` and `libx11>=1.8.14-r0`, the first fixed builds
 in [Alpine's security database](https://secdb.alpinelinux.org/v3.24/main.json).
 The existing OpenSSL floors remain. No edge repository or scan exception is added;
 provenance/SBOM and the HIGH/CRITICAL gate bind the actual derived release digest.

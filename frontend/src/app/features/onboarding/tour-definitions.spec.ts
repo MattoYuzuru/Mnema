@@ -48,7 +48,7 @@ describe('tour definitions, version 1', () => {
                     for (const step of definition.steps) {
                         expect(registry.has(step.key), step.key).toBe(true);
                         expect([branch, null], step.key).toContain(registry.get(step.key));
-                        expect(STEP_BRANCH[step.key]).toBe(registry.get(step.key));
+                        expect(STEP_BRANCH[step.key as keyof typeof STEP_BRANCH]).toBe(registry.get(step.key));
                         if (step.external !== true) expect(TOUR_ANCHOR_KEYS, step.key).toContain(step.anchor);
                     }
                 });

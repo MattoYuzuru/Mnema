@@ -13,6 +13,7 @@ import { TourNudgeComponent } from '../../shared/tour-nudge.component';
 import { TourPauseComponent } from '../../shared/tour-pause.component';
 import { FinaleComponent } from './finale.component';
 import { FirstEntryComponent } from './first-entry.component';
+import { QuestHostComponent } from './quest-host.component';
 import { OnboardingFlow } from './onboarding-flow.service';
 
 /** How long a surface that waits for another modal dialog to close looks again, in ms. */
@@ -26,10 +27,11 @@ const MODAL_RECHECK_MS = 1_000;
  */
 @Component({
     selector: 'app-onboarding-host',
-    imports: [FirstEntryComponent, FinaleComponent, TourNudgeComponent, TourPauseComponent],
+    imports: [FirstEntryComponent, FinaleComponent, QuestHostComponent, TourNudgeComponent, TourPauseComponent],
     template: `
       <app-first-entry />
       <app-finale />
+      <app-quest-host />
       @if (flow.pausedCard() !== null && flow.card() === null && !engine.active() && !studying()) {
         <app-tour-pause (resumed)="flow.resumeSurface()" />
       }
@@ -115,7 +117,7 @@ export class OnboardingHostComponent {
         effect(() => {
             const answered = this.store.view() !== null;
             const enabled = this.store.enabled();
-            if (answered && !enabled && this.engine.recordsJourney()) untracked(() => this.engine.stop());
+            if (answered && !enabled && (this.engine.recordsJourney() || this.engine.isQuest())) untracked(() => this.engine.stop());
         });
 
         // A journey paused (or left on a branch step) elsewhere shows the plaque once the page has found it.

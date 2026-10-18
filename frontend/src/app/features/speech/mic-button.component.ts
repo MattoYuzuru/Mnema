@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, input, output, signal, viewChild } from '@angular/core';
 
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { AudioRecorder, RecordedAudio, RecordingEnd, clockText, SPEECH_MAX_MS } from '../../shared/audio-recorder';
 import { UsageApiService } from '../usage/usage-api.service';
 import { speechCounterText } from '../usage/usage-view';
@@ -38,6 +39,7 @@ export class MicButtonComponent {
     readonly inserted = output<InsertedTranscript>();
 
     private readonly speech = inject(SpeechInputService);
+    private readonly tour = inject(TourEvents);
     private readonly usageApi = inject(UsageApiService);
     private readonly destroyRef = inject(DestroyRef);
     private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('dialog');
@@ -138,6 +140,8 @@ export class MicButtonComponent {
         this.selection = null;
         this.status.set('Текст добавлен в поле. Проверьте его и отправьте сами.');
         this.inserted.emit({ text: inserted, garbled });
+        // A side quest waiting for a spoken answer is over (the server counts the milestone with the transcription).
+        this.tour.emit('voice.transcribed');
     }
 
     private fail(message: string): void {

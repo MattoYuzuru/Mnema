@@ -524,7 +524,7 @@ class GenerationContractFixtureTest {
             assertThat(example.path("params").toString().getBytes(StandardCharsets.UTF_8).length).isLessThan(4096);
         });
         assertThat(kinds).containsExactlyInAnyOrder("GENERATION_PLAN_READY", "GENERATION_READY", "GENERATION_PARTIAL", "GENERATION_FAILED",
-                "USAGE_LOW", "USAGE_EXHAUSTED", "GENERATION_SESSION_EXPIRING", "MEDIA_PROCESSING_FAILED", "DECK_ACCESS_REQUESTED", "DECK_ACCESS_GRANTED", "DECK_HIDDEN", "DECK_CONTENT_TAKEN_DOWN");
+                "USAGE_LOW", "USAGE_EXHAUSTED", "GENERATION_SESSION_EXPIRING", "MEDIA_PROCESSING_FAILED", "DECK_ACCESS_REQUESTED", "DECK_ACCESS_GRANTED", "DECK_HIDDEN", "DECK_CONTENT_TAKEN_DOWN", "PATH_MILESTONE");
         for (String list : List.of("listResponse", "listResponseAfter")) {
             long previous = list.equals("listResponse") ? Long.MAX_VALUE : 0;
             for (JsonNode item : notifications.path(list).path("items")) {

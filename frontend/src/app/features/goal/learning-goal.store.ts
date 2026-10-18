@@ -8,7 +8,7 @@ export type GoalState = 'idle' | 'loading' | 'ready' | 'error';
 
 /**
  * The owner's learning goal for the whole session. It reads as a signal (`goal`) wherever copy changes; only the shell's
- * onboarding and the plans page call `load()`, so a screen that merely reads the goal needs no HTTP. The API is resolved on
+ * onboarding, the plans page and the «Цель» block of the profile call `load()`, so a screen that merely reads the goal needs no HTTP. The API is resolved on
  * first use for the same reason.
  */
 @Injectable({ providedIn: 'root' })

@@ -24,7 +24,27 @@ export const TOUR_ANCHORS = {
     /** `/decks/:deckId/materials/:memberKey`: the published text of a material. */
     materialRead: 'material.read',
     /** `/decks/:deckId/materials/:memberKey/exercises/new`: the list of the exercises the material already has. */
-    materialExercises: 'material.exercises'
+    materialExercises: 'material.exercises',
+    /** The masthead link «Новая колода»: the place the in-place hint of «Путь» shows for the first deck (OB-E3). */
+    navNewDeck: 'nav.newDeck',
+    /** The question «Для чего вам Mnema?» on the profile while the goal is unanswered (hint of «Путь»). */
+    profileGoal: 'profile.goal',
+    /** `/decks/:deckId`: «Добавить материал» (hint of «Путь»). */
+    hubAddMaterial: 'hub.addMaterial',
+    /** `/decks/:deckId`: the list of materials, where a material's exercises are opened (hint of «Путь»). */
+    hubMaterials: 'hub.materials',
+    /** `/decks/:deckId`: «На потом» (hint of «Путь»). */
+    hubCapture: 'hub.capture',
+    /** `/decks/:deckId/capture`: the list of notes with their checkboxes (quest «Мастерская из заметок»). */
+    captureNotes: 'capture.notes',
+    /** `/decks/:deckId/capture`: the bar of the picked notes with «Создать материалы с ИИ» (it exists while a note is picked). */
+    captureAssemble: 'capture.assemble',
+    /** `/decks/:deckId/capture`: the microphone of the note field (quest «Ответить голосом»). */
+    captureMic: 'capture.mic',
+    /** The material editor: the control that puts a picture or a sound into the text (quest «Добавить картинку или звук»). */
+    editorMedia: 'editor.media',
+    /** The material editor: «Опубликовать». */
+    editorPublish: 'editor.publish'
 } as const;
 
 export type TourAnchorKey = typeof TOUR_ANCHORS[keyof typeof TOUR_ANCHORS];

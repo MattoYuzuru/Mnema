@@ -9,6 +9,9 @@ import app.mnema.learning.catalog.content.pages.CountedPages;
 import app.mnema.learning.catalog.content.NativeNodeIndex;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
 import app.mnema.learning.capability.LearningCapabilities;
+import app.mnema.learning.library.DeckPurpose;
+import app.mnema.learning.onboarding.MilestoneKey;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
@@ -61,11 +64,13 @@ public class ExerciseService {
     private final ExerciseNewMarks newMarks;
     private final TransactionTemplate publication;
     private final TransactionTemplate cleanup;
+    private final MilestoneRecorder milestones;
 
     public ExerciseService(ExerciseRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
                            ImmutableStorage storage, MediaCatalog mediaCatalog, LearningCapabilities capabilities,
-                           ExerciseNewMarks newMarks, PlatformTransactionManager transactions) {
+                           ExerciseNewMarks newMarks, PlatformTransactionManager transactions, MilestoneRecorder milestones) {
         this.repository = repository;
+        this.milestones = milestones;
         this.receipts = receipts;
         this.cas = cas;
         this.storage = storage;
@@ -349,6 +354,8 @@ public class ExerciseService {
 
         if (pathExerciseId == null) {
             repository.insertExercise(deckId, prepared.exerciseId(), actor, deck.scopeId(), time);
+            // «Путь Mnema»: a NEW exercise in a deck of the author's own (a revision of an exercise is not one; the sample deck does not count)
+            if (deck.purpose() == DeckPurpose.USER) milestones.increment(actor, MilestoneKey.OWN_EXERCISES);
         }
         repository.insertExerciseRevision(deckId, prepared.exerciseId(), prepared.exerciseRevision(), deck.scopeId(),
                 prepared.exerciseSequence(), prepared.previous() == null ? null : prepared.previous().revisionId(),

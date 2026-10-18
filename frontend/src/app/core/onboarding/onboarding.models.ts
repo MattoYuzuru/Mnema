@@ -1,3 +1,5 @@
+import { Milestone, PathSummary } from './path.models';
+
 /**
  * Wire types of the first-entry journey (`contracts/onboarding/journey.json`, `GET /api/onboarding`,
  * `PUT /api/onboarding/journey`, `PUT /api/onboarding/preferences`). The constants below are the closed lists of the contract;
@@ -81,15 +83,15 @@ export interface SampleDeck {
 }
 
 /**
- * The view of the account's onboarding. While `enabled` is false `journey` is `null` and the client shows neither «Начало пути»
- * nor the tour. `milestones`, `path` and `rhythm` are reserved by the contract (`[]`, `null`, `null` until OB-E2/E3/E4); they are
- * kept as received so the later epics define their shapes without a change here.
+ * The view of the account's onboarding. While `enabled` is false `journey` is `null`, `milestones` is `[]` and `path` is `null`, and the
+ * client shows neither «Начало пути», the tour nor «Путь». `milestones` lists the visible milestones in registry order and `path` their
+ * count (`contracts/onboarding/milestones.json`). `rhythm` is reserved for OB-E4 (`null` until then) and kept as received.
  */
 export interface OnboardingView {
     readonly enabled: boolean;
     readonly journey: Journey | null;
-    readonly milestones: readonly unknown[];
-    readonly path: unknown;
+    readonly milestones: readonly Milestone[];
+    readonly path: PathSummary | null;
     readonly rhythm: unknown;
     readonly sampleDeck: SampleDeck;
 }

@@ -1,6 +1,6 @@
 import { STEP_BRANCH } from './onboarding.models';
 import { TOUR_ANCHOR_KEYS } from './tour-anchor-keys';
-import { TourDefinition } from './tour.models';
+import { TourDefinition, isServerStep } from './tour.models';
 
 /**
  * What is wrong with a definition, as sentences (empty: it is sound): a step key outside the server's registry, a step of another
@@ -10,11 +10,12 @@ import { TourDefinition } from './tour.models';
 export function tourDefinitionProblems(definition: TourDefinition, anchors: readonly string[] = TOUR_ANCHOR_KEYS): readonly string[] {
     const problems: string[] = [];
     if (definition.steps.length === 0) problems.push(`${definition.id}: the tour has no steps`);
+    if (definition.quest === true) problems.push(`${definition.id}: a quest is not a tour of the journey (see questDefinitionProblems)`);
     const seen = new Set<string>();
     for (const step of definition.steps) {
         const where = `${definition.id}/${step.key}`;
         if (step.external !== true && definition.steps.slice(0, definition.steps.indexOf(step)).some(earlier => earlier.external === true)) problems.push(`${where}: a step after an external one`);
-        if (!(step.key in STEP_BRANCH)) problems.push(`${where}: unknown step key`);
+        if (!isServerStep(step.key)) problems.push(`${where}: unknown step key`);
         else if (definition.branch !== null && STEP_BRANCH[step.key] !== null && STEP_BRANCH[step.key] !== definition.branch) {
             problems.push(`${where}: the step belongs to ${STEP_BRANCH[step.key]}, the tour to ${definition.branch}`);
         }

@@ -15,7 +15,7 @@
       } @else if (status() === 'authenticated') {
         <a routerLink="/decks" routerLinkActive="active" ariaCurrentWhenActive="page" [routerLinkActiveOptions]="{ exact: true }">Мои колоды</a>
         @if (communityLaunched) { <a routerLink="/community" routerLinkActive="active" ariaCurrentWhenActive="page">Сообщество</a> }
-        <a routerLink="/decks/new" routerLinkActive="active" ariaCurrentWhenActive="page">Новая колода</a>
+        <a routerLink="/decks/new" mnTourAnchor="nav.newDeck" routerLinkActive="active" ariaCurrentWhenActive="page">Новая колода</a>
         <a routerLink="/profile" routerLinkActive="active" ariaCurrentWhenActive="page">Профиль</a>
       } @else {
         @if (communityLaunched) { <a routerLink="/community" routerLinkActive="active" ariaCurrentWhenActive="page">Сообщество</a> }
@@ -40,7 +40,7 @@
 
   <main id="main-content" tabindex="-1">
     @if (constellationSeed(); as seed) { <app-deck-constellation [seed]="seed" [layoutKey]="routeUrl()" /> }
-    @if (!adminMode()) { <app-goal-onboarding /> }
+    @if (!adminMode()) { <app-path-hint /> <app-goal-onboarding /> }
     <router-outlet (activate)="focusPageHeading()"></router-outlet>
   </main>
 

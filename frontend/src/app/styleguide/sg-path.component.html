@@ -1,0 +1,100 @@
+<section class="sg-section" id="path" aria-labelledby="path-section-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="path-section-title">Путь Mnema</h2>
+  <p class="sg-lede">Конечный список полезных навыков в четырёх главах: веха отмечается, когда пользователь делает это на самом деле. Страница — <code>/profile/path</code>,
+    блок в профиле, тост вехи и подсказка на месте; движение по шеврону и подсказка — <code>core/onboarding</code> (<code>PathNavigation</code>, <code>PathHint</code>).</p>
+
+  <app-sg-specimen title="Веха: состояния" selector="<app-path-milestone>"
+    when="Одна веха «Пути»: слева знак и слово состояния («Сделано», «Начато», «Не начато»), заголовок и строка пользы, у счётной вехи в работе — тонкая полоса role=progressbar с именем, значением и текстом («2 из 3»; счёт звучит один раз, полосой). Состояние не передаётся цветом: у каждого свой знак (круг с галочкой, половина круга, пунктирный круг) и слово. У «На потом» стадия («Заметка сохранена, осталось её разобрать.») стоит вместо строки пользы. Шеврон справа — ссылка с доступным именем «Перейти: …», она растянута на всю строку; у сделанной вехи шеврона нет."
+    [tokens]="['--mn-ink', '--mn-muted', '--mn-rule', '--mn-path-hover', '--mn-on-ink']"
+    usage='<app-path-milestone key="OWN_EXERCISES" state="PARTIAL" [progress]="2" [target]="3" href="/decks" (follow)="navigation.go(key)" />'>
+    <ul class="sg-path-list">
+      <li><app-path-milestone key="GOAL_TOLD" state="DONE" [progress]="1" [target]="1" /></li>
+      <li><app-path-milestone key="OWN_EXERCISES" state="PARTIAL" [progress]="2" [target]="3" href="/decks" /></li>
+      <li><app-path-milestone key="CAPTURE_NOTE" state="PARTIAL" [progress]="1" [target]="2" href="/decks" /></li>
+      <li><app-path-milestone key="MEDIA_IN_MATERIAL" state="TODO" [progress]="0" [target]="1" href="/decks" /></li>
+    </ul>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Веха: наведение и фокус" selector="<app-path-milestone>:hover, :focus-visible"
+    when="Наведение и фокус шеврона заливают строку лавандой (--mn-path-hover, контраст чернил на ней 10,9:1) от шеврона к началу строки, фокус — ещё и рамка 3 px. Верхняя строка показывает вид наведения без указателя (preview=hover, только для стайлгайда), нижнюю можно навести или пройти Tab. В forced-colors заливки нет: вокруг строки рамка Highlight."
+    [tokens]="['--mn-path-hover', '--mn-focus']">
+    <ul class="sg-path-list">
+      <li><app-path-milestone key="FIRST_DECK" state="TODO" [progress]="0" [target]="1" href="/decks" preview="hover" /></li>
+      <li><app-path-milestone key="TWO_DAYS" state="PARTIAL" [progress]="1" [target]="2" href="/decks" /></li>
+    </ul>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Веха на 320 px" selector="<app-path-milestone> в узкой колонке"
+    when="Строка перестраивается без горизонтальной прокрутки: длинное название переносится, полоса сжимается, шеврон остаётся в колонке касания 44 px."
+    [tokens]="['--mn-touch-min']">
+    <div class="sg-path-narrow">
+      <ul class="sg-path-list">
+        <li><app-path-milestone key="WORKSHOP_APPROVED" state="TODO" [progress]="0" [target]="1" href="/decks" /></li>
+        <li><app-path-milestone key="OWN_EXERCISES" state="PARTIAL" [progress]="2" [target]="3" href="/decks" /></li>
+      </ul>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Глава и общая полоса" selector="<app-path-chapter>, <app-path-progress>"
+    when="Глава — нативный &lt;details&gt;: имя главы и «N из M» в заголовке-кнопке, веха внутри. Открыта текущая глава (первая, где есть что делать), остальные свёрнуты. Имя главы — h2 внутри заголовка-кнопки (название страницы h1, вехи h3). Общая полоса «Пути» — role=progressbar с именем «Путь Mnema», aria-valuenow, aria-valuemax и текстом («5 из 12») рядом (текст для глаз, aria-hidden); тонкая, заливка чернильная (в forced-colors CanvasText)."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-soft']"
+    usage='<app-path-chapter name="Материалы" [done]="1" [total]="3" [open]="true"><ul>…</ul></app-path-chapter>'>
+    <div class="sg-path-total">
+      <strong>{{ total }}</strong>
+      <app-path-progress [label]="title" [value]="5" [max]="12" [valueText]="total" />
+    </div>
+    @for (chapter of chapters; track chapter.name) {
+      <app-path-chapter [name]="chapter.name" [done]="chapter.done" [total]="chapter.total" [open]="chapter.open">
+        <ul class="sg-path-list">
+          @if (chapter.open) {
+            <li><app-path-milestone key="OWN_MATERIAL" state="DONE" [progress]="1" [target]="1" /></li>
+            <li><app-path-milestone key="CAPTURE_NOTE" state="TODO" [progress]="0" [target]="2" href="/decks" /></li>
+          } @else {
+            <li><app-path-milestone key="FIRST_SESSION" state="DONE" [progress]="1" [target]="1" /></li>
+          }
+        </ul>
+      </app-path-chapter>
+    }
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Подсказка на месте" selector="<app-path-hint-card>"
+    when="Шеврон вехи ведёт к нужному месту, и там без затемнения стоит карточка: заголовок — название вехи, одна фраза, «Понятно». Немодальный role=dialog (aria-modal=false) с именем и описанием; при появлении фокус на заголовке, Esc и «Понятно» закрывают и возвращают фокус к цели, действие на цели просто закрывает. Не появляется, пока на экране тур, первый вход или ответ в занятии. Если цель не появилась за 4 секунды, та же фраза — карточкой в начале страницы (в потоке). Ниже живой пример у кнопки макета."
+    [tokens]="['--mn-ink', '--mn-sheet']"
+    usage='<app-path-hint-card title="Сохраните заметку «На потом»" text="…" [floating]="true" [at]="point" (acknowledged)="close()" />'>
+    <app-path-hint-card [title]="hintCard.title" [text]="hintCard.text" />
+    <div class="sg-path-hint-live">
+      <button type="button" class="button" mnTourAnchor="hub.capture">На потом</button>
+      <button type="button" class="button primary" (click)="showHint()">Показать подсказку у кнопки</button>
+      @if (shown()) { <button type="button" class="button quiet" (click)="hideHint()">Убрать подсказку</button> }
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Выбор колоды для задания" selector="<app-quest-chooser>"
+    when="Побочный квест («Ответить голосом», «Мастерская из заметок», «Добавить картинку или звук», «Объяснить своими словами») начинается с выбора колоды: свои колоды списком радио-кнопок, учебная — со штампом «Учебная» и только там, где задание можно показать на ней. Колоду не создают молча. Если задание начать нельзя (возможность выключена, лимит ИИ исчерпан, нет подходящей колоды, заметки, материала или задания со свободным ответом), об этом сказано до первого шага и предложен выход: учебная колода (пока есть бесплатные проверки), «Тарифы», «Новая колода». «Не сейчас» есть везде. В продукте карточка стоит в модальном &lt;dialog&gt;, заголовок принимает фокус."
+    [tokens]="['--mn-sheet', '--mn-ink', '--mn-soft', '--mn-rule']"
+    usage='<app-quest-chooser title="Ответьте голосом" phase="choose" [decks]="decks" [selected]="id" (chosen)="…" (started)="…" (cancelled)="…" />'>
+    <div class="sg-quest-pair">
+      <app-quest-chooser [title]="questTitle" phase="choose" [decks]="questDecks" [selected]="questSelected()" (chosen)="questSelected.set($event)" />
+      <app-quest-chooser [title]="questTitle" phase="blocked" [notice]="questNotice" />
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Экран о микрофоне" selector="<app-tour-card> шага-экрана задания"
+    when="Первый шаг «Ответить голосом» — собственный экран задания: что записывается, что браузер сам спросит разрешение и как остановить запись. Системный запрос не появляется, пока человек не нажал кнопку записи в поле; «Дальше» только ведёт к полю. У шага нет места на странице: карточка стоит посередине на вуали. Из задания выходят кнопкой «Выйти из задания» (она заменяет удержание «Завершить знакомство»), Esc ставит его на паузу."
+    [tokens]="['--mn-sheet', '--mn-ink']">
+    <app-tour-card [position]="1" [total]="2" [title]="micStep.title" [body]="micStep.body" gate="next" [canBack]="false" [inline]="true" [leaveLabel]="leaveLabel" />
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Пауза задания" selector="<app-tour-pause [quest]=true>"
+    when="Esc во время задания сворачивает его в ту же плашку, что у тура, но со своими словами: «Задание на паузе» и «Продолжить задание». Прогресс главного пути не затронут: задание ничего не пишет в journey."
+    [tokens]="['--mn-sheet', '--mn-ink']">
+    <app-tour-pause [inline]="true" [quest]="true" />
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Тост вехи" selector="ToastService.notify(PATH_MILESTONE)"
+    when="«Путь: вы добавили в материал картинку или звук · 6 из 12» со ссылкой «Открыть «Путь»». Не во время ответа в занятии (ждёт паузы, что бы ни выбрал пользователь в «Во время занятия»), не чаще одного за 30 секунд: несколько — одним сводным («Путь: отмечено 3 пункта · 8 из 12»); тур, первый вход и подсказка тише тоста. Тот, кто скрыл «Путь», тостов вех не получает."
+    [tokens]="['--mn-ink', '--mn-sheet']">
+    <div class="actions"><button type="button" class="button" (click)="showToast()">Показать тост вехи</button></div>
+  </app-sg-specimen>
+</section>

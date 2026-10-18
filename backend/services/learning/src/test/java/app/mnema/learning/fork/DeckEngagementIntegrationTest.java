@@ -417,10 +417,12 @@ class DeckEngagementIntegrationTest extends PostgresIntegrationTest {
         UUID session = UUID.randomUUID();
         String plan = new TransactionTemplate(transactions).execute(status -> {
             // A test database is too small for the planner to prefer an index by cost: ask for the plan it would take if the tables were large (no sequential or bitmap scan of a
-            // whole table) and take away the one other index of study_session that starts with the account (study_session_resume), which competes with the keys only
-            // while the statistics say that an account has a single session. Rolled back.
+            // whole table) and take away the other indexes of study_session that start with the account (study_session_resume, and the partial study_session_study_dates
+            // of V74 for the completed scheduled and practice dates), which compete with the keys only while the statistics say that an account has a single session.
+            // Rolled back.
             jdbc.sql("SET LOCAL lock_timeout = '5s'").update();
             jdbc.sql("DROP INDEX app_learning.study_session_resume").update();
+            jdbc.sql("DROP INDEX app_learning.study_session_study_dates").update();
             jdbc.sql("SET LOCAL enable_seqscan = off").update();
             jdbc.sql("SET LOCAL enable_bitmapscan = off").update();
             var lines = jdbc.sql("EXPLAIN " + sql).param("account", source.author()).param("session", session).query(String.class).list();

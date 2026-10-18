@@ -73,6 +73,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
     @Autowired private JdbcClient jdbc;
     @Autowired private UsageLedger ledger;
     @Autowired private app.mnema.learning.onboarding.SampleChecks sampleChecks;
+    @Autowired private app.mnema.learning.onboarding.MilestoneRecorder milestones;
     @Autowired private PlatformTransactionManager transactions;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
@@ -300,6 +301,35 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         assertThat(send(owner, get("/speech-inputs/" + id)).getStatus()).isEqualTo(404);
         assertThat(send(owner, delete("/speech-inputs/" + id)).getStatus()).isEqualTo(204);
         assertThat(send(owner, delete("/speech-inputs/" + UUID.randomUUID())).getStatus()).isEqualTo(204);
+    }
+
+    private java.util.List<String> voiceMilestone(UUID owner) {
+        return jdbc.sql("SELECT progress || ':' || (achieved_at IS NOT NULL) || ':' || source FROM app_learning.account_milestone WHERE account_id=:a AND milestone_key='VOICE_ANSWER'")
+                .param("a", owner).query(String.class).list();
+    }
+
+    @Test
+    void aTranscriptionThatEndsDoneIsTheVoiceMilestoneOfAnyPurposeAndAFailedOneIsNot() throws Exception {
+        UUID owner = UUID.randomUUID();
+        consent(owner);
+        // none of the failures is a spoken answer that was delivered
+        assertThat(scripted(owner, "").path("errorCode").stringValue(null)).isEqualTo("NO_SPEECH");
+        assertThat(scripted(owner, "[[stub:stt-down]]").path("errorCode").stringValue(null)).isEqualTo("UNAVAILABLE");
+        assertThat(scripted(owner, "[[stub:stt-unsupported]]").path("errorCode").stringValue(null)).isEqualTo("UNSUPPORTED_AUDIO");
+        assertThat(voiceMilestone(owner)).isEmpty();
+
+        // a delivered transcript is, for the editor's microphone as well as for an answer; it is written once, in the transaction that stores and pays for it
+        assertThat(scripted(owner, "Привет, мир").path("state").stringValue(null)).isEqualTo("DONE");
+        assertThat(voiceMilestone(owner)).containsExactly("1:true:LIVE");
+        String achieved = jdbc.sql("SELECT achieved_at::text FROM app_learning.account_milestone WHERE account_id=:a AND milestone_key='VOICE_ANSWER'").param("a", owner)
+                .query(String.class).single();
+        assertThat(finished(owner, accepted(owner, input("STUDY_ANSWER", UUID.randomUUID(), 5_000, AUDIO))).path("state").stringValue(null)).isEqualTo("DONE");
+        assertThat(jdbc.sql("SELECT achieved_at::text FROM app_learning.account_milestone WHERE account_id=:a AND milestone_key='VOICE_ANSWER'").param("a", owner)
+                .query(String.class).single()).isEqualTo(achieved);
+        // the milestone is the account's, not the clip's: another account has none
+        UUID other = UUID.randomUUID();
+        consent(other);
+        assertThat(voiceMilestone(other)).isEmpty();
     }
 
     @Test
@@ -696,7 +726,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
     }
 
     private SpeechInputWorker workerOf(Provider provider) {
-        return new SpeechInputWorker(repository, hints, consents, provider, userKeys, ledger, sampleChecks, aiProperties,
+        return new SpeechInputWorker(repository, hints, consents, provider, userKeys, ledger, sampleChecks, milestones, aiProperties,
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), transactions);
     }
 
@@ -824,6 +854,8 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         assertThat(failed.path("text").isNull()).isTrue();
         assertThat(sttSeconds(owner)).isEqualTo(1_790);
         assertThat(audioRows(claim.id())).isZero();
+        // the milestone is written in the transaction that failed to pay: it rolled back with it
+        assertThat(voiceMilestone(owner)).isEmpty();
     }
 
     @Test

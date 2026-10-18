@@ -20,6 +20,8 @@ import { CommunityPageComponent } from './features/community/community-page.comp
 import { AuthorPageComponent } from './features/community/author-page.component';
 import { publicDeckMatcher } from './features/public-deck/public-deck-routing';
 import { UrlSegment } from '@angular/router';
+import { PathPageComponent } from './features/onboarding/path-page.component';
+import { PATH_TARGET } from './features/onboarding/onboarding-targets';
 
 describe('appRoutes', () => {
     it('keeps the Identity callback and exposes only canonical private deck routes', () => {
@@ -55,6 +57,14 @@ describe('appRoutes', () => {
         expect(appRoutes.find(route => route.path === 'decks/:deckId/materials/:memberKey/exercises/new')?.canDeactivate).toHaveLength(1);
         expect(appRoutes.find(route => route.path === 'decks/:deckId/exercises/:exerciseId/edit')?.canDeactivate).toHaveLength(1);
         expect(appRoutes.find(route => route.path === 'decks/:deckId/study')?.canDeactivate).toHaveLength(1);
+    });
+
+    it('has «Путь Mnema» at /profile/path, lazy and behind the sign-in guard, and the toast and the congratulation lead there', async () => {
+        const path = appRoutes.find(route => route.path === 'profile/path')!;
+        expect(path.canActivate).toEqual([authGuard]);
+        expect(path.component).toBeUndefined();
+        expect(await path.loadComponent!()).toBe(PathPageComponent);
+        expect(PATH_TARGET).toBe('/profile/path');
     });
 
     it('guards the paywall and leaves the AI explanation public', () => {

@@ -8,7 +8,7 @@
       "kind": "One of the kinds below. A client ignores unknown kinds (shows nothing, still counts them unread).",
       "severity": "INFO | WARNING | ERROR: drives the glyph and the toast duration, never the only signal (the text always names the outcome).",
       "params": "Object of at most 4 KiB; the fields per kind below. No server-rendered prose and no personal data: no email, name, titles, note or material text, only identifiers, counts, enums and timestamps. The client builds the sentence from kind and params and fetches titles itself.",
-      "route": "WORKSHOP (params.deckId, params.sessionId) | DECK (params.deckId; for DECK_ACCESS_GRANTED params.code, the public code of the deck, because a reader never learns the deck id) | PLANS | NONE; the kind table says DYNAMIC where the producer picks one. The client maps the key to its own URL; the server never sends a URL.",
+      "route": "WORKSHOP (params.deckId, params.sessionId) | DECK (params.deckId; for DECK_ACCESS_GRANTED params.code, the public code of the deck, because a reader never learns the deck id) | PLANS | PATH (the «Путь Mnema» page, no params needed) | NONE; the kind table says DYNAMIC where the producer picks one. The client maps the key to its own URL; the server never sends a URL. A client treats a route it does not know as NONE (the notification still renders by its kind), so a new route never breaks an older client's list.",
       "createdAt": "UTC RFC 3339.",
       "expiresAt": "createdAt + 30 days (exactly; same time of day)."
     },
@@ -357,6 +357,32 @@
         "route": "DECK",
         "createdAt": "2026-10-12T09:30:00Z",
         "expiresAt": "2026-11-11T09:30:00Z"
+      }
+    },
+    "PATH_MILESTONE": {
+      "severity": "INFO",
+      "route": "PATH",
+      "producer": "onboarding milestones (OB-301, #532): MilestoneRecorder in the transaction of the domain action",
+      "when": "A LIVE milestone record set achieved_at in this very statement while learning.onboarding.enabled is on (contracts/onboarding/milestones.json). Published once per milestone and account; BACKFILL never publishes, and a milestone achieved while the flag was off is never announced later. Several milestones achieved in one transaction are separate notifications with the same done/total.",
+      "params": {
+        "key": "token: a milestone key of contracts/onboarding/milestones.json",
+        "done": "integer: visible milestones done, this one included",
+        "total": "integer: visible milestones"
+      },
+      "dedupeKey": "path:{key}",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-000000000060",
+        "seq": "61",
+        "kind": "PATH_MILESTONE",
+        "severity": "INFO",
+        "params": {
+          "key": "MEDIA_IN_MATERIAL",
+          "done": 6,
+          "total": 12
+        },
+        "route": "PATH",
+        "createdAt": "2026-10-22T10:00:00Z",
+        "expiresAt": "2026-11-21T10:00:00Z"
       }
     }
   },

@@ -4,6 +4,8 @@ import app.mnema.learning.community.CatalogOutbox;
 import app.mnema.learning.community.CatalogEvents;
 import app.mnema.learning.community.InterestService;
 import app.mnema.learning.fork.ForkReadModel;
+import app.mnema.learning.onboarding.MilestoneKey;
+import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
@@ -34,9 +36,11 @@ public class DeckService {
     private final CatalogOutbox catalog;
     private final CatalogEvents events;
     private final InterestService interests;
+    private final MilestoneRecorder milestones;
 
     public DeckService(DeckRepository repository, CommandReceiptService receipts,
-                       CompareAndSetExecutor cas, ImmutableStorage storage, ForkReadModel forks, CatalogOutbox catalog, CatalogEvents events, InterestService interests) {
+                       CompareAndSetExecutor cas, ImmutableStorage storage, ForkReadModel forks, CatalogOutbox catalog, CatalogEvents events, InterestService interests,
+                       MilestoneRecorder milestones) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
@@ -45,6 +49,7 @@ public class DeckService {
         this.catalog = catalog;
         this.events = events;
         this.interests = interests;
+        this.milestones = milestones;
     }
 
     @Transactional(readOnly = true, timeout = 10)
@@ -95,6 +100,7 @@ public class DeckService {
                     members.objectId(), exercises.objectId(), 0, 0, "private", null);
             repository.insertDeck(deck, actor, scope, revision, time);
             publish(row, actor, null, command, List.of(members, exercises));
+            milestones.reach(actor, MilestoneKey.FIRST_DECK, 1);
             return withFork(actor, row);
         });
     }

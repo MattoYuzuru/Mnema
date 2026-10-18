@@ -29,14 +29,23 @@ import {
     WEEKLY_TARGET,
     isCommandId
 } from './onboarding.models';
+import {
+    MILESTONE_KEYS,
+    MILESTONE_STATES,
+    Milestone,
+    MilestoneKey,
+    PathSummary,
+    isMilestoneKey,
+    milestoneDefinition
+} from './path.models';
 
 const ROW_VERSION = /^(?:0|[1-9][0-9]{0,18})$/u;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const MAX_MILESTONES = 100;
 const VIEW_KEYS = ['enabled', 'journey', 'milestones', 'path', 'rhythm', 'sampleDeck'];
 const JOURNEY_KEYS = ['state', 'eligible', 'autoOffer', 'tourVersion', 'branch', 'stepKey', 'experience', 'weeklyTarget', 'offeredAt', 'finishedAt',
     'replayCount', 'rowVersion'];
-const MAX_MILESTONES = 100;
 
 /**
  * HTTP boundary of the onboarding journey. Envelopes are parsed strictly; the `ETag` is an opaque validator echoed as
@@ -172,6 +181,62 @@ function parseSampleDeck(value: unknown): SampleDeck {
     return { available: bool(body['available']), deckId, updateAvailable: bool(body['updateAvailable']), freeChecksLeft };
 }
 
+function parseMilestone(value: unknown): Milestone {
+    const body = exact(value, ['key', 'state', 'progress', 'target', 'achievedAt']);
+    const key = body['key'];
+    if (!isMilestoneKey(key)) throw protocol('Unknown milestone.');
+    const state = oneOf(body['state'], MILESTONE_STATES);
+    const target = count(body['target'], 1);
+    const progress = count(body['progress']);
+    const achievedAt = nullable(body['achievedAt'], instant);
+    if (target !== milestoneDefinition(key).target || progress > target) throw protocol('Milestone target out of the registry.');
+    // DONE: achieved, at the target. PARTIAL: started and not achieved. TODO: nothing yet.
+    const consistent = state === 'DONE' ? achievedAt !== null && progress === target
+        : state === 'PARTIAL' ? achievedAt === null && progress > 0 && progress < target : achievedAt === null && progress === 0;
+    if (!consistent) throw protocol('Milestone state does not match its progress.');
+    return { key, state, progress, target, achievedAt };
+}
+
+/**
+ * `milestones` and `path` of the view. Off (`enabled=false`): `[]` and `null`. On: the visible milestones in registry order without a
+ * repeat, and `path` agreeing with them: `done` the ones achieved, `total` how many are visible, `hidden` the rest of the registry in
+ * registry order. A milestone that is always visible is never hidden.
+ *
+ * Forward compatible: a milestone key this client does not know (a newer server) is dropped from `milestones` and from `hidden` and is
+ * counted nowhere; the checks run over the known keys only, and `done` and `total` are the client's own count of them. A server's
+ * count that included the unknown one cannot be compared, so it is compared only when nothing was dropped. Known keys stay strict.
+ */
+function parsePath(milestones: unknown, path: unknown, enabled: boolean): { readonly milestones: readonly Milestone[]; readonly path: PathSummary | null } {
+    if (!enabled) {
+        if (!Array.isArray(milestones) || milestones.length > 0 || path !== null) throw protocol('A disabled view carries no path.');
+        return { milestones: [], path: null };
+    }
+    if (!Array.isArray(milestones) || milestones.length > MAX_MILESTONES) throw protocol('Invalid milestones.');
+    if (milestones.some(item => !isRecord(item) || typeof item['key'] !== 'string')) throw protocol('Invalid milestone.');
+    const known = milestones.filter(item => isMilestoneKey((item as Record<string, unknown>)['key']));
+    const parsed = known.map(parseMilestone);
+    let dropped = milestones.length - known.length;
+    const order = parsed.map(milestone => MILESTONE_KEYS.indexOf(milestone.key));
+    if (order.some((position, index) => index > 0 && position <= order[index - 1])) throw protocol('Milestones are not in registry order.');
+    const summary = exact(path, ['done', 'total', 'hidden']);
+    const listed = summary['hidden'];
+    if (!Array.isArray(listed) || listed.length > MAX_MILESTONES || !listed.every(key => typeof key === 'string')) throw protocol('Invalid hidden milestones.');
+    const hidden = listed.filter((key): key is MilestoneKey => isMilestoneKey(key));
+    dropped += listed.length - hidden.length;
+    const visible = new Set<string>(parsed.map(milestone => milestone.key));
+    const rest = MILESTONE_KEYS.filter(key => !visible.has(key));
+    if (hidden.length !== rest.length || hidden.some((key, index) => key !== rest[index])) throw protocol('Hidden milestones do not complete the registry.');
+    if (hidden.some(key => milestoneDefinition(key).visibility === 'ALWAYS')) throw protocol('A milestone that is always visible is hidden.');
+    const done = parsed.filter(milestone => milestone.state === 'DONE').length;
+    if (dropped === 0 && (summary['done'] !== done || summary['total'] !== parsed.length)) throw protocol('The path counts do not match the milestones.');
+    if (typeof summary['done'] !== 'number' || typeof summary['total'] !== 'number') throw protocol('Invalid path counts.');
+    return { milestones: parsed, path: { done, total: parsed.length, hidden } };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /** Parses the strict envelope of the view. Exported for the contract spec. */
 export function parseOnboardingView(value: unknown): OnboardingView {
     const body = exact(value, VIEW_KEYS);
@@ -179,12 +244,9 @@ export function parseOnboardingView(value: unknown): OnboardingView {
     const journey = nullable(body['journey'], parseJourney);
     // Disabled means no tour state at all; enabled always has a journey (`NOT_OFFERED` when there is no row).
     if (enabled !== (journey !== null)) throw protocol('The journey must be present exactly when onboarding is enabled.');
-    const milestones = body['milestones'];
-    if (!Array.isArray(milestones) || milestones.length > MAX_MILESTONES) throw protocol('Invalid milestones.');
-    const path = body['path'];
     const rhythm = body['rhythm'];
-    if (path !== null && (typeof path !== 'object' || Array.isArray(path))) throw protocol('Invalid path.');
     if (rhythm !== null && (typeof rhythm !== 'object' || Array.isArray(rhythm))) throw protocol('Invalid rhythm.');
+    const { milestones, path } = parsePath(body['milestones'], body['path'], enabled);
     return { enabled, journey, milestones, path, rhythm, sampleDeck: parseSampleDeck(body['sampleDeck']) };
 }
 

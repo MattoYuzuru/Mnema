@@ -136,6 +136,24 @@ class CombinedPublicationIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void acceptingAnUpdateWritesNoMilestoneOfTheCopysOwner() {
+        Fork f = worlds.fork();
+        Authoring author = authorChanges(f);
+        long authored = jdbc.sql("SELECT count(*) FROM app_learning.account_milestone WHERE account_id=:a AND milestone_key IN ('OWN_MATERIAL','OWN_EXERCISES')").param("a", f.author())
+                .query(Long.class).single();
+        assertThat(authored).as("the author's own publications are his milestones").isEqualTo(2);
+        long copyOwnerBefore = jdbc.sql("SELECT count(*) FROM app_learning.account_milestone WHERE account_id=:a").param("a", f.copyOwner()).query(Long.class).single();
+
+        // the update adopts a new material, a new exercise and a new objective into the copy: they are the author's, not the copy owner's
+        Applied applied = publication.publish(theWholeUpdate(f, author, null));
+
+        assertThat(applied.result().changed()).isTrue();
+        assertThat(applied.result().itemsChanged()).isEqualTo(4);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.account_milestone WHERE account_id=:a").param("a", f.copyOwner()).query(Long.class).single())
+                .isEqualTo(copyOwnerBefore).isZero();
+    }
+
+    @Test
     void aMixOfAdoptionsRemovalsMovesObjectivesAndMetadataIsOneRevisionWhoseManifestsAreTheAuthors() {
         Fork f = worlds.fork();
         Authoring author = authorChanges(f);

@@ -2,6 +2,7 @@ import { Component, ElementRef, viewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
+import { TourEvents } from '../../core/onboarding/tour-events';
 import { SPEECH_MIME_PREFERENCE } from '../../shared/audio-recorder';
 import { UsageApiService } from '../usage/usage-api.service';
 import { MicButtonComponent } from './mic-button.component';
@@ -77,6 +78,17 @@ describe('MicButtonComponent', () => {
         button('Остановить запись').click();
         await flush();
     }
+
+    it('tells a waiting side quest that a spoken text went in, and not before it did', async () => {
+        const seen: string[] = [];
+        TestBed.inject(TourEvents).listen(event => { seen.push(event); });
+        button('Начать запись').click();
+        await flush();
+        expect(seen).toEqual([]);
+        button('Остановить запись').click();
+        await flush();
+        expect(seen).toEqual(['voice.transcribed']);
+    });
 
     it('starts idle with a named button and one polite status region', () => {
         expect(button('Начать запись')).toBeTruthy();

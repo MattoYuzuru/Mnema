@@ -26,8 +26,9 @@ expires_at)` with `UNIQUE(owner_id, dedupe_key)` and `UNIQUE(owner_id, seq)`, an
   separate outbox. A second publish with an existing `(owner, dedupeKey)` is a no-op: the first stands and is never refreshed.
 - **Retention** 30 days and 200 per account (the 201st evicts the oldest). `expiresAt = createdAt + 30 days`, exactly. Dismissed and
   expired rows are absent from reads.
-- `route` is a key the client maps to its own URL: `WORKSHOP` (`deckId`, `sessionId`), `DECK` (`deckId`), `PLANS`, `NONE`.
-  The server never sends a URL. A kind whose producer picks one is `DYNAMIC` in the table below.
+- `route` is a key the client maps to its own URL: `WORKSHOP` (`deckId`, `sessionId`), `DECK` (`deckId`), `PLANS`, `PATH` (the
+  «Путь Mnema» page), `NONE`. The server never sends a URL. A kind whose producer picks one is `DYNAMIC` in the table below. A client
+  treats a route it does not know as `NONE`, so a new route never breaks the list of an older client.
 - A client ignores unknown kinds (shows nothing but they still count as unread).
 - **Toast duration by severity:** `INFO` 6 s (the product's "ready" toast), `WARNING` 6 s, `ERROR` until closed. The 3 s toast of the
   product contract is the echo of the user's own action: a client toast, not a notification. During Study toasts wait for a natural
@@ -49,6 +50,7 @@ expires_at)` with `UNIQUE(owner_id, dedupe_key)` and `UNIQUE(owner_id, seq)`, an
 | `DECK_ACCESS_GRANTED` | INFO | DECK | `code` | deck access requests (Share/13, #435) |
 | `DECK_HIDDEN` | WARNING | DECK | `deckId` | complaint decisions (Share/15, #437) |
 | `DECK_CONTENT_TAKEN_DOWN` | WARNING | DECK | `deckId`, `materialCount`, `exerciseCount` | complaint decisions (Share/15, #437) |
+| `PATH_MILESTONE` | INFO | PATH | `key`, `done`, `total` | onboarding milestones (OB-301, #532) |
 
 Semantics (details and dedupe keys per kind in `notifications.json`):
 
@@ -71,6 +73,12 @@ Semantics (details and dedupe keys per kind in `notifications.json`):
 - `DECK_HIDDEN` and `DECK_CONTENT_TAKEN_DOWN` go to the owner of a deck when the console owner decides a complaint (HIDDEN, or a legal takedown that names
   new units). They carry only the deck id and counts; the reporter is never told and the owners of copies see only the hub notice. The client opens
   the deck hub (section «Модерация»). Contract of the feature: [`contracts/moderation`](../moderation/README.md).
+- `PATH_MILESTONE` is published by `MilestoneRecorder` in the transaction of the domain action when a **live** record reaches its
+  target, once per milestone and account (`path:{key}`), and only while `learning.onboarding.enabled` is on: the backfill never
+  publishes and a milestone reached while the flag was off is not announced later. `key` is a key of
+  [`contracts/onboarding/milestones.json`](../onboarding/milestones.json); `done`/`total` count the visible milestones. The client shows
+  «Путь: {event} · {done} из {total}», never while an answer is open in Study and at most one milestone toast per 30 s (a summary for
+  several).
 - `MEDIA_PROCESSING_FAILED` is also produced for provider-step media failures of a generation slot; the route is `WORKSHOP` when
   `sessionId` is set, `DECK` when only `deckId` is set, else `NONE`.
 

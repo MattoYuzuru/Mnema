@@ -41,7 +41,7 @@ class OnboardingCohortTest {
         when(repository.insert(eq(account), any(), eq(NOW))).thenReturn(true);
         when(samples.state(account)).thenReturn(SampleDeckState.unavailable(3));
         service = new OnboardingService(repository, new OnboardingSettings(true, "2026-10-16T00:00:00Z"), assignments, events, mock(CommandReceiptService.class),
-                new SimpleMeterRegistry(), samples);
+                new SimpleMeterRegistry(), samples, mock(MilestoneRepository.class), mock(PathVisibility.class));
     }
 
     private OnboardingRepository.Row created(OnboardingRepository.Cohort cohort) {

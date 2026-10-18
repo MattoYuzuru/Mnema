@@ -48,8 +48,8 @@ describe('AttentionCoordinator', () => {
         expect(coordinator.visible()).toEqual([]);
     });
 
-    it('keeps the order system error > study > tour > first entry > promo > milestone', () => {
-        expect([...SURFACES]).toEqual(['system-error', 'study', 'tour', 'first-entry', 'promo', 'milestone']);
+    it('keeps the order system error > study > tour > first entry > hint > promo > milestone', () => {
+        expect([...SURFACES]).toEqual(['system-error', 'study', 'tour', 'first-entry', 'hint', 'promo', 'milestone']);
     });
 
     it('lets only the highest surface on the screen speak, whatever else is reported', () => {
@@ -75,6 +75,21 @@ describe('AttentionCoordinator', () => {
             expect(SURFACES.filter(surface => coordinator.canShow(surface)), holder).toEqual(SURFACES.slice(0, index + 1));
             hold(holder, false);
         }
+    });
+
+    describe('the in-place hint of «Путь»', () => {
+        it('is the learner\'s own request: it waits for the study session, the tour and the first entry, and keeps the promo window and the milestone toasts quiet', () => {
+            coordinator.report('hint', true);
+            expect(coordinator.speaking()).toBe('hint');
+            expect(all()).toEqual(['system-error', 'study', 'tour', 'first-entry', 'hint']);
+            coordinator.report('hint', false);
+            for (const holder of ['study', 'tour', 'first-entry'] as const) {
+                if (holder === 'study') quiet.set(true); else if (holder === 'tour') active.set(true); else coordinator.report('first-entry', true);
+                expect(coordinator.canShow('hint'), holder).toBe(false);
+                if (holder === 'study') quiet.set(false); else if (holder === 'tour') active.set(false); else coordinator.report('first-entry', false);
+            }
+            expect(coordinator.canShow('hint')).toBe(true);
+        });
     });
 
     describe('the study session', () => {

@@ -18,8 +18,9 @@ Backend tests and the frontend contract spec both execute the fixture.
   The goal and the interests stay in their own APIs (`/api/learning-profile`, `/api/community/interests`); this contract
   stores only the tour state, `experience` and `weeklyTarget`. No user text, deck title or search query is stored.
 - **The view.** `enabled` mirrors `learning.onboarding.enabled`; while it is false `journey` is `null`, every `PUT` is
-  409 `ONBOARDING_UNAVAILABLE` and the client shows neither «Начало пути» nor the tour (rollback). `milestones`, `path`,
-  `rhythm` are reserved now so the client never changes shape: until OB-E3/E4 they are `[]`, `null` and `null`.
+  409 `ONBOARDING_UNAVAILABLE` and the client shows neither «Начало пути», the tour nor «Путь» (rollback). `milestones` and
+  `path` are the «Путь Mnema» (OB-E3, below); while the flag is off they are `[]` and `null`. `rhythm` is reserved for OB-E4
+  and is `null`.
   `sampleDeck` (OB-E2): `available` — the flag `learning.onboarding.sample-deck.enabled`, a configured template that is live and
   has a published revision; `deckId` — the account's live sample copy or `null`; `updateAvailable` — that copy has an update of
   the template waiting (the ordinary «Есть обновление»); `freeChecksLeft` — AI checks still free for the account in its sample
@@ -72,4 +73,23 @@ Backend tests and the frontend contract spec both execute the fixture.
   transcription of an answer) cost the user nothing: they are counted as `ONBOARDING_SAMPLE_CHECK` in the usage ledger instead of
   the plan's buckets. Later ones are ordinary checks.
 
-Account purge (#409) deletes `onboarding_journey` by `account_id` (TODO in the repository, like `learning_profile`).
+- **«Путь Mnema» (OB-E3, [ADR-ONB-002](../../docs/engineering/onboarding/adr/adr-onb-002-milestones.md)).** The closed registry of
+  13 milestones — key, chapter, target, visibility condition, client route key, the writer and what a backfill can restore — is
+  [`milestones.json`](milestones.json). `milestones` lists the **visible** milestones in registry order as
+  `{key, state: DONE|PARTIAL|TODO, progress, target, achievedAt}`; `path` is `{done, total, hidden}` where `hidden` names the
+  milestones a switched-off feature hides (AI assessment, speech-to-text, AI generation, an empty or closed catalogue, the
+  rhythm until OB-401). 100 % is `done = total` over the visible ones. The facts live in `account_milestone` (V74): one row per
+  account and milestone, written **in the transaction of the domain action** by `MilestoneRecorder`
+  (`@Transactional(MANDATORY)`, one upsert; a rolled-back action leaves no milestone), source `LIVE` or `BACKFILL`. Rows are
+  written whatever `learning.onboarding.enabled` says (harmless facts), are never reset (a tour replay keeps them) and are read
+  only while the flag is on. Practice, replay, someone else's copy and the sample deck do not count the author's milestones
+  (`purpose=USER` in their conditions); the sample deck counts `FIRST_DECK`, `FIRST_SESSION`, `TWO_DAYS` and `AI_EXPLANATION`.
+- **Milestone notification.** A live record that reaches its target publishes `PATH_MILESTONE` (route `PATH`, params
+  `key`, `done`, `total`, dedupe `path:{key}`) in the same transaction, only while the flag is on
+  ([notifications contract](../notifications/README.md)). The backfill never notifies.
+- **Backfill (OB-302).** A bounded background job (queue `onboarding.backfill`; scheduled only while `learning.onboarding.backfill.enabled` is on, default off; `learning.jobs.onboarding.backfill.enabled` is the queue kill switch) writes `BACKFILL` rows
+  from the account's history; it raises `progress` to what history shows (never lowers it) and sets `achievedAt` from the fact's
+  time. Facts history no longer holds (deleted notes, speech transcripts after 15 minutes, practice outcomes after retention)
+  stay undone; see `backfill.restorable` per milestone.
+
+Account purge (#409) deletes `onboarding_journey` and `account_milestone` by `account_id` (TODO in the repositories, like `learning_profile`).

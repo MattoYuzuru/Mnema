@@ -90,6 +90,12 @@ export const appRoutes: Routes = [
         canActivate: [authGuard]
     },
     {
+        // «Путь Mnema»: the milestones. Exists while the server says onboarding is on; the page sends the learner back to the profile otherwise.
+        path: 'profile/path',
+        loadComponent: () => import('./features/onboarding/path-page.component').then(module => module.PathPageComponent),
+        canActivate: [authGuard]
+    },
+    {
         path: 'decks',
         loadComponent: () => import('./features/own-decks/own-decks-list-page.component')
             .then(module => module.OwnDecksListPageComponent),
