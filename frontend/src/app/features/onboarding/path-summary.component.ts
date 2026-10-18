@@ -18,7 +18,7 @@ import { PathProgressComponent } from '../../shared/path-progress.component';
         <section class="path-summary" aria-labelledby="path-summary-title">
           <h2 id="path-summary-title">{{ title }}</h2>
           @if (!preferences.hidden() && total(); as text) {
-            <p class="total">{{ text }}</p>
+            <p class="total" aria-hidden="true">{{ text }}</p>
             <app-path-progress [label]="title" [value]="store.view()?.path?.done ?? 0" [max]="store.view()?.path?.total ?? 1" [valueText]="text" />
           }
           <p><a class="button" routerLink="/profile/path">{{ open }}</a></p>

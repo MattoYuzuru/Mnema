@@ -7,8 +7,11 @@ export const QUEST_CAPABILITY: Readonly<Record<QuestRoute, keyof LearningCapabil
     QUEST_WORKSHOP: 'aiGeneration', QUEST_VOICE: 'speechToText', QUEST_EXPLAIN: 'aiAssessment', QUEST_MEDIA: null
 };
 
-/** The quests that may run in the sample deck as a demonstration, on the free checks of the account. */
-export const SAMPLE_QUESTS: readonly QuestRoute[] = ['QUEST_EXPLAIN', 'QUEST_VOICE'];
+/**
+ * The quests that may run in the sample deck as a demonstration, on the free checks of the account: only the explanation (an AI check
+ * of an answer). The voice goes through the microphone of a note field, which the free checks do not cover.
+ */
+export const SAMPLE_QUESTS: readonly QuestRoute[] = ['QUEST_EXPLAIN'];
 
 /** The quests that need a deck of the learner's own work (they write into it). */
 export function needsOwnDeck(route: QuestRoute): boolean {

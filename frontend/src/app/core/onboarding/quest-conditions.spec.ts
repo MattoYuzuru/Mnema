@@ -27,9 +27,9 @@ describe('conditions of the side quests', () => {
         expect(capabilityReason('QUEST_MEDIA', CAPABILITIES_UNAVAILABLE)).toBeNull();
     });
 
-    it('lets only the explanation and the voice demonstrate on the sample deck; the others write into a deck of the learner\'s own', () => {
-        expect(SAMPLE_QUESTS).toEqual(['QUEST_EXPLAIN', 'QUEST_VOICE']);
-        expect(QUEST_ROUTES.filter(needsOwnDeck)).toEqual(['QUEST_MEDIA', 'QUEST_WORKSHOP']);
+    it('lets only the explanation demonstrate on the sample deck (its free checks cover an AI check, not a note\'s microphone); the others write into a deck of the learner\'s own', () => {
+        expect(SAMPLE_QUESTS).toEqual(['QUEST_EXPLAIN']);
+        expect(QUEST_ROUTES.filter(needsOwnDeck)).toEqual(['QUEST_MEDIA', 'QUEST_VOICE', 'QUEST_WORKSHOP']);
     });
 
     it('counts the credits that may be spent now: the open part on Free, less what is used and reserved', () => {

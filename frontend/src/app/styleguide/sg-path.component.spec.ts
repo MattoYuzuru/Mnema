@@ -31,7 +31,7 @@ describe('SgPathComponent', () => {
 
     it('shows the milestone in every state with a word each: done, partial with a counter, the stage of «На потом», not started', () => {
         const rows = [...specimen('Веха: состояния').querySelectorAll('app-path-milestone')];
-        expect(rows.map(row => row.querySelector('.word')!.textContent!.trim())).toEqual(['Сделано', '2 из 3', 'Начато', 'Не начато']);
+        expect(rows.map(row => row.querySelector('.word')!.textContent!.trim())).toEqual(['Сделано', 'Начато', 'Начато', 'Не начато']);
         expect(rows[1].querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('2');
         expect(rows[2].querySelector('.benefit')?.textContent).toBe('Заметка сохранена, осталось её разобрать.');
         expect(rows[0].querySelector('a.go')).toBeNull();

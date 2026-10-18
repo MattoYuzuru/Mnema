@@ -3,6 +3,7 @@ import { Title } from '@angular/platform-browser';
 import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 
+import { Journey } from '../../core/onboarding/onboarding.models';
 import { JourneyStore } from '../../core/onboarding/journey.store';
 import { onboardingText } from '../../core/onboarding/onboarding-texts';
 import { PathNavigation } from '../../core/onboarding/path-navigation.service';
@@ -32,13 +33,13 @@ import { ReplayTourComponent } from './replay-tour.component';
         }
         <header class="path-head">
           <div class="heading">
-            <a class="eyebrow" routerLink="/profile">{{ text.eyebrow }}</a>
+            <a class="eyebrow back" routerLink="/profile">{{ text.eyebrow }}</a>
             <h1 id="path-title" tabindex="-1">{{ text.title }}</h1>
-            <p class="hint">{{ text.intro }}</p>
+            <p class="hint intro">{{ text.intro }}</p>
           </div>
           @if (path(); as summary) {
             <div class="total">
-              <strong>{{ totalText() }}</strong>
+              <strong aria-hidden="true">{{ totalText() }}</strong>
               <app-path-progress [label]="text.title" [value]="summary.done" [max]="summary.total" [valueText]="totalText()" />
             </div>
           }
@@ -81,11 +82,12 @@ import { ReplayTourComponent } from './replay-tour.component';
       .path-new { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
       .path-head { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; justify-content: space-between; }
       .heading { min-inline-size: 0; max-inline-size: 45rem; }
-      .eyebrow { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min); text-decoration: none; }
-      .eyebrow:hover { text-decoration: underline; text-underline-offset: .22em; }
+      /* Layout deltas only: the look of the rubric and of the hint is the shared .eyebrow and .hint. */
+      .back { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min); text-decoration: none; }
+      .back:hover { text-decoration: underline; text-underline-offset: .22em; }
       h1 { margin: 0 0 .5rem; color: var(--mn-ink); font: 500 clamp(2.7rem, 7vw, 5rem)/.98 var(--mn-font-display); overflow-wrap: anywhere; }
       h1:focus-visible { outline: none; }
-      .hint { margin: 0; }
+      .intro { margin: 0; }
       .total { display: grid; gap: .35rem; min-inline-size: min(100%, 16rem); }
       .total strong { color: var(--mn-ink); font-size: 1.3rem; }
       .status, .notice p { margin: 0; }
@@ -116,7 +118,7 @@ export class PathPageComponent implements OnInit {
         const summary = this.path();
         return summary === null ? '' : onboardingText('path.total', { done: summary.done, total: summary.total });
     });
-    /** «Новое: Путь Mnema», once per account on this device, for an existing account only (`eligible=false`: old accounts and those outside the eligibility). Kept on screen for this visit. */
+    /** «Новое: Путь Mnema», once per account on this device, for an account the tour was never offered to by itself (see `neverOffered`). Kept on screen for this visit. */
     protected readonly showNotice = signal(false);
 
     constructor() {
@@ -133,7 +135,7 @@ export class PathPageComponent implements OnInit {
             const journey = this.store.journey();
             if (!this.store.enabled() || journey === null) return;
             untracked(() => {
-                if (journey.eligible || this.preferences.noticeSeen()) return;
+                if (!neverOffered(journey) || this.preferences.noticeSeen()) return;
                 this.showNotice.set(true);
                 this.preferences.markNoticeSeen();
             });
@@ -162,3 +164,13 @@ export class PathPageComponent implements OnInit {
     }
 }
 
+
+/**
+ * Whether the tour was never offered to this account on its own: an old account or one outside the eligibility (`eligible=false`), or the
+ * holdout (eligible, still `OFFERED`, and `autoOffer=false`, which the server says only for the group that is not offered it). The view
+ * does not name the holdout once it has left `OFFERED` (a replay or a start), so a holdout that went through the tour is treated as
+ * offered from then on: it has been introduced to «Путь» by the tour's own finale.
+ */
+export function neverOffered(journey: Journey): boolean {
+    return !journey.eligible || (journey.state === 'OFFERED' && !journey.autoOffer);
+}

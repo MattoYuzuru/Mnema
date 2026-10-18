@@ -14,7 +14,7 @@ const sample: QuestContext = { deckId: DECK, sample: true, memberKey: null };
 
 describe('the side quests (OB-304)', () => {
     const all: [QuestRoute, QuestContext][] = QUEST_ROUTES.flatMap((route): [QuestRoute, QuestContext][] =>
-        route === 'QUEST_EXPLAIN' || route === 'QUEST_VOICE' ? [[route, own], [route, sample]] : [[route, own]]);
+        route === 'QUEST_EXPLAIN' ? [[route, own], [route, sample]] : [[route, own]]);
 
     it.each(all)('%s is a sound quest of two to four steps, client-only, under its own keys', (route, context) => {
         const definition = questDefinition(route, context);
@@ -73,14 +73,12 @@ describe('the side quests (OB-304)', () => {
             expect(next.anchor).toBe('capture.mic');
         });
 
-        it('ends on the transcription: the note field in a deck of the learner\'s own, the study in the sample deck', () => {
+        it('ends on the transcription in the note field of the deck, in any deck: a session cannot be steered to a spoken task', () => {
             const last = questDefinition('QUEST_VOICE', own).steps[1];
             expect(last.gate).toEqual({ action: QUEST_EVENTS.voiceTranscribed, label: 'Начать запись' });
-            const demo = questDefinition('QUEST_VOICE', sample).steps[1];
-            expect(demo.anchor).toBe('hub.start');
-            expect(demo.route).toBe(`/decks/${DECK}`);
-            expect(demo.completes).toBe(QUEST_EVENTS.voiceTranscribed);
-            expect(demo.gate).toMatchObject({ action: 'study.started', pauses: true });
+            expect(last.completes).toBeUndefined();
+            expect(questDefinition('QUEST_VOICE', own).steps).toHaveLength(2);
+            expect(questDefinition('QUEST_VOICE', own).steps.some(item => item.anchor === 'hub.start')).toBe(false);
         });
     });
 
@@ -102,6 +100,10 @@ describe('the side quests (OB-304)', () => {
             expect(study.completes).toBe(QUEST_EVENTS.answerChecked);
             expect(study.gate).toMatchObject({ action: 'study.started', label: 'Учить', pauses: true });
             expect(questDefinition('QUEST_EXPLAIN', sample).steps.map(item => item.anchor)).toEqual(['', 'hub.start']);
+            // Honest about it: the task is not in every session, and the text says how to find one.
+            const text = study.body.kind === 'paragraphs' ? study.body.paragraphs.map(plainText).join(' ') : '';
+            expect(text).toContain('попадается не в каждом занятии');
+            expect(text).toContain('начните занятие ещё раз или добавьте такое упражнение');
         });
     });
 

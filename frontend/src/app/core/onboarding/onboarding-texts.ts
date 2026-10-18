@@ -180,6 +180,17 @@ export const ONBOARDING_TEXTS = {
     'hint.MATERIAL_NEW': 'Добавьте материал — то, что хотите запомнить.',
     'hint.EXERCISE_NEW': 'Добавьте упражнение, чтобы проверять себя.',
     'hint.COMMUNITY': 'Найдите колоду по своей теме и нажмите «Добавить к себе».',
+    // pending owner approval (S3, OB-E3): the «Цель» block of the profile (the place the survey promises to change the answer in)
+    'goal.profile.title': 'Цель',
+    'goal.profile.loading': 'Загружаем цель…',
+    'goal.profile.error': 'Не удалось загрузить цель.',
+    'goal.profile.saveError': 'Не удалось сохранить цель. Попробуйте ещё раз.',
+    'goal.profile.current': 'Ваша цель: {goal}.',
+    'goal.profile.none': 'Цель не выбрана. Её можно выбрать в любой момент.',
+    'goal.profile.change': 'Изменить',
+    'goal.profile.choose': 'Выбрать',
+    'goal.profile.save': 'Сохранить',
+    'goal.profile.cancel': 'Отмена',
     // pending owner approval (S3, OB-E3, OB-304): the side quests (client-only tours started from a chevron of «Путь»)
     'quest.loading': 'Готовим задание…',
     'quest.choose.lead': 'Выберите колоду, в которой пройдём это задание.',
@@ -217,8 +228,6 @@ export const ONBOARDING_TEXTS = {
     'quest.voice.mic.body3': 'Нажмите «Дальше», когда будете готовы.',
     'quest.voice.record.title': 'Скажите вслух',
     'quest.voice.record.body': 'Нажмите «Начать запись», скажите пару слов и остановите запись. Текст появится в поле, его можно поправить.',
-    'quest.voice.study.title': 'Ответьте голосом в занятии',
-    'quest.voice.study.body': 'Нажмите «Учить». В задании со свободным ответом нажмите «Начать запись» и скажите ответ.',
     'quest.media.insert.title': 'Добавьте картинку или звук',
     'quest.media.insert.body': 'Выберите файл или найдите картинку здесь, и она встанет в текст материала.',
     'quest.media.publish.title': 'Опубликуйте материал',
@@ -227,15 +236,18 @@ export const ONBOARDING_TEXTS = {
     'quest.explain.what.body1': 'В заданиях со свободным ответом вы объясняете мысль своими словами, а ИИ проверяет, понятна ли она, и подсказывает, чего не хватает.',
     'quest.explain.what.body2': 'Оценку можно оспорить, а если ИИ занят, оценить себя самому.',
     'quest.explain.study.title': 'Пройдите занятие',
-    'quest.explain.study.body': 'Нажмите «Учить». Когда попадётся задание со свободным ответом, ответьте своими словами. Задание закончится, когда ИИ проверит ответ.'
+    'quest.explain.study.body': 'Нажмите «Учить». Задание со свободным ответом попадается не в каждом занятии: если его не было, начните занятие ещё раз или добавьте такое упражнение в материал. Задание закончится, когда ИИ проверит ответ.'
 } as const;
+
+/** The strings of the goal block of the profile: all of them await approval. */
+const GOAL_PROFILE_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('goal.profile.'));
 
 /** The strings of the side quests: all of them await approval. */
 const QUEST_TEXT_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('quest.'));
 
 /** Keys that are not in the approved text list of the prototype (texts.js): the markup of the prototype, or new strings awaiting approval. */
 export const UNLISTED_TEXT_KEYS: readonly OnboardingTextKey[] = ['tour.slider.label', 'survey.progress.label', 'survey.progress.value', 'replay.own.title', 'replay.own.new',
-    'path.eyebrow', ...MILESTONE_KEYS.map(key => `path.event.${key}` as const), 'path.toast.many', 'path.show', 'path.loading',
+    'path.eyebrow', ...GOAL_PROFILE_KEYS, ...MILESTONE_KEYS.map(key => `path.event.${key}` as const), 'path.toast.many', 'path.show', 'path.loading',
     'hint.PROFILE_GOAL', 'hint.DECKS', 'hint.STUDY', 'hint.MATERIAL_NEW', 'hint.EXERCISE_NEW', 'hint.COMMUNITY',
     ...QUEST_TEXT_KEYS];
 

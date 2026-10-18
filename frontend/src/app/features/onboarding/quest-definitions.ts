@@ -17,7 +17,7 @@ export const QUEST_EVENTS = {
 /** What a quest needs to know about where it runs. */
 export interface QuestContext {
     readonly deckId: string;
-    /** The deck is the account's sample copy (a demonstration of the explanation or the voice). */
+    /** The deck is the account's sample copy (a demonstration of the explanation). */
     readonly sample: boolean;
     /** The material the editor opens, for the quest of the picture. */
     readonly memberKey: string | null;
@@ -48,9 +48,8 @@ export function questDefinition(route: QuestRoute, context: QuestContext): TourD
         ]);
         case 'QUEST_VOICE': return quest('voice', [
             { ...step('quest.voice.mic', '', 'quest.voice.mic', { gate: 'next' }, text('quest.voice.mic.body1'), text('quest.voice.mic.body2'), text('quest.voice.mic.body3')), screen: true },
-            context.sample
-                ? step('quest.voice.study', TOUR_ANCHORS.hubStart, 'quest.voice.study', { route: deck, completes: QUEST_EVENTS.voiceTranscribed, gate: { action: 'study.started', label: STUDY_LABEL, pauses: true } }, text('quest.voice.study.body'))
-                : step('quest.voice.record', TOUR_ANCHORS.captureMic, 'quest.voice.record', { route: `${deck}/capture`, gate: { action: QUEST_EVENTS.voiceTranscribed, label: 'Начать запись' } }, text('quest.voice.record.body'))
+            // Any transcription counts the milestone, so the quest uses the microphone of the note field: a session cannot be steered to a spoken task.
+            step('quest.voice.record', TOUR_ANCHORS.captureMic, 'quest.voice.record', { route: `${deck}/capture`, gate: { action: QUEST_EVENTS.voiceTranscribed, label: 'Начать запись' } }, text('quest.voice.record.body'))
         ]);
         case 'QUEST_MEDIA': return quest('media', [
             step('quest.media.insert', TOUR_ANCHORS.editorMedia, 'quest.media.insert', { route: `${deck}/materials/${context.memberKey ?? ''}/edit`, gate: { action: QUEST_EVENTS.mediaInserted, label: null } }, text('quest.media.insert.body')),

@@ -121,25 +121,27 @@ describe('QuestLauncher (the start of a side quest)', () => {
                 actions: [{ kind: 'link', label: 'Тарифы', commands: ['/plans'] }] });
         });
 
-        it('offers the sample deck when the budget is gone but its free checks are not (the explanation and the voice), and starts the quest there', async () => {
+        it('offers the sample deck when the budget is gone but its free checks are not (the explanation), and starts the quest there', async () => {
             const empty = plusUsage() as unknown as UsageSnapshot;
-            usage.mockReturnValue(of({ ...empty, fairUse: { ...empty.fairUse, stt: { ...empty.fairUse.stt, used: 60, limit: 60 } } }));
-            await launcher.open('QUEST_VOICE', 'VOICE_ANSWER');
+            usage.mockReturnValue(of({ ...empty, fairUse: { ...empty.fairUse, assessment: { ...empty.fairUse.assessment, used: 50, limit: 50 } } }));
+            await launcher.open('QUEST_EXPLAIN', 'AI_EXPLANATION');
             expect(launcher.phase()).toBe('blocked');
             expect(launcher.notice()?.text).toBe('Лимит ИИ для этого задания исчерпан, но в учебной колоде ещё есть бесплатные проверки: 2. Пройдём задание в ней.');
             const action = launcher.notice()!.actions[0];
             expect(action).toEqual({ kind: 'sample', label: 'Пройти в учебной колоде', deckId: SAMPLE });
             await launcher.act(action);
-            expect(engine.definition()?.id).toBe('quest.voice');
-            expect(engine.step()?.key).toBe('quest.voice.mic');
+            expect(engine.definition()?.id).toBe('quest.explain');
+            expect(engine.step()?.key).toBe('quest.explain.what');
             expect(launcher.request()).toBeNull();
         });
 
-        it('offers the plans instead when the sample deck has no free check left, and never for the Workshop', async () => {
+        it('offers the plans instead when the sample deck has no free check left, and for the voice and the Workshop, which the free checks do not cover', async () => {
             const empty = plusUsage() as unknown as UsageSnapshot;
-            usage.mockReturnValue(of({ ...empty, fairUse: { ...empty.fairUse, stt: { ...empty.fairUse.stt, used: 60, limit: 60 } } }));
-            view.set(sampleView(0));
+            usage.mockReturnValue(of({ ...empty, fairUse: { ...empty.fairUse, stt: { ...empty.fairUse.stt, used: 60, limit: 60 }, assessment: { ...empty.fairUse.assessment, used: 50, limit: 50 } } }));
             await launcher.open('QUEST_VOICE', 'VOICE_ANSWER');
+            expect(launcher.notice()?.actions).toEqual([{ kind: 'link', label: 'Тарифы', commands: ['/plans'] }]);
+            view.set(sampleView(0));
+            await launcher.open('QUEST_EXPLAIN', 'AI_EXPLANATION');
             expect(launcher.notice()?.actions).toEqual([{ kind: 'link', label: 'Тарифы', commands: ['/plans'] }]);
         });
 
@@ -178,9 +180,7 @@ describe('QuestLauncher (the start of a side quest)', () => {
                 { deckId: OWN, title: 'Японский', sample: false }, { deckId: OTHER, title: 'Физика', sample: false }, { deckId: SAMPLE, title: 'Учебная колода', sample: true }
             ]);
             expect(launcher.selected()).toBe(OWN);
-            await launcher.open('QUEST_VOICE', 'VOICE_ANSWER');
-            expect(launcher.decks().some(option => option.sample)).toBe(true);
-            for (const route of ['QUEST_WORKSHOP', 'QUEST_MEDIA'] as const) {
+            for (const route of ['QUEST_VOICE', 'QUEST_WORKSHOP', 'QUEST_MEDIA'] as const) {
                 await launcher.open(route, 'GOAL_TOLD');
                 expect(launcher.decks().map(option => option.deckId), route).toEqual([OWN, OTHER]);
             }

@@ -83,6 +83,29 @@ describe('«Путь» wire contract (contracts/onboarding/milestones.json)', ()
         });
     });
 
+    describe('forward compatibility (a newer server)', () => {
+        const midway = journey.views.pathMidway;
+        const extra = { key: 'NEW_ONE', state: 'DONE', progress: 1, target: 1, achievedAt: '2026-10-22T10:00:00Z' };
+
+        it('drops a milestone key it does not know from the list and from the hidden ones, and counts it nowhere', () => {
+            const milestones = [...midway.milestones.slice(0, 4), extra, ...midway.milestones.slice(4)];
+            const parsed = parseOnboardingView({ ...midway, milestones, path: { done: 6, total: 13, hidden: ['RHYTHM_WEEK', 'NEW_HIDDEN'] } });
+            expect(parsed.milestones).toEqual(midway.milestones);
+            expect(parsed.path).toEqual({ done: 5, total: 12, hidden: ['RHYTHM_WEEK'] });
+        });
+
+        it('compares the server\'s counts with the known keys only when nothing was dropped, and stays strict for the known ones', () => {
+            expect(() => parseOnboardingView({ ...midway, path: { done: 6, total: 12, hidden: ['RHYTHM_WEEK'] } })).toThrow();
+            const milestones = [...midway.milestones, extra];
+            expect(() => parseOnboardingView({ ...midway, milestones, path: { done: 6, total: 13, hidden: ['RHYTHM_WEEK'] } })).not.toThrow();
+            // A known milestone with a broken state is refused whether or not an unknown one is beside it.
+            const broken = milestones.map(item => item.key === 'GOAL_TOLD' ? { ...item, achievedAt: null } : item);
+            expect(() => parseOnboardingView({ ...midway, milestones: broken, path: { done: 6, total: 13, hidden: ['RHYTHM_WEEK'] } })).toThrow();
+            expect(() => parseOnboardingView({ ...midway, milestones, path: { done: 'six', total: 13, hidden: ['RHYTHM_WEEK'] } })).toThrow();
+            expect(() => parseOnboardingView({ ...midway, path: { done: 5, total: 12, hidden: ['RHYTHM_WEEK', 7] } })).toThrow();
+        });
+    });
+
     describe('strictness', () => {
         const midway = journey.views.pathMidway;
         const withMilestones = (change: (milestones: Record<string, unknown>[]) => void): unknown => {
@@ -100,7 +123,8 @@ describe('«Путь» wire contract (contracts/onboarding/milestones.json)', ()
         });
 
         it.each<[string, (milestones: Record<string, unknown>[]) => void]>([
-            ['an unknown key', milestones => { milestones[0]['key'] = 'NEW_ONE'; }],
+            ['a known milestone replaced by an unknown key (the registry is then not complete)', milestones => { milestones[0]['key'] = 'NEW_ONE'; }],
+            ['an item that is not an object with a key', milestones => { milestones[3] = 'x' as unknown as Record<string, unknown>; }],
             ['a repeated key', milestones => { milestones[1]['key'] = 'GOAL_TOLD'; }],
             ['keys out of the registry order', milestones => { milestones.reverse(); }],
             ['an unknown state', milestones => { milestones[0]['state'] = 'DOING'; }],

@@ -7,7 +7,6 @@ import { filter, map } from 'rxjs';
 import { AuthService } from '../../auth.service';
 import { JourneyStore } from '../../core/onboarding/journey.store';
 import { Journey } from '../../core/onboarding/onboarding.models';
-import { TourAnchorDirective } from '../../core/onboarding/tour-anchor.directive';
 import { GOAL_COPY } from './goal-copy';
 import { LEARNING_GOALS, LearningGoal } from './goal.models';
 import { LearningGoalStore } from './learning-goal.store';
@@ -16,11 +15,11 @@ import { SegmentedChoiceComponent } from '../../shared/segmented-choice.componen
 let nextOnboarding = 0;
 
 /**
- * The only places the question appears: the deck list, the profile and the plans page. An allowlist, not a blocklist:
+ * The only places the question appears: the deck list and the plans page (the profile has its own «Цель» block). An allowlist, not a blocklist:
  * every other route (authoring, capture, the workshop, the study session, privacy and terms, the home page, sign-in and
  * any page added later) stays free of it by default. Query and fragment are ignored; a deeper path is not the list.
  */
-const ONBOARDING_PATHS: ReadonlySet<string> = new Set(['/decks', '/profile', '/plans']);
+const ONBOARDING_PATHS: ReadonlySet<string> = new Set(['/decks', '/plans']);
 
 export function onboardingSuppressed(url: string): boolean {
     const path = url.split(/[?#]/u)[0].replace(/\/+$/u, '');
@@ -48,7 +47,7 @@ export function surveyAsksTheGoal(enabled: boolean, journey: Journey | null): bo
     selector: 'app-goal-onboarding',
     template: `
       @if (visible()) {
-        <form class="goal-onboarding paper-surface ruled" mnTourAnchor="profile.goal" (submit)="submit($event)">
+        <form class="goal-onboarding paper-surface ruled" (submit)="submit($event)">
           <app-segmented-choice legend="Для чего вам Mnema?" [options]="options" [(value)]="choice" [name]="groupName" />
           <p class="hint">Подстроим подсказки и подскажем подходящий тариф. Ответ можно пропустить; ИИ он не передаётся.</p>
           @if (store.saveFailed()) {
@@ -68,7 +67,7 @@ export function surveyAsksTheGoal(enabled: boolean, journey: Journey | null): bo
       .actions { display: flex; flex-wrap: wrap; gap: .75rem; }
       .actions .button { flex: 1 1 10rem; }
     `],
-    imports: [SegmentedChoiceComponent, TourAnchorDirective],
+    imports: [SegmentedChoiceComponent],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class GoalOnboardingComponent {

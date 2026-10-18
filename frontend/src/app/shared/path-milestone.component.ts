@@ -9,7 +9,7 @@ const STAGED: readonly MilestoneKey[] = ['CAPTURE_NOTE'];
 
 /**
  * One milestone of «Путь Mnema»: the state glyph with its word on the left (done, partial, not started: shape and word, never colour
- * alone), the title and the line of benefit, a thin progress bar with its text for a counted milestone that is under way, and for a
+ * alone; the count of a counted one is in the bar, said once), the title and the line of benefit, a thin progress bar with its text for a counted milestone that is under way, and for a
  * milestone not yet done a chevron that stretches over the whole row (a link named «Перейти: {title}»; the lavender fill on hover and
  * focus is `--mn-path-hover`). A staged milestone (`CAPTURE_NOTE`) says its stage in place of the benefit.
  *
@@ -109,7 +109,8 @@ export class PathMilestoneComponent {
         switch (this.state()) {
             case 'DONE': return onboardingText('path.state.done');
             case 'TODO': return onboardingText('path.state.todo');
-            default: return this.counted() ? this.counter() : onboardingText('path.state.partial');
+            // The count is said once, by the bar (its name and value); the word is the state.
+            default: return onboardingText('path.state.partial');
         }
     });
     protected readonly linked = computed(() => this.state() !== 'DONE' && this.href() !== null);

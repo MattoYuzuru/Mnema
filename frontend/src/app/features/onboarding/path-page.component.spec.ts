@@ -6,13 +6,13 @@ import { Router, provideRouter } from '@angular/router';
 import journey from '../../../../../contracts/onboarding/journey.json';
 import { AuthService } from '../../auth.service';
 import { JourneyStore } from '../../core/onboarding/journey.store';
-import { OnboardingView } from '../../core/onboarding/onboarding.models';
+import { Journey, OnboardingView } from '../../core/onboarding/onboarding.models';
 import { PathNavigation } from '../../core/onboarding/path-navigation.service';
 import { PATH_HIDDEN_STORAGE_PREFIX, PATH_NOTICE_STORAGE_PREFIX, PathPreferences } from '../../core/onboarding/path-preferences';
 import { ReplayTourComponent } from './replay-tour.component';
 import { FakeJourneyStore, viewOf } from './onboarding-test-data';
 import { OnboardingFlow } from './onboarding-flow.service';
-import { PathPageComponent } from './path-page.component';
+import { PathPageComponent, neverOffered } from './path-page.component';
 
 const midway = journey.views.pathMidway as OnboardingView;
 const fresh = journey.views.offered as OnboardingView;
@@ -81,6 +81,38 @@ describe('PathPageComponent («Путь Mnema»)', () => {
         expect(chapters.every(chapter => chapter.querySelector('summary') !== null)).toBe(true);
     });
 
+    it('keeps a chapter open or folded as the learner left it when a refresh moves the current chapter', async () => {
+        const { root, fixture } = await render();
+        const chapters = (): HTMLDetailsElement[] => Array.from(root.querySelectorAll('details.chapter'));
+        expect(chapters().map(chapter => chapter.open)).toEqual([false, true, false, false]);
+        // The learner opens another chapter and folds the current one.
+        chapters()[0].open = true;
+        chapters()[1].open = false;
+        // The refresh: «Материалы» is done, so the current chapter is now «Упражнения».
+        store.view.set({ ...midway, milestones: midway.milestones.map(item => ['CAPTURE_NOTE', 'MEDIA_IN_MATERIAL'].includes(item.key)
+            ? { ...item, state: 'DONE', progress: item.target, achievedAt: '2026-10-22T10:00:00Z' } : item), path: { ...midway.path!, done: 7 } } as OnboardingView);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(chapters().map(chapter => chapter.open)).toEqual([true, false, false, false]);
+    });
+
+    it('has the title as the h1, the chapters as h2 inside their summaries and the milestones as h3: no level is skipped', async () => {
+        const { root } = await render();
+        expect(root.querySelectorAll('h1')).toHaveLength(1);
+        const headings = Array.from(root.querySelectorAll('h1, h2, h3')).map(heading => heading.tagName);
+        expect(headings.slice(0, 5)).toEqual(['H1', 'H2', 'H3', 'H3', 'H3']);
+        expect(root.querySelectorAll('summary > h2.chapter-name')).toHaveLength(4);
+        expect(root.querySelectorAll('h2')).toHaveLength(4);
+        for (const [index, heading] of headings.entries()) if (index > 0) expect(Number(heading[1]) - Number(headings[index - 1][1]), `${index}`).toBeLessThanOrEqual(1);
+    });
+
+    it('says the total once: the text is for the eyes, the progress bar names and values it for assistive technology', async () => {
+        const { root } = await render();
+        expect(root.querySelector('.total strong')?.getAttribute('aria-hidden')).toBe('true');
+        expect(root.querySelector('.total [role="progressbar"]')?.getAttribute('aria-valuetext')).toBe('5 из 12');
+    });
+
     it('draws the visible milestones only: a hidden one is not in the page', async () => {
         const { root, rows } = await render();
         expect(rows()).toHaveLength(12);
@@ -96,7 +128,7 @@ describe('PathPageComponent («Путь Mnema»)', () => {
     it('passes every state to the milestone with a word, so nothing rests on colour', async () => {
         const { rows } = await render();
         const words = rows().map(row => row.querySelector('.word')!.textContent!.trim());
-        expect(words).toEqual(['Сделано', 'Сделано', 'Сделано', 'Сделано', 'Не начато', 'Начато', '2 из 3', 'Не начато', 'Не начато', 'Не начато', 'Сделано', 'Не начато']);
+        expect(words).toEqual(['Сделано', 'Сделано', 'Сделано', 'Сделано', 'Не начато', 'Начато', 'Начато', 'Не начато', 'Не начато', 'Не начато', 'Сделано', 'Не начато']);
         // Done milestones have no chevron; the others link to a place.
         expect(rows().filter(row => row.querySelector('a.go') === null)).toHaveLength(5);
     });
@@ -119,7 +151,8 @@ describe('PathPageComponent («Путь Mnema»)', () => {
 
     const existing = { eligible: false, autoOffer: false, state: 'NOT_OFFERED' as const };
 
-    it('shows the «Новое» notice once per account on this device, for an existing account (eligible=false)', async () => {
+
+    it('shows the «Новое» notice once per account on this device, for an old account (eligible=false)', async () => {
         const first = await render(midway, { journey: existing });
         expect(first.root.querySelector('.path-new .stamp')?.textContent).toBe('Новое');
         expect(first.root.querySelector('.path-new')?.textContent).toContain('«Путь Mnema» — что умеет Mnema. Часть пунктов уже отмечена по вашей истории.');
@@ -132,11 +165,18 @@ describe('PathPageComponent («Путь Mnema»)', () => {
         expect(again.root.querySelector('.path-new')).toBeNull();
     });
 
+    it('shows the notice to the holdout (eligible, still OFFERED, never offered automatically), who never met «Путь» in a tour', async () => {
+        const { root } = await render(midway, { journey: { eligible: true, autoOffer: false, state: 'OFFERED' } });
+        expect(root.querySelector('.path-new')).not.toBeNull();
+        expect(neverOffered({ ...(midway.journey as Journey), eligible: true, autoOffer: false, state: 'OFFERED' })).toBe(true);
+    });
+
     it.each([
         ['a fresh auto-offer', { eligible: true, autoOffer: true, state: 'OFFERED' as const }],
+        ['an account that is going through the tour', { eligible: true, autoOffer: false, state: 'IN_PROGRESS' as const }],
         ['an eligible account that finished the tour', { eligible: true, autoOffer: false, state: 'COMPLETED' as const }],
-        ['the holdout', { eligible: true, autoOffer: false, state: 'OFFERED' as const }]
-    ])('does not show the notice to %s (only existing accounts see it)', async (_name, journeyState) => {
+        ['an eligible account that skipped the welcome', { eligible: true, autoOffer: false, state: 'SKIPPED' as const }]
+    ])('does not show the notice to %s (the tour was offered to it by itself)', async (_name, journeyState) => {
         const { root } = await render(midway, { journey: journeyState });
         expect(root.querySelector('.path-new')).toBeNull();
         expect(localStorage.getItem(`${PATH_NOTICE_STORAGE_PREFIX}acc-1`)).toBeNull();

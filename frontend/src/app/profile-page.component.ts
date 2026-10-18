@@ -1,3 +1,4 @@
+import { ProfileGoalComponent } from './features/goal/profile-goal.component';
 import { PathSummaryComponent } from './features/onboarding/path-summary.component';
 import { ReplayTourComponent } from './features/onboarding/replay-tour.component';
 import { ChangeDetectionStrategy, Component, DestroyRef, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
@@ -25,7 +26,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
 
 @Component({
     selector: 'app-profile-page',
-    imports: [PathSummaryComponent, ReplayTourComponent, InterestSettingsComponent, ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent,
+    imports: [ProfileGoalComponent, PathSummaryComponent, ReplayTourComponent, InterestSettingsComponent, ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent,
         PublicProfileSettingsComponent],
     template: `
       <section class="profile-page" aria-labelledby="profile-title">
@@ -90,6 +91,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
               <h2 id="public-profile-heading">Публичный профиль</h2>
               <app-public-profile-settings [profile]="account" [avatarUrl]="avatarUrl()" />
             </section>
+            <app-profile-goal />
             <app-interest-settings />
             <app-path-summary />
             <div class="replay"><app-replay-tour /></div>

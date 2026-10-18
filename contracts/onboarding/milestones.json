@@ -10,7 +10,7 @@
     "AI_ASSESSMENT": "Visible while the operator switch learning.features.ai-assessment.enabled is on (CapabilityFlags), not the runtime circuit breaker or budget.",
     "SPEECH_TO_TEXT": "Visible while learning.features.speech-to-text.enabled is on.",
     "AI_GENERATION": "Visible while learning.features.ai-generation.enabled is on.",
-    "COMMUNITY_CATALOG": "Visible while learning.community.catalog.enabled is on and the catalogue lists at least one deck.",
+    "COMMUNITY_CATALOG": "Visible while a copy from the catalogue is possible: learning.community.catalog.enabled, learning.community.public-routes.enabled and learning.community.forks.enabled are on and the catalogue lists at least one deck.",
     "RHYTHM": "Visible once the weekly rhythm (OB-401) writes its milestone; registry version 1 has no writer, so the milestone is hidden."
   },
   "milestones": [
@@ -40,8 +40,8 @@
     },
     {
       "key": "MEDIA_IN_MATERIAL", "chapter": "materials", "target": 1, "visibility": "ALWAYS", "route": "QUEST_MEDIA",
-      "counts": "A material revision (create or save) with at least one media reference is published in a USER deck by the owner.",
-      "writer": "ItemService.apply (create or save with mediaReferences)",
+      "counts": "Media appears in a material of a USER deck: a new material published with at least one media reference, or a new revision that references an asset its previous revision did not. Saving a material that already had the same media does not count.",
+      "writer": "ItemService.apply (create or save adding mediaReferences)",
       "backfill": {"restorable": "full", "source": "content_media_ref of the owner joined to a USER deck"}
     },
     {
@@ -98,10 +98,10 @@
     "PROFILE_GOAL": "The goal block of the profile (in-place hint).",
     "DECKS": "The deck list, the «Новая колода» control (in-place hint).",
     "STUDY": "The account's most recent deck hub, the study control; the deck list when there is none (in-place hint).",
-    "MATERIAL_NEW": "New material in a USER deck of the account (deck chooser when there are several; the deck list when there is none).",
+    "MATERIAL_NEW": "The add-material control of the account's most recent USER deck hub; the deck list when there is none.",
     "QUEST_MEDIA": "Side quest «Добавить картинку или звук».",
     "CAPTURE": "The «На потом» control (in-place hint hint.capture).",
-    "EXERCISE_NEW": "New exercise in a USER deck of the account (deck chooser).",
+    "EXERCISE_NEW": "The materials list of the account's most recent USER deck hub (exercises are added to a material); the deck list when there is none.",
     "QUEST_EXPLAIN": "Side quest «Объяснить своими словами».",
     "QUEST_VOICE": "Side quest «Ответить голосом».",
     "QUEST_WORKSHOP": "Side quest «Мастерская из заметок «На потом»».",

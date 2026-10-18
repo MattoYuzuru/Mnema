@@ -42,6 +42,7 @@ import {
 const ROW_VERSION = /^(?:0|[1-9][0-9]{0,18})$/u;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const MAX_MILESTONES = 100;
 const VIEW_KEYS = ['enabled', 'journey', 'milestones', 'path', 'rhythm', 'sampleDeck'];
 const JOURNEY_KEYS = ['state', 'eligible', 'autoOffer', 'tourVersion', 'branch', 'stepKey', 'experience', 'weeklyTarget', 'offeredAt', 'finishedAt',
     'replayCount', 'rowVersion'];
@@ -200,26 +201,40 @@ function parseMilestone(value: unknown): Milestone {
  * `milestones` and `path` of the view. Off (`enabled=false`): `[]` and `null`. On: the visible milestones in registry order without a
  * repeat, and `path` agreeing with them: `done` the ones achieved, `total` how many are visible, `hidden` the rest of the registry in
  * registry order. A milestone that is always visible is never hidden.
+ *
+ * Forward compatible: a milestone key this client does not know (a newer server) is dropped from `milestones` and from `hidden` and is
+ * counted nowhere; the checks run over the known keys only, and `done` and `total` are the client's own count of them. A server's
+ * count that included the unknown one cannot be compared, so it is compared only when nothing was dropped. Known keys stay strict.
  */
 function parsePath(milestones: unknown, path: unknown, enabled: boolean): { readonly milestones: readonly Milestone[]; readonly path: PathSummary | null } {
     if (!enabled) {
         if (!Array.isArray(milestones) || milestones.length > 0 || path !== null) throw protocol('A disabled view carries no path.');
         return { milestones: [], path: null };
     }
-    if (!Array.isArray(milestones) || milestones.length > MILESTONE_KEYS.length) throw protocol('Invalid milestones.');
-    const parsed = milestones.map(parseMilestone);
+    if (!Array.isArray(milestones) || milestones.length > MAX_MILESTONES) throw protocol('Invalid milestones.');
+    if (milestones.some(item => !isRecord(item) || typeof item['key'] !== 'string')) throw protocol('Invalid milestone.');
+    const known = milestones.filter(item => isMilestoneKey((item as Record<string, unknown>)['key']));
+    const parsed = known.map(parseMilestone);
+    let dropped = milestones.length - known.length;
     const order = parsed.map(milestone => MILESTONE_KEYS.indexOf(milestone.key));
     if (order.some((position, index) => index > 0 && position <= order[index - 1])) throw protocol('Milestones are not in registry order.');
     const summary = exact(path, ['done', 'total', 'hidden']);
-    const hidden = summary['hidden'];
-    if (!Array.isArray(hidden) || !hidden.every((key): key is MilestoneKey => isMilestoneKey(key))) throw protocol('Invalid hidden milestones.');
+    const listed = summary['hidden'];
+    if (!Array.isArray(listed) || listed.length > MAX_MILESTONES || !listed.every(key => typeof key === 'string')) throw protocol('Invalid hidden milestones.');
+    const hidden = listed.filter((key): key is MilestoneKey => isMilestoneKey(key));
+    dropped += listed.length - hidden.length;
     const visible = new Set<string>(parsed.map(milestone => milestone.key));
     const rest = MILESTONE_KEYS.filter(key => !visible.has(key));
     if (hidden.length !== rest.length || hidden.some((key, index) => key !== rest[index])) throw protocol('Hidden milestones do not complete the registry.');
     if (hidden.some(key => milestoneDefinition(key).visibility === 'ALWAYS')) throw protocol('A milestone that is always visible is hidden.');
     const done = parsed.filter(milestone => milestone.state === 'DONE').length;
-    if (summary['done'] !== done || summary['total'] !== parsed.length) throw protocol('The path counts do not match the milestones.');
+    if (dropped === 0 && (summary['done'] !== done || summary['total'] !== parsed.length)) throw protocol('The path counts do not match the milestones.');
+    if (typeof summary['done'] !== 'number' || typeof summary['total'] !== 'number') throw protocol('Invalid path counts.');
     return { milestones: parsed, path: { done, total: parsed.length, hidden } };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** Parses the strict envelope of the view. Exported for the contract spec. */

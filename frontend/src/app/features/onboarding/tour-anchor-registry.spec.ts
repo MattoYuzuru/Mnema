@@ -51,7 +51,7 @@ describe('anchor registry', () => {
         expect(owner(TOUR_ANCHORS.materialExercises)).toContain('exercise-authoring-page');
         // The in-place hints of «Путь» (OB-E3) stand at these.
         expect(owner(TOUR_ANCHORS.navNewDeck)).toContain('app-shell');
-        expect(owner(TOUR_ANCHORS.profileGoal)).toContain('goal-onboarding');
+        expect(owner(TOUR_ANCHORS.profileGoal)).toContain('profile-goal');
         expect(owner(TOUR_ANCHORS.hubAddMaterial)).toContain('own-deck-detail-page');
         expect(owner(TOUR_ANCHORS.hubCapture)).toContain('own-deck-detail-page');
         expect(owner(TOUR_ANCHORS.hubMaterials)).toContain('deck-materials');

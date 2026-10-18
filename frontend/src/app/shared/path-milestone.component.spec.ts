@@ -42,7 +42,8 @@ describe('PathMilestoneComponent', () => {
 
     it('shows a counted milestone under way as «2 из 3» with a named progress bar that has valuenow, valuemax and a text', () => {
         const partial = render({ key: 'OWN_EXERCISES', state: 'PARTIAL', progress: 2, target: 3, href: '/decks' });
-        expect(partial.word()).toBe('2 из 3');
+        // The word is the state; the count is said once, by the bar.
+        expect(partial.word()).toBe('Начато');
         const bar = partial.bar()!;
         expect(bar.getAttribute('aria-label')).toBe('Создайте три своих упражнения');
         expect(bar.getAttribute('aria-valuenow')).toBe('2');
