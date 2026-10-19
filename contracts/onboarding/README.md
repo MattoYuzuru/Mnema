@@ -125,4 +125,4 @@ Which switches are on in production is listed in the [onboarding README](../../d
   `PROMO_INVALID`). The issuance publishes `PATH_REWARD_READY` ([notifications](../notifications/README.md)). At most
   `learning.onboarding.reward.daily-limit` codes per campaign in 24 hours. Codes already issued are not revoked by any switch.
 
-Account purge (#409) deletes `onboarding_journey` (the `NOT_OFFERED` rows of the rhythm included), `account_milestone` and `onboarding_reward` by `account_id` (TODO in the repositories, like `learning_profile`).
+Account purge must delete `onboarding_journey` (the `NOT_OFFERED` rows of the rhythm included), `account_milestone` and `onboarding_reward` by `account_id`; it is not implemented yet ([#409](https://github.com/MattoYuzuru/Mnema/issues/409)), like the purge of `learning_profile`.

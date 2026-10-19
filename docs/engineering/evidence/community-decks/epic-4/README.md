@@ -3,7 +3,7 @@ artifact:
   id: community-decks-epic-4-evidence
   type: verification-evidence
   title: "Колоды сообщества: сравнение ранкеров и границы рекомендаций"
-  status: current
+  status: historical
   created_at: "2026-10-13"
   updated_at: "2026-10-19"
   owners: ["project-owner"]

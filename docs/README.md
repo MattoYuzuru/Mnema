@@ -38,7 +38,7 @@ refinement или решения, не реализовано; `historical` — 
 | Изменить authoring/content | [Learning guide](../backend/services/learning/guide.md) и [native content contract](../contracts/content/native-v1/README.md) |
 | Изменить media | Раздел [Media](#media-epic-76) ниже |
 | Колоды сообщества: доступ, публикация, копии, обновления, каталог, рекомендации, жалобы | [Product contract](./product/community-decks.md), затем [architecture](./architecture/community-decks.md) и разделы в [Learning guide](../backend/services/learning/guide.md); выключатели — [runtime policy index](./engineering/runtime-policy-index.md) |
-| Изменить AI | [Generation](../contracts/generation/README.md), [speech](../contracts/speech/README.md), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md); смысл — [product contract](./product/ai-layer-2026-10.md) |
+| Изменить AI | [Generation](../contracts/generation/README.md), [speech](../contracts/speech/README.md), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md); смысл — [product contract](./product/ai-layer-2026-10.md); значения и выключатели — [runtime policy index](./engineering/runtime-policy-index.md) |
 | GitHub Issue/PR | [Work item standard](./engineering/work-item-standard.md) |
 | Публикация или deployment | [Production delivery](./operations/production-delivery.md), только в scope соответствующего поручения |
 
@@ -104,7 +104,7 @@ refinement или решения, не реализовано; `historical` — 
 | Статус | Документ | Назначение |
 |---|---|---|
 | current | [Mnema brand and UI contract](./frontend/mnema-brand-and-ui-contract.md) | Правила оформления и проверки изменений в действующем Angular UI. |
-| accepted | [Owner console UX](./frontend/admin-console-ux.md) | Фильтры, карточка пользователя, источник каждого показателя, тикеты/доставка и styleguide reuse. |
+| current | [Owner console UX](./frontend/admin-console-ux.md) | Фильтры, карточка пользователя, источник каждого показателя, тикеты/доставка и styleguide reuse. |
 | current | [Frontend styleguide](./frontend/styleguide.md) | Живой каталог `/styleguide` (только dev-сборка): правила «бери из стайлгайда», как открыть, карта разделов. |
 | accepted | [Design and experience](./frontend/design-and-experience-2026-09.md) | Выбранное paper/antiquity/indigo направление и a11y boundaries. |
 | historical | [Interactive prototype](../design/prototype/README.md) | Design evidence, не production architecture. |
@@ -129,12 +129,12 @@ refinement или решения, не реализовано; `historical` — 
 | current | [Identity abuse protection](./operations/turnstile.md) | Production password sign-in и registration проходят Cloudflare Turnstile (`required`); `blocked` — kill switch, OAuth не затрагивается. Публичные политика ПДн и соглашение публикуются из frontend; статус уведомлений — в [legal checklist](./product/russia-legal-launch-checklist-2026.md). |
 | current | [Persistent local runtime](./deploy/selfhost-local.md) | HTTPS-запуск Identity, Learning, Angular, media и Colima clock. |
 | current | [Security automation triage](./operations/security-triage.md) | Dependabot/dependency review/CodeQL policy. |
-| current | [CI artifact boundary](./operations/ci-artifact-security-boundary.md) | Artifact and token policy для ручной публикации четырёх образов. |
+| current | [CI artifact boundary](./operations/ci-artifact-security-boundary.md) | Artifact and token policy для публикации пяти образов Main CI. |
 | current | [AI operations runbook](./operations/ai-runbook.md) | Роли api/worker, ключи только на worker, kill switches и бюджеты, метрики на отдельном порту, инциденты провайдеров, хранение данных, eval-gate. |
 | current | [AI egress proxy](./operations/ai-egress-proxy.md) | Stateless Squid CONNECT proxy в Финляндии для AI-провайдеров, недоступных из РФ; kill switch и fallback. |
 | current | [Browser security headers](./operations/browser-security-headers.md) | Проверяемый response-security contract. |
 | current | [Link previews](./operations/link-previews.md) | OG-превью `/d/*` без SSR: nginx SSI + `GET /api/public/meta/…` Learning, три конфигурации web-сервера, порядок установки. |
-| current | [Production image inventory](./operations/production-image-inventory.md), [release security evidence](./operations/release-security-evidence.md) | Пины и supply-chain evidence четырёх VPS images. |
+| current | [Production image inventory](./operations/production-image-inventory.md), [release security evidence](./operations/release-security-evidence.md) | Пины и supply-chain evidence пяти VPS images. |
 | proposed | [Reset/capacity/offline plan](./operations/v2-reset-capacity-and-offline-plan.md) | Остаточные purge/capacity/offline решения с legacy inventory; текущий VPS сохраняет старые данные. |
 
 Production работает на RU VPS; deployment идёт через Main CI и protected VPS workflow.

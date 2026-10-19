@@ -68,7 +68,7 @@ Mnema/
 │   ├── features/study/                  canonical deck-scoped Study UI
 │   ├── features/generation/             AI composer, Workshop, edits and planner
 │   ├── features/usage, plans, promo/     budget, paywall and promo UI
-│   ├── features/goal, experiment/       onboarding copy and server-assigned variants
+│   ├── features/goal, experiment/       goal prompt and experiment wiring (the first-entry journey lives in core/onboarding, features/onboarding)
 │   ├── core/onboarding, features/onboarding/  journey store, tour engine, first entry and tours
 │   ├── styleguide/                      development-only shared UI catalogue
 │   └── core/, shared/                   shell, authentication and shared UI

@@ -133,7 +133,7 @@ against it. `plan --affected` / `run --affected` give fast feedback during work,
   (`135.106.175.30`, administrator access `ssh mnema`). Follow
   [production delivery](docs/operations/production-delivery.md) for development
   releases: full local/hosted gates, protected squash, then Main CI releases a runtime
-  change automatically (scoped four-image publication, one `prod` Environment approval,
+  change automatically (scoped five-image publication, one `prod` Environment approval,
   automatic admission, deploy, verify and public smoke; `vps-deploy.yaml` only for manual
   status/verify/rollback). Host config/tooling is installed by the administrator beforehand.
   Use the working server/jobs within an owner-authorized production task; keep

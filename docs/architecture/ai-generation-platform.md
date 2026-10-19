@@ -38,7 +38,7 @@ fail-closed); production-значения задаёт `deploy/production/compos
 | A5 | Прогресс в UI — append-only события с монотонным `seq` + adaptive polling; блоковое проявление; без token streaming, `EventSource` и WebSocket в v1 | Token streaming (генерация идёт в фоновом шаге; `EventSource` не передаёт bearer) |
 | A6 | Свой PostgreSQL step queue по образцу `MediaProcessingRepository`: `FOR UPDATE SKIP LOCKED`, lease + fencing token, heartbeat, backoff, deadline, cancel, fairness | JobRunr (нужные функции только Pro), db-scheduler (нет DAG), Modulith events (не job queue), брокеры |
 | A7 | Порты per capability + адаптеры на JDK `HttpClient`; routing и flags server-owned; существующий `/api/capabilities` расширяется | Spring AI (2.0 только Boot 4; 1.1 EOL; абстракции не нужны) |
-| A8 | Usage: credits как внутренняя cost-weighted единица, versioned rate card, `reserve → settle → release`, append-only ledger; entitlement приходит из billing через inbox | Списание из браузера; unlimited |
+| A8 | Usage: credits как внутренняя cost-weighted единица, versioned rate card, `reserve → settle → release`, append-only ledger; entitlement приходит из пакета `billing` через inbox | Списание из браузера; unlimited |
 | A9 | Общий durable центр уведомлений с read watermark; producer в той же транзакции | Отдельная outbox-доставка |
 | A10 | У модели нет agency: вывод — данные; ссылки только из allowlist; медиа — untrusted upload через pipeline #76; промпты без ПД | Tool calling с побочными эффектами; хранение raw prompts |
 | A11 | `ai-semantic` evaluator реализует существующий `SemanticAssessmentProvider`; строгость — серверная политика по состоянию objective; AI не пишет `StudyState` | Отдельный классификатор; строгость, выбранная моделью |
@@ -455,11 +455,17 @@ cost per accepted item.
   списывается. Пользователь не уходит в минус.
 - «Потратить X% на колоду»: `budget = X% × текущий остаток`, становится reservation и
   входом планировщика.
-- Entitlement: потребление — в Learning; покупки, промокоды и периоды — в будущем
-  billing-контексте (#79), который публикует **entitlement snapshot** (план, период,
-  allowances, `valid_until`) в `entitlement_inbox` идемпотентно. До billing —
-  `EntitlementSource` port с конфигурационной реализацией. Browser return URL никогда не
-  меняет права. Удаление аккаунта удаляет/обезличивает ledger по retention schedule.
+- Entitlement: потребление — в Learning; покупки и периоды — пакет `billing`
+  Learning ([guide «Billing (#389)»](../../backend/services/learning/guide.md),
+  [`contracts/billing`](../../contracts/billing/README.md)), промокоды — пакет `promo`. Оба идемпотентно публикуют
+  **entitlement snapshot** (план, период, allowances, `valid_until`) в `entitlement_inbox`
+  через `EntitlementInbox`; `InboxEntitlementSource` берёт действующий снимок с высшим
+  планом, при его отсутствии — конфигурационный `EntitlementSource` (план по умолчанию и
+  overrides). Оплата — разовый месячный checkout Plus и Pro через размещённую форму T-Bank;
+  права выдаёт только ответ `GetState`, а browser return URL никогда не меняет права.
+  Выключатель `learning.billing.checkout` (`MNEMA_BILLING_CHECKOUT`) по умолчанию `OFF`
+  (`TESTERS` — только перечисленные аккаунты); он останавливает лишь новые заказы.
+  Удаление аккаунта удаляет/обезличивает ledger по retention schedule.
 
 ## 11. Семантическая проверка объяснений (`ai-semantic`)
 

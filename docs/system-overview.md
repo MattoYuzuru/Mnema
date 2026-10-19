@@ -179,16 +179,15 @@ Acceptance #74: [integrated main evidence](./engineering/evidence/epic-74/verifi
 ## Delivery boundary
 
 Production: `mnema.app`, Identity: `auth.mnema.app`, RU VPS `135.106.175.30`
-(`ssh mnema`). Публикация четырёх immutable images и protected VPS rollout доступны
+(`ssh mnema`). Публикация пяти immutable images и protected VPS rollout доступны
 для разработки. Merge и live verification — разные результаты; точный путь и
 admission описаны в [production delivery](./operations/production-delivery.md).
 
-## Открытые работы
+## Статус работ
 
-1. #147 — отдельная судьба старых данных и purge; новый production использует новую БД и сохраняет старые данные.
-2. #77 — AI-слой допущен в production, Issue остаётся открытым для оставшейся работы
-   ([архитектура и решения реализации](./architecture/ai-generation-platform.md)).
-3. [Learning core](./engineering/learning-core/README.md) — предложенный, не реализованный пакет.
+Открытые работы и их статус ведутся в GitHub Issues и на Kanban-доске проекта; документы описывают
+только действующее поведение. Пакет [Learning core](./engineering/learning-core/README.md)
+предложен и не реализован.
 
 Интеграционная проверка #75 и её пределы: [acceptance evidence](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md);
 Epic #76: [browser/Study evidence](./engineering/evidence/epic-76/integrated-browser/README.md).

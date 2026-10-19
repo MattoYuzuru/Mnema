@@ -915,7 +915,7 @@ approved one); Gemini was run live on 2026-10-05 (below).
   expiresAt}`; `GET /{id}` the row (404 for foreign, expired or unknown), `DELETE /{id}` 204 always. Admission is one transaction under an advisory lock of the account: capability (409), consent for the region of the clip's
   language (409 `SPEECH_CONSENT_REQUIRED`), own deck (404), the replay of the key (the stored 202 with `Idempotency-Replayed: true`, `409 IDEMPOTENCY_CONFLICT` for another body: the hash covers the audio, purpose, type, duration,
   language, deck and script), the rate limit (`speech_input_use`, 20 per 10 minutes, `429` with `Retry-After`; a replay takes no place), fair use, insert of `speech_input` + `speech_input_audio` + the use.
-  `GET/PUT/DELETE /api/speech-consent` (`speech_consent`, one row per account: version `speech-2026-10-2`, region `RU|ABROAD`): `GET` states the widest region any route can use when no language is given, `PUT` is idempotent
+  `GET/PUT/DELETE /api/speech-consent` (`speech_consent`, one row per account: version `speech-2026-10-3`, region `RU|ABROAD`): `GET` states the widest region any route can use when no language is given, `PUT` is idempotent
   (a stale version or another region than required is `409 SPEECH_CONSENT_OUTDATED`, the answer is `200` with the `GET` body), `DELETE` is `204`; an `ABROAD` consent covers `RU`, not the reverse; the disclosure stays
   readable while the provider is only `TEMPORARILY_UNAVAILABLE`.
 - **Fair use.** The ledger counts, it does not hold (`UsageLedger.consume`, idempotent per key). Admission calls the new `UsageLedger.requireFairUse` (a read like `fairUseFits`, but it throws the same
@@ -2681,7 +2681,7 @@ retention); [Spring Security resource-server JWT](https://docs.spring.io/spring-
 ## Onboarding journey (OB-101, OB-105; migration `V72__onboarding_journey.sql`)
 
 Package `app.mnema.learning.onboarding`; the wire contract and its executable fixture are [`contracts/onboarding`](../../../contracts/onboarding/README.md),
-the design [onboarding architecture](../../../docs/engineering/onboarding/architecture.md). `GET /api/onboarding`, `PUT /api/onboarding/journey`
+the design [onboarding architecture](../../../docs/engineering/onboarding/architecture.md#10-нагрузка). `GET /api/onboarding`, `PUT /api/onboarding/journey`
 and `PUT /api/onboarding/preferences` follow the blanket scope rule (`learning.read` / `learning.write`); every answer is `private, no-store` with a strong
 `ETag` (128 bits of the SHA-256 of the canonical JSON of the view) and a matching `If-None-Match` on `GET` is a 304.
 
@@ -2839,8 +2839,8 @@ on the public `MilestoneRecorder` only.
 - **Session completion cost.** REPLAY: nothing. Otherwise ONE read of the account's two rows (`FIRST_SESSION`, `TWO_DAYS`, primary-key range). After both are achieved that is all. Before: an upsert
   for each milestone that grows and, only for `TWO_DAYS` below 2, one `EXISTS` of a completed SCHEDULED/PRACTICE session on another `local_study_date` (index range of the account). The
   gate asserts 0 / 1 / 2 / 4 statements for replay / both achieved / second day still missing / first completion (`MilestoneHotPathIntegrationTest`, counted at the JDBC connection, small fixtures);
-  the latency (steady state about 0.26 ms median, 0.35 ms p95 on the local container, against about 0.30 ms for the existing `DeckEngagement.studied` of the same transaction) and the plans on a 100,000-row
-  `study_session` are the opt-in `MilestoneHotPathEvidenceTest` (`MNEMA_PATH_EVIDENCE=1`, listed in `backend/test-opt-ins.json`).
+  the latency and the plans on a 100,000-row `study_session` are the opt-in `MilestoneHotPathEvidenceTest` (`MNEMA_PATH_EVIDENCE=1`, listed in `backend/test-opt-ins.json`); the measured
+  numbers live in the [onboarding architecture](../../../docs/engineering/onboarding/architecture.md#10-нагрузка) (section 10).
 - **Known benign races.** Two sessions of one account that complete concurrently on two different dates leave `TWO_DAYS` at 1 until the next completion; two transactions that achieve
   milestones of one account at once may announce the same `done`/`total`. Neither loses a fact.
 - **Net for a new writer.** `MilestoneInventoryIntegrationTest` lists every mutating route of the live handler mapping and requires each to be classified by the milestones it can write (an empty set
