@@ -210,6 +210,57 @@ class PathRewardIntegrationTest extends PathRewardSupport {
     }
 
     @Test
+    void aQualifyingAccountWithoutACampaignIsRefusedByPlainReadsWithoutALockOrATransactionOfItsOwn() {
+        UUID account = trusted();
+        complete(account);
+        double none = outcome("no_campaign");
+
+        StatementCounting.start();
+        JsonNode view = onboarding.read(account, false, null, Boolean.TRUE);
+        List<String> statements = StatementCounting.stop();
+
+        assertThat(view.path("reward").isNull()).isTrue();
+        assertThat(outcome("no_campaign") - none).isEqualTo(1.0);
+        assertThat(statements.stream().filter(sql -> sql.contains("pg_advisory") || sql.contains("FOR SHARE") || sql.contains("INSERT INTO")).toList())
+                .as(statements.toString()).isEmpty();
+    }
+
+    @Test
+    void aCampaignTheOwnerSwitchesOffWhileTheIssuerWaitsForItsRowIssuesNothing() throws Exception {
+        UUID account = trusted();
+        complete(account);
+        UUID campaign = discountCampaign(10);
+        double none = outcome("no_campaign");
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        var owner = transactions.getTransaction(new org.springframework.transaction.support.DefaultTransactionDefinition());
+        boolean committed = false;
+        try {
+            // the owner's switch-off is in flight (not committed): the issuer's unlocked check still sees the campaign enabled, and its locked read must wait for the owner and then see it off
+            jdbc.sql("UPDATE app_learning.promo_campaign SET enabled=false WHERE campaign_id=:id").param("id", campaign).update();
+            Future<JsonNode> read = pool.submit(() -> view(account));
+            Instant limit = Instant.now().plusSeconds(4);
+            // asked from a thread without the owner's transaction: inside it pg_stat_activity would stay the snapshot of the first look
+            while (java.util.concurrent.CompletableFuture.supplyAsync(() -> jdbc.sql("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%FOR SHARE%'")
+                    .query(Long.class).single()).get() == 0) {
+                assertThat(Instant.now()).as("the issuer waits for the campaign row").isBefore(limit);
+                Thread.sleep(20);
+            }
+            assertThat(read.isDone()).isFalse();
+            transactions.commit(owner);
+            committed = true;
+
+            assertThat(read.get(10, java.util.concurrent.TimeUnit.SECONDS).path("reward").isNull()).isTrue();
+        } finally {
+            if (!committed) transactions.rollback(owner);
+            pool.shutdownNow();
+        }
+        assertThat(outcome("no_campaign") - none).isEqualTo(1.0);
+        assertThat(codes(account)).isZero();
+        assertThat(rewards(account)).isZero();
+        assertThat(announcements(account)).isZero();
+    }
+
+    @Test
     void anAccountThatIsNotAtOneHundredPercentOfTheVisibleMilestonesIsNotIssued() {
         UUID account = trusted();
         completeExcept(account, MilestoneKey.OWN_EXERCISES);

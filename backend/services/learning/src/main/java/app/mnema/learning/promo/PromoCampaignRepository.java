@@ -65,6 +65,15 @@ class PromoCampaignRepository {
                 .query(PromoCampaignRepository::campaign).optional();
     }
 
+    /**
+     * The enabled campaign of the type, read {@code FOR SHARE}: the row stays share-locked until the end of the transaction, so a disable of it (an {@code UPDATE}) waits for the
+     * caller's commit, and a disable that is already in flight is waited for and then seen (the {@code WHERE} is re-evaluated against its committed row).
+     */
+    Optional<Campaign> enabledForShare(PromoCampaignType type) {
+        return jdbc.sql("SELECT " + COLUMNS + " FROM app_learning.promo_campaign c WHERE c.type=:type AND c.enabled FOR SHARE OF c").param("type", type.name())
+                .query(PromoCampaignRepository::campaign).optional();
+    }
+
     /** Whether a campaign of the type other than {@code campaignId} is enabled. */
     boolean otherEnabled(PromoCampaignType type, UUID campaignId) {
         return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.promo_campaign WHERE type=:type AND enabled AND campaign_id<>:id)")

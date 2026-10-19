@@ -1,6 +1,7 @@
 package app.mnema.learning.onboarding;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import tools.jackson.databind.JsonNode;
 
@@ -19,6 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         "learning.onboarding.enabled=true", "learning.onboarding.eligible-from=2026-01-01T00:00:00Z", "learning.onboarding.reward.enabled=true",
         "learning.onboarding.reward.daily-limit=2", "spring.datasource.hikari.maximum-pool-size=32"})
 class PathRewardDailyLimitIntegrationTest extends PathRewardSupport {
+    @Autowired private OnboardingService onboarding;
+
     private UUID completed() {
         UUID account = trusted();
         complete(account);
@@ -54,6 +57,26 @@ class PathRewardDailyLimitIntegrationTest extends PathRewardSupport {
 
         assertThat(view(third).path("reward").path("state").stringValue(null)).isEqualTo("ACTIVE");
         assertThat(issuedBy(campaign)).isEqualTo(3);
+    }
+
+    @Test
+    void aReadPastTheLimitIsRefusedByPlainReadsWithoutALockOrATransactionOfItsOwn() {
+        discountCampaign(10);
+        view(completed());
+        view(completed());
+        UUID third = completed();
+        double limited = outcome("limited");
+
+        StatementCounting.start();
+        JsonNode view = onboarding.read(third, false, null, Boolean.TRUE);
+        List<String> statements = StatementCounting.stop();
+
+        assertThat(view.path("reward").isNull()).isTrue();
+        assertThat(outcome("limited") - limited).isEqualTo(1.0);
+        // the unlocked count says the campaign is full: no advisory lock (neither the account's nor the campaign's), no row lock, no write
+        assertThat(statements.stream().filter(sql -> sql.contains("pg_advisory") || sql.contains("FOR SHARE") || sql.contains("INSERT INTO")).toList())
+                .as(statements.toString()).isEmpty();
+        assertThat(codes(third)).isZero();
     }
 
     @Test

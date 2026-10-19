@@ -4,6 +4,7 @@ import app.mnema.learning.notification.NotificationKind;
 import app.mnema.learning.notification.NotificationPublisher;
 import app.mnema.learning.notification.NotificationRoute;
 import app.mnema.learning.promo.PersonalPromoCodes;
+import app.mnema.learning.promo.PromoCampaignType;
 import app.mnema.learning.promo.PromoType;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -47,7 +48,9 @@ class RewardIssuerTest {
     void world() {
         issuer = new RewardIssuer(repository, new RewardSettings(true, 2), codes, milestones, visibility, publisher, meters, transactions);
         when(codes.available()).thenReturn(true);
-        when(codes.enabledCampaign(any())).thenReturn(Optional.of(new PersonalPromoCodes.Campaign(campaignId, PromoType.DISCOUNT_PERCENT, 10, null, null, UUID.randomUUID())));
+        PersonalPromoCodes.Campaign enabled = new PersonalPromoCodes.Campaign(campaignId, PromoType.DISCOUNT_PERCENT, 10, null, null, UUID.randomUUID());
+        when(codes.enabledCampaign(any())).thenReturn(Optional.of(enabled));
+        when(codes.lockEnabledCampaign(any())).thenReturn(Optional.of(enabled));
         when(visibility.hidden()).thenReturn(EnumSet.of(MilestoneKey.AI_EXPLANATION));
         when(milestones.all(account)).thenReturn(everythingVisible());
         when(repository.issuedInLastDay(campaignId)).thenReturn(0L);
@@ -74,6 +77,8 @@ class RewardIssuerTest {
         Instant expires = ISSUED.plusSeconds(7 * 24 * 3600);
         InOrder order = inOrder(repository, codes, publisher);
         order.verify(repository).lockAccount(account);
+        // the campaign is read again under its row lock before its advisory lock is taken
+        order.verify(codes).lockEnabledCampaign(PromoCampaignType.PATH_REWARD);
         order.verify(repository).lockCampaign(campaignId);
         order.verify(codes).issue(any(), org.mockito.ArgumentMatchers.eq(account), org.mockito.ArgumentMatchers.eq(ISSUED), org.mockito.ArgumentMatchers.eq(expires));
         order.verify(repository).insert(account, campaignId, code, ISSUED, expires);
@@ -95,11 +100,11 @@ class RewardIssuerTest {
 
     @Test
     void eachRefusalIsCountedUnderItsOwnOutcomeAndWritesNothing() {
-        when(codes.enabledCampaign(any())).thenReturn(Optional.empty());
+        when(codes.lockEnabledCampaign(any())).thenReturn(Optional.empty());
         issuer.issue(account);
         assertThat(count("no_campaign")).isEqualTo(1.0);
 
-        when(codes.enabledCampaign(any())).thenReturn(Optional.of(new PersonalPromoCodes.Campaign(campaignId, PromoType.TIER_DAYS, null, "PLUS", 30, UUID.randomUUID())));
+        when(codes.lockEnabledCampaign(any())).thenReturn(Optional.of(new PersonalPromoCodes.Campaign(campaignId, PromoType.TIER_DAYS, null, "PLUS", 30, UUID.randomUUID())));
         Map<MilestoneKey, MilestoneRepository.Row> partial = everythingVisible();
         partial.put(MilestoneKey.OWN_EXERCISES, new MilestoneRepository.Row(2, null));
         when(milestones.all(account)).thenReturn(partial);
@@ -131,7 +136,7 @@ class RewardIssuerTest {
         issuer.issue(account);
 
         assertThat(count("unavailable")).isEqualTo(2.0);
-        verify(codes, never()).enabledCampaign(any());
+        verify(codes, never()).lockEnabledCampaign(any());
         verify(codes, never()).issue(any(), any(), any(), any());
     }
 
@@ -146,6 +151,97 @@ class RewardIssuerTest {
         assertThat(count("issued")).isZero();
         verify(transactions).rollback(any());
         verify(transactions, never()).commit(any());
+    }
+
+    // ---- the check before the transaction ----
+
+    @Test
+    void anAccountThatIsNotCompleteIsPassedOverSilentlyWithoutATransactionOrACount() {
+        Map<MilestoneKey, MilestoneRepository.Row> partial = everythingVisible();
+        partial.put(MilestoneKey.OWN_EXERCISES, new MilestoneRepository.Row(2, null));
+        when(milestones.all(account)).thenReturn(partial);
+
+        assertThat(issuer.issueIfDue(account)).isFalse();
+
+        verify(transactions, never()).getTransaction(any());
+        verify(codes, never()).enabledCampaign(any());
+        for (String outcome : new String[] {"issued", "no_campaign", "not_complete", "limited", "unavailable", "failed"}) assertThat(count(outcome)).as(outcome).isZero();
+    }
+
+    @Test
+    void theRefusalsAboutThePlatformAreCountedByTheCheckAndNeverOpenATransactionOrTakeALock() {
+        when(codes.enabledCampaign(any())).thenReturn(Optional.empty());
+        assertThat(issuer.issueIfDue(account)).isFalse();
+        assertThat(count("no_campaign")).isEqualTo(1.0);
+
+        when(codes.enabledCampaign(any())).thenReturn(Optional.of(new PersonalPromoCodes.Campaign(campaignId, PromoType.DISCOUNT_PERCENT, 10, null, null, UUID.randomUUID())));
+        when(repository.issuedInLastDay(campaignId)).thenReturn(2L);
+        assertThat(issuer.issueIfDue(account)).isFalse();
+        assertThat(count("limited")).isEqualTo(1.0);
+
+        when(codes.available()).thenReturn(false);
+        assertThat(issuer.issueIfDue(account)).isFalse();
+        assertThat(count("unavailable")).isEqualTo(1.0);
+
+        verify(transactions, never()).getTransaction(any());
+        verify(repository, never()).lockAccount(any());
+        verify(repository, never()).lockCampaign(any());
+    }
+
+    @Test
+    void anAccountThatPassesTheCheckIsIssuedInATransactionOfItsOwn() {
+        when(codes.issue(any(), any(), any(), any())).thenReturn(UUID.randomUUID());
+
+        assertThat(issuer.issueIfDue(account)).isTrue();
+
+        assertThat(count("issued")).isEqualTo(1.0);
+        verify(transactions).commit(any());
+    }
+
+    @Test
+    void anExistingRewardFoundUnderTheLockIsReportedAndCountsNothing() {
+        when(repository.exists(account)).thenReturn(true);
+
+        assertThat(issuer.issueIfDue(account)).isTrue();
+
+        verify(codes, never()).issue(any(), any(), any(), any());
+        assertThat(count("issued")).isZero();
+    }
+
+    @Test
+    void aFailureOfTheCheckIsCountedAndNeverReachesTheCaller() {
+        when(milestones.all(account)).thenThrow(new IllegalStateException("account " + account + " is broken"));
+
+        assertThatCode(() -> assertThat(issuer.issueIfDue(account)).isFalse()).doesNotThrowAnyException();
+
+        assertThat(count("failed")).isEqualTo(1.0);
+        verify(transactions, never()).getTransaction(any());
+    }
+
+    @Test
+    void aCampaignThatTheOwnerSwitchedOffAfterTheCheckIssuesNothing() {
+        // the unlocked read of the check still saw it enabled; under the row lock it is gone
+        when(codes.lockEnabledCampaign(any())).thenReturn(Optional.empty());
+
+        assertThat(issuer.issueIfDue(account)).isFalse();
+
+        assertThat(count("no_campaign")).isEqualTo(1.0);
+        verify(repository, never()).lockCampaign(any());
+        verify(codes, never()).issue(any(), any(), any(), any());
+        verify(publisher, never()).publish(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void theIssuerRefusesToRunInsideATransactionSoItNeverHoldsTwoConnections() {
+        org.springframework.transaction.support.TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            assertThatThrownBy(() -> issuer.issueIfDue(account)).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> issuer.issue(account)).isInstanceOf(IllegalStateException.class);
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.setActualTransactionActive(false);
+        }
+        verify(transactions, never()).getTransaction(any());
+        verify(milestones, never()).all(any());
     }
 
     @Test

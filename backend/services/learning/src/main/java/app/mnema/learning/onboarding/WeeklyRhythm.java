@@ -26,10 +26,19 @@ import java.util.UUID;
  * on each of two dates) the second waits for the first's commit and then counts both sessions, so the week is counted by exactly one of them, never by none. Once the week is met the
  * completion costs one primary-key read and takes no lock. The upsert never touches {@code row_version}, which is the client's compare-and-set for the tour commands.
  *
- * <p><b>Lock order.</b> The lock is taken before anything that publishes. The milestone recorder announces {@code RHYTHM_WEEK} in {@code beforeCommit}, where the notification
- * publisher takes the owner's cursor row until the commit and expects to be the last write of the transaction; every writer here takes the advisory lock first, then writes the
- * journey row, then (through the recorder) the milestone, and only the commit-time publication reaches the cursor. {@code PUT /preferences} takes the same lock before it updates the
- * journey row, so the two cannot wait for each other's row and lock in opposite orders.
+ * <p><b>Lock order.</b> The rule: <em>every transaction that can complete a session takes the rhythm lock before its first notification publication.</em> The milestone recorder
+ * announces {@code RHYTHM_WEEK} in {@code beforeCommit}, where the notification publisher takes the owner's cursor row until the commit and expects to be the last write of the
+ * transaction; a writer here takes the advisory lock first, then writes the journey row, then (through the recorder) the milestone, and only the commit-time publication reaches the
+ * cursor. A transaction that publishes earlier takes the cursor row before the lock and meets a writer of the same account that holds the lock and waits for the cursor (40P01). So:
+ * <ul>
+ *   <li>{@code PUT /preferences} takes the lock before it updates the journey row ({@link #lock});</li>
+ *   <li>the writers that complete a session without having published anything (the submit of a deterministic answer, the learner's self-rating, the session commands) take it when the
+ *       completion calls {@link #sessionCompleted}, and only while the week is not yet met;</li>
+ *   <li>the AI assessment, which pays for a grade with the usage ledger ({@code USAGE_LOW} / {@code USAGE_EXHAUSTED} publish at once) before the answer is concluded and the session
+ *       maybe completed, takes it before the payment ({@link #lockForCompletion}), after the study-state row every completing writer locks first. The speech worker pays the same way
+ *       but cannot complete a session, so it needs no lock.</li>
+ * </ul>
+ * Whoever adds a path that publishes before it may complete a session joins the third group.
  *
  * <p>Every write method is {@link Propagation#MANDATORY}: the week is counted in the transaction of the action that makes it true, and a rolled-back action counts nothing.
  */
@@ -74,6 +83,15 @@ public class WeeklyRhythm {
     @Transactional(propagation = Propagation.MANDATORY)
     public void lock(UUID account) {
         if (settings.enabled()) repository.lock(account);
+    }
+
+    /**
+     * Serializes the rhythm writers of {@code account} until the end of the transaction, for a writer that is about to publish a notification (the usage ledger) and may then complete a
+     * session of {@code mode}: the lock goes first (see the lock order above). Does nothing while the rhythm is off or for a mode that never counts (a replay).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockForCompletion(UUID account, String mode) {
+        if (settings.enabled() && COUNTED_MODES.contains(mode)) repository.lock(account);
     }
 
     /**

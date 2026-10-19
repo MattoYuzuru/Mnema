@@ -12,9 +12,11 @@ import app.mnema.learning.platform.security.IdentityClaims.AccountSignals;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -26,7 +28,7 @@ import java.util.UUID;
  * The first-entry journey of an account ({@code contracts/onboarding}): the first read of an eligible account creates its {@code OFFERED} row exactly once (or turns its
  * {@code NOT_OFFERED} row of V75 into it) and freezes its holdout cohort; the two commands move the row by compare-and-set on its version, each idempotent by command id through
  * the global receipts (the receipt and the update are one transaction, so a repeat returns the stored answer and a failure leaves nothing behind). Every view carries the account's path
- * reward when it has one ({@link PathReward}); only the read issues it. The service holds no state.
+ * reward when it has one ({@link PathReward}); only the read issues it, before its transaction opens. The service holds no state.
  */
 @Service
 public class OnboardingService {
@@ -34,6 +36,7 @@ public class OnboardingService {
     static final String EXPERIMENT = "onboarding_v1";
     private static final String SCOPE = "onboarding";
     private static final int MAX_REPLAYS = Short.MAX_VALUE;
+    private static final int READ_TIMEOUT_SECONDS = 10;
 
     /** @param replayed the answer was stored by an earlier execution of the same command */
     record Result(ObjectNode view, boolean replayed) { }
@@ -52,11 +55,12 @@ public class OnboardingService {
     private final PathVisibility visibility;
     private final WeeklyRhythm rhythm;
     private final PathReward reward;
+    private final TransactionTemplate readTransaction;
 
     @Autowired
     OnboardingService(OnboardingRepository repository, OnboardingSettings settings, ExperimentAssignments assignments, ExperimentEvents experimentEvents,
                       CommandReceiptService receipts, MeterRegistry meters, SampleDeckService samples, MilestoneRepository milestones, PathVisibility visibility,
-                      WeeklyRhythm rhythm, PathReward reward) {
+                      WeeklyRhythm rhythm, PathReward reward, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.settings = settings;
         this.assignments = assignments;
@@ -68,6 +72,8 @@ public class OnboardingService {
         this.visibility = visibility;
         this.rhythm = rhythm;
         this.reward = reward;
+        this.readTransaction = new TransactionTemplate(transactions);
+        this.readTransaction.setTimeout(READ_TIMEOUT_SECONDS);
     }
 
     /**
@@ -76,21 +82,28 @@ public class OnboardingService {
      * @param newAccount Identity marks the account new ({@code mnema_new_account}); an absent or malformed claim is false, so the tour is never offered on a guess
      * @param zoneinfo the token's {@code zoneinfo} claim, or null: the zone of the rhythm's «today»
      * @param trusted Identity's {@code mnema_trusted} of this request ({@code null}: unknown, as for an old Identity). This is the one read that may issue the path reward
-     *                ({@link PathReward}): an account with every visible milestone done that Identity calls trusted gets its personal code here, in a transaction of its own that
-     *                cannot fail the read. The last milestone is often reached in a worker without request signals, and a new account typically reaches 100 % before it is 3 days
-     *                old, so deciding in the milestone's transaction would refuse the reward for ever; the client re-reads this view on every {@code PATH_MILESTONE}, so the read
-     *                follows the last milestone, and an untrusted account is retried by a later read. A replayed tour never issues again; there is no other path.
+     *                ({@link PathReward}): an account with every visible milestone done that Identity calls trusted gets its personal code here. The last milestone is often reached
+     *                in a worker without request signals, and a new account typically reaches 100 % before it is 3 days old, so deciding in the milestone's transaction would
+     *                refuse the reward for ever; the client re-reads this view on every {@code PATH_MILESTONE}, so the read follows the last milestone, and an untrusted account
+     *                is retried by a later read. A replayed tour never issues again; there is no other path.
+     *
+     * <p><b>Not transactional itself.</b> The reward is found, and issued when due, <em>before</em> the transaction of the view opens: the issuing has a transaction and a pooled
+     * connection of its own, and nested in the read it would hold two connections per read for as long as it waits for the account's or the campaign's lock. Issued first, the read
+     * only shows the reward, and a failure of the issuing never fails the read (it is answered without a reward and the next read asks again). The view's own reads then run in one
+     * transaction, as before.
      */
-    @Transactional(timeout = 10)
     public ObjectNode read(UUID account, boolean newAccount, String zoneinfo, Boolean trusted) {
         UuidPolicy.requireEntityId(account, "account");
         if (!settings.enabled()) return disabledView();
-        Optional<OnboardingRepository.Row> row = repository.find(account);
-        if (newAccount && row.map(found -> found.state() == JourneyState.NOT_OFFERED).orElse(true)) {
-            Instant now = repository.now();
-            if (settings.opens(now) && !repository.hasLiveDeck(account)) row = offer(account, now);
-        }
-        return view(account, row, zoneinfo, trusted);
+        RewardState prize = reward.current(account, trusted);
+        return readTransaction.execute(status -> {
+            Optional<OnboardingRepository.Row> row = repository.find(account);
+            if (newAccount && row.map(found -> found.state() == JourneyState.NOT_OFFERED).orElse(true)) {
+                Instant now = repository.now();
+                if (settings.opens(now) && !repository.hasLiveDeck(account)) row = offer(account, now);
+            }
+            return view(account, row, zoneinfo, prize);
+        });
     }
 
     /** The view of a switched-off tour: no journey, no sample deck, and the free checks the configuration gives. Touches nothing. */
@@ -98,16 +111,15 @@ public class OnboardingService {
         return OnboardingView.disabled(samples.freeAiChecks());
     }
 
-    /** The answer of a command: it shows an existing reward and never issues one ({@code trusted} null). */
+    /** The answer of a command: it shows an existing reward and never issues one. */
     private ObjectNode view(UUID account, Optional<OnboardingRepository.Row> row, String zoneinfo) {
-        return view(account, row, zoneinfo, null);
+        return view(account, row, zoneinfo, reward.state(account));
     }
 
-    private ObjectNode view(UUID account, Optional<OnboardingRepository.Row> row, String zoneinfo, Boolean trusted) {
+    private ObjectNode view(UUID account, Optional<OnboardingRepository.Row> row, String zoneinfo, RewardState prize) {
         SampleDeckState sample = samples.state(account);
         PathState path = path(account);
         RhythmState week = rhythm.state(account, zoneinfo);
-        RewardState prize = reward.state(account, path, trusted);
         return row.map(found -> OnboardingView.of(found, sample, path, week, prize)).orElseGet(() -> OnboardingView.notOffered(sample, path, week, prize));
     }
 

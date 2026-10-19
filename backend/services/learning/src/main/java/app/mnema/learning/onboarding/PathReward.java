@@ -7,8 +7,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The reward of the «Путь Mnema» in the view of an account (OB-402, ADR-ONB-005; {@code contracts/onboarding/README.md} «Path reward»): reads it and, on the read that
- * carries the right signals, asks {@link RewardIssuer} to issue it.
+ * The reward of the «Путь Mnema» in the view of an account (OB-402, ADR-ONB-005; {@code contracts/onboarding/README.md} «Path reward»): reads it and, on the read that carries the right
+ * signals, asks {@link RewardIssuer} to issue it.
  *
  * <p><b>Why the issuing follows the read.</b> The last milestone is often reached in a worker (AI grading, speech) that has no request signals, and a new account typically
  * reaches 100 % before it is 3 days old, so deciding in the milestone's own transaction would refuse the reward for ever. The signal that makes an account trusted
@@ -16,8 +16,12 @@ import java.util.UUID;
  * notification, so the read follows the last milestone; an untrusted or unknown account simply is not issued yet and is asked again by a later read. A replayed tour never issues
  * again (the key of {@code onboarding_reward} is the account), and there is no other path to a reward.
  *
- * <p>The cost: with the reward switched off nothing is read. On, an account with a reward costs one primary-key join per view; an account without one costs the same plus, only while
- * it has every visible milestone done and is trusted, one issuing transaction ({@link RewardIssuer}) per read until it is issued.
+ * <p><b>Before the read's transaction, never inside it.</b> {@link #current} runs before {@link OnboardingService#read} opens its transaction, on autocommit statements, so the issuing
+ * transaction of {@link RewardIssuer} is never nested in another one: a read never holds a connection while it waits for the account's or the campaign's lock, whatever the pool size and
+ * however many accounts qualify together. The transaction of the read only shows the reward {@link #current} found ({@link #state} for the answers of the commands).
+ *
+ * <p>The cost: with the reward switched off nothing is read. On, an account with a reward costs one primary-key join per view; an account without one that is not trusted the same; a
+ * trusted one without a reward adds the lock-free check of {@link RewardIssuer#issueIfDue} (a few plain reads), and an issuing transaction only when the account qualifies.
  */
 @Service
 class PathReward {
@@ -34,20 +38,23 @@ class PathReward {
     }
 
     /**
-     * The {@code reward} of the account's view: null while the reward is switched off or the account has none.
+     * The {@code reward} of the account's view for the read of the view: it issues the reward first when the account has none and Identity calls it trusted and it qualifies. Call it
+     * <em>outside</em> any transaction ({@link RewardIssuer} refuses otherwise); it does not fail the read because the issuing failed.
      *
-     * @param path the account's path as the view shows it: the reward is issued only when every visible milestone is done
-     * @param trusted Identity's {@code mnema_trusted} of this request when the caller is the read of the view; {@code null} for every other caller (a command's answer, an
-     *                old Identity), which never issues and only shows an existing reward
+     * @param trusted Identity's {@code mnema_trusted} of this request ({@code null}: unknown, as for an old Identity, which never issues)
+     * @return null while the reward is switched off or the account has none
      */
-    RewardState state(UUID account, PathState path, Boolean trusted) {
+    RewardState current(UUID account, Boolean trusted) {
         if (!settings.enabled()) return null;
         Optional<RewardRepository.Row> found = repository.find(account);
-        if (found.isEmpty() && Boolean.TRUE.equals(trusted) && path.total() >= 1 && path.done() == path.total()) {
-            issuer.issue(account);
-            found = repository.find(account);
-        }
+        if (found.isEmpty() && Boolean.TRUE.equals(trusted) && issuer.issueIfDue(account)) found = repository.find(account);
         return found.map(this::of).orElse(null);
+    }
+
+    /** The {@code reward} of the account's view in the answer of a command: an existing reward, never an issuance; null while the reward is switched off or the account has none. */
+    RewardState state(UUID account) {
+        if (!settings.enabled()) return null;
+        return repository.find(account).map(this::of).orElse(null);
     }
 
     private RewardState of(RewardRepository.Row row) {

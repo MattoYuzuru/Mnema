@@ -51,9 +51,19 @@ public class PersonalPromoCodes {
         return settings.available;
     }
 
-    /** The enabled campaign of the type, if the owner has switched one on. A plain read in the caller's transaction. */
+    /** The enabled campaign of the type, if the owner has switched one on. A plain read: no lock, and it needs no transaction. */
     public Optional<Campaign> enabledCampaign(PromoCampaignType type) {
         return campaigns.enabled(type).map(row -> new Campaign(row.campaignId(), row.offerType(), row.percent(), row.plan(), row.days(), row.createdBy()));
+    }
+
+    /**
+     * The enabled campaign of the type, share-locked until the end of the caller's transaction: the issuer reads it again here, under its own locks, so that an owner who switches the
+     * campaign off stops the issuance that has not yet written (the switch waits for the issuing transaction, or is waited for and then seen), instead of the issuer acting on the unlocked
+     * read it made before.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<Campaign> lockEnabledCampaign(PromoCampaignType type) {
+        return campaigns.enabledForShare(type).map(row -> new Campaign(row.campaignId(), row.offerType(), row.percent(), row.plan(), row.days(), row.createdBy()));
     }
 
     /**

@@ -46,7 +46,7 @@ public final class OnboardingController {
         IdentityClaims.AccountSignals signals = IdentityClaims.signals(request);
         boolean newAccount = Boolean.TRUE.equals(signals.newAccount());
         UUID owner = PromoBodies.owner(identity);
-        // The flag is checked here, before the transactional read: a switched-off tour must not cost a transaction or a query.
+        // The flag is checked here, before the read: a switched-off tour must not cost a transaction or a query. The read issues the path reward before it opens its own transaction.
         JsonNode view = service.enabled() ? service.read(owner, newAccount, identity.getClaimAsString("zoneinfo"), signals.trusted()) : service.disabledView();
         String tag = etag(view);
         if (matches(request.getHeaders(HttpHeaders.IF_NONE_MATCH), tag)) {

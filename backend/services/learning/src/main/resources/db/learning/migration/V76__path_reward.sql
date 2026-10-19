@@ -27,8 +27,9 @@ CREATE UNIQUE INDEX promo_campaign_one_enabled ON app_learning.promo_campaign(ty
 ALTER TABLE app_learning.promo_code ADD COLUMN campaign_id UUID REFERENCES app_learning.promo_campaign(campaign_id);
 ALTER TABLE app_learning.promo_code ADD COLUMN recipient_id UUID;
 ALTER TABLE app_learning.promo_code ADD CONSTRAINT promo_code_personal CHECK ((campaign_id IS NULL) = (recipient_id IS NULL));
--- The owner's list pages the codes that are not personal by code_id; personal codes may be many, so the list must not walk over them.
-CREATE INDEX promo_code_admin_list ON app_learning.promo_code(code_id) WHERE campaign_id IS NULL;
+-- The owner's list pages the codes that are not personal, newest first (created_at DESC, code_id DESC); personal codes may be many, so the list must neither walk over
+-- them nor sort: the index answers the order and stops at the page.
+CREATE INDEX promo_code_admin_list ON app_learning.promo_code(created_at DESC, code_id DESC) WHERE campaign_id IS NULL;
 
 -- onboarding_reward: the one reward of an account (account_id is the key: a replayed tour or a second campaign never issues another; the issuer writes it under an
 -- account-scoped advisory lock after the code, so the key is only the backstop), the audit of the issuance

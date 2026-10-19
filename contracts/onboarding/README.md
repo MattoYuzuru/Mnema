@@ -114,7 +114,7 @@ Backend tests and the frontend contract spec both execute the fixture.
   console, a discount percent or a tier for N days, one enabled at a time, the console's kill switch). It is issued by the
   server, never claimed: the `GET` of an account whose visible milestones are all done (`path.done = path.total`) and that
   Identity calls trusted (`mnema_trusted`: verified e-mail, at least 3 days old) issues it once, under an account-scoped lock,
-  in its own transaction that cannot fail the read (the client re-reads the view after every `PATH_MILESTONE`, so the read
+  in its own transaction before the read's, which it cannot fail (the client re-reads the view after every `PATH_MILESTONE`, so the read
   follows the last milestone; an untrusted account is retried on a later read). One per account for ever
   (`onboarding_reward.account_id` is the key): a replayed tour or a new campaign issues nothing more. `expiresAt` is
   `issuedAt + 7 days`, the end of the code's validity on the server; the client shows that date and time as text, never a

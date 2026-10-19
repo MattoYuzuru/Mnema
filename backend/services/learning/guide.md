@@ -2922,17 +2922,20 @@ codes), `PATH_REWARD_READY` in [`contracts/notifications`](../../../contracts/no
   rule, as for an unknown code. The plain code is never stored: `PromoCodes.derive` = 12 characters of the promo alphabet from HMAC-SHA256(promo secret, `path-reward-code:<codeId>`)
   (rejection sampling, about 59 bits); the stored hash is the ordinary one; a hash collision draws another code id. Valid from a minute before the issuance (clock skew between the
   database and the application) to `expires_at`. `listPromoCodes` leaves campaign codes out (`promo_code_admin_list`).
-- **Issuance** (`RewardIssuer`, `REQUIRES_NEW`, never throws to the caller). Called only by `PathReward.state` from `GET /api/onboarding` when the account has no reward, every
+- **Issuance** (`RewardIssuer`, never throws to the caller, refuses to run inside a transaction). `GET /api/onboarding` calls it through `PathReward.current` BEFORE the read's own
+  transaction (one connection at a time; nested, it held two per read while it waited for a lock): a lock-free pre-check (no reward, every visible milestone done, the secret, an enabled
+  campaign, the unlocked daily count below the limit), then the issuing transaction (timeout 5 s), only when the account has no reward, every
   visible milestone is done (`PathState`, total ≥ 1) and Identity says `mnema_trusted` for this request. Why the read and not the milestone's transaction: the last milestone is often
   reached in a worker without request signals (AI grading, speech) and a new account usually reaches 100 % before it is 3 days old (trusted), while the client re-reads the view after
   every `PATH_MILESTONE`. Under `pg_advisory_xact_lock('onboarding.reward:'||account)`: an existing reward → nothing; then the promo secret, the enabled campaign, the milestones recounted
-  in this transaction, the daily limit (counted under a campaign lock), the code, `onboarding_reward` (PK `account_id`: once per account, a replayed tour never issues again), and
+  in this transaction, the campaign re-read `FOR SHARE` (a disable in flight stops it), the daily limit (counted under a campaign lock), the code, `onboarding_reward` (PK `account_id`: once per account, a replayed tour never issues again), and
   `PATH_REWARD_READY` (`path:reward`, params `expiresAt`, route `PATH`) as the last write. `expires_at = issued_at + 7 days`. Metric `mnema_path_reward_total{outcome}`
   (`issued`, `no_campaign`, `not_complete`, `limited`, `unavailable`, `failed`); logs name no account (a failure logs the exception class only).
 - **View.** `reward` in every view (one PK join per `GET` while the switch is on): `ACTIVE` (with the display code), `REDEEMED` (a redemption of the code exists), `EXPIRED`; an active
   code that cannot be derived any more (rotated secret, a development process with a random one) shows no reward. Commands show an existing reward and never issue.
-- **Costs and edges.** An issuing read holds two pooled connections (the read and the issuer) — once per account. A qualifying account re-attempts on each read while there is no
-  campaign or the limit is reached (one small transaction). Codes already issued stay valid when any switch goes off (no revocation).
+- **Costs and edges.** A qualifying account re-attempts on each read while there is no campaign or the limit is reached: plain reads, no lock and no transaction
+  (`PathRewardConnectionsIntegrationTest`: a pool of 3, 8 issuing reads held at the issuer, every GET 200). AI grading takes the rhythm lock before it pays (`AssessmentService`):
+  the ledger may publish a usage notice mid-transaction, and the rhythm writers must hold their lock before the first publication. Codes already issued stay valid when any switch goes off (no revocation).
 - **Tests.** `PathRewardIntegrationTest` (race of reads and of the last milestones → one code, untrusted then trusted, campaign off, hidden milestones, replay, redemption by the recipient
   and refusal for others, expiry, view states), `PathRewardDailyLimitIntegrationTest`, `PathRewardOffIntegrationTest`, `PathRewardOnboardingOffIntegrationTest`,
   `PathRewardFailureIntegrationTest`, `PathRewardUnavailableIntegrationTest`, `RewardIssuerTest`, `PersonalPromoCodesTest`, `PromoCampaignHttpTest`.
