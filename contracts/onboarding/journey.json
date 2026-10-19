@@ -37,7 +37,8 @@
         3,
         5,
         7
-      ]
+      ],
+      "default": 3
     },
     "experiment": {
       "key": "onboarding_v1",
@@ -52,6 +53,14 @@
     "sampleDeck": {
       "freeAiChecks": 3,
       "usageOperation": "ONBOARDING_SAMPLE_CHECK"
+    },
+    "rhythm": {
+      "modes": [
+        "SCHEDULED",
+        "PRACTICE"
+      ],
+      "weekStartsOn": "MONDAY",
+      "zone": "the zoneinfo claim of the token, UTC when absent or invalid (as Study)"
     }
   },
   "steps": [
@@ -814,6 +823,115 @@
         "updateAvailable": false,
         "freeChecksLeft": 3
       }
+    },
+    "rhythmWeek": {
+      "enabled": true,
+      "journey": {
+        "state": "NOT_OFFERED",
+        "eligible": false,
+        "autoOffer": false,
+        "tourVersion": 1,
+        "branch": null,
+        "stepKey": null,
+        "experience": null,
+        "weeklyTarget": 5,
+        "offeredAt": null,
+        "finishedAt": null,
+        "replayCount": 0,
+        "rowVersion": "1"
+      },
+      "milestones": [
+        {
+          "key": "GOAL_TOLD",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-01T09:00:00Z"
+        },
+        {
+          "key": "FIRST_DECK",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-01T09:05:00Z"
+        },
+        {
+          "key": "FIRST_SESSION",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-01T09:20:00Z"
+        },
+        {
+          "key": "OWN_MATERIAL",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-02T18:00:00Z"
+        },
+        {
+          "key": "MEDIA_IN_MATERIAL",
+          "state": "TODO",
+          "progress": 0,
+          "target": 1,
+          "achievedAt": null
+        },
+        {
+          "key": "CAPTURE_NOTE",
+          "state": "PARTIAL",
+          "progress": 1,
+          "target": 2,
+          "achievedAt": null
+        },
+        {
+          "key": "OWN_EXERCISES",
+          "state": "PARTIAL",
+          "progress": 2,
+          "target": 3,
+          "achievedAt": null
+        },
+        {
+          "key": "RHYTHM_WEEK",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-10-08T19:00:00Z"
+        },
+        {
+          "key": "TWO_DAYS",
+          "state": "DONE",
+          "progress": 2,
+          "target": 2,
+          "achievedAt": "2026-09-02T18:30:00Z"
+        }
+      ],
+      "path": {
+        "done": 6,
+        "total": 9,
+        "hidden": [
+          "AI_EXPLANATION",
+          "VOICE_ANSWER",
+          "WORKSHOP_APPROVED",
+          "COMMUNITY_COPY"
+        ]
+      },
+      "rhythm": {
+        "weekStart": "2026-10-19",
+        "today": "2026-10-22",
+        "target": 5,
+        "days": [
+          "2026-10-19",
+          "2026-10-20",
+          "2026-10-22"
+        ],
+        "weeksMet": 2
+      },
+      "sampleDeck": {
+        "available": false,
+        "deckId": null,
+        "updateAvailable": false,
+        "freeChecksLeft": 3
+      }
     }
   },
   "commands": {
@@ -845,6 +963,11 @@
       "commandId": "018f1d98-5c10-7abc-8abc-0123456789af",
       "rowVersion": "3",
       "experience": "FAMILIAR",
+      "weeklyTarget": 5
+    },
+    "preferencesWithoutTour": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789c1",
+      "rowVersion": "0",
       "weeklyTarget": 5
     },
     "sampleDeck": {

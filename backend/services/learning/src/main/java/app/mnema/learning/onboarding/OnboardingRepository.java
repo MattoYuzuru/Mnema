@@ -13,7 +13,8 @@ import java.util.UUID;
 
 /**
  * SQL of {@code onboarding_journey}: one row per account that was offered or started the tour, written by the owner's own commands and by the first read of an
- * eligible account only. Writes are compare-and-set on {@code row_version}.
+ * eligible account, plus (V75, OB-401) a {@code NOT_OFFERED} row, with no cohort and no {@code offered_at}, for an account that was never offered the tour but has a weekly
+ * target or a counted week ({@link RhythmRepository}). The commands' writes are compare-and-set on {@code row_version}.
  *
  * <p>TODO(account-deletion task; owner: Learning's account-purge epic #409): delete the row by {@code account_id} (the tour state, experience and weekly target
  * are personal data tied to the account) and the account's command receipts of scope {@code onboarding} (partial index {@code command_receipt_onboarding_actor}).
@@ -21,7 +22,10 @@ import java.util.UUID;
  */
 @Repository
 class OnboardingRepository {
-    /** {@code cohort} is null for a row created by REPLAY outside the holdout cohort. */
+    /**
+     * {@code cohort} is null for a row created by REPLAY outside the holdout cohort and for a {@code NOT_OFFERED} row; {@code offeredAt} is null exactly for a
+     * {@code NOT_OFFERED} row.
+     */
     record Row(int tourVersion, JourneyState state, Cohort cohort, JourneyBranch branch, String stepKey, Experience experience, Integer weeklyTarget,
                Instant offeredAt, Instant finishedAt, int replayCount, long rowVersion) { }
 
@@ -51,7 +55,7 @@ class OnboardingRepository {
                         row.getString("cohort") == null ? null : Cohort.valueOf(row.getString("cohort")),
                         row.getString("branch") == null ? null : JourneyBranch.valueOf(row.getString("branch")), row.getString("step_key"),
                         row.getString("experience") == null ? null : Experience.valueOf(row.getString("experience")),
-                        row.getObject("weekly_target", Integer.class), row.getTimestamp("offered_at").toInstant(),
+                        row.getObject("weekly_target", Integer.class), row.getTimestamp("offered_at") == null ? null : row.getTimestamp("offered_at").toInstant(),
                         row.getTimestamp("finished_at") == null ? null : row.getTimestamp("finished_at").toInstant(),
                         row.getInt("replay_count"), row.getLong("row_version")))
                 .optional();
@@ -63,21 +67,49 @@ class OnboardingRepository {
                 .param("account", account).query(Boolean.class).single();
     }
 
-    /** Creates the row at {@code row.rowVersion()} unless one exists. @return whether this call created it */
+    /**
+     * Creates the row at {@code row.rowVersion()} unless one exists, with the answers it carries ({@code experience}, {@code weeklyTarget}) and the {@code offeredAt} it carries
+     * (null for a {@code NOT_OFFERED} row).
+     *
+     * @return whether this call created it
+     */
     boolean insert(UUID account, Row row, Instant now) {
-        return jdbc.sql("INSERT INTO app_learning.onboarding_journey(account_id,tour_version,state,cohort,branch,step_key,offered_at,replay_count,row_version,updated_at) "
-                        + "VALUES (:account,:tour,:state,:cohort,:branch,:step,:now,:replays,:version,:now) ON CONFLICT (account_id) DO NOTHING")
+        return jdbc.sql("INSERT INTO app_learning.onboarding_journey(account_id,tour_version,state,cohort,branch,step_key,experience,weekly_target,offered_at,replay_count,row_version,updated_at) "
+                        + "VALUES (:account,:tour,:state,:cohort,:branch,:step,:experience,:weekly,:offered,:replays,:version,:now) ON CONFLICT (account_id) DO NOTHING")
                 .param("account", account).param("tour", row.tourVersion()).param("state", row.state().name())
                 .param("cohort", row.cohort() == null ? null : row.cohort().name(), Types.VARCHAR)
                 .param("branch", row.branch() == null ? null : row.branch().name(), Types.VARCHAR)
-                .param("step", row.stepKey(), Types.VARCHAR).param("replays", row.replayCount()).param("version", row.rowVersion()).param("now", Timestamp.from(now))
+                .param("step", row.stepKey(), Types.VARCHAR)
+                .param("experience", row.experience() == null ? null : row.experience().name(), Types.VARCHAR).param("weekly", row.weeklyTarget(), Types.SMALLINT)
+                .param("offered", row.offeredAt() == null ? null : Timestamp.from(row.offeredAt()), Types.TIMESTAMP)
+                .param("replays", row.replayCount()).param("version", row.rowVersion()).param("now", Timestamp.from(now))
                 .update() == 1;
     }
 
-    /** Writes the mutable columns of {@code next} and bumps the version, if the row still has {@code expected}. @return whether it did */
+    /**
+     * Offers the tour to an eligible account in ONE statement: creates its {@code OFFERED} row in {@code cohort} (version 0), or turns the account's {@code NOT_OFFERED} row (V75)
+     * into it (cohort and {@code offered_at} set, version bumped; its answers and counters stay). A row in any other state is left alone, so of concurrent first reads exactly one
+     * statement changes a row.
+     *
+     * @return whether this call created or upgraded the row, which is the one that counts the exposure
+     */
+    boolean offer(UUID account, Cohort cohort, Instant now) {
+        return jdbc.sql("INSERT INTO app_learning.onboarding_journey AS j(account_id,tour_version,state,cohort,offered_at,replay_count,row_version,updated_at) "
+                        + "VALUES (:account,:tour,'OFFERED',:cohort,:now,0,0,:now) ON CONFLICT (account_id) DO UPDATE "
+                        + "SET tour_version=EXCLUDED.tour_version,state='OFFERED',cohort=EXCLUDED.cohort,offered_at=EXCLUDED.offered_at,row_version=j.row_version+1,updated_at=EXCLUDED.updated_at "
+                        + "WHERE j.state='NOT_OFFERED'")
+                .param("account", account).param("tour", JourneySteps.TOUR_VERSION).param("cohort", cohort.name()).param("now", Timestamp.from(now))
+                .update() == 1;
+    }
+
+    /**
+     * Writes the mutable columns of {@code next} and bumps the version, if the row still has {@code expected}. {@code offered_at} is set when the state leaves
+     * {@code NOT_OFFERED} (a replay from the row of V75) and stays null while it is {@code NOT_OFFERED}. @return whether it did
+     */
     boolean update(UUID account, Row next, long expected, Instant now) {
         return jdbc.sql("UPDATE app_learning.onboarding_journey SET tour_version=:tour,state=:state,branch=:branch,step_key=:step,experience=:experience,"
-                        + "weekly_target=:weekly,finished_at=:finished,replay_count=:replays,row_version=row_version+1,updated_at=:now "
+                        + "weekly_target=:weekly,finished_at=:finished,replay_count=:replays,"
+                        + "offered_at=CASE WHEN :state='NOT_OFFERED' THEN NULL ELSE coalesce(offered_at,:now) END,row_version=row_version+1,updated_at=:now "
                         + "WHERE account_id=:account AND row_version=:expected")
                 .param("account", account).param("expected", expected).param("tour", next.tourVersion()).param("state", next.state().name())
                 .param("branch", next.branch() == null ? null : next.branch().name(), Types.VARCHAR).param("step", next.stepKey(), Types.VARCHAR)

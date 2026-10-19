@@ -202,12 +202,18 @@ public final class HttpIdentityFixture {
     /** An access token of the owner console's client ({@code client_id} claim, RFC 9068), as Identity issues to {@code mnema-admin-web}. */
     public static String adminToken(UUID actor) { return token(actor, "learning.read learning.write", "mnema-admin-web"); }
 
-    public static String token(UUID actor, String scopes, String clientId) {
+    public static String token(UUID actor, String scopes, String clientId) { return token(actor, scopes, clientId, null); }
+
+    /** A reader token that carries the {@code zoneinfo} claim (an IANA zone name, or any text to try the fallback), as Identity issues it to a client that knows the user's zone. */
+    public static String reader(UUID actor, String zoneinfo) { return token(actor, "learning.read learning.write", null, zoneinfo); }
+
+    public static String token(UUID actor, String scopes, String clientId, String zoneinfo) {
         try {
             var builder = new JWTClaimsSet.Builder().issuer(ISSUER).subject(actor.toString()).audience("mnema-api")
                     .issueTime(new Date()).expirationTime(Date.from(Instant.now().plusSeconds(300)))
                     .claim("generation", "0").claim("scope", scopes);
             if (clientId != null) builder.claim("client_id", clientId);
+            if (zoneinfo != null) builder.claim("zoneinfo", zoneinfo);
             var claims = builder.build();
             var token = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KEY.getKeyID()).type(new JOSEObjectType("at+jwt")).build(), claims);
             token.sign(new RSASSASigner(KEY));

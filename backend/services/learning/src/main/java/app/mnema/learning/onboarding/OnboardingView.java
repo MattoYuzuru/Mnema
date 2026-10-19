@@ -9,27 +9,36 @@ import java.time.temporal.ChronoUnit;
 
 /**
  * The answer of {@code GET /api/onboarding} and of both commands ({@code views} of {@code contracts/onboarding/journey.json}). Every member is always present:
- * {@code milestones} and {@code path} (OB-E3) are the {@link PathState} of the account (empty and null while the tour is switched off), {@code rhythm} is reserved for OB-E4 so
- * that the client never changes shape; {@code sampleDeck} (OB-E2) is the {@link SampleDeckState} of the account. The strong ETag hashes the whole view.
+ * {@code milestones} and {@code path} (OB-E3) are the {@link PathState} of the account (empty and null while the tour is switched off), {@code rhythm} (OB-401) is the
+ * {@link RhythmState} of the account (null while the tour or the rhythm is switched off); {@code sampleDeck} (OB-E2) is the {@link SampleDeckState} of the account. The strong ETag
+ * hashes the whole view.
  */
 final class OnboardingView {
     private OnboardingView() { }
 
     /** The tour is turned off: no journey. */
     static ObjectNode disabled(int freeChecks) {
-        return envelope(false, null, null, SampleDeckState.unavailable(freeChecks));
+        return envelope(false, null, null, null, SampleDeckState.unavailable(freeChecks));
     }
 
     /** No row: the account was never offered the tour and did not start it. */
-    static ObjectNode notOffered(SampleDeckState sample, PathState path) {
-        return envelope(true, journey(JourneyState.NOT_OFFERED, false, false, JourneySteps.TOUR_VERSION, null, null, null, null, null, null, 0, 0), path, sample);
+    static ObjectNode notOffered(SampleDeckState sample, PathState path, RhythmState rhythm) {
+        return envelope(true, journey(JourneyState.NOT_OFFERED, false, false, JourneySteps.TOUR_VERSION, null, null, null, null, null, null, 0, 0), path, rhythm, sample);
     }
 
-    static ObjectNode of(OnboardingRepository.Row row, SampleDeckState sample, PathState path) {
+    /**
+     * The view of a stored row. A {@code NOT_OFFERED} row (V75) holds only the answers and the counters of an account that was never offered the tour, so it reads exactly like no
+     * row except for {@code experience}, {@code weeklyTarget} and {@code rowVersion}.
+     */
+    static ObjectNode of(OnboardingRepository.Row row, SampleDeckState sample, PathState path, RhythmState rhythm) {
+        if (row.state() == JourneyState.NOT_OFFERED) {
+            return envelope(true, journey(JourneyState.NOT_OFFERED, false, false, JourneySteps.TOUR_VERSION, null, null, row.experience(), row.weeklyTarget(), null, null, 0,
+                    row.rowVersion()), path, rhythm, sample);
+        }
         boolean eligible = row.cohort() != null;
         boolean autoOffer = eligible && row.cohort() != OnboardingRepository.Cohort.CONTROL && row.state() == JourneyState.OFFERED;
         return envelope(true, journey(row.state(), eligible, autoOffer, row.tourVersion(), row.branch(), row.stepKey(), row.experience(), row.weeklyTarget(),
-                row.offeredAt(), row.finishedAt(), row.replayCount(), row.rowVersion()), path, sample);
+                row.offeredAt(), row.finishedAt(), row.replayCount(), row.rowVersion()), path, rhythm, sample);
     }
 
     private static ObjectNode journey(JourneyState state, boolean eligible, boolean autoOffer, int tourVersion, JourneyBranch branch, String stepKey,
@@ -45,7 +54,7 @@ final class OnboardingView {
         return journey.put("replayCount", replayCount).put("rowVersion", Long.toString(rowVersion));
     }
 
-    private static ObjectNode envelope(boolean enabled, ObjectNode journey, PathState path, SampleDeckState sample) {
+    private static ObjectNode envelope(boolean enabled, ObjectNode journey, PathState path, RhythmState rhythm, SampleDeckState sample) {
         ObjectNode view = JsonNodeFactory.instance.objectNode();
         view.put("enabled", enabled);
         if (journey == null) view.putNull("journey");
@@ -62,7 +71,14 @@ final class OnboardingView {
             ArrayNode hidden = summary.putArray("hidden");
             path.hidden().forEach(key -> hidden.add(key.name()));
         }
-        view.putNull("rhythm");
+        if (rhythm == null) view.putNull("rhythm");
+        else {
+            ObjectNode week = view.putObject("rhythm");
+            week.put("weekStart", rhythm.weekStart().toString()).put("today", rhythm.today().toString()).put("target", rhythm.target());
+            ArrayNode days = week.putArray("days");
+            rhythm.days().forEach(day -> days.add(day.toString()));
+            week.put("weeksMet", rhythm.weeksMet());
+        }
         view.putObject("sampleDeck").put("available", sample.available()).put("deckId", sample.deckId() == null ? null : sample.deckId().toString())
                 .put("updateAvailable", sample.updateAvailable()).put("freeChecksLeft", sample.freeChecksLeft());
         return view;

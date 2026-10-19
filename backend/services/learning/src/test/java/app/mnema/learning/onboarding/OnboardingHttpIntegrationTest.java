@@ -570,9 +570,53 @@ class OnboardingHttpIntegrationTest extends PostgresIntegrationTest {
     // ---- preferences ----
 
     @Test
-    void preferencesNeedARowAndStoreOrClearEachAnswer() {
+    void preferencesWorkWithoutARowAndTheyCreateTheNotOfferedRowAtVersionOne() {
         UUID account = newAccount();
-        assertCode(preferences(account, preference("0").put("weeklyTarget", 3)), 409, "ONBOARDING_TRANSITION");
+
+        HttpResponse<String> created = preferences(account, copy(CONTRACT.path("commands").path("preferencesWithoutTour")).put("commandId", UUID.randomUUID().toString()));
+
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(200);
+        JsonNode journey = json(created).path("journey");
+        assertThat(journey.path("state").stringValue()).isEqualTo("NOT_OFFERED");
+        assertThat(journey.path("weeklyTarget").intValue()).isEqualTo(5);
+        assertThat(journey.path("rowVersion").stringValue()).isEqualTo("1");
+        assertThat(journey.path("eligible").booleanValue()).isFalse();
+        assertThat(journey.path("offeredAt").isNull()).isTrue();
+        assertThat(rows(account)).isOne();
+        assertThat(column(account, "cohort")).isNull();
+        assertThat(column(account, "offered_at")).isNull();
+        assertThat(column(account, "weekly_target")).isEqualTo("5");
+        // the stored row reads like no row: the report counts no account for it, and a stale "0" is the usual 412
+        assertCode(preferences(account, preference("0").put("weeklyTarget", 2)), 412, "VERSION_CONFLICT");
+        assertThat(json(preferences(account, preference("1").put("experience", "NEW"))).path("journey").path("rowVersion").stringValue()).isEqualTo("2");
+        assertThat(column(account, "offered_at")).as("a later answer keeps the row outside the tour").isNull();
+    }
+
+    @Test
+    void twoFirstPreferencesOfAnAccountWithoutARowCreateItOnceAndTheLoserIsA412() throws Exception {
+        UUID account = newAccount();
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<HttpResponse<String>>> answers = new ArrayList<>();
+        try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int target : new int[] {2, 3, 5, 7}) {
+                ObjectNode body = preference("0").put("weeklyTarget", target);
+                answers.add(pool.submit(() -> {
+                    start.await();
+                    return preferences(account, body);
+                }));
+            }
+            start.countDown();
+            List<Integer> statuses = new ArrayList<>();
+            for (Future<HttpResponse<String>> answer : answers) statuses.add(answer.get().statusCode());
+            assertThat(statuses).containsExactlyInAnyOrder(200, 412, 412, 412);
+        }
+        assertThat(rows(account)).isOne();
+        assertThat(column(account, "row_version")).isEqualTo("1");
+    }
+
+    @Test
+    void preferencesStoreOrClearEachAnswerOfAStoredRow() {
+        UUID account = newAccount();
         get(account);
 
         JsonNode both = json(preferences(account, copy(CONTRACT.path("commands").path("preferences")).put("commandId", UUID.randomUUID().toString())
@@ -595,6 +639,104 @@ class OnboardingHttpIntegrationTest extends PostgresIntegrationTest {
         assertCode(preferences(account, preference("3")), 400, "INVALID_REQUEST");
         assertCode(preferences(account, preference("3").put("experience", "EXPERT")), 400, "INVALID_REQUEST");
         assertThat(column(account, "row_version")).isEqualTo("3");
+    }
+
+    // ---- the NOT_OFFERED row (V75, OB-401) ----
+
+    /** An account that Identity does not mark new, with the NOT_OFFERED row that its first target answer created (version 1). */
+    private UUID accountWithStoredNotOfferedRow() {
+        UUID account = UUID.randomUUID();
+        HttpIdentityFixture.signals(account, false, false);
+        assertThat(preferences(account, preference("0").put("weeklyTarget", 5)).statusCode()).isEqualTo(200);
+        assertThat(column(account, "row_version")).isEqualTo("1");
+        return account;
+    }
+
+    @Test
+    void aStoredNotOfferedRowOfANewAccountBecomesTheOfferedRowOnceUnderConcurrentReadsAndCountsOneExposure() throws Exception {
+        UUID account = newAccountIn("tour");
+        assertThat(preferences(account, preference("0").put("weeklyTarget", 4)).statusCode()).isEqualTo(200);
+        assertThat(column(account, "state")).isEqualTo("NOT_OFFERED");
+        double before = exposures();
+
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<HttpResponse<String>>> answers = new ArrayList<>();
+        try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int index = 0; index < 8; index++) {
+                answers.add(pool.submit(() -> {
+                    start.await();
+                    return get(account);
+                }));
+            }
+            start.countDown();
+            for (Future<HttpResponse<String>> answer : answers) {
+                JsonNode journey = json(answer.get()).path("journey");
+                assertThat(journey.path("state").stringValue()).isEqualTo("OFFERED");
+                assertThat(journey.path("weeklyTarget").intValue()).as("the answers survive the upgrade").isEqualTo(4);
+                assertThat(journey.path("autoOffer").booleanValue()).isTrue();
+            }
+        }
+
+        assertThat(rows(account)).isOne();
+        assertThat(column(account, "cohort")).isEqualTo("TOUR");
+        assertThat(column(account, "row_version")).as("one statement changed the row, once: 1 -> 2").isEqualTo("2");
+        assertThat(exposures() - before).isEqualTo(1.0);
+        assertThat(json(get(account)).path("journey").path("rowVersion").stringValue()).isEqualTo("2");
+        assertThat(exposures() - before).isEqualTo(1.0);
+    }
+
+    @Test
+    void aStoredNotOfferedRowOfAnAccountThatIsNotEligibleIsNeverOffered() {
+        UUID account = accountWithStoredNotOfferedRow();
+
+        JsonNode view = json(get(account));
+
+        assertThat(view.path("journey").path("state").stringValue()).isEqualTo("NOT_OFFERED");
+        assertThat(view.path("journey").path("eligible").booleanValue()).isFalse();
+        assertThat(view.path("journey").path("autoOffer").booleanValue()).isFalse();
+        assertThat(view.path("journey").path("weeklyTarget").intValue()).isEqualTo(5);
+        assertThat(view.path("journey").path("offeredAt").isNull()).isTrue();
+        assertThat(column(account, "state")).isEqualTo("NOT_OFFERED");
+        assertThat(column(account, "row_version")).isEqualTo("1");
+    }
+
+    @Test
+    void replayFromAStoredNotOfferedRowGoesThroughTheUpdatePathAndGivesTheRowItsOfferedAt() {
+        UUID account = accountWithStoredNotOfferedRow();
+        assertThat(column(account, "offered_at")).isNull();
+
+        HttpResponse<String> started = journey(account, command("1", "REPLAY", "choose", null));
+
+        assertThat(started.statusCode()).as(started.body()).isEqualTo(200);
+        JsonNode journey = json(started).path("journey");
+        assertThat(journey.path("state").stringValue()).isEqualTo("IN_PROGRESS");
+        assertThat(journey.path("replayCount").intValue()).as("one replay, like the insert path").isOne();
+        assertThat(journey.path("rowVersion").stringValue()).isEqualTo("2");
+        assertThat(journey.path("weeklyTarget").intValue()).isEqualTo(5);
+        assertThat(journey.path("eligible").booleanValue()).as("outside the cohort, like a row made by a replay").isFalse();
+        assertThat(journey.path("autoOffer").booleanValue()).isFalse();
+        assertThat(journey.path("offeredAt").isNull()).isFalse();
+        assertThat(column(account, "offered_at")).isNotNull();
+        assertThat(column(account, "cohort")).isNull();
+        // the stale version the client had before is the usual 412, and an answer afterwards keeps the offer time
+        assertCode(journey(account, command("1", "PAUSE", null, null)), 412, "VERSION_CONFLICT");
+        assertThat(preferences(account, preference("2").put("experience", "NEW")).statusCode()).isEqualTo(200);
+        assertThat(column(account, "state")).isEqualTo("IN_PROGRESS");
+        assertThat(column(account, "offered_at")).isNotNull();
+    }
+
+    @Test
+    void aStoredNotOfferedRowAllowsNoActionButReplay() {
+        for (JourneyAction action : JourneyAction.values()) {
+            if (action == JourneyAction.REPLAY) continue;
+            UUID account = accountWithStoredNotOfferedRow();
+            String step = action.stepKey() == JourneyAction.Presence.REQUIRED ? "choose" : null;
+
+            assertCode(journey(account, command("1", action.name(), step, null)), 409, "ONBOARDING_TRANSITION");
+
+            assertThat(column(account, "state")).as(action.name()).isEqualTo("NOT_OFFERED");
+            assertThat(column(account, "row_version")).as(action.name()).isEqualTo("1");
+        }
     }
 
     // ---- the owner's report ----

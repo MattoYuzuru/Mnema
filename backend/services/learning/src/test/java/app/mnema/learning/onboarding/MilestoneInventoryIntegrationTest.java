@@ -23,6 +23,7 @@ import static app.mnema.learning.onboarding.MilestoneKey.GOAL_TOLD;
 import static app.mnema.learning.onboarding.MilestoneKey.MEDIA_IN_MATERIAL;
 import static app.mnema.learning.onboarding.MilestoneKey.OWN_EXERCISES;
 import static app.mnema.learning.onboarding.MilestoneKey.OWN_MATERIAL;
+import static app.mnema.learning.onboarding.MilestoneKey.RHYTHM_WEEK;
 import static app.mnema.learning.onboarding.MilestoneKey.TWO_DAYS;
 import static app.mnema.learning.onboarding.MilestoneKey.VOICE_ANSWER;
 import static app.mnema.learning.onboarding.MilestoneKey.WORKSHOP_APPROVED;
@@ -45,8 +46,8 @@ class MilestoneInventoryIntegrationTest extends SampleDeckIntegrationTest {
 
     /** A new material, a revision with a picture (every publication of an item). */
     private static final Set<MilestoneKey> ITEM = keys(OWN_MATERIAL, MEDIA_IN_MATERIAL);
-    /** The completion of a study session by the last answer, or by the issuer that finds nothing left. */
-    private static final Set<MilestoneKey> SESSION = keys(FIRST_SESSION, TWO_DAYS);
+    /** The completion of a study session by the last answer, or by the issuer that finds nothing left: the path's two session milestones and the week of the rhythm (OB-401). */
+    private static final Set<MilestoneKey> SESSION = keys(FIRST_SESSION, TWO_DAYS, RHYTHM_WEEK);
 
     /** route to the milestones it can write; the controller of the route is named for the reader. */
     private static final Map<String, Set<MilestoneKey>> ROUTES = routes();
@@ -59,7 +60,8 @@ class MilestoneInventoryIntegrationTest extends SampleDeckIntegrationTest {
         routes.put("POST /decks/forks", keys(FIRST_DECK, COMMUNITY_COPY));
         routes.put("POST /onboarding/sample-deck", keys(FIRST_DECK));
         routes.put("PUT /onboarding/journey", NONE);
-        routes.put("PUT /onboarding/preferences", NONE);
+        // a weekly target lowered below the days the current week already has meets the week (WeeklyRhythm.targetChanged)
+        routes.put("PUT /onboarding/preferences", keys(RHYTHM_WEEK));
         // ---- authoring ----
         routes.put("POST /decks/{deckId}/items", ITEM);
         routes.put("POST /decks/{deckId}/items/publications", ITEM);
@@ -84,7 +86,7 @@ class MilestoneInventoryIntegrationTest extends SampleDeckIntegrationTest {
         // ---- study: the completion of a session; the model's grade arrives after the answer was accepted ----
         routes.put("POST /decks/{deckId}/study-sessions", NONE);
         routes.put("POST /decks/{deckId}/study-sessions/{sessionId}/presentations", SESSION);
-        routes.put("POST /decks/{deckId}/study-sessions/{sessionId}/attempts", keys(FIRST_SESSION, TWO_DAYS, AI_EXPLANATION));
+        routes.put("POST /decks/{deckId}/study-sessions/{sessionId}/attempts", keys(FIRST_SESSION, TWO_DAYS, RHYTHM_WEEK, AI_EXPLANATION));
         routes.put("POST /decks/{deckId}/study-sessions/{sessionId}/attempts/{attemptId}/self-rating", SESSION);
         routes.put("POST /decks/{deckId}/study-sessions/{sessionId}/attempts/{attemptId}/self-check", NONE);
         routes.put("POST /decks/{deckId}/study-sessions/{sessionId}/attempts/{attemptId}/dispute", NONE);
@@ -161,7 +163,7 @@ class MilestoneInventoryIntegrationTest extends SampleDeckIntegrationTest {
     }
 
     @Test
-    void everyMilestoneWithAWriterIsWrittenByAClassifiedRouteAndTheRhythmByNone() {
+    void everyMilestoneWithAWriterIsWrittenByAClassifiedRoute() {
         Set<MilestoneKey> reachable = EnumSet.noneOf(MilestoneKey.class);
         ROUTES.values().forEach(reachable::addAll);
         Set<MilestoneKey> withWriter = EnumSet.noneOf(MilestoneKey.class);
@@ -169,6 +171,18 @@ class MilestoneInventoryIntegrationTest extends SampleDeckIntegrationTest {
             if (!milestone.path("writer").isNull()) withWriter.add(MilestoneKey.valueOf(milestone.path("key").stringValue()));
         }
         assertThat(reachable).isEqualTo(withWriter);
-        assertThat(reachable).doesNotContain(MilestoneKey.RHYTHM_WEEK);
+    }
+
+    @Test
+    void everyRouteAWriterOfTheFixtureNamesIsClassifiedWithItsMilestone() {
+        for (JsonNode milestone : MilestoneFixture.REGISTRY.path("milestones")) {
+            MilestoneKey key = MilestoneKey.valueOf(milestone.path("key").stringValue());
+            for (String route : MilestoneFixture.routes(milestone)) {
+                assertThat(ROUTES).as("%s names the route %s", key, route).containsKey(route);
+                assertThat(ROUTES.get(route)).as("%s names the route %s", key, route).contains(key);
+            }
+        }
+        // the rhythm is written by the two completing routes' writers and by the preferences route, which the fixture names
+        assertThat(MilestoneFixture.routes(MilestoneFixture.REGISTRY.path("milestones").get(MilestoneKey.RHYTHM_WEEK.ordinal()))).containsExactly("PUT /onboarding/preferences");
     }
 }
