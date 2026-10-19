@@ -19,6 +19,7 @@ import {
     OnboardingReadResult,
     OnboardingView,
     PreferencesCommand,
+    Rhythm,
     SAMPLE_FREE_AI_CHECKS,
     SampleDeck,
     SampleDeckCommand,
@@ -38,12 +39,15 @@ import {
     isMilestoneKey,
     milestoneDefinition
 } from './path.models';
+import { isInWeek, isIsoDate, isMonday } from './rhythm-format';
 
 const ROW_VERSION = /^(?:0|[1-9][0-9]{0,18})$/u;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_MILESTONES = 100;
 const VIEW_KEYS = ['enabled', 'journey', 'milestones', 'path', 'rhythm', 'sampleDeck'];
+const RHYTHM_KEYS = ['weekStart', 'today', 'target', 'days', 'weeksMet'];
+const RHYTHM_WEEK_DAYS = 7;
 const JOURNEY_KEYS = ['state', 'eligible', 'autoOffer', 'tourVersion', 'branch', 'stepKey', 'experience', 'weeklyTarget', 'offeredAt', 'finishedAt',
     'replayCount', 'rowVersion'];
 
@@ -170,6 +174,28 @@ function parseJourney(value: unknown): Journey {
     };
 }
 
+/**
+ * `rhythm` of the view: `null`, or the week of the contract. The dates are real calendar dates in ISO form, `weekStart` is a Monday, `today`
+ * and every studied day lie in the seven days from it, the days are ascending and without a repeat, the target is 1–7 and `weeksMet` a
+ * count. Anything else is a protocol error, like the rest of the view.
+ */
+function parseRhythm(value: unknown): Rhythm {
+    const body = exact(value, RHYTHM_KEYS);
+    const weekStart = body['weekStart'];
+    const today = body['today'];
+    if (!isIsoDate(weekStart) || !isMonday(weekStart)) throw protocol('The week must start on a Monday.');
+    if (!isIsoDate(today) || !isInWeek(weekStart, today)) throw protocol('Today is outside the week.');
+    const listed = body['days'];
+    if (!Array.isArray(listed) || listed.length > RHYTHM_WEEK_DAYS) throw protocol('Invalid days.');
+    const days = listed.map((day): string => {
+        if (!isIsoDate(day) || !isInWeek(weekStart, day)) throw protocol('A studied day is outside the week.');
+        return day;
+    });
+    // ISO dates order as text, so ascending and unique is strictly increasing.
+    if (days.some((day, index) => index > 0 && day <= days[index - 1])) throw protocol('The days are not ascending and distinct.');
+    return { weekStart, today, target: weeklyTarget(body['target']), days, weeksMet: count(body['weeksMet']) };
+}
+
 function parseSampleDeck(value: unknown): SampleDeck {
     const body = exact(value, ['available', 'deckId', 'updateAvailable', 'freeChecksLeft']);
     const deckId = nullable(body['deckId'], item => {
@@ -244,8 +270,7 @@ export function parseOnboardingView(value: unknown): OnboardingView {
     const journey = nullable(body['journey'], parseJourney);
     // Disabled means no tour state at all; enabled always has a journey (`NOT_OFFERED` when there is no row).
     if (enabled !== (journey !== null)) throw protocol('The journey must be present exactly when onboarding is enabled.');
-    const rhythm = body['rhythm'];
-    if (rhythm !== null && (typeof rhythm !== 'object' || Array.isArray(rhythm))) throw protocol('Invalid rhythm.');
+    const rhythm = nullable(body['rhythm'], parseRhythm);
     const { milestones, path } = parsePath(body['milestones'], body['path'], enabled);
     return { enabled, journey, milestones, path, rhythm, sampleDeck: parseSampleDeck(body['sampleDeck']) };
 }

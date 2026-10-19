@@ -7,7 +7,7 @@ import contract from '../../../../../contracts/onboarding/journey.json';
 import { AuthService } from '../../auth.service';
 import { ToastService } from '../../core/notifications/toast.service';
 import { JourneyStore } from '../../core/onboarding/journey.store';
-import { ActionOptions, Journey, JourneyAction, JourneyResult, OnboardingView, StepKey } from '../../core/onboarding/onboarding.models';
+import { ActionOptions, Journey, JourneyAction, JourneyResult, OnboardingView, StepKey, WEEKLY_TARGET } from '../../core/onboarding/onboarding.models';
 import { TOUR_PERSISTENCE, TourEngine } from '../../core/onboarding/tour-engine.service';
 import { TourEvents } from '../../core/onboarding/tour-events';
 import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
@@ -21,6 +21,8 @@ import { OnboardingFlow } from './onboarding-flow.service';
 
 /** Specs only. */
 export const OFFERED_VIEW = contract.views.offered as OnboardingView;
+/** The view of a week of the rhythm with three studied days of a target of five (`views.rhythmWeek` of the contract). */
+export const RHYTHM_VIEW = contract.views.rhythmWeek as OnboardingView;
 /** The id of the sample copy the fake store makes (`views.sampleReady` of the contract). */
 export const SAMPLE_DECK_ID = contract.views.sampleReady.sampleDeck.deckId as string;
 /** The sample deck of a view where the learner may choose it. */
@@ -45,7 +47,7 @@ const TRANSITIONS = contract.transitions as unknown as Readonly<Record<JourneyAc
 const STEP_BRANCH = new Map<string, string | null>(contract.steps.map(step => [step.key, step.branch]));
 
 /** Why a command is not applied, so a spec can tell a rule from a failure: `transition` is the server's 409, `invalid` its 400. */
-export type Rejection = { readonly action: JourneyAction | 'PREFERENCES'; readonly reason: 'transition' | 'invalid' | 'failure' };
+export type Rejection = { readonly action: JourneyAction; readonly reason: 'transition' | 'invalid' | 'failure' };
 
 /**
  * A stand-in for `JourneyStore` that keeps the journey the way the server does (`contracts/onboarding/journey.json`): a command from a
@@ -120,13 +122,14 @@ export class FakeJourneyStore {
         const current = this.view();
         const journey = this.journey();
         if (current === null || journey === null || this.failNext) { this.failNext = false; return Promise.resolve({ status: 'failed' }); }
-        // There is no row to write the answers to until the journey exists: the server answers 409 with the current view.
-        if (journey.state === 'NOT_OFFERED') { this.rejections.push({ action: 'PREFERENCES', reason: 'transition' }); return Promise.resolve({ status: 'refused', view: current }); }
+        // The preferences work in every state (OB-401): without a row the server makes the `NOT_OFFERED` row that holds them (version 0 -> 1).
         const target = changes.weeklyTarget;
         if (typeof target === 'number' && (target < contract.constants.weeklyTarget.min || target > contract.constants.weeklyTarget.max)) {
             return Promise.resolve({ status: 'failed' });
         }
-        const next = { ...current, journey: { ...journey, ...changes, rowVersion: String(Number(journey.rowVersion) + 1) } as Journey };
+        // The rhythm follows the target the way the server derives it: the journey's, or the default.
+        const rhythm = current.rhythm !== null && target !== undefined ? { ...current.rhythm, target: target ?? WEEKLY_TARGET.default } : current.rhythm;
+        const next = { ...current, rhythm, journey: { ...journey, ...changes, rowVersion: String(Number(journey.rowVersion) + 1) } as Journey };
         this.view.set(next);
         return Promise.resolve({ status: 'applied', view: next });
     });

@@ -10,6 +10,7 @@ import { QuietZone } from '../notifications/quiet-zone';
 import { ToastService } from '../notifications/toast.service';
 import { AttentionCoordinator } from './attention-coordinator';
 import { JourneyStore } from './journey.store';
+import { OnboardingView, Rhythm } from './onboarding.models';
 import { PathPreferences } from './path-preferences';
 import { MILESTONE_TOAST_WINDOW_MS, PathToasts } from './path-toasts';
 import { TourEngine } from './tour-engine.service';
@@ -26,6 +27,7 @@ describe('PathToasts (the milestone toast policy)', () => {
     let notify: ReturnType<typeof vi.fn>;
     let load: ReturnType<typeof vi.fn>;
     const tourActive = signal(false);
+    const view = signal<OnboardingView | null>(null);
     const account = signal<{ accountId: string } | null>({ accountId: 'acc-1' });
 
     const flush = async (ms = 0): Promise<void> => { TestBed.tick(); await vi.advanceTimersByTimeAsync(ms); TestBed.tick(); };
@@ -35,7 +37,7 @@ describe('PathToasts (the milestone toast policy)', () => {
             providers: [provideRouter([{ path: '**', children: [] }]),
                 { provide: ToastService, useValue: spyObj<ToastService>({ notify }) },
                 { provide: TourEngine, useValue: spyObj<TourEngine>({ active: tourActive, paused: signal(false) }) },
-                { provide: JourneyStore, useValue: { load, view: signal(null), error: signal(null), journey: signal(null) } },
+                { provide: JourneyStore, useValue: { load, view, error: signal(null), journey: signal(null) } },
                 { provide: AuthService, useValue: { status: signal('authenticated'), user: account } }]
         });
         toasts = TestBed.inject(PathToasts);
@@ -54,6 +56,7 @@ describe('PathToasts (the milestone toast policy)', () => {
         localStorage.clear();
         vi.useFakeTimers();
         tourActive.set(false);
+        view.set(null);
         account.set({ accountId: 'acc-1' });
         notify = vi.fn();
         load = vi.fn(() => Promise.resolve(null));
@@ -205,5 +208,170 @@ describe('PathToasts (the milestone toast policy)', () => {
     it('asks the journey to read the view again when a milestone notification arrives', () => {
         toasts.noteArrival();
         expect(load).toHaveBeenCalledExactlyOnceWith({ refresh: true });
+    });
+    describe('the quiet toast of the met weekly goal (OB-401)', () => {
+        const RHYTHM: Rhythm = { weekStart: '2026-10-19', today: '2026-10-22', target: 3, days: ['2026-10-19', '2026-10-20'], weeksMet: 0 };
+        const MET: Rhythm = { ...RHYTHM, days: ['2026-10-19', '2026-10-20', '2026-10-22'] };
+        const MESSAGE = 'Цель недели выполнена: вы занимались 3\u00a0дня.';
+        const show = (rhythm: Rhythm | null): void => { view.set({ enabled: true, journey: null, milestones: [], path: null, rhythm, sampleDeck: { available: false, deckId: null, updateAvailable: false, freeChecksLeft: 3 } }); TestBed.tick(); };
+        const rhythmToasts = (): unknown[][] => notify.mock.calls.filter(call => String(call[0]).startsWith('rhythm-met-'));
+
+        it('shows it when a newer view of the same week reaches the target the previous view was below, with no link and as information', async () => {
+            show(RHYTHM);
+            await flush();
+            show(MET);
+            await flush();
+            expect(notify).toHaveBeenCalledExactlyOnceWith('rhythm-met-2026-10-19', MESSAGE, 'INFO', null);
+        });
+
+        it('says the days of the view that met it, in the right form of «день»', async () => {
+            show({ ...RHYTHM, target: 5, days: ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22'] });
+            show({ ...RHYTHM, target: 5, days: ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23'] });
+            await flush();
+            expect(notify).toHaveBeenCalledExactlyOnceWith('rhythm-met-2026-10-19', 'Цель недели выполнена: вы занимались 5\u00a0дней.', 'INFO', null);
+        });
+
+        it('shows nothing for the first view of the session: a page loaded with the week already met is no celebration', async () => {
+            show(MET);
+            await flush(MILESTONE_TOAST_WINDOW_MS);
+            expect(notify).not.toHaveBeenCalled();
+            show({ ...MET, days: [...MET.days, '2026-10-23'] });
+            await flush(MILESTONE_TOAST_WINDOW_MS);
+            expect(notify).not.toHaveBeenCalled();
+        });
+
+        it('shows nothing while the week stays below the target, or a view arrives that changes nothing', async () => {
+            show(RHYTHM);
+            show({ ...RHYTHM, days: [...RHYTHM.days] });
+            show({ ...RHYTHM, today: '2026-10-23' });
+            await flush(MILESTONE_TOAST_WINDOW_MS);
+            expect(notify).not.toHaveBeenCalled();
+        });
+
+        it('is for the same week only: a new week that starts with a met target (a target of one) is not the crossing of the old one', async () => {
+            show({ ...RHYTHM, target: 1, days: [] });
+            show({ ...RHYTHM, target: 1, weekStart: '2026-10-26', today: '2026-10-26', days: ['2026-10-26'] });
+            await flush();
+            expect(notify).not.toHaveBeenCalled();
+        });
+
+        it('is no celebration when the target changed: a target lowered in the profile to what the week already has, or raised and met', async () => {
+            show(RHYTHM);
+            show({ ...RHYTHM, target: 2 });
+            await flush(MILESTONE_TOAST_WINDOW_MS);
+            expect(notify).not.toHaveBeenCalled();
+            // The new target is the baseline: reaching it from here, unchanged, is the crossing.
+            show({ ...RHYTHM, target: 3 });
+            show({ ...MET, target: 3 });
+            await flush();
+            expect(rhythmToasts()).toHaveLength(1);
+        });
+
+        it('announces a week once: a raised and then met target in the same week is not announced again', async () => {
+            show(RHYTHM);
+            show(MET);
+            await flush(MILESTONE_TOAST_WINDOW_MS);
+            show({ ...MET, target: 5 });
+            show({ ...MET, target: 5, days: [...MET.days, '2026-10-23', '2026-10-24'] });
+            await flush(MILESTONE_TOAST_WINDOW_MS);
+            expect(rhythmToasts()).toHaveLength(1);
+        });
+
+        it('announces the next week again', async () => {
+            show(RHYTHM);
+            show(MET);
+            await flush(MILESTONE_TOAST_WINDOW_MS);
+            show({ ...RHYTHM, weekStart: '2026-10-26', today: '2026-10-26', days: ['2026-10-26'] });
+            show({ ...RHYTHM, weekStart: '2026-10-26', today: '2026-10-28', days: ['2026-10-26', '2026-10-27', '2026-10-28'] });
+            await flush();
+            expect(rhythmToasts().map(call => call[0])).toEqual(['rhythm-met-2026-10-19', 'rhythm-met-2026-10-26']);
+        });
+
+        it('starts over after a view without a rhythm (the flag was off for a moment): the next view is a first view', async () => {
+            show(RHYTHM);
+            show(null);
+            show(MET);
+            await flush(MILESTONE_TOAST_WINDOW_MS);
+            expect(notify).not.toHaveBeenCalled();
+        });
+
+        it('waits while an answer is open and shows once, when the zone clears', async () => {
+            show(RHYTHM);
+            quiet.set(true);
+            show(MET);
+            await flush(60_000);
+            expect(notify).not.toHaveBeenCalled();
+            quiet.set(false);
+            await flush();
+            expect(notify).toHaveBeenCalledExactlyOnceWith('rhythm-met-2026-10-19', MESSAGE, 'INFO', null);
+        });
+
+        it.each([
+            ['the tour', (on: boolean) => tourActive.set(on)],
+            ['the first entry', (on: boolean) => TestBed.inject(AttentionCoordinator).report('first-entry', on)],
+            ['an in-place hint', (on: boolean) => TestBed.inject(AttentionCoordinator).report('hint', on)]
+        ])('waits for %s to leave the screen', async (_name, set) => {
+            show(RHYTHM);
+            set(true);
+            show(MET);
+            await flush(40_000);
+            expect(notify).not.toHaveBeenCalled();
+            set(false);
+            await flush();
+            expect(notify).toHaveBeenCalledTimes(1);
+        });
+
+        it('shares the 30 s window with milestone toasts: the milestone leaves first, this one in the next window, never merged into the summary', async () => {
+            show(RHYTHM);
+            quiet.set(true);
+            toasts.arrived(note(1, 'FIRST_SESSION', 3));
+            show(MET);
+            quiet.set(false);
+            await flush();
+            expect(notify).toHaveBeenCalledExactlyOnceWith(note(1).notificationId, 'Путь: вы прошли первое занятие · 3 из 12', 'INFO', LINK);
+            await flush(MILESTONE_TOAST_WINDOW_MS - 1);
+            expect(notify).toHaveBeenCalledTimes(1);
+            await flush(1);
+            expect(notify).toHaveBeenCalledTimes(2);
+            expect(notify).toHaveBeenLastCalledWith('rhythm-met-2026-10-19', MESSAGE, 'INFO', null);
+        });
+
+        it('waits out a milestone toast that was just shown, and a milestone that comes after it waits out this one', async () => {
+            toasts.arrived(note(1, 'GOAL_TOLD', 1));
+            await flush();
+            show(RHYTHM);
+            show(MET);
+            await flush(MILESTONE_TOAST_WINDOW_MS - 1);
+            expect(rhythmToasts()).toHaveLength(0);
+            await flush(1);
+            expect(rhythmToasts()).toHaveLength(1);
+            toasts.arrived(note(2, 'FIRST_DECK', 2));
+            await flush(MILESTONE_TOAST_WINDOW_MS - 1);
+            expect(notify).toHaveBeenCalledTimes(2);
+            await flush(1);
+            expect(notify).toHaveBeenCalledTimes(3);
+        });
+
+        it('is not silenced by hiding «Путь» on the device: it is the weekly goal, not a milestone; the milestones waiting are forgotten', async () => {
+            const preferences = TestBed.inject(PathPreferences);
+            show(RHYTHM);
+            quiet.set(true);
+            toasts.arrived(note(1));
+            show(MET);
+            preferences.setHidden(true);
+            quiet.set(false);
+            await flush();
+            expect(notify).toHaveBeenCalledExactlyOnceWith('rhythm-met-2026-10-19', MESSAGE, 'INFO', null);
+            await flush(MILESTONE_TOAST_WINDOW_MS * 2);
+            expect(notify).toHaveBeenCalledTimes(1);
+        });
+
+        it('forgets the previous account on sign-out: its week is not the baseline of the next', async () => {
+            show(RHYTHM);
+            toasts.reset();
+            show(MET);
+            await flush(MILESTONE_TOAST_WINDOW_MS);
+            expect(notify).not.toHaveBeenCalled();
+        });
     });
 });

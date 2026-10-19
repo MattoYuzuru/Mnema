@@ -1,5 +1,6 @@
 import { ProfileGoalComponent } from './features/goal/profile-goal.component';
 import { PathSummaryComponent } from './features/onboarding/path-summary.component';
+import { ProfileRhythmComponent } from './features/onboarding/profile-rhythm.component';
 import { ReplayTourComponent } from './features/onboarding/replay-tour.component';
 import { ChangeDetectionStrategy, Component, DestroyRef, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
@@ -26,7 +27,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
 
 @Component({
     selector: 'app-profile-page',
-    imports: [ProfileGoalComponent, PathSummaryComponent, ReplayTourComponent, InterestSettingsComponent, ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent,
+    imports: [ProfileGoalComponent, PathSummaryComponent, ProfileRhythmComponent, ReplayTourComponent, InterestSettingsComponent, ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent,
         PublicProfileSettingsComponent],
     template: `
       <section class="profile-page" aria-labelledby="profile-title">
@@ -94,6 +95,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
             <app-profile-goal />
             <app-interest-settings />
             <app-path-summary />
+            <app-profile-rhythm />
             <div class="replay"><app-replay-tour /></div>
             <section id="ai-budget" class="sheet" aria-labelledby="ai-budget-heading">
               <h2 id="ai-budget-heading" tabindex="-1">ИИ-бюджет</h2>

@@ -4,6 +4,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterRender
 import { JourneyStore } from '../../core/onboarding/journey.store';
 import { Branch, Experience } from '../../core/onboarding/onboarding.models';
 import { onboardingText } from '../../core/onboarding/onboarding-texts';
+import { daysLabel } from '../../core/onboarding/rhythm-format';
 import { NightSkyComponent } from '../../shared/night-sky.component';
 import { InterestPickerComponent } from '../../shared/interest-picker.component';
 import { SegmentedChoiceComponent, SegmentedOption } from '../../shared/segmented-choice.component';
@@ -16,16 +17,11 @@ import { FirstEntryCard, OnboardingFlow } from './onboarding-flow.service';
 
 const EXPERIENCES: readonly Experience[] = ['NEW', 'FAMILIAR', 'CONFIDENT'];
 const DAYS: readonly number[] = [2, 3, 5, 7];
-const RUSSIAN_PLURALS = new Intl.PluralRules('ru');
 const SAME_CARD_BRANCH_LABEL: Readonly<Record<Branch, 'branch.sample' | 'branch.community' | 'branch.own'>> = {
     SAMPLE: 'branch.sample', COMMUNITY: 'branch.community', OWN: 'branch.own'
 };
 
-/** «2 дня», «5 дней»: the form of «день» a number asks for, with a non-breaking space. */
-export function daysLabel(count: number): string {
-    const words: Record<Intl.LDMLPluralRule, string> = { zero: 'дней', one: 'день', two: 'дня', few: 'дня', many: 'дней', other: 'дня' };
-    return `${count}\u00a0${words[RUSSIAN_PLURALS.select(count)]}`;
-}
+export { daysLabel };
 
 /**
  * «Начало пути»: the first-entry surface, a full-screen modal `<dialog>` on the night: the welcome (with the stars; the survey and the

@@ -122,6 +122,7 @@
         ? 'В выбранной практике пока нет заданий'
         : phase() === 'empty' ? 'На сейчас всё повторено' : 'Хорошая работа' }}</h2>
       <p>На сегодня с этой колодой всё. Если хочется ещё, повторите занятие или потренируйтесь свободно.</p>
+      @if (phase() === 'complete') { @if (sessionRhythm(); as rhythm) { <app-rhythm-summary [rhythm]="rhythm" /> } }
       <div class="completion-actions">
         <a class="button primary" [routerLink]="['/decks', deckId]">Вернуться в колоду</a>
       </div>

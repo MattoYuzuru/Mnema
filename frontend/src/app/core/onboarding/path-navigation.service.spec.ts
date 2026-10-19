@@ -110,10 +110,10 @@ describe('PathNavigation (a chevron of «Путь»)', () => {
         expect(hint.active()).toBe(false);
     });
 
-    it('does nothing for a milestone without a place (the rhythm, hidden in this version)', async () => {
+    it('takes the rhythm milestone to the rhythm block of the profile, with the hint of the place standing at it', async () => {
         await navigation.go('RHYTHM_WEEK');
-        expect(navigate).not.toHaveBeenCalled();
-        expect(hint.active()).toBe(false);
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(['/profile'], {});
+        expect(hint.request()).toMatchObject({ title: 'Проведите неделю в ритме', anchor: 'profile.rhythm' });
     });
 
     it('has a place or an explicit nothing for every milestone of the registry', async () => {
@@ -121,8 +121,8 @@ describe('PathNavigation (a chevron of «Путь»)', () => {
             navigate.mockClear();
             await navigation.go(key);
             const route = milestoneDefinition(key).route;
-            // A side quest opens its chooser instead of navigating; the rhythm has no place yet.
-            expect(navigate.mock.calls.length, `${key} → ${route}`).toBe(route === 'PROFILE_RHYTHM' || isQuestRoute(route) ? 0 : 1);
+            // A side quest opens its chooser instead of navigating.
+            expect(navigate.mock.calls.length, `${key} → ${route}`).toBe(isQuestRoute(route) ? 0 : 1);
         }
     });
 

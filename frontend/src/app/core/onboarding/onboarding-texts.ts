@@ -150,6 +150,11 @@ export const ONBOARDING_TEXTS = {
     'm.COMMUNITY_COPY': 'Возьмите готовую колоду', 'm.COMMUNITY_COPY.b': 'В Сообществе есть колоды по вашим темам.',
     'hint.capture': 'Сохраните сюда мысль или ссылку — разберёте её потом.',
     'hint.ok': 'Понятно',
+    // Weekly rhythm (OB-401): the approved sentences. `{ordinal}` is «Первый»…«Седьмой» (the number of days of the week), `{days}` «3 дня».
+    'rhythm.day': '{ordinal} день на этой неделе',
+    'rhythm.target': 'Цель — {days} в неделю',
+    'rhythm.met.toast': 'Цель недели выполнена: вы занимались {days}.',
+    'rhythm.profile.weeks': 'Недель в ритме: {n}',
     // From the prototype's markup, not from its text list
     'tour.slider.label': 'Пояснения к шагу',
     'survey.progress.label': 'Пройдено вопросов',
@@ -191,6 +196,31 @@ export const ONBOARDING_TEXTS = {
     'goal.profile.choose': 'Выбрать',
     'goal.profile.save': 'Сохранить',
     'goal.profile.cancel': 'Отмена',
+    // pending owner approval (S4, OB-E4, OB-401): the week of the rhythm (visible letters, the sentence a screen reader says instead), and the rhythm block of the profile
+    'rhythm.week.short.1': 'Пн',
+    'rhythm.week.short.2': 'Вт',
+    'rhythm.week.short.3': 'Ср',
+    'rhythm.week.short.4': 'Чт',
+    'rhythm.week.short.5': 'Пт',
+    'rhythm.week.short.6': 'Сб',
+    'rhythm.week.short.7': 'Вс',
+    'rhythm.week.on.1': 'в понедельник',
+    'rhythm.week.on.2': 'во вторник',
+    'rhythm.week.on.3': 'в среду',
+    'rhythm.week.on.4': 'в четверг',
+    'rhythm.week.on.5': 'в пятницу',
+    'rhythm.week.on.6': 'в субботу',
+    'rhythm.week.on.7': 'в воскресенье',
+    'rhythm.week.and': 'и',
+    'rhythm.week.summary': 'Эта неделя: занятия {days}.',
+    'rhythm.week.summary.none': 'Эта неделя: занятия ещё не отмечены.',
+    'rhythm.settings.title': 'Недельный ритм',
+    'rhythm.settings.hint': 'Это цель, а не обязательство: пропущенный день ничего не сжигает.',
+    'rhythm.settings.save': 'Сохранить',
+    'rhythm.settings.saved': 'Сохранено.',
+    'rhythm.settings.error': 'Не удалось сохранить. Попробуйте ещё раз.',
+    'rhythm.settings.conflict': 'Настройки уже изменились на другом устройстве. Проверьте выбор и сохраните ещё раз.',
+    'hint.PROFILE_RHYTHM': 'Здесь видна ваша неделя и выбирается цель: сколько дней в неделю заниматься.',
     // pending owner approval (S3, OB-E3, OB-304): the side quests (client-only tours started from a chevron of «Путь»)
     'quest.loading': 'Готовим задание…',
     'quest.choose.lead': 'Выберите колоду, в которой пройдём это задание.',
@@ -242,6 +272,9 @@ export const ONBOARDING_TEXTS = {
 /** The strings of the goal block of the profile: all of them await approval. */
 const GOAL_PROFILE_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('goal.profile.'));
 
+/** The strings of the rhythm week and the rhythm block of the profile that are not in the approved list: all of them await approval (S4). */
+const RHYTHM_NEW_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('rhythm.week.') || key.startsWith('rhythm.settings.'));
+
 /** The strings of the side quests: all of them await approval. */
 const QUEST_TEXT_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('quest.'));
 
@@ -249,7 +282,7 @@ const QUEST_TEXT_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).f
 export const UNLISTED_TEXT_KEYS: readonly OnboardingTextKey[] = ['tour.slider.label', 'survey.progress.label', 'survey.progress.value', 'replay.own.title', 'replay.own.new',
     'path.eyebrow', ...GOAL_PROFILE_KEYS, ...MILESTONE_KEYS.map(key => `path.event.${key}` as const), 'path.toast.many', 'path.show', 'path.loading',
     'hint.PROFILE_GOAL', 'hint.DECKS', 'hint.STUDY', 'hint.MATERIAL_NEW', 'hint.EXERCISE_NEW', 'hint.COMMUNITY',
-    ...QUEST_TEXT_KEYS];
+    'hint.PROFILE_RHYTHM', ...RHYTHM_NEW_KEYS, ...QUEST_TEXT_KEYS];
 
 export type OnboardingTextKey = keyof typeof ONBOARDING_TEXTS;
 

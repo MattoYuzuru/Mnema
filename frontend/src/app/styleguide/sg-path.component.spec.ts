@@ -23,7 +23,7 @@ describe('SgPathComponent', () => {
         [...section().querySelectorAll<HTMLElement>('.sg-specimen')].find(item => item.querySelector('h3')!.textContent === title)!;
 
     it('has every specimen with a «когда использовать» note', () => {
-        for (const title of ['Веха: состояния', 'Веха: наведение и фокус', 'Веха на 320 px', 'Глава и общая полоса', 'Подсказка на месте', 'Выбор колоды для задания', 'Экран о микрофоне', 'Пауза задания', 'Тост вехи']) {
+        for (const title of ['Веха: состояния', 'Веха: наведение и фокус', 'Веха на 320 px', 'Глава и общая полоса', 'Подсказка на месте', 'Выбор колоды для задания', 'Экран о микрофоне', 'Пауза задания', 'Тост вехи', 'Неделя ритма: состояния', 'Неделя ритма на 320 px', 'Ритм на итогах занятия', 'Тост выполненной цели недели']) {
             expect(specimen(title), title).toBeDefined();
             expect(specimen(title).querySelector('.sg-when')!.textContent, title).toContain('Когда использовать');
         }
@@ -78,5 +78,24 @@ describe('SgPathComponent', () => {
         const notify = vi.spyOn(TestBed.inject(ToastService), 'notify');
         [...specimen('Тост вехи').querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Показать тост вехи')!.click();
         expect(notify).toHaveBeenCalledWith(expect.any(String), 'Путь: вы добавили в материал картинку или звук · 6 из 12', 'INFO', { label: 'Открыть «Путь»', commands: ['/profile', 'path'] });
+    });
+    it('shows the week of the rhythm in its states: empty, partial, met, and today at the first and the last day', () => {
+        const figures = [...specimen('Неделя ритма: состояния').querySelectorAll('figure')];
+        expect(figures).toHaveLength(5);
+        const studied = figures.map(figure => [...figure.querySelectorAll('ol.week > li')].filter(item => item.classList.contains('done')).length);
+        expect(studied).toEqual([0, 3, 5, 1, 2]);
+        const today = figures.map(figure => [...figure.querySelectorAll('ol.week > li')].findIndex(item => item.classList.contains('today')));
+        expect(today).toEqual([2, 4, 4, 0, 6]);
+        expect(figures[0].querySelector('p.visually-hidden')?.textContent).toBe('Эта неделя: занятия ещё не отмечены.');
+        expect(figures[1].querySelector('p.visually-hidden')?.textContent).toBe('Эта неделя: занятия во вторник, в четверг и в пятницу.');
+        expect(specimen('Неделя ритма на 320 px').querySelector('.sg-path-narrow app-rhythm-week')).not.toBeNull();
+    });
+
+    it('shows the rhythm block of a summary, and raises the quiet toast of the met goal through the real text', () => {
+        expect(specimen('Ритм на итогах занятия').querySelector('app-rhythm-summary h3')?.textContent).toBe('Третий день на этой неделе');
+        expect(specimen('Ритм на итогах занятия').querySelector('.hint')?.textContent).toBe('Цель — 5\u00a0дней в неделю');
+        const notify = vi.spyOn(TestBed.inject(ToastService), 'notify');
+        [...specimen('Тост выполненной цели недели').querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Показать тост цели недели')!.click();
+        expect(notify).toHaveBeenCalledWith(expect.any(String), 'Цель недели выполнена: вы занимались 5\u00a0дней.', 'INFO', null);
     });
 });

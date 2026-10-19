@@ -97,4 +97,36 @@
     [tokens]="['--mn-ink', '--mn-sheet']">
     <div class="actions"><button type="button" class="button" (click)="showToast()">Показать тост вехи</button></div>
   </app-sg-specimen>
+
+  <app-sg-specimen title="Неделя ритма: состояния" selector="<app-rhythm-week>"
+    when="Семь дней недели, понедельник первым: день с занятием — закрашенный круг с галочкой (два знака, не один цвет), сегодняшний — круг в рамке (форма, не оттенок), остальные — пустые кольца. Ничего отрицательного: день без занятия просто пуст, день, который ещё не наступил, выглядит так же. Буквы и знаки скрыты от скринридера; он читает одну фразу недели («Эта неделя: занятия во вторник, в четверг и в пятницу»; без занятий — «Эта неделя: занятия ещё не отмечены.») из визуально скрытого абзаца. Ничего не анимируется, поэтому reduced motion ничего не меняет; в forced-colors закрашенный день остаётся закрашенным системными цветами, сегодня — с рамкой Highlight. Одно и то же в итогах занятия и в профиле."
+    [tokens]="['--mn-ink', '--mn-muted', '--mn-on-ink']"
+    usage='<app-rhythm-week weekStart="2026-10-19" today="2026-10-23" [days]="[&apos;2026-10-20&apos;, &apos;2026-10-22&apos;]" />'>
+    <div class="sg-rhythm-weeks">
+      <figure><figcaption>Неделя без занятий (сегодня среда)</figcaption><app-rhythm-week [weekStart]="weekStart" [today]="weeks.empty.today" [days]="weeks.empty.days" /></figure>
+      <figure><figcaption>Часть недели (вторник, четверг и пятница, сегодня пятница)</figcaption><app-rhythm-week [weekStart]="weekStart" [today]="weeks.partial.today" [days]="weeks.partial.days" /></figure>
+      <figure><figcaption>Цель выполнена (пять дней)</figcaption><app-rhythm-week [weekStart]="weekStart" [today]="weeks.met.today" [days]="weeks.met.days" /></figure>
+      <figure><figcaption>Сегодня первый день недели</figcaption><app-rhythm-week [weekStart]="weekStart" [today]="weeks.first.today" [days]="weeks.first.days" /></figure>
+      <figure><figcaption>Сегодня последний день недели</figcaption><app-rhythm-week [weekStart]="weekStart" [today]="weeks.last.today" [days]="weeks.last.days" /></figure>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Неделя ритма на 320 px" selector="<app-rhythm-week> в узкой колонке"
+    when="Семь кругов делят ширину колонки поровну и не выходят за неё: горизонтальной прокрутки нет."
+    [tokens]="['--mn-touch-min']">
+    <div class="sg-path-narrow"><app-rhythm-week [weekStart]="weekStart" [today]="weeks.partial.today" [days]="weeks.partial.days" /></div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Ритм на итогах занятия" selector="<app-rhythm-summary>"
+    when="Под текстом итогов завершённого занятия (обычного или практики; повтор не считается): «Третий день на этой неделе» (порядковое по числу дней недели), семь дней и «Цель — 5 дней в неделю». Блок появляется, когда после завершения прочитан обновлённый вид пути: до этого ничего нет, без счётчика загрузки; итоги не ждут его. Число выполненных недель здесь не показывается никогда — оно только в профиле. Не в шапке, без красного, без долгов и серий."
+    [tokens]="['--mn-rule', '--mn-ink']"
+    usage='<app-rhythm-summary [rhythm]="rhythm" />'>
+    <app-rhythm-summary [rhythm]="summaryRhythm" />
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Тост выполненной цели недели" selector="ToastService.notify (PathToasts)"
+    when="«Цель недели выполнена: вы занимались 5 дней.» — тихий тост без ссылки. Один раз за неделю и только когда новый вид той же недели дошёл до цели, а прежний был ниже и цель не менялась: загрузка страницы с уже выполненной неделей и снижение цели в профиле — не повод. Ждёт, пока в занятии открыт ответ, уступает туру, первому входу и подсказке, не чаще одного за 30 секунд вместе с тостами вех. «Скрыть «Путь»» его не отключает."
+    [tokens]="['--mn-ink', '--mn-sheet']">
+    <div class="actions"><button type="button" class="button" (click)="showRhythmToast()">Показать тост цели недели</button></div>
+  </app-sg-specimen>
 </section>

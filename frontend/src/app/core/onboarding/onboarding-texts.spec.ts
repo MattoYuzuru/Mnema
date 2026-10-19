@@ -46,6 +46,31 @@ describe('onboarding texts', () => {
         expect(fresh).toContain('hint.STUDY');
     });
 
+    it('has the approved sentences of the rhythm verbatim, and lists every other rhythm string as awaiting approval (S4)', () => {
+        for (const key of ['rhythm.day', 'rhythm.target', 'rhythm.met.toast', 'rhythm.profile.weeks'] as const) {
+            expect(approved.get(key), key).toBe(ONBOARDING_TEXTS[key]);
+            expect(UNLISTED_TEXT_KEYS, key).not.toContain(key);
+        }
+        const rhythmKeys = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('rhythm.') || key === 'hint.PROFILE_RHYTHM');
+        const pending = rhythmKeys.filter(key => !approved.has(key));
+        // 7 letters + 7 days of the sentence + «и» + 2 week sentences + 6 strings of the profile block + the hint of the place.
+        expect(pending).toHaveLength(7 + 7 + 1 + 2 + 6 + 1);
+        for (const key of pending) expect(UNLISTED_TEXT_KEYS, key).toContain(key);
+    });
+
+    it('fills the sentences of the rhythm: the ordinal, the days, the toast and the weeks', () => {
+        expect(onboardingText('rhythm.day', { ordinal: 'Второй' })).toBe('Второй день на этой неделе');
+        expect(onboardingText('rhythm.target', { days: '5\u00a0дней' })).toBe('Цель — 5\u00a0дней в неделю');
+        expect(onboardingText('rhythm.met.toast', { days: '3\u00a0дня' })).toBe('Цель недели выполнена: вы занимались 3\u00a0дня.');
+        expect(onboardingText('rhythm.profile.weeks', { n: 6 })).toBe('Недель в ритме: 6');
+    });
+
+    it('says nothing of loss, debt or a streak in any rhythm string', () => {
+        for (const [key, text] of Object.entries(ONBOARDING_TEXTS).filter(([key]) => key.startsWith('rhythm.') || key === 'hint.PROFILE_RHYTHM')) {
+            expect(text, key).not.toMatch(/потер|долг|серия|стрик|огонь|не успел|отстал|штраф/iu);
+        }
+    });
+
     it('fills the toast of a milestone', () => {
         expect(onboardingText('path.toast', { event: onboardingText('path.event.MEDIA_IN_MATERIAL'), done: 6, total: 12 })).toBe('Путь: вы добавили в материал картинку или звук · 6 из 12');
         expect(onboardingText('path.go', { title: onboardingText('m.TWO_DAYS') })).toBe('Перейти: Позанимайтесь в другой день');

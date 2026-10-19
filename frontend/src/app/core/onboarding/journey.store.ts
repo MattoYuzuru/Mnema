@@ -49,14 +49,25 @@ export class JourneyStore {
     /** Bumped by every reset: an answer to a request that began before it belongs to the previous account and is dropped. */
     private epoch = 0;
     private inflight: Promise<OnboardingView | null> | null = null;
+    private queued: Promise<OnboardingView | null> | null = null;
     private tail: Promise<unknown> = Promise.resolve();
 
     /**
      * Reads the view. Once it is held this resolves with it without a request; `refresh` asks again with the held `ETag`, and a
-     * `304` keeps the current view. Concurrent calls share one request. Resolves with the held view (`null` before any answer).
+     * `304` keeps the current view. Concurrent calls share one request, except that a `refresh` asked while a request is in flight asks
+     * once more after it (the request may have started before what the refresh is for, a session that has just completed); refreshes asked
+     * meanwhile share that one. Resolves with the held view (`null` before any answer).
      */
     load(options: { readonly refresh?: boolean } = {}): Promise<OnboardingView | null> {
-        if (this.inflight !== null) return this.inflight;
+        if (this.inflight !== null) {
+            if (options.refresh !== true) return this.inflight;
+            const epoch = this.epoch;
+            this.queued ??= this.inflight.then(() => {
+                this.queued = null;
+                return epoch === this.epoch ? this.load({ refresh: true }) : null;
+            });
+            return this.queued;
+        }
         if (this.state() !== null && options.refresh !== true) return Promise.resolve(this.state());
         return this.fetch(options.refresh === true ? this.etag : null);
     }
@@ -96,6 +107,7 @@ export class JourneyStore {
         this.error.set(null);
         this.loading.set(false);
         this.inflight = null;
+        this.queued = null;
     }
 
     private fetch(etag: string | null): Promise<OnboardingView | null> {

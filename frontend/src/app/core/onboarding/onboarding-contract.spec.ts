@@ -13,6 +13,7 @@ import {
     JOURNEY_ACTIONS,
     JOURNEY_STATES,
     JourneyCommand,
+    OnboardingProtocolError,
     PreferencesCommand,
     SAMPLE_FREE_AI_CHECKS,
     STEP_BRANCH,
@@ -50,6 +51,7 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
             expect([...EXPERIENCES]).toEqual(contract.constants.experiences);
             expect(WEEKLY_TARGET.min).toBe(contract.constants.weeklyTarget.min);
             expect(WEEKLY_TARGET.max).toBe(contract.constants.weeklyTarget.max);
+            expect(WEEKLY_TARGET.default).toBe(contract.constants.weeklyTarget.default);
             expect([...WEEKLY_TARGET.surveyOptions]).toEqual(contract.constants.weeklyTarget.surveyOptions);
         });
 
@@ -90,6 +92,74 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
             expect(() => parseOnboardingView({ ...contract.views.offered, extra: 1 })).toThrow();
             expect(() => parseOnboardingView({ ...contract.views.disabled, journey: contract.views.offered.journey })).toThrow();
             expect(() => parseOnboardingView({ ...contract.views.offered, journey: null })).toThrow();
+        });
+    });
+
+    describe('rhythm', () => {
+        const week = contract.views.rhythmWeek;
+        const rhythm = week.rhythm;
+        const viewWith = (patch: Record<string, unknown>): unknown => ({ ...week, rhythm: { ...rhythm, ...patch } });
+
+        it('parses the week of the fixture: the Monday, today and the studied days of the week, ascending, with the weeks in rhythm', () => {
+            const parsed = parseOnboardingView(week);
+            expect(parsed.rhythm).toEqual({ weekStart: '2026-10-19', today: '2026-10-22', target: 5, days: ['2026-10-19', '2026-10-20', '2026-10-22'], weeksMet: 2 });
+            expect(parsed.rhythm?.target).toBe(parsed.journey?.weeklyTarget);
+        });
+
+        it('takes no rhythm from the views whose flag is off', () => {
+            for (const [name, view] of Object.entries(contract.views).filter(([name]) => name !== 'rhythmWeek')) expect(parseOnboardingView(view).rhythm, name).toBeNull();
+        });
+
+        it('accepts the edges: a week without a session, a full week, today on Monday and on Sunday, a target of one and seven', () => {
+            expect(parseOnboardingView(viewWith({ days: [] })).rhythm?.days).toEqual([]);
+            const all = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25'];
+            expect(parseOnboardingView(viewWith({ days: all, target: 7, today: '2026-10-25' })).rhythm?.days).toEqual(all);
+            expect(parseOnboardingView(viewWith({ today: '2026-10-19', days: ['2026-10-19'], target: 1, weeksMet: 0 })).rhythm?.target).toBe(1);
+        });
+
+        it.each<[string, Record<string, unknown>]>([
+            ['a week that does not start on a Monday', { weekStart: '2026-10-20' }],
+            ['a week start that is not a date', { weekStart: '2026-02-30' }],
+            ['a week start with a time', { weekStart: '2026-10-19T00:00:00Z' }],
+            ['today before the week', { today: '2026-10-18' }],
+            ['today after the week', { today: '2026-10-26' }],
+            ['today that is not a date', { today: 'today' }],
+            ['a studied day before the week', { days: ['2026-10-18', '2026-10-19'] }],
+            ['a studied day after the week', { days: ['2026-10-19', '2026-10-26'] }],
+            ['days that descend', { days: ['2026-10-22', '2026-10-20'] }],
+            ['a day twice', { days: ['2026-10-20', '2026-10-20'] }],
+            ['days that are not a list', { days: '2026-10-20' }],
+            ['more than seven days', { days: ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25', '2026-10-25'] }],
+            ['a target of zero', { target: 0 }],
+            ['a target of eight', { target: 8 }],
+            ['a fractional target', { target: 2.5 }],
+            ['a target as text', { target: '5' }],
+            ['negative weeks in rhythm', { weeksMet: -1 }],
+            ['fractional weeks in rhythm', { weeksMet: 1.5 }],
+            ['weeks in rhythm as text', { weeksMet: '2' }],
+            ['a member the contract does not have', { streak: 4 }]
+        ])('refuses %s as a protocol error', (_name, patch) => {
+            expect(() => parseOnboardingView(viewWith(patch))).toThrow(OnboardingProtocolError);
+        });
+
+        it.each(['weekStart', 'today', 'target', 'days', 'weeksMet'])('refuses a rhythm without %s', key => {
+            const { [key]: _removed, ...rest } = rhythm as Record<string, unknown>;
+            expect(() => parseOnboardingView({ ...week, rhythm: rest })).toThrow(OnboardingProtocolError);
+        });
+
+        it('refuses a rhythm that is not an object', () => {
+            for (const value of [[], 'week', 3, true]) expect(() => parseOnboardingView({ ...week, rhythm: value })).toThrow(OnboardingProtocolError);
+        });
+
+        it('sends the preferences of an account without a tour (row version 0) as they are, and the client accepts them', async () => {
+            const command = contract.commands.preferencesWithoutTour;
+            expect(command.rowVersion).toBe('0');
+            expect(() => validatePreferencesCommand(command)).not.toThrow();
+            const result = firstValueFrom(api.preferences(command));
+            const request = http.expectOne('/api/onboarding/preferences');
+            expect(request.request.body).toEqual(command);
+            request.flush(week, { headers });
+            await expect(result).resolves.toMatchObject({ view: { rhythm: { target: 5 } } });
         });
     });
 

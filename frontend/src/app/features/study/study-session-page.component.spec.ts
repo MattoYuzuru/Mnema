@@ -19,6 +19,9 @@ import { MEDIA_PLAYBACK_RESOLVER, MediaPlaybackResolver } from './media-playback
 import { clone, fakePlayback, ids, mechanics } from './study-test-data';
 import { spyObj, type SpyObj, lastCall } from '../../../testing/mocks';
 import { TourEvents } from '../../core/onboarding/tour-events';
+import { JourneyStore } from '../../core/onboarding/journey.store';
+import { OnboardingView, Rhythm } from '../../core/onboarding/onboarding.models';
+import { FakeJourneyStore } from '../onboarding/onboarding-test-data';
 
 describe('StudySessionPageComponent', () => {
     const deck = metadataFixture.detail as unknown as OwnDeck;
@@ -696,6 +699,144 @@ describe('StudySessionPageComponent', () => {
         fixture.detectChanges();
         expect([...page().querySelectorAll('.notice button')].map(button => button.textContent?.trim())).toContain('Начать заново');
         expect(page().querySelector('.notice a.button')).toBeNull();
+    });
+
+    describe('the weekly rhythm on the summary (OB-401)', () => {
+        const WEEK = '2026-10-19';
+        /** The rhythm before the session: two days of the week, none of them today (Friday). */
+        const BEFORE: Rhythm = { weekStart: WEEK, today: '2026-10-23', target: 3, days: ['2026-10-20', '2026-10-22'], weeksMet: 1 };
+        /** The rhythm after it: today is a studied day, the third of the week. */
+        const AFTER: Rhythm = { ...BEFORE, days: ['2026-10-20', '2026-10-22', '2026-10-23'] };
+        let journey: FakeJourneyStore;
+        let refresh: (() => void) | null;
+
+        /** A store whose re-read is held until the test releases it, and then holds `after`. */
+        function journeyReading(after: Partial<OnboardingView>, held = true): void {
+            journey = new FakeJourneyStore({}, { rhythm: BEFORE });
+            refresh = null;
+            journey.load.mockImplementation((options?: { refresh?: boolean }) => {
+                if (options?.refresh !== true) return Promise.resolve(journey.view());
+                return new Promise(resolve => {
+                    const release = (): void => { journey.view.set({ ...journey.view()!, ...after }); resolve(journey.view()); };
+                    if (held) refresh = release; else release();
+                });
+            });
+            TestBed.overrideProvider(JourneyStore, { useValue: journey });
+        }
+
+        function complete(mode: 'SCHEDULED' | 'PRACTICE' | 'REPLAY', status: 'COMPLETE' | 'EMPTY' = 'COMPLETE'): void {
+            api.start.mockReturnValue(of({ value: { ...sessionOf([fixtures['selfCheck']]), mode, status, presentations: [], localStudyDate: '2026-10-23' }, replayed: false }));
+            createStarted();
+        }
+        const block = (): HTMLElement | null => page().querySelector<HTMLElement>('app-rhythm-summary');
+        const settle = async (): Promise<void> => { await fixture.whenStable(); fixture.detectChanges(); };
+
+        it('reads the journey again after the session is completed and shows the day only when the new view is here, never before', async () => {
+            journeyReading({ rhythm: AFTER });
+            complete('SCHEDULED');
+            expect(journey.load).toHaveBeenCalledExactlyOnceWith({ refresh: true });
+            // Until the answer arrives the summary is whole and nothing about the rhythm shows: no spinner, no old number.
+            expect(page().querySelector('.completion')).not.toBeNull();
+            expect(block()).toBeNull();
+            expect(page().querySelector('.completion [role=status]')?.textContent ?? '').not.toContain('ритм');
+            refresh!();
+            await settle();
+            expect(block()).not.toBeNull();
+            expect(block()!.querySelector('h3')?.textContent).toBe('Третий день на этой неделе');
+            expect(block()!.querySelector('p.visually-hidden')?.textContent).toBe('Эта неделя: занятия во вторник, в четверг и в пятницу.');
+            expect(block()!.querySelector('.hint')?.textContent).toBe('Цель — 3\u00a0дня в неделю');
+            expect(block()!.querySelectorAll('ol.week > li')).toHaveLength(7);
+        });
+
+        it('keeps every text of the summary and puts the block inside it, with no weeks counted', async () => {
+            journeyReading({ rhythm: AFTER }, false);
+            complete('SCHEDULED');
+            await settle();
+            const completion = page().querySelector<HTMLElement>('.completion')!;
+            expect(completion.querySelector('h2')?.textContent).toBe('Хорошая работа');
+            expect(completion.textContent).toContain('На сегодня с этой колодой всё.');
+            expect(completion.contains(block())).toBe(true);
+            expect(completion.querySelector('.completion-actions')).not.toBeNull();
+            expect(block()!.textContent).not.toContain('Недель в ритме');
+        });
+
+        it('counts a practice session too', async () => {
+            journeyReading({ rhythm: AFTER }, false);
+            complete('PRACTICE');
+            await settle();
+            expect(journey.load).toHaveBeenCalledWith({ refresh: true });
+            expect(block()?.querySelector('h3')?.textContent).toBe('Третий день на этой неделе');
+        });
+
+        it('does not count a replay: it neither reads the view again nor shows the block, even when the view holds a rhythm of today', async () => {
+            journeyReading({ rhythm: AFTER }, false);
+            journey.view.set({ ...journey.view()!, rhythm: AFTER });
+            complete('REPLAY');
+            await settle();
+            expect(journey.load).not.toHaveBeenCalled();
+            expect(block()).toBeNull();
+            expect(page().querySelector('.completion')).not.toBeNull();
+        });
+
+        it('shows nothing when the queue was empty (no session was completed)', async () => {
+            journeyReading({ rhythm: AFTER }, false);
+            complete('SCHEDULED', 'EMPTY');
+            await settle();
+            expect(journey.load).not.toHaveBeenCalled();
+            expect(block()).toBeNull();
+        });
+
+        it('shows nothing from a view that does not hold the study date of the session as a studied day (an old view, or another week)', async () => {
+            journeyReading({ rhythm: BEFORE }, false);
+            complete('SCHEDULED');
+            await settle();
+            expect(journey.load).toHaveBeenCalledWith({ refresh: true });
+            expect(block()).toBeNull();
+        });
+
+        it('judges by the study date the session itself carries, not by the clock of the view: a session of Thursday is not today\'s block on Friday', async () => {
+            journeyReading({ rhythm: AFTER }, false);
+            api.start.mockReturnValue(of({ value: { ...sessionOf([fixtures['selfCheck']]), status: 'COMPLETE', presentations: [], localStudyDate: '2026-10-21' }, replayed: false }));
+            createStarted();
+            await settle();
+            expect(block()).toBeNull();
+        });
+
+        it.each([
+            ['the rhythm is off', { rhythm: null }],
+            ['onboarding is off', { enabled: false, journey: null, rhythm: AFTER }]
+        ])('shows nothing when %s', async (_name, after) => {
+            journeyReading(after as Partial<OnboardingView>, false);
+            complete('SCHEDULED');
+            await settle();
+            expect(block()).toBeNull();
+        });
+
+        it('shows nothing when the view could not be read again, and the summary stays whole', async () => {
+            journeyReading({ rhythm: AFTER });
+            complete('SCHEDULED');
+            journey.error.set('load');
+            refresh!();
+            await settle();
+            expect(block()).toBeNull();
+            expect(page().textContent).toContain('Хорошая работа');
+        });
+
+        it('forgets the block when another session begins and asks again when that one is completed', async () => {
+            journeyReading({ rhythm: AFTER }, false);
+            complete('SCHEDULED');
+            await settle();
+            expect(block()).not.toBeNull();
+            api.start.mockReturnValue(of({ value: sessionOf([fixtures['selfCheck']]), replayed: false }));
+            fixture.componentInstance.startPractice();
+            fixture.detectChanges();
+            expect(block()).toBeNull();
+            api.start.mockReturnValue(of({ value: { ...sessionOf([fixtures['selfCheck']]), mode: 'PRACTICE', status: 'COMPLETE', presentations: [], localStudyDate: '2026-10-23' }, replayed: false }));
+            fixture.componentInstance.startPractice();
+            await settle();
+            expect(journey.load).toHaveBeenCalledTimes(2);
+            expect(block()).not.toBeNull();
+        });
     });
 
     // ------------------------------------------------------------------------------------------

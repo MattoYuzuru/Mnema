@@ -18,7 +18,8 @@ export type Branch = typeof BRANCHES[number];
 export const EXPERIENCES = ['NEW', 'FAMILIAR', 'CONFIDENT'] as const;
 export type Experience = typeof EXPERIENCES[number];
 
-export const WEEKLY_TARGET = { min: 1, max: 7, surveyOptions: [2, 3, 5, 7] } as const;
+/** The weekly target in days: the range, the options of the survey, and what the rhythm uses while the learner has not chosen (`constants.weeklyTarget`). */
+export const WEEKLY_TARGET = { min: 1, max: 7, default: 3, surveyOptions: [2, 3, 5, 7] } as const;
 
 /** The closed registry of step keys and the branch each belongs to (`null`: shared by every branch). */
 export const STEP_BRANCH = {
@@ -83,16 +84,30 @@ export interface SampleDeck {
 }
 
 /**
+ * The weekly rhythm of the account (`rhythm` of the view, OB-401, `contracts/onboarding/journey.json` `views.rhythmWeek`). `weekStart` is
+ * the Monday of the ISO week of `today`, the learner's local date; `days` are the distinct local dates of the week with a completed
+ * SCHEDULED or PRACTICE session, ascending; `target` is 1–7. The week is met when `days.length` reaches `target` (the client derives it, there
+ * is no flag). `weeksMet` is shown in the profile only.
+ */
+export interface Rhythm {
+    readonly weekStart: string;
+    readonly today: string;
+    readonly target: number;
+    readonly days: readonly string[];
+    readonly weeksMet: number;
+}
+
+/**
  * The view of the account's onboarding. While `enabled` is false `journey` is `null`, `milestones` is `[]` and `path` is `null`, and the
  * client shows neither «Начало пути», the tour nor «Путь». `milestones` lists the visible milestones in registry order and `path` their
- * count (`contracts/onboarding/milestones.json`). `rhythm` is reserved for OB-E4 (`null` until then) and kept as received.
+ * count (`contracts/onboarding/milestones.json`). `rhythm` is the weekly rhythm, `null` while `learning.onboarding.rhythm.enabled` is off.
  */
 export interface OnboardingView {
     readonly enabled: boolean;
     readonly journey: Journey | null;
     readonly milestones: readonly Milestone[];
     readonly path: PathSummary | null;
-    readonly rhythm: unknown;
+    readonly rhythm: Rhythm | null;
     readonly sampleDeck: SampleDeck;
 }
 

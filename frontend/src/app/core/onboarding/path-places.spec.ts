@@ -52,9 +52,10 @@ describe('the places of «Путь»', () => {
         }
     });
 
-    it('has no place for the rhythm until OB-401, so no chevron', () => {
-        expect(resolve('PROFILE_RHYTHM', BOTH)).toBeNull();
-        expect(PATH_STATIC_HREFS.PROFILE_RHYTHM).toBeNull();
+    it('takes the rhythm milestone to the rhythm block of the profile, with the hint of the place', () => {
+        expect(resolve('PROFILE_RHYTHM', BOTH)).toEqual({ commands: ['/profile'], anchor: 'profile.rhythm', text: 'hint.PROFILE_RHYTHM' });
+        expect(resolve('PROFILE_RHYTHM', NONE)).toEqual(resolve('PROFILE_RHYTHM', BOTH));
+        expect(PATH_STATIC_HREFS.PROFILE_RHYTHM).toBe('/profile');
     });
 
     it('has no plain place for a side quest: each is a tour of its own, opened from the chooser', () => {
