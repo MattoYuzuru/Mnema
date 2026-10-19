@@ -68,24 +68,23 @@ x-learning-environment: &learning-environment
   MNEMA_ADMIN_SUPPORT_SECRET: ${MNEMA_ADMIN_SUPPORT_SECRET:-}
   MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP: ${MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP:-false}
   LEARNING_PLANS_MAXTEASER_ENABLED: ${LEARNING_PLANS_MAXTEASER_ENABLED:-false}
-  # Public read of shared decks and the link-preview metadata the local nginx puts into /d/{code} pages (docs/operations/link-previews.md); off by default.
-  LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED: ${LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED:-false}
-  # The rest of community decks for a local try-out (off by default, like production before each launch): copies, public media, the catalogue.
-  LEARNING_COMMUNITY_FORKS_ENABLED: ${LEARNING_COMMUNITY_FORKS_ENABLED:-false}
-  LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED: ${LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED:-false}
-  LEARNING_COMMUNITY_CATALOG_ENABLED: ${LEARNING_COMMUNITY_CATALOG_ENABLED:-false}
-  LEARNING_COMMUNITY_EVENTS_ENABLED: ${LEARNING_COMMUNITY_EVENTS_ENABLED:-false}
-  LEARNING_COMMUNITY_FOR_YOU_ENABLED: ${LEARNING_COMMUNITY_FOR_YOU_ENABLED:-false}
-  # The first-entry tour «Начало пути» (OB-101/OB-105) is on locally, like the other features under development; production keeps it off (the application default).
+  # Community decks as in production (public read and link previews, copies, public media, the catalogue, events, «Для вас»); set any of them to false to try a switched-off state.
+  LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED: ${LEARNING_COMMUNITY_PUBLIC_ROUTES_ENABLED:-true}
+  LEARNING_COMMUNITY_FORKS_ENABLED: ${LEARNING_COMMUNITY_FORKS_ENABLED:-true}
+  LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED: ${LEARNING_COMMUNITY_PUBLIC_MEDIA_ENABLED:-true}
+  LEARNING_COMMUNITY_CATALOG_ENABLED: ${LEARNING_COMMUNITY_CATALOG_ENABLED:-true}
+  LEARNING_COMMUNITY_EVENTS_ENABLED: ${LEARNING_COMMUNITY_EVENTS_ENABLED:-true}
+  LEARNING_COMMUNITY_FOR_YOU_ENABLED: ${LEARNING_COMMUNITY_FOR_YOU_ENABLED:-true}
+  # Onboarding as in production (docs/engineering/onboarding/README.md): «Начало пути», the tour, «Путь Mnema» and the weekly rhythm.
   # The holdout experiment buckets only with MNEMA_EXPERIMENT_SECRET above; without it every local account gets the tour.
   LEARNING_ONBOARDING_ENABLED: ${LEARNING_ONBOARDING_ENABLED:-true}
   LEARNING_ONBOARDING_ELIGIBLE_FROM: ${LEARNING_ONBOARDING_ELIGIBLE_FROM:-2026-10-16T00:00:00Z}
   LEARNING_ONBOARDING_EXPERIMENT_ENABLED: ${LEARNING_ONBOARDING_EXPERIMENT_ENABLED:-true}
   # The sample deck «Моя первая колода» (OB-201/OB-203): on locally, but nothing is copied until a template deck is named. Publish the editorial deck at the LINK level, put its id into
-  # LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID and restart Learning (it marks the deck as the template when it starts); production keeps the switch off.
+  # LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID and restart Learning (it marks the deck as the template when it starts); production keeps it off until the owner installs a production template.
   LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED: ${LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED:-true}
   LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID: ${LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID:-}
-  # The weekly rhythm (OB-401) and the path reward (OB-402) are on locally; production keeps both off. The reward issues nothing until the owner creates and enables
+  # The weekly rhythm is on as in production; the path reward is on locally only (off in production). The reward issues nothing until the owner creates and enables
   # a «Награда за «Путь»» campaign in /manage/promos, and only to a trusted account (verified e-mail, at least 3 days old).
   LEARNING_ONBOARDING_RHYTHM_ENABLED: ${LEARNING_ONBOARDING_RHYTHM_ENABLED:-true}
   LEARNING_ONBOARDING_REWARD_ENABLED: ${LEARNING_ONBOARDING_REWARD_ENABLED:-true}
@@ -102,15 +101,15 @@ x-learning-environment: &learning-environment
   MNEMA_PUBLIC_BASE_URL: https://localhost:${MNEMA_LOCAL_WEB_PORT:-3443}
 
 # AI provider layer (docs/deploy/selfhost-local.md). Names only: the values come from the launcher's process environment or
-# from the owner's private .env that Compose reads, never from this repository. Without them the AI capabilities stay
-# unavailable. They reach Learning only; the media runner and its job containers have no environment and no network credentials.
+# from the owner's private .env that Compose reads, never from this repository. The operator switches are on, as in production; without the
+# provider keys the AI capabilities stay unavailable. They reach Learning only; the media runner and its job containers have no environment and no network credentials.
 x-ai-environment: &ai-environment
-  LEARNING_FEATURES_AI_GENERATION_ENABLED: ${LEARNING_FEATURES_AI_GENERATION_ENABLED:-false}
-  LEARNING_FEATURES_AI_ASSESSMENT_ENABLED: ${LEARNING_FEATURES_AI_ASSESSMENT_ENABLED:-false}
-  LEARNING_FEATURES_IMAGE_SEARCH_ENABLED: ${LEARNING_FEATURES_IMAGE_SEARCH_ENABLED:-false}
-  LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED: ${LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED:-false}
-  LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED: ${LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED:-false}
-  LEARNING_FEATURES_WEB_SEARCH_ENABLED: ${LEARNING_FEATURES_WEB_SEARCH_ENABLED:-false}
+  LEARNING_FEATURES_AI_GENERATION_ENABLED: ${LEARNING_FEATURES_AI_GENERATION_ENABLED:-true}
+  LEARNING_FEATURES_AI_ASSESSMENT_ENABLED: ${LEARNING_FEATURES_AI_ASSESSMENT_ENABLED:-true}
+  LEARNING_FEATURES_IMAGE_SEARCH_ENABLED: ${LEARNING_FEATURES_IMAGE_SEARCH_ENABLED:-true}
+  LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED: ${LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED:-true}
+  LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED: ${LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED:-true}
+  LEARNING_FEATURES_WEB_SEARCH_ENABLED: ${LEARNING_FEATURES_WEB_SEARCH_ENABLED:-true}
   LEARNING_AI_PROVIDER: ${LEARNING_AI_PROVIDER:-}
   MNEMA_AI_DEEPSEEK_API_KEY: ${MNEMA_AI_DEEPSEEK_API_KEY:-}
   MNEMA_AI_GIGACHAT_AUTH_KEY: ${MNEMA_AI_GIGACHAT_AUTH_KEY:-}
@@ -337,7 +336,7 @@ services:
       MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:?Local launcher did not provide a build id}
       MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "false"
       # The «Сообщество» entry before its production launch (development container and loopback host only).
-      MNEMA_COMMUNITY_LAUNCHED: ${MNEMA_LOCAL_COMMUNITY_LAUNCHED:-false}
+      MNEMA_COMMUNITY_LAUNCHED: ${MNEMA_LOCAL_COMMUNITY_LAUNCHED:-true}
     depends_on:
       identity-account: {condition: service_started}
       learning: {condition: service_started}
