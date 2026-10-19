@@ -11,7 +11,7 @@
     "SPEECH_TO_TEXT": "Visible while learning.features.speech-to-text.enabled is on.",
     "AI_GENERATION": "Visible while learning.features.ai-generation.enabled is on.",
     "COMMUNITY_CATALOG": "Visible while a copy from the catalogue is possible: learning.community.catalog.enabled, learning.community.public-routes.enabled and learning.community.forks.enabled are on and the catalogue lists at least one deck.",
-    "RHYTHM": "Visible once the weekly rhythm (OB-401) writes its milestone; registry version 1 has no writer, so the milestone is hidden."
+    "RHYTHM": "Visible while the weekly rhythm is on: learning.onboarding.rhythm.enabled (OB-401, default off). While it is off nothing writes the milestone and it is hidden."
   },
   "milestones": [
     {
@@ -77,9 +77,9 @@
     },
     {
       "key": "RHYTHM_WEEK", "chapter": "rhythm", "target": 1, "visibility": "RHYTHM", "route": "PROFILE_RHYTHM",
-      "counts": "The weekly rhythm target is met (OB-401 writes it). No writer in registry version 1.",
-      "writer": null,
-      "backfill": {"restorable": "none", "source": "OB-401"}
+      "counts": "A week of the weekly rhythm is met for the first time: a completed SCHEDULED or PRACTICE session brings the distinct local study dates of its ISO week (Monday first) to the weekly target (journey weeklyTarget, default 3); REPLAY never counts. Written only while learning.onboarding.rhythm.enabled is on.",
+      "writer": "StudySessionRepository.complete, AttemptRepository.completeSessionIfTerminal (WeeklyRhythm), PUT /api/onboarding/preferences when a lowered target meets the current week",
+      "backfill": {"restorable": "none", "source": "The target of a past week is not known (it is a setting that changes); the rhythm counts from the moment it is switched on"}
     },
     {
       "key": "TWO_DAYS", "chapter": "rhythm", "target": 2, "visibility": "ALWAYS", "route": "STUDY",
@@ -105,7 +105,7 @@
     "QUEST_EXPLAIN": "Side quest «Объяснить своими словами».",
     "QUEST_VOICE": "Side quest «Ответить голосом».",
     "QUEST_WORKSHOP": "Side quest «Мастерская из заметок «На потом»».",
-    "PROFILE_RHYTHM": "The rhythm block of the profile (OB-401).",
+    "PROFILE_RHYTHM": "The rhythm block of the profile (OB-401): the seven days of the week, the target and the weeks in rhythm.",
     "COMMUNITY": "The community catalogue /community."
   },
   "notification": {

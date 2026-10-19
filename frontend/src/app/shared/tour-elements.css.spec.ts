@@ -24,7 +24,7 @@ describe('stylesheet contract of the tour elements', () => {
         const { readFileSync } = await import('node:fs' as string) as NodeFs;
         const root = (globalThis as unknown as { process: { cwd(): string } }).process.cwd();
         for (const name of ['shared/tour-card.component.css', 'shared/hold-to-delete-button.component.css', 'shared/tour-scrim.component.ts', 'shared/night-sky.component.ts',
-            'shared/tour-pause.component.ts', '../theme/components.css']) {
+            'shared/tour-pause.component.ts', 'shared/reward-code.component.ts', 'shared/reward-card.component.ts', 'features/onboarding/reward-congratulation.component.css', '../theme/components.css']) {
             sources.set(name, readFileSync(`${root}/src/app/${name}`, 'utf8'));
         }
     });
@@ -110,8 +110,44 @@ describe('stylesheet contract of the tour elements', () => {
         });
     });
 
+    describe('the reward surfaces (OB-402)', () => {
+        const rewardSources = ['shared/reward-code.component.ts', 'shared/reward-card.component.ts', 'features/onboarding/reward-congratulation.component.css'];
+
+        it.each(rewardSources)('%s moves nothing of its own: no animation, no transition, so reduced motion has nothing to switch off beyond the shared sky', name => {
+            expect(read(name)).not.toMatch(/animation|transition|@keyframes/u);
+        });
+
+        it('keeps the congratulation readable in forced colours: Canvas ground, system text, the code outlined in CanvasText', () => {
+            expect(media(read('features/onboarding/reward-congratulation.component.css'), 'forced-colors: active')).toMatch(/color:\s*CanvasText;\s*background:\s*Canvas/u);
+            expect(media(read('shared/reward-code.component.ts'), 'forced-colors: active')).toContain('CanvasText');
+            expect(media(read('shared/reward-card.component.ts'), 'forced-colors: active')).toContain('CanvasText');
+        });
+
+        it('makes the congratulation a full-screen night of its own, with no second veil, over the shared sky', () => {
+            const css = read('features/onboarding/reward-congratulation.component.css');
+            expect(css).toMatch(/\.reward-night::backdrop\s*\{\s*background:\s*var\(--mn-night\)/u);
+            expect(css).toMatch(/\.reward-night app-night-sky\s*\{\s*min-block-size:\s*100dvh/u);
+        });
+
+        it('draws a lavender focus ring on the night for the code and the button, over the global ring of an input (which is !important), and Highlight in forced colours', () => {
+            const source = read('shared/reward-code.component.ts');
+            expect(source).toMatch(/:host\(\.night\) \.code:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--mn-star-lavender\)\s*!important[^}]*outline-offset:\s*2px\s*!important/u);
+            expect(source).toMatch(/:host\(\.night\) \.button:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--mn-star-lavender\)/u);
+            const forced = media(source, 'forced-colors: active');
+            expect(forced).toMatch(/:host\(\.night\) \.code:focus-visible[^{]*\{[^}]*outline-color:\s*Highlight/u);
+            expect(forced).toMatch(/:host\(\.night\) \.button:focus-visible[^{]*\{[^}]*outline-color:\s*Highlight/u);
+        });
+
+        it('lets the code be selected whole and keeps it inside a 320px window', () => {
+            const source = read('shared/reward-code.component.ts');
+            expect(source).toMatch(/user-select:\s*all/u);
+            expect(source).toMatch(/max-inline-size:\s*100%/u);
+            expect(source).not.toMatch(/min-inline-size:\s*[1-9][\d.]*(?:rem|px|em)/u);
+        });
+    });
+
     describe('every colour is a token', () => {
-        it.each(['shared/tour-card.component.css', 'shared/hold-to-delete-button.component.css', 'shared/tour-scrim.component.ts', 'shared/night-sky.component.ts', 'shared/tour-pause.component.ts'])(
+        it.each(['shared/reward-code.component.ts', 'shared/reward-card.component.ts', 'features/onboarding/reward-congratulation.component.css', 'shared/tour-card.component.css', 'shared/hold-to-delete-button.component.css', 'shared/tour-scrim.component.ts', 'shared/night-sky.component.ts', 'shared/tour-pause.component.ts'])(
             '%s has no hex colour and no rgb() literal', name => {
                 expect(read(name)).not.toMatch(/#[0-9a-f]{3,8}\b/iu);
                 expect(read(name)).not.toMatch(/\brgba?\(/u);

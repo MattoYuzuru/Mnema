@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { InterestProfile } from '../community/recommendations.models';
-import { FirstEntryComponent, daysLabel } from './first-entry.component';
+import { daysLabel } from '../../core/onboarding/rhythm-format';
+import { FirstEntryComponent } from './first-entry.component';
 import { OnboardingFlow } from './onboarding-flow.service';
 import { SAMPLE_AVAILABLE, Setup, setup } from './onboarding-test-data';
 

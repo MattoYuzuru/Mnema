@@ -19,18 +19,20 @@ Backend tests and the frontend contract spec both execute the fixture.
   stores only the tour state, `experience` and `weeklyTarget`. No user text, deck title or search query is stored.
 - **The view.** `enabled` mirrors `learning.onboarding.enabled`; while it is false `journey` is `null`, every `PUT` is
   409 `ONBOARDING_UNAVAILABLE` and the client shows neither «Начало пути», the tour nor «Путь» (rollback). `milestones` and
-  `path` are the «Путь Mnema» (OB-E3, below); while the flag is off they are `[]` and `null`. `rhythm` is reserved for OB-E4
-  and is `null`.
+  `path` are the «Путь Mnema» (OB-E3, below); while the flag is off they are `[]` and `null`. `rhythm` is the weekly rhythm
+  (OB-401, below), `null` while `learning.onboarding.rhythm.enabled` is off.
   `sampleDeck` (OB-E2): `available` — the flag `learning.onboarding.sample-deck.enabled`, a configured template that is live and
   has a published revision; `deckId` — the account's live sample copy or `null`; `updateAvailable` — that copy has an update of
   the template waiting (the ordinary «Есть обновление»); `freeChecksLeft` — AI checks still free for the account in its sample
   deck (0–3, per account, not per copy).
-- **Journey state.** `NOT_OFFERED` means there is no row: the account was never offered the tour and did not start it
-  from the profile. The first `GET` of an **eligible** account creates the row in `OFFERED` exactly once
-  (`INSERT … ON CONFLICT DO NOTHING`, concurrent first reads included). Eligible means: the flag is on, the time is at
+- **Journey state.** `NOT_OFFERED` means the account was never offered the tour and did not start it from the profile: there
+  is no row, or a row that holds only the rhythm and the preferences of such an account (`state NOT_OFFERED`, no cohort, no
+  `offeredAt`; OB-401), which reads exactly like no row. The first `GET` of an **eligible** account creates the row in `OFFERED` exactly once
+  (one `INSERT … ON CONFLICT DO UPDATE … WHERE state = 'NOT_OFFERED'`, concurrent first reads included: exactly one of them
+  creates or upgrades the row and counts the exposure). Eligible means: the flag is on, the time is at
   or after `learning.onboarding.eligible-from`, Identity marks the account new (`mnema_new_account`; an absent or
-  malformed claim is not new) and the account owns no live deck. A non-eligible account gets `NOT_OFFERED` with
-  `eligible=false` and no row.
+  malformed claim is not new) and the account owns no live deck; a `NOT_OFFERED` row of an eligible account becomes that
+  `OFFERED` row the same way. A non-eligible account gets `NOT_OFFERED` with `eligible=false` and no new row.
 - **Holdout (OB-105).** When the row is created the server assigns the account to the cohort of the experiment
   `onboarding_v1` (existing `ExperimentAssignments`; `control` is the holdout) and freezes it on the row. A disabled
   experiment or a missing experiment secret stores the account as `UNASSIGNED`: it gets the tour and the report leaves it out
@@ -42,7 +44,8 @@ Backend tests and the frontend contract spec both execute the fixture.
   id with another body is 409 `IDEMPOTENCY_CONFLICT`) and compare-and-set by `rowVersion` (decimal string; `"0"` for
   `NOT_OFFERED`): a stale version is 412 `VERSION_CONFLICT` and the client re-reads, a missing one is 428
   `PRECONDITION_REQUIRED`. A transition the table does not allow is 409 `ONBOARDING_TRANSITION`. `PUT /preferences`
-  needs a row (409 `ONBOARDING_TRANSITION` on `NOT_OFFERED`) and at least one of its fields; `null` clears a field.
+  needs at least one of its fields (`null` clears a field) and works in every state: on `NOT_OFFERED` without a row it
+  creates the `NOT_OFFERED` row (version 1), so the profile can change the weekly target of any account.
 - **Steps.** `stepKey` is one of the closed registry `steps` (a step of another branch than the journey's is 400);
   the client's tour definitions and the server's registry are tested against the fixture, and the counters
   `mnema_onboarding_journey_total{action,step}` take their labels from it only. `branch` is `SAMPLE|COMMUNITY|OWN`,
@@ -78,7 +81,7 @@ Backend tests and the frontend contract spec both execute the fixture.
   [`milestones.json`](milestones.json). `milestones` lists the **visible** milestones in registry order as
   `{key, state: DONE|PARTIAL|TODO, progress, target, achievedAt}`; `path` is `{done, total, hidden}` where `hidden` names the
   milestones a switched-off feature hides (AI assessment, speech-to-text, AI generation, an empty or closed catalogue, the
-  rhythm until OB-401). 100 % is `done = total` over the visible ones. The facts live in `account_milestone` (V74): one row per
+  rhythm while `learning.onboarding.rhythm.enabled` is off). 100 % is `done = total` over the visible ones. The facts live in `account_milestone` (V74): one row per
   account and milestone, written **in the transaction of the domain action** by `MilestoneRecorder`
   (`@Transactional(MANDATORY)`, one upsert; a rolled-back action leaves no milestone), source `LIVE` or `BACKFILL`. Rows are
   written whatever `learning.onboarding.enabled` says (harmless facts), are never reset (a tour replay keeps them) and are read
@@ -92,4 +95,32 @@ Backend tests and the frontend contract spec both execute the fixture.
   time. Facts history no longer holds (deleted notes, speech transcripts after 15 minutes, practice outcomes after retention)
   stay undone; see `backfill.restorable` per milestone.
 
-Account purge (#409) deletes `onboarding_journey` and `account_milestone` by `account_id` (TODO in the repositories, like `learning_profile`).
+- **Weekly rhythm (OB-401, [ADR-ONB-004](../../docs/engineering/onboarding/adr/adr-onb-004-rhythm.md)).** `rhythm` is
+  `{weekStart, today, target, days, weeksMet}`: `today` is the account's local date (the token's `zoneinfo` claim, UTC when it
+  is absent or invalid, as Study), `weekStart` the Monday of its ISO week, `target` the journey's `weeklyTarget` or the default
+  3, `days` the distinct `local_study_date`s of completed SCHEDULED or PRACTICE sessions in `[weekStart, weekStart + 7)` in
+  ascending order (REPLAY never counts; the stored date of a session decides, so a change of time zone moves no session), and
+  `weeksMet` the weeks in which the target was met. The week is met when `days` reaches `target`; the client derives it, there
+  is no flag. `weeksMet` grows by one per ISO week at most, in the transaction of the completion that meets it (or of the
+  `PUT /preferences` that lowers the target below this week's days): an account-scoped lock serializes the count of concurrent
+  completions, and `last_met_week` (the Monday of the last counted week) makes the increment once per week. The first met
+  week also achieves `RHYTHM_WEEK`. Nothing is negative: a missed day or week changes nothing and a new week starts empty. The
+  weeks are counted from the moment the rhythm is on; history is not replayed (a past week's target is unknown).
+
+- **Path reward (OB-402, [ADR-ONB-005](../../docs/engineering/onboarding/adr/adr-onb-005-path-reward.md)).** `reward` is `null` unless
+  `learning.onboarding.reward.enabled` (default off) is on and the account has a reward; otherwise
+  `{state: ACTIVE|REDEEMED|EXPIRED, code, offer: {type, percent, plan, days}, issuedAt, expiresAt}`. The reward is a **personal
+  promo code** of the owner's enabled `PATH_REWARD` campaign ([promo contract](../usage/promo.json): the owner creates it in the
+  console, a discount percent or a tier for N days, one enabled at a time, the console's kill switch). It is issued by the
+  server, never claimed: the `GET` of an account whose visible milestones are all done (`path.done = path.total`) and that
+  Identity calls trusted (`mnema_trusted`: verified e-mail, at least 3 days old) issues it once, under an account-scoped lock,
+  in its own transaction before the read's, which it cannot fail (the client re-reads the view after every `PATH_MILESTONE`, so the read
+  follows the last milestone; an untrusted account is retried on a later read). One per account for ever
+  (`onboarding_reward.account_id` is the key): a replayed tour or a new campaign issues nothing more. `expiresAt` is
+  `issuedAt + 7 days`, the end of the code's validity on the server; the client shows that date and time as text, never a
+  countdown. `code` (display form) is present only while `ACTIVE`: it is derived from the code id under the promo secret, never
+  stored, and only its recipient can redeem it on `/plans` through the ordinary redemption (another account gets
+  `PROMO_INVALID`). The issuance publishes `PATH_REWARD_READY` ([notifications](../notifications/README.md)). At most
+  `learning.onboarding.reward.daily-limit` codes per campaign in 24 hours. Codes already issued are not revoked by any switch.
+
+Account purge (#409) deletes `onboarding_journey` (the `NOT_OFFERED` rows of the rhythm included), `account_milestone` and `onboarding_reward` by `account_id` (TODO in the repositories, like `learning_profile`).

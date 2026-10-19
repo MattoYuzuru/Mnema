@@ -23,7 +23,8 @@ describe('SgPathComponent', () => {
         [...section().querySelectorAll<HTMLElement>('.sg-specimen')].find(item => item.querySelector('h3')!.textContent === title)!;
 
     it('has every specimen with a «когда использовать» note', () => {
-        for (const title of ['Веха: состояния', 'Веха: наведение и фокус', 'Веха на 320 px', 'Глава и общая полоса', 'Подсказка на месте', 'Выбор колоды для задания', 'Экран о микрофоне', 'Пауза задания', 'Тост вехи']) {
+        for (const title of ['Веха: состояния', 'Веха: наведение и фокус', 'Веха на 320 px', 'Глава и общая полоса', 'Подсказка на месте', 'Выбор колоды для задания', 'Экран о микрофоне', 'Пауза задания', 'Тост вехи', 'Неделя ритма: состояния', 'Неделя ритма на 320 px', 'Ритм на итогах занятия', 'Тост выполненной цели недели',
+            'Награда за «Путь»: карточка', 'Награда за «Путь»: на 320 px', 'Промокод награды', 'Поздравление с наградой', 'Тост: награда готова']) {
             expect(specimen(title), title).toBeDefined();
             expect(specimen(title).querySelector('.sg-when')!.textContent, title).toContain('Когда использовать');
         }
@@ -78,5 +79,65 @@ describe('SgPathComponent', () => {
         const notify = vi.spyOn(TestBed.inject(ToastService), 'notify');
         [...specimen('Тост вехи').querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Показать тост вехи')!.click();
         expect(notify).toHaveBeenCalledWith(expect.any(String), 'Путь: вы добавили в материал картинку или звук · 6 из 12', 'INFO', { label: 'Открыть «Путь»', commands: ['/profile', 'path'] });
+    });
+    it('shows the week of the rhythm in its states: empty, partial, met, and today at the first and the last day', () => {
+        const figures = [...specimen('Неделя ритма: состояния').querySelectorAll('figure')];
+        expect(figures).toHaveLength(5);
+        const studied = figures.map(figure => [...figure.querySelectorAll('ol.week > li')].filter(item => item.classList.contains('done')).length);
+        expect(studied).toEqual([0, 3, 5, 1, 2]);
+        const today = figures.map(figure => [...figure.querySelectorAll('ol.week > li')].findIndex(item => item.classList.contains('today')));
+        expect(today).toEqual([2, 4, 4, 0, 6]);
+        expect(figures[0].querySelector('p.visually-hidden')?.textContent).toBe('Эта неделя: занятия ещё не отмечены.');
+        expect(figures[1].querySelector('p.visually-hidden')?.textContent).toBe('Эта неделя: занятия во вторник, в четверг и в пятницу.');
+        expect(specimen('Неделя ритма на 320 px').querySelector('.sg-path-narrow app-rhythm-week')).not.toBeNull();
+    });
+
+    it('shows the rhythm block of a summary, and raises the quiet toast of the met goal through the real text', () => {
+        expect(specimen('Ритм на итогах занятия').querySelector('app-rhythm-summary h3')?.textContent).toBe('Третий день на этой неделе');
+        expect(specimen('Ритм на итогах занятия').querySelector('.hint')?.textContent).toBe('Цель — 5\u00a0дней в неделю');
+        const notify = vi.spyOn(TestBed.inject(ToastService), 'notify');
+        [...specimen('Тост выполненной цели недели').querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Показать тост цели недели')!.click();
+        expect(notify).toHaveBeenCalledWith(expect.any(String), 'Цель недели выполнена: вы занимались 5\u00a0дней.', 'INFO', null);
+    });
+
+    describe('the reward of the finished path', () => {
+        const plain = (text: string | null): string => (text ?? '').replace(/\u00a0/gu, ' ').trim();
+
+        it('shows the card in its states: three kinds of gift, the profile form, the redeemed line, and nothing for an expired reward', () => {
+            const figures = [...specimen('Награда за «Путь»: карточка').querySelectorAll('figure')];
+            expect(figures).toHaveLength(6);
+            expect(figures.map(figure => plain(figure.querySelector('.gift')?.textContent ?? null))).toEqual([
+                'Ваш подарок: −10 % на подписку до 29 октября, 21:41 МСК.', 'Ваш подарок: −15 % на подписку Pro до 29 октября, 21:41 МСК.',
+                'Ваш подарок: Plus на 30 дней. Активировать до 29 октября, 21:41 МСК.', 'Ваш подарок: −10 % на подписку до 29 октября, 21:41 МСК.', '', ''
+            ]);
+            expect(figures[3].querySelector('h3')?.textContent).toBe('Вы освоили Mnema полностью');
+            expect(figures[0].querySelector('h2')?.textContent).toBe('Вы освоили Mnema полностью');
+            expect(plain(figures[4].querySelector('.redeemed')?.textContent ?? null)).toBe('Подарок за «Путь» использован.');
+            expect(figures[5].querySelector('app-reward-card')!.children).toHaveLength(0);
+            expect(figures[0].querySelector('a.button.primary')?.getAttribute('href')).toBe('/plans?promo=K7PM-W2QX-H9RT');
+        });
+
+        it('shows the code on paper and on the night, and the 320 px frame', () => {
+            const codes = [...specimen('Промокод награды').querySelectorAll('app-reward-code')];
+            expect(codes.map(code => code.classList.contains('night'))).toEqual([false, true]);
+            expect(codes.every(code => code.querySelector<HTMLInputElement>('input')!.value === 'K7PM-W2QX-H9RT')).toBe(true);
+            expect(specimen('Награда за «Путь»: на 320 px').querySelector('.sg-path-narrow app-reward-card .gift')).not.toBeNull();
+        });
+
+        it('shows the congratulation on the shared night with its stars, not as an open dialog', () => {
+            const night = specimen('Поздравление с наградой').querySelector('app-night-sky')!;
+            expect(night.querySelector('.sky')).not.toBeNull();
+            expect(plain(night.querySelector('.lead')!.textContent)).toBe('Ваш подарок: −10 % на подписку до 29 октября, 21:41 МСК.');
+            expect(night.querySelector('app-reward-code.night')).not.toBeNull();
+            expect([...night.querySelectorAll('.actions > *')].map(item => item.textContent)).toEqual(['Выбрать тариф', 'Позже']);
+            expect(section().querySelectorAll('dialog')).toHaveLength(0);
+        });
+
+        it('raises the toast of the ready reward through the real presenter', () => {
+            const notify = vi.spyOn(TestBed.inject(ToastService), 'notify');
+            [...specimen('Тост: награда готова').querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Показать тост награды')!.click();
+            expect(notify).toHaveBeenCalledWith(expect.any(String), 'Вы освоили Mnema полностью. Подарок за «Путь» действует до 29 октября, 21:41\u00a0МСК.', 'INFO',
+                { label: 'Открыть «Путь»', commands: ['/profile', 'path'] });
+        });
     });
 });

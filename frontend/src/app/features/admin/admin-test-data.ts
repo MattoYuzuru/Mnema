@@ -32,4 +32,25 @@ export const promo = {
     redemptions: 2,
     createdAt: '2026-10-09T00:00:00Z'
 };
+/** `adminCampaignView` of `contracts/usage/promo.json`: a campaign of the reward for a finished «Путь». */
+export const campaign = {
+    campaignId: '40000000-0000-4000-8000-000000000001',
+    type: 'PATH_REWARD',
+    offerType: 'DISCOUNT_PERCENT',
+    percent: 10,
+    plan: null,
+    days: null,
+    enabled: false,
+    createdAt: '2026-10-20T09:00:00Z',
+    issued: 12,
+    redeemed: 3,
+    issuedLast24h: 2
+};
+/** `adminIssuanceView`: only the hint, the dates and whether the code was redeemed. */
+export const issuance = {
+    codeHint: 'K7…RT',
+    issuedAt: '2026-10-22T18:41:00Z',
+    expiresAt: '2026-10-29T18:41:00Z',
+    redeemedAt: null
+};
 export const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;

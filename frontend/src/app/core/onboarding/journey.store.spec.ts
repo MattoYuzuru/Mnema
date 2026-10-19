@@ -69,6 +69,20 @@ describe('JourneyStore', () => {
             expect(api.read).toHaveBeenCalledTimes(1);
         });
 
+        it('asks once more after an in-flight read when a refresh is asked meanwhile, and shares that one', async () => {
+            const first = new Subject<OnboardingReadResult>();
+            api.read.mockReturnValueOnce(first).mockReturnValueOnce(of({ kind: 'view', ...read(paused, '"v2"') }));
+            const initial = store.load();
+            const refreshes = [store.load({ refresh: true }), store.load({ refresh: true })];
+            expect(api.read).toHaveBeenCalledTimes(1);
+            first.next({ kind: 'view', ...read(offered) });
+            first.complete();
+            await expect(initial).resolves.toEqual(offered);
+            await expect(Promise.all(refreshes)).resolves.toEqual([paused, paused]);
+            expect(api.read).toHaveBeenCalledTimes(2);
+            expect(api.read).toHaveBeenLastCalledWith('"v1"');
+        });
+
         it('asks again on refresh with the held ETag, and keeps the view on a 304', async () => {
             await loaded();
             api.read.mockReturnValueOnce(of({ kind: 'not-modified' }));

@@ -176,6 +176,12 @@
 .sg-path-total { display: grid; gap: .35rem; max-inline-size: 16rem; margin-block-end: 1rem; }
 .sg-path-total strong { color: var(--mn-ink); font-size: 1.3rem; }
 .sg-path-hint-live { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-block-start: 1.5rem; }
+.sg-rhythm-weeks, .sg-reward-cards { display: grid; gap: 1.25rem; }
+.sg-reward-cards figure { display: grid; gap: .5rem; margin: 0; min-inline-size: 0; }
+.sg-reward-cards figcaption { color: var(--mn-muted); font-size: .9rem; }
+.sg-reward-code-paper { padding: 1rem; background: var(--mn-sheet); }
+.sg-rhythm-weeks figure { display: grid; gap: .5rem; margin: 0; }
+.sg-rhythm-weeks figcaption { color: var(--mn-muted); font-size: .9rem; }
 @media (forced-colors: active) { .sg-path-narrow { border-color: CanvasText; } }
 .sg-quest-pair { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); align-items: start; }
 .sg-quest-pair app-quest-chooser { border: 1px solid var(--mn-rule); border-block-start: 3px solid var(--mn-ink); padding: 1.1rem 1.2rem 1rem; background: var(--mn-sheet); }

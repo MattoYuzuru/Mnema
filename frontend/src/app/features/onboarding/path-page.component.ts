@@ -13,6 +13,7 @@ import { MilestoneChapter, MilestoneKey, milestoneDefinition, pathChapters } fro
 import { PathChapterComponent } from '../../shared/path-chapter.component';
 import { PathMilestoneComponent } from '../../shared/path-milestone.component';
 import { PathProgressComponent } from '../../shared/path-progress.component';
+import { RewardCardComponent } from '../../shared/reward-card.component';
 import { ReplayTourComponent } from './replay-tour.component';
 
 /**
@@ -20,11 +21,12 @@ import { ReplayTourComponent } from './replay-tour.component';
  * it for real. The current chapter (the first with something left to do) is open, the others are folded with their count; milestones that
  * a switched-off feature hides are not drawn. A chevron takes the learner to the place with an in-place hint (`PathNavigation`).
  * The page exists only while the server says onboarding is on (the rollback switch): otherwise it sends the learner back to the profile.
- * Reading the journey never blocks anything: a failure is a message with «Повторить», not a broken page.
+ * While the finished path's reward is active the page shows it above the chapters (the gift, its code and «Выбрать тариф»), once it was redeemed one quiet line, and
+ * nothing once it has expired. Reading the journey never blocks anything: a failure is a message with «Повторить», not a broken page.
  */
 @Component({
     selector: 'app-path-page',
-    imports: [RouterLink, PathChapterComponent, PathMilestoneComponent, PathProgressComponent, ReplayTourComponent],
+    imports: [RouterLink, PathChapterComponent, PathMilestoneComponent, PathProgressComponent, ReplayTourComponent, RewardCardComponent],
     template: `
       @if (!off()) {
       <section class="path-page" aria-labelledby="path-title">
@@ -55,6 +57,7 @@ import { ReplayTourComponent } from './replay-tour.component';
             <p class="status" role="status">{{ text.loading }}</p>
           }
         } @else if (store.enabled()) {
+          @if (reward(); as given) { <app-reward-card [reward]="given" [level]="2" /> }
           @for (chapter of chapters(); track chapter.chapter) {
             <app-path-chapter [name]="chapterName(chapter.chapter)" [done]="chapter.done" [total]="chapter.milestones.length" [open]="chapter.current">
               <ul class="milestones">
@@ -113,6 +116,11 @@ export class PathPageComponent implements OnInit {
     /** The server says onboarding is off: nothing of «Путь» is drawn while the learner is sent back to the profile. */
     protected readonly off = computed(() => this.store.view() !== null && !this.store.enabled());
     protected readonly path = computed(() => this.store.view()?.path ?? null);
+    /** The reward of the finished path while there is something to say about it (an active one, or one that was redeemed); an expired one is not mentioned. */
+    protected readonly reward = computed(() => {
+        const reward = this.store.view()?.reward ?? null;
+        return reward !== null && reward.state !== 'EXPIRED' ? reward : null;
+    });
     protected readonly chapters = computed(() => pathChapters(this.store.view()?.milestones ?? []));
     protected readonly totalText = computed(() => {
         const summary = this.path();

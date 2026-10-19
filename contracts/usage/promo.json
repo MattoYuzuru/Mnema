@@ -34,7 +34,8 @@
         "A discount is pending billing data, grants no rights and is not applied to the displayed catalog price. A weaker/equal pending discount is refused without burning the code.",
         "Configured defaults: 5 attempts/account/hour, 20/address/hour; trusted-proxy address resolution and IPv6 /64 grouping. Address and device evidence are keyed hashes.",
         "Code-row locking enforces the global activation cap; once-per-account is enforced in storage. Expiry is checked after contended redemption locks.",
-        "Production redemption/creation is unavailable without a nonblank promo hashing secret of at least 32 characters. Plain codes and unkeyed guess-verification fingerprints are never stored or logged."
+        "Production redemption/creation is unavailable without a nonblank promo hashing secret of at least 32 characters. Plain codes and unkeyed guess-verification fingerprints are never stored or logged.",
+        "A personal code (a campaign code, OB-402) is redeemable only by its recipient account; any other account gets PROMO_INVALID, exactly as for an unknown code, so a leaked personal code reveals nothing. It is a DISCOUNT_PERCENT or TIER_DAYS code with maxRedemptions 1 whose validUntil is the end of the offer."
       ]
     },
     {
@@ -42,7 +43,8 @@
       "method": "GET",
       "path": "/api/admin/promo-codes?after={UUID}",
       "auth": "learning.read and administrator confirmed by Identity on every privileged request without the standing cache; fail closed",
-      "response": "{codes: [adminCodeView] (at most 200), next: UUID|null}; next is the last returned id, passed as after"
+      "response": "{codes: [adminCodeView] (at most 200), next: UUID|null}; next is the last returned id, passed as after",
+      "notes": ["Personal campaign codes are not listed here; listCampaignIssuances lists them per campaign."]
     },
     {
       "operationId": "createPromoCode",
@@ -106,10 +108,16 @@
         "mnema_experiment_events_total labels contain only bounded experiment key, configured variant and event, never an account/address/code.",
         "CONVERSION measures CTA intent while payments (#79) are unavailable; it does not represent a purchase."
       ]
-    }
+    },
+    {"operationId": "listPromoCampaigns", "method": "GET", "path": "/api/admin/promo-campaigns", "auth": "learning.read and administrator confirmed by Identity on every privileged request without the standing cache; fail closed", "response": "{campaigns: [adminCampaignView] (newest first, at most 100)}"},
+    {"operationId": "createPromoCampaign", "method": "POST", "path": "/api/admin/promo-campaigns", "auth": "learning.write and administrator confirmed by Identity on every privileged request", "headers": {"Idempotency-Key": "canonical command UUID v4/v7, required"}, "request": "{type PATH_REWARD, offerType DISCOUNT_PERCENT|TIER_DAYS, percent integer 1..90|null, plan PLUS|PRO|null, days integer 1..366|null}; DISCOUNT_PERCENT requires percent (plan optional: the plan the discount applies to), TIER_DAYS requires plan and days", "response": "201 adminCampaignView; the campaign is created disabled", "notes": ["A campaign is immutable except for enabled: a new offer is a new campaign, so every issued code keeps the terms it was issued under.", "Creation appends PROMO_CAMPAIGN_CREATE to the admin journal; a replay of the same key returns the same campaign."]},
+    {"operationId": "switchPromoCampaign", "method": "PATCH", "path": "/api/admin/promo-campaigns/{campaignId}", "auth": "learning.write and administrator confirmed by Identity", "request": {"enabled": "boolean, required"}, "response": "200 adminCampaignView; 404 when unknown; 409 PROMO_CAMPAIGN_ACTIVE when another campaign of the type is enabled", "notes": ["The kill switch of the owner: a disabled campaign issues nothing; codes already issued stay valid until their own expiry (no automatic revocation).", "Repeating the current state writes nothing; an actual change appends PROMO_CAMPAIGN_ENABLE or PROMO_CAMPAIGN_DISABLE."]},
+    {"operationId": "listCampaignIssuances", "method": "GET", "path": "/api/admin/promo-campaigns/{campaignId}/issuances?after={cursor}", "auth": "learning.read and administrator confirmed by Identity", "response": "{issuances: [adminIssuanceView] (newest first, at most 100), next: string|null}; next is an opaque cursor passed as after", "notes": ["No account id, e-mail or plain code leaves the server: the owner sees the code hint, the dates and whether it was redeemed."]}
   ],
   "shapes": {
-    "adminCodeView": "{codeId UUID, hint, type, plan PLUS|PRO|null, days integer|null, months integer|null, percent integer|null, validFrom, validUntil|null, maxRedemptions, oncePerAccount, channel|null, enabled, redemptions integer, createdAt}"
+    "adminCodeView": "{codeId UUID, hint, type, plan PLUS|PRO|null, days integer|null, months integer|null, percent integer|null, validFrom, validUntil|null, maxRedemptions, oncePerAccount, channel|null, enabled, redemptions integer, createdAt}",
+    "adminCampaignView": "{campaignId UUID, type PATH_REWARD, offerType DISCOUNT_PERCENT|TIER_DAYS, percent integer|null, plan PLUS|PRO|null, days integer|null, enabled, createdAt, issued integer, redeemed integer, issuedLast24h integer}",
+    "adminIssuanceView": "{codeHint, issuedAt, expiresAt, redeemedAt RFC 3339|null}"
   },
   "authority": ["../../docs/product/ai-layer-2026-10.md", "../../docs/architecture/ai-generation-platform.md"]
 }

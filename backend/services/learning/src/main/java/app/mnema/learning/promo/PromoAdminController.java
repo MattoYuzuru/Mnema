@@ -78,7 +78,8 @@ public final class PromoAdminController {
         return ResponseEntity.ok().header("Cache-Control", "private, no-store").body(admin.setEnabled(owner, uuid(codeId), enabled));
     }
 
-    private static UUID key(HttpServletRequest request) {
+    /** The required {@code Idempotency-Key}: one canonical command UUID. */
+    static UUID key(HttpServletRequest request) {
         var values = java.util.Collections.list(request.getHeaders("Idempotency-Key"));
         if (values.size() != 1) throw InvalidRequestException.because("idempotency_key_required");
         try {
@@ -88,7 +89,7 @@ public final class PromoAdminController {
         } catch (IllegalArgumentException failure) { throw InvalidRequestException.because("idempotency_key_required"); }
     }
 
-    private static UUID uuid(String text) {
+    static UUID uuid(String text) {
         try {
             return UUID.fromString(text);
         } catch (IllegalArgumentException failure) {

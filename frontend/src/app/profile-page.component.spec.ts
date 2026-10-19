@@ -227,6 +227,29 @@ describe('ProfilePageComponent', () => {
         expect(root.querySelector('app-path-summary section')).toBeNull();
     });
 
+    it('shows the rhythm block right after the «Путь Mnema» block, only while onboarding is on and the view carries a rhythm', async () => {
+        const state = (TestBed.inject(JourneyStore) as unknown as { state: WritableSignal<OnboardingView | null> }).state;
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        const root = fixture.nativeElement as HTMLElement;
+        const settle = async (): Promise<void> => { fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges(); };
+        await settle();
+        expect(root.querySelector('app-profile-rhythm section')).toBeNull();
+        state.set(journey.views.pathMidway as OnboardingView);
+        await settle();
+        // The «Путь» block is there, the rhythm is not: the view carries none while the rhythm flag is off.
+        expect(root.querySelector('app-path-summary section')).not.toBeNull();
+        expect(root.querySelector('app-profile-rhythm section')).toBeNull();
+        state.set(journey.views.rhythmWeek as OnboardingView);
+        await settle();
+        const block = root.querySelector('app-profile-rhythm section')!;
+        expect(block.id).toBe('profile-rhythm');
+        expect(block.querySelector('h2')?.textContent).toBe('Недельный ритм');
+        expect(root.querySelector('app-path-summary')?.nextElementSibling?.tagName).toBe('APP-PROFILE-RHYTHM');
+        state.set(journey.views.disabled as OnboardingView);
+        await settle();
+        expect(root.querySelector('app-profile-rhythm section')).toBeNull();
+    });
+
     it('keeps the profile working when the usage request fails', async () => {
         usage.load.mockReturnValue(throwError(() => new Error('offline')));
         const fixture = TestBed.createComponent(ProfilePageComponent);

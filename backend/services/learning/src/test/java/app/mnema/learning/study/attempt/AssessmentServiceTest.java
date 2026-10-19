@@ -55,6 +55,7 @@ class AssessmentServiceTest {
     private final AttemptConclusion conclusion = mock(AttemptConclusion.class);
     private final LearningCapabilities capabilities = mock(LearningCapabilities.class);
     private final UsageLedger ledger = mock(UsageLedger.class);
+    private final app.mnema.learning.onboarding.WeeklyRhythm rhythm = mock(app.mnema.learning.onboarding.WeeklyRhythm.class);
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
     private final io.micrometer.core.instrument.simple.SimpleMeterRegistry meters = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
     private final ObjectNode rubric = rubric();
@@ -64,7 +65,7 @@ class AssessmentServiceTest {
     void setUp() {
         service = new AssessmentService(assessments, attempts, conclusion, capabilities, ledger, mock(app.mnema.learning.onboarding.SampleChecks.class),
                 new AssessmentSettings(Duration.ofSeconds(20), Duration.ofSeconds(2), 16, "ru", 3), events,
-                mock(PlatformTransactionManager.class), meters, mock(app.mnema.learning.onboarding.MilestoneRecorder.class));
+                mock(PlatformTransactionManager.class), meters, mock(app.mnema.learning.onboarding.MilestoneRecorder.class), rhythm);
         when(attempts.now()).thenReturn(NOW);
         when(capabilities.aiAssessment()).thenReturn(new LearningCapabilities.Status(true, null));
         when(ledger.fairUseFits(any(), eq(Bucket.ASSESSMENT), anyLong())).thenReturn(true);
@@ -346,6 +347,7 @@ class AssessmentServiceTest {
         when(assessments.find(attemptId)).thenReturn(Optional.of(waiting));
         when(assessments.forUpdate(attemptId)).thenReturn(Optional.of(waiting));
         when(attempts.presentationForUpdate(any(), any(), any(), any())).thenReturn(Optional.of(presentation));
+        when(attempts.stateForUpdate(actor, deck, objective)).thenReturn(state(1, 0, 0, 0));
         when(ledger.consume(any(), any(), anyLong(), anyString(), any())).thenThrow(new UsageLimitReachedException(
                 new UsageLimitReachedException.Block(Bucket.ASSESSMENT, app.mnema.learning.usage.Window.DAY, app.mnema.learning.usage.Unit.COUNT,
                         5L, 5, 1, true, NOW, false, app.mnema.learning.usage.Plan.FREE)));
@@ -355,6 +357,42 @@ class AssessmentServiceTest {
         verify(ledger).consume(actor, Bucket.ASSESSMENT, 1, "assessment:" + attemptId, attemptId.toString());
         verify(conclusion, never()).conclude(any(), any(), any(), any(), any(), any(), any(), any(), any());
         verify(assessments).transition(attemptId, "ASSESSING", "UNAVAILABLE", "USAGE_LIMIT", NOW);
+    }
+
+    @Test
+    void aGradeTakesTheWeeklyRhythmLockBeforeTheAllowanceIsDebitedAndBeforeTheAnswerIsConcluded() {
+        for (String mode : new String[] {"SCHEDULED", "PRACTICE"}) {
+            org.mockito.Mockito.reset(rhythm, ledger, conclusion);
+            ObjectNode response = JSON.createObjectNode().put("kind", "TEXT").put("text", "ответ");
+            AttemptRepository.Presentation presentation = presentation(mode, 0, textContent("Вопрос"));
+            AssessmentRepository.Row waiting = row("ASSESSING", response, NOW.plusSeconds(10), "TYPED", "S1");
+            when(assessments.find(attemptId)).thenReturn(Optional.of(waiting));
+            when(assessments.forUpdate(attemptId)).thenReturn(Optional.of(waiting));
+            when(attempts.presentationForUpdate(any(), any(), any(), any())).thenReturn(Optional.of(presentation));
+            when(attempts.stateForUpdate(actor, deck, objective)).thenReturn(state(1, 0, 0, 0));
+
+            service.complete(attemptId, new GradeOutcome.Graded(List.of(allMet(Verdict.MET))));
+
+            // the ledger publishes USAGE_LOW / USAGE_EXHAUSTED (the owner's cursor row) at once: the lock, which a rhythm writer holds while it waits for that cursor, goes first
+            org.mockito.InOrder order = org.mockito.Mockito.inOrder(rhythm, ledger, conclusion);
+            order.verify(rhythm).lockForCompletion(actor, mode);
+            order.verify(ledger).consume(actor, Bucket.ASSESSMENT, 1, "assessment:" + attemptId, attemptId.toString());
+            order.verify(conclusion).conclude(any(), any(), any(), any(), any(), any(), any(), any(), any());
+        }
+    }
+
+    @Test
+    void anAnswerThatIsNotGradedTakesNoRhythmLock() {
+        ObjectNode response = JSON.createObjectNode().put("kind", "TEXT").put("text", "ответ");
+        AttemptRepository.Presentation presentation = presentation("SCHEDULED", 0, textContent("Вопрос"));
+        AssessmentRepository.Row waiting = row("ASSESSING", response, NOW.plusSeconds(10), "TYPED", "S1");
+        when(assessments.find(attemptId)).thenReturn(Optional.of(waiting));
+        when(assessments.forUpdate(attemptId)).thenReturn(Optional.of(waiting));
+        when(attempts.presentationForUpdate(any(), any(), any(), any())).thenReturn(Optional.of(presentation));
+
+        service.complete(attemptId, new GradeOutcome.Graded(List.of(allMet(Verdict.UNCLEAR))));
+
+        verify(rhythm, never()).lockForCompletion(any(), any());
     }
 
     private Run allMet(Verdict verdict) {

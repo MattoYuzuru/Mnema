@@ -97,4 +97,88 @@
     [tokens]="['--mn-ink', '--mn-sheet']">
     <div class="actions"><button type="button" class="button" (click)="showToast()">Показать тост вехи</button></div>
   </app-sg-specimen>
+
+  <app-sg-specimen title="Неделя ритма: состояния" selector="<app-rhythm-week>"
+    when="Семь дней недели, понедельник первым: день с занятием — закрашенный круг с галочкой (два знака, не один цвет), сегодняшний — круг в рамке (форма, не оттенок), остальные — пустые кольца. Ничего отрицательного: день без занятия просто пуст, день, который ещё не наступил, выглядит так же. Буквы и знаки скрыты от скринридера; он читает одну фразу недели («Эта неделя: занятия во вторник, в четверг и в пятницу»; без занятий — «Эта неделя: занятия ещё не отмечены.») из визуально скрытого абзаца. Ничего не анимируется, поэтому reduced motion ничего не меняет; в forced-colors закрашенный день остаётся закрашенным системными цветами, сегодня — с рамкой Highlight. Одно и то же в итогах занятия и в профиле."
+    [tokens]="['--mn-ink', '--mn-muted', '--mn-on-ink']"
+    usage='<app-rhythm-week weekStart="2026-10-19" today="2026-10-23" [days]="[&apos;2026-10-20&apos;, &apos;2026-10-22&apos;]" />'>
+    <div class="sg-rhythm-weeks">
+      <figure><figcaption>Неделя без занятий (сегодня среда)</figcaption><app-rhythm-week [weekStart]="weekStart" [today]="weeks.empty.today" [days]="weeks.empty.days" /></figure>
+      <figure><figcaption>Часть недели (вторник, четверг и пятница, сегодня пятница)</figcaption><app-rhythm-week [weekStart]="weekStart" [today]="weeks.partial.today" [days]="weeks.partial.days" /></figure>
+      <figure><figcaption>Цель выполнена (пять дней)</figcaption><app-rhythm-week [weekStart]="weekStart" [today]="weeks.met.today" [days]="weeks.met.days" /></figure>
+      <figure><figcaption>Сегодня первый день недели</figcaption><app-rhythm-week [weekStart]="weekStart" [today]="weeks.first.today" [days]="weeks.first.days" /></figure>
+      <figure><figcaption>Сегодня последний день недели</figcaption><app-rhythm-week [weekStart]="weekStart" [today]="weeks.last.today" [days]="weeks.last.days" /></figure>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Неделя ритма на 320 px" selector="<app-rhythm-week> в узкой колонке"
+    when="Семь кругов делят ширину колонки поровну и не выходят за неё: горизонтальной прокрутки нет."
+    [tokens]="['--mn-touch-min']">
+    <div class="sg-path-narrow"><app-rhythm-week [weekStart]="weekStart" [today]="weeks.partial.today" [days]="weeks.partial.days" /></div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Ритм на итогах занятия" selector="<app-rhythm-summary>"
+    when="Под текстом итогов завершённого занятия (обычного или практики; повтор не считается): «Третий день на этой неделе» (порядковое по числу дней недели), семь дней и «Цель — 5 дней в неделю». Блок появляется, когда после завершения прочитан обновлённый вид пути: до этого ничего нет, без счётчика загрузки; итоги не ждут его. Число выполненных недель здесь не показывается никогда — оно только в профиле. Не в шапке, без красного, без долгов и серий."
+    [tokens]="['--mn-rule', '--mn-ink']"
+    usage='<app-rhythm-summary [rhythm]="rhythm" />'>
+    <app-rhythm-summary [rhythm]="summaryRhythm" />
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Тост выполненной цели недели" selector="ToastService.notify (PathToasts)"
+    when="«Цель недели выполнена: вы занимались 5 дней.» — тихий тост без ссылки. Один раз за неделю и только когда новый вид той же недели дошёл до цели, а прежний был ниже и цель не менялась: загрузка страницы с уже выполненной неделей и снижение цели в профиле — не повод. Ждёт, пока в занятии открыт ответ, уступает туру, первому входу и подсказке, не чаще одного за 30 секунд вместе с тостами вех. «Скрыть «Путь»» его не отключает."
+    [tokens]="['--mn-ink', '--mn-sheet']">
+    <div class="actions"><button type="button" class="button" (click)="showRhythmToast()">Показать тост цели недели</button></div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Награда за «Путь»: карточка" selector="<app-reward-card>"
+    when="Тихий блок на странице «Путь» (над главами, h2) и в блоке «Путь Mnema» профиля (h3, без второй рамки): «Путь пройден», «Вы освоили Mnema полностью», подарок одной фразой с концом предложения датой и временем по Москве текстом (никакого обратного отсчёта, секунд и слов срочности), промокод в поле, условия и «Выбрать тариф» — ссылка на /plans, где код подставлен в поле промокода и применяется только самим пользователем. Три вида подарка: скидка (при скидке на один тариф фраза называет его) и тариф на дни. Награда уже использована — одна приглушённая строка. Награда истекла или её нет — ничего, без сообщения о потере."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-sheet', '--mn-muted']"
+    usage='<app-reward-card [reward]="view.reward" [level]="2" />'>
+    <div class="sg-reward-cards">
+      <figure><figcaption>Скидка на подписку</figcaption><app-reward-card [reward]="rewards.percent" /></figure>
+      <figure><figcaption>Скидка на один тариф</figcaption><app-reward-card [reward]="rewards.plan" /></figure>
+      <figure><figcaption>Тариф на дни</figcaption><app-reward-card [reward]="rewards.tier" /></figure>
+      <figure><figcaption>В профиле (h3, внутри листа блока)</figcaption><app-reward-card [reward]="rewards.percent" [level]="3" /></figure>
+      <figure><figcaption>Награда использована</figcaption><app-reward-card [reward]="rewards.redeemed" /></figure>
+      <figure><figcaption>Награда истекла (ничего не показывается)</figcaption><app-reward-card [reward]="rewards.expired" /></figure>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Награда за «Путь»: на 320 px" selector="<app-reward-card> в узкой колонке"
+    when="Блок перестраивается без горизонтальной прокрутки: длинное предложение переносится, поле кода и «Скопировать» встают в столбец, «Выбрать тариф» остаётся в колонке касания 44 px."
+    [tokens]="['--mn-touch-min']">
+    <div class="sg-path-narrow"><app-reward-card [reward]="rewards.tier" /></div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Промокод награды" selector="<app-reward-code>"
+    when="Персональный код как текст, который можно прочитать, выделить и скопировать: поле только для чтения моноширинным шрифтом с видимой подписью «Ваш промокод» (она же имя поля), которое само выделяется целиком при фокусе и нажатии, и кнопка «Скопировать». Копирует по нажатию пользователя; если браузер не дал, код остаётся выделенным, а строка состояния (role=status, уже на странице) просит скопировать его самому. Лежит на бумаге (tone=paper) и на ночи (tone=night)."
+    [tokens]="['--mn-ink', '--mn-on-night', '--mn-focus', '--mn-star-lavender']"
+    usage='<app-reward-code code="K7PM-W2QX-H9RT" tone="paper" />'>
+    <div class="sg-night-pair">
+      <div class="sg-reward-code-paper"><app-reward-code code="K7PM-W2QX-H9RT" /></div>
+      <app-night-sky layout="panel" [stars]="false"><app-reward-code code="K7PM-W2QX-H9RT" tone="night" /></app-night-sky>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Поздравление с наградой" selector="<app-reward-congratulation>"
+    when="Один раз на устройстве, когда в виде «Пути» появилась действующая награда: модальный &lt;dialog&gt; на ночи со звёздами (та же поверхность, что у приветствия и финала знакомства) — «Путь пройден», «Вы освоили Mnema полностью», подарок с датой конца предложения, код, условия, «Выбрать тариф» (/plans с кодом в поле) и «Позже». Заголовок h1 принимает фокус; «Позже» и Esc закрывают и возвращают фокус на прежнее место. Это громкая поверхность: не во время тура, первого входа, подсказки, промо-окна и открытого ответа в занятии, не на странице занятия и не поверх другого модального окна; дождавшись, появляется сама. Звёзды конечные и неподвижны при уменьшенном движении, в forced-colors фон Canvas. Ниже — те же элементы в рамке-образце."
+    [tokens]="['--mn-night', '--mn-on-night', '--mn-on-night-muted', '--mn-star-lavender', '--mn-glow']">
+    <app-night-sky layout="panel" seed="mnema-reward">
+      <p class="eyebrow">{{ rewardNight.eyebrow }}</p>
+      <h2>{{ rewardNight.title }}</h2>
+      <p class="lead">{{ rewardNight.gift }}</p>
+      <app-reward-code code="K7PM-W2QX-H9RT" tone="night" />
+      <p class="muted">{{ rewardNight.terms }}</p>
+      <div class="actions">
+        <a class="button primary" href="#path">{{ rewardNight.action }}</a>
+        <button type="button" class="button quiet">{{ rewardNight.later }}</button>
+      </div>
+    </app-night-sky>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Тост: награда готова" selector="ToastService.notify(PATH_REWARD_READY)"
+    when="«Вы освоили Mnema полностью. Подарок за «Путь» действует до 29 октября, 21:41 МСК.» со ссылкой «Открыть «Путь»». Обычный тихий тост по правилам уведомлений (во время ответа в занятии ждёт паузы), не веха и не часть сводки вех. Код в уведомлении не приходит: он на странице «Путь». Приход уведомления заставляет перечитать вид «Пути»."
+    [tokens]="['--mn-ink', '--mn-sheet']">
+    <div class="actions"><button type="button" class="button" (click)="showRewardToast()">Показать тост награды</button></div>
+  </app-sg-specimen>
 </section>

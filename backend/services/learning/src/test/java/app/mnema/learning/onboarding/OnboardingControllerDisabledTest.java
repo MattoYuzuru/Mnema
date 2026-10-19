@@ -31,6 +31,6 @@ class OnboardingControllerDisabledTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).isEqualTo(OnboardingFixture.CONTRACT.path("views").path("disabled"));
-        verify(service, never()).read(any(), anyBoolean());
+        verify(service, never()).read(any(), anyBoolean(), any(), any());
     }
 }

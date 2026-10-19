@@ -585,9 +585,39 @@ describe('PlansPageComponent', () => {
             expect(promo.redeem).not.toHaveBeenCalled();
         });
 
-        it('ignores a link code that is not a code', async () => {
+        it('shows a personal code with the dashes of its card, as the reward link carries it', async () => {
+            await open({ url: '/plans?promo=K7PM-W2QX-H9RT' });
+            expect(root.querySelector<HTMLInputElement>('.promo input')!.value).toBe('K7PM-W2QX-H9RT');
+        });
+
+        it('takes the promo parameter off the address after it filled the field, keeping the code and the other parameters', async () => {
+            const harness = await open({ url: '/plans?promo=K7PM-W2QX-H9RT&from=generate&used=3' });
+            await harness.fixture.whenStable();
+            harness.detectChanges();
+            const url = TestBed.inject(Router).url;
+            expect(url).not.toContain('promo');
+            expect(url).toContain('from=generate');
+            expect(url).toContain('used=3');
+            expect(root.querySelector<HTMLInputElement>('.promo input')!.value).toBe('K7PM-W2QX-H9RT');
+        });
+
+        it('replaces the history entry instead of adding one when it takes the parameter off', async () => {
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+            await open({ url: '/plans?promo=AUTUMN-26' });
+            expect(navigate).toHaveBeenCalledWith([], { queryParams: { promo: null }, queryParamsHandling: 'merge', replaceUrl: true });
+            expect(TestBed.inject(Router).url).toBe('/plans');
+        });
+
+        it('leaves the address alone when there is no promo parameter', async () => {
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+            await open({ url: '/plans?from=generate' });
+            expect(navigate).not.toHaveBeenCalled();
+        });
+
+        it('ignores a link code that is not a code, and still takes it off the address', async () => {
             await open({ url: '/plans?promo=%3Cscript%3E' });
             expect(root.querySelector<HTMLInputElement>('.promo input')!.value).toBe('');
+            expect(TestBed.inject(Router).url).toBe('/plans');
         });
 
         it('reads the plan again after a redemption and shows it as the current plan, keeping the success message', async () => {

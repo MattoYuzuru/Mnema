@@ -10,6 +10,7 @@ import app.mnema.learning.catalog.exercise.Rubric;
 import app.mnema.learning.onboarding.MilestoneKey;
 import app.mnema.learning.onboarding.MilestoneRecorder;
 import app.mnema.learning.onboarding.SampleChecks;
+import app.mnema.learning.onboarding.WeeklyRhythm;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
@@ -86,12 +87,14 @@ public class AssessmentService {
     private final MeterRegistry meters;
     private final TransactionTemplate transaction;
     private final MilestoneRecorder milestones;
+    private final WeeklyRhythm rhythm;
 
     public AssessmentService(AssessmentRepository assessments, AttemptRepository attempts, AttemptConclusion conclusion,
                              LearningCapabilities capabilities, UsageLedger ledger, SampleChecks sampleChecks,
                              AssessmentSettings settings, ApplicationEventPublisher events, PlatformTransactionManager transactions, MeterRegistry meters,
-                             MilestoneRecorder milestones) {
+                             MilestoneRecorder milestones, WeeklyRhythm rhythm) {
         this.milestones = milestones;
+        this.rhythm = rhythm;
         this.assessments = assessments;
         this.attempts = attempts;
         this.conclusion = conclusion;
@@ -351,12 +354,17 @@ public class AssessmentService {
             return;
         }
         SemanticPolicy.Graded graded = (SemanticPolicy.Graded) result;
+        // The study state row (a scheduled answer) is locked here, as every completing writer locks it before the rhythm lock; the evaluation does not depend on the payment below.
+        AttemptEvaluation evaluation = evaluation(graded, strictness, rubric, presentation, row, now);
+        // The weekly rhythm's lock comes before the first notification of this transaction: the payment below may publish USAGE_LOW or USAGE_EXHAUSTED, which takes the owner's cursor row
+        // until the commit, and concluding the answer may complete the session and take the rhythm lock; a rhythm writer of the same account holds that lock and publishes RHYTHM_WEEK
+        // (the cursor) at its commit, so taking the cursor first would be a cycle (WeeklyRhythm, «Lock order»). A no-op while the rhythm is off and for a replay.
+        rhythm.lockForCompletion(row.accountId(), presentation.mode());
         // paid only for a delivered grade, in this transaction; a refusal rolls it back and the caller falls back to self-check
         // one of the account's free checks in its onboarding sample deck (OB-203) is counted instead of the plan's bucket; past them the check is paid as ever
         if (!sampleChecks.consume(row.accountId(), row.deckId(), "sample-check:assessment:" + attemptId, attemptId.toString())) {
             ledger.consume(row.accountId(), Bucket.ASSESSMENT, 1, "assessment:" + attemptId, attemptId.toString());
         }
-        AttemptEvaluation evaluation = evaluation(graded, strictness, rubric, presentation, row, now);
         conclusion.conclude(row.accountId(), row.deckId(), row.sessionId(), command(row, presentation), presentation, evaluation,
                 presentation.evaluator(), row.payloadHash(), now);
         // «Путь Mnema»: an answer concluded by the model in a scheduled or practice session (a self-check, an uncertain or unavailable assessment and a replay never get here)

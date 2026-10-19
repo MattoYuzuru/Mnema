@@ -33,8 +33,8 @@ function inDeck(deckId: string | null, rest: readonly string[], anchor: string, 
 
 /**
  * One resolver per route key of `contracts/onboarding/milestones.json` (a spec keeps the two lists equal): the address and the anchor of
- * the place, from the account's recent decks. `null`: the milestone has no place to point at (the rhythm block of the profile arrives with
- * OB-401, and its milestone is hidden until then), so no chevron is drawn.
+ * the place, from the account's recent decks. `null`: the milestone has no plain place to point at (a side quest opens a tour of its own),
+ * so no chevron is drawn.
  */
 export const PATH_PLACES: Readonly<Record<MilestoneRoute, Resolver>> = {
     PROFILE_GOAL: () => ({ commands: ['/profile'], anchor: TOUR_ANCHORS.profileGoal, text: 'hint.PROFILE_GOAL' }),
@@ -44,7 +44,7 @@ export const PATH_PLACES: Readonly<Record<MilestoneRoute, Resolver>> = {
     EXERCISE_NEW: decks => inDeck(decks.user, [], TOUR_ANCHORS.hubMaterials, 'hint.EXERCISE_NEW'),
     CAPTURE: decks => inDeck(decks.user, [], TOUR_ANCHORS.hubCapture, 'hint.capture'),
     COMMUNITY: () => ({ commands: ['/community'], anchor: TOUR_ANCHORS.communitySearch, text: 'hint.COMMUNITY' }),
-    PROFILE_RHYTHM: () => null,
+    PROFILE_RHYTHM: () => ({ commands: ['/profile'], anchor: TOUR_ANCHORS.profileRhythm, text: 'hint.PROFILE_RHYTHM' }),
     // Side quests (OB-304) are tours of their own: the chevron opens the chooser of `QuestLauncher`, it has no plain place.
     QUEST_MEDIA: () => null,
     QUEST_EXPLAIN: () => null,
@@ -66,5 +66,5 @@ export function isQuestRoute(route: MilestoneRoute): route is QuestRoute {
  */
 export const PATH_STATIC_HREFS: Readonly<Record<MilestoneRoute, string | null>> = {
     PROFILE_GOAL: '/profile', DECKS: '/decks', STUDY: '/decks', MATERIAL_NEW: '/decks', QUEST_MEDIA: '/decks', CAPTURE: '/decks', EXERCISE_NEW: '/decks',
-    QUEST_EXPLAIN: '/decks', QUEST_VOICE: '/decks', QUEST_WORKSHOP: '/decks', PROFILE_RHYTHM: null, COMMUNITY: '/community'
+    QUEST_EXPLAIN: '/decks', QUEST_VOICE: '/decks', QUEST_WORKSHOP: '/decks', PROFILE_RHYTHM: '/profile', COMMUNITY: '/community'
 };

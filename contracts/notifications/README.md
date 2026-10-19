@@ -51,6 +51,7 @@ expires_at)` with `UNIQUE(owner_id, dedupe_key)` and `UNIQUE(owner_id, seq)`, an
 | `DECK_HIDDEN` | WARNING | DECK | `deckId` | complaint decisions (Share/15, #437) |
 | `DECK_CONTENT_TAKEN_DOWN` | WARNING | DECK | `deckId`, `materialCount`, `exerciseCount` | complaint decisions (Share/15, #437) |
 | `PATH_MILESTONE` | INFO | PATH | `key`, `done`, `total` | onboarding milestones (OB-301, #532) |
+| `PATH_REWARD_READY` | INFO | PATH | `expiresAt` | onboarding path reward (OB-402, #539) |
 
 Semantics (details and dedupe keys per kind in `notifications.json`):
 
@@ -79,6 +80,9 @@ Semantics (details and dedupe keys per kind in `notifications.json`):
   [`contracts/onboarding/milestones.json`](../onboarding/milestones.json); `done`/`total` count the visible milestones. The client shows
   «Путь: {event} · {done} из {total}», never while an answer is open in Study and at most one milestone toast per 30 s (a summary for
   several).
+- `PATH_REWARD_READY` is published once per account (`path:reward`) in the transaction that issues the account's personal code of the
+  `PATH_REWARD` campaign ([onboarding contract](../onboarding/README.md), «Path reward»); `expiresAt` is the end of the offer. The code itself never
+  travels in a notification: the client opens «Путь», whose view carries it.
 - `MEDIA_PROCESSING_FAILED` is also produced for provider-step media failures of a generation slot; the route is `WORKSHOP` when
   `sessionId` is set, `DECK` when only `deckId` is set, else `NONE`.
 

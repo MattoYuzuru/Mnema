@@ -897,7 +897,13 @@ export async function runOnboarding(ctx) {
     await shoot(A, 'onboarding-study-no-veil-1440.png');
     require_(await clickText('.feedback-card button.primary', 'Продолжить', A.tab), 'the continue action after the feedback is absent');
     await waitFor('the end of the session or the finale', () => read(A, `return Boolean(document.querySelector('.completion')) || Boolean(document.querySelector('app-finale dialog[open]'));`), Boolean, 30_000);
-    return { gateText: step.gate, serverPausedWhenTheSessionOpened: paused.state, veilChecked: veils.map(([where]) => where) };
+    // OB-401: the summary of the session (under the finale) gets its rhythm block once the view is read again: the first day of the week, the default target of 3.
+    const rhythm = await waitFor('the rhythm block of the summary', () => read(A, `const s = document.querySelector('app-rhythm-summary section');
+      return s ? { heading: norm(s.querySelector('h3')?.textContent), target: norm(s.querySelector('.hint')?.textContent), studied: s.querySelectorAll('app-rhythm-week li.done').length,
+        days: s.querySelectorAll('app-rhythm-week li').length, weeks: /Недель в ритме/.test(s.textContent) } : null;`), r => r !== null, 20_000);
+    A.need(rhythm.heading === 'Первый день на этой неделе' && rhythm.target === 'Цель — 3 дня в неделю' && rhythm.days === 7 && rhythm.studied === 1 && !rhythm.weeks,
+      'the rhythm block of the summary is ' + JSON.stringify(rhythm));
+    return { gateText: step.gate, serverPausedWhenTheSessionOpened: paused.state, veilChecked: veils.map(([where]) => where), summaryRhythm: rhythm.heading };
   });
 
   await stage('own_finale', ['own_study'], async () => {
@@ -951,7 +957,8 @@ export async function runOnboarding(ctx) {
     A.need(byKey.OWN_EXERCISES?.state === 'PARTIAL' && byKey.OWN_EXERCISES.progress === 1 && byKey.OWN_EXERCISES.target === 3, 'OWN_EXERCISES is ' + JSON.stringify(byKey.OWN_EXERCISES));
     A.need(byKey.TWO_DAYS?.state === 'PARTIAL' && byKey.TWO_DAYS.progress === 1, 'TWO_DAYS is ' + JSON.stringify(byKey.TWO_DAYS));
     A.need(byKey.CAPTURE_NOTE?.state === 'TODO' && byKey.MEDIA_IN_MATERIAL?.state === 'TODO', 'CAPTURE_NOTE and MEDIA_IN_MATERIAL are not untouched');
-    A.need(Object.keys(byKey).every(key => !['AI_EXPLANATION', 'VOICE_ANSWER', 'WORKSHOP_APPROVED', 'RHYTHM_WEEK'].includes(key)), 'a milestone of a switched-off feature is visible: ' + JSON.stringify(Object.keys(byKey)));
+    A.need(Object.keys(byKey).every(key => !['AI_EXPLANATION', 'VOICE_ANSWER', 'WORKSHOP_APPROVED'].includes(key)), 'a milestone of a switched-off feature is visible: ' + JSON.stringify(Object.keys(byKey)));
+    A.need(byKey.RHYTHM_WEEK?.state === 'TODO', 'RHYTHM_WEEK is not visible and undone with the rhythm on: ' + JSON.stringify(byKey.RHYTHM_WEEK));
     A.need(!view.notice, 'the «Новое» notice is shown to an account the tour was offered to');
     A.need(!view.overflow, 'the Path page overflows at 1440 px');
     // The keyboard reaches a chevron, and the accessibility tree says it once: the heading levels, the named progress bars, the chevrons by their names.
@@ -1003,6 +1010,53 @@ export async function runOnboarding(ctx) {
     A.need(block.title === PATH.title && block.total === `${server.path.done} из ${server.path.total}` && block.href === '/profile/path' && block.link === PATH.open, 'the profile block is ' + JSON.stringify(block));
     return { milestones: server.milestones.map(item => `${item.key}:${item.state}`), done: server.path.done, total: server.path.total, hidden: server.path.hidden, pageMatchesServer: true, openChapters: view.chapters.filter(chapter => chapter.open).map(chapter => chapter.name),
       axHeadings: headings.length, axProgressbars: bars.length, axChevrons: links.length, forcedColors: true, noHorizontalScroll: ['1440', '390', '320'], chevronTouchTargetsPx: Math.min(...targets), profileBlock: block.total };
+  });
+
+  // ==== 3a'. The weekly rhythm of the profile (OB-401): the week, the target, a lowered target that meets this week, the weeks in rhythm only here ================
+  await stage('rhythm', ['own_finale'], async () => {
+    const A = world.journeyActor;
+    await A.front();
+    await navigate('/profile', A.tab);
+    const block = () => read(A, `const s = document.querySelector('app-profile-rhythm section#profile-rhythm');
+      return s ? { title: norm(s.querySelector('h2')?.textContent), target: norm(s.querySelector('.target')?.textContent), weeks: norm(s.querySelector('.weeks')?.textContent) || null,
+        studied: s.querySelectorAll('app-rhythm-week li.done').length, summary: norm(s.querySelector('app-rhythm-week .visually-hidden, app-rhythm-week [class*="summary"]')?.textContent) || null,
+        legends: [...s.querySelectorAll('legend')].map(l => norm(l.textContent)), checkedDays: s.querySelector('input[name="profile-rhythm-days"]:checked')?.value ?? null,
+        status: norm(s.querySelector('[role="status"]')?.textContent), overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth } : null;`);
+    const before = await waitFor('the rhythm block of the profile', block, b => b !== null, 20_000);
+    A.need(before.target === 'Цель — 3 дня в неделю' && before.weeks === null && before.studied === 1 && before.legends.length === 2, 'the rhythm block before is ' + JSON.stringify(before));
+    const server = (await A.api('GET', '/api/onboarding')).body;
+    A.need(server.rhythm?.target === 3 && server.rhythm.days.length === 1 && server.rhythm.weeksMet === 0, 'the server rhythm before is ' + JSON.stringify(server.rhythm));
+    await shoot(A, 'onboarding-rhythm-profile-1440.png');
+    // One day a week: the day already studied meets the week, the weeks in rhythm appear (here only), RHYTHM_WEEK is done; no toast for a lowered target.
+    await realClick(A, 'app-profile-rhythm label.segment', '1 день');
+    await realClick(A, 'app-profile-rhythm button[type="submit"]', 'Сохранить');
+    const after = await waitFor('the saved target', block, b => b !== null && b.weeks !== null, 15_000);
+    A.need(after.target === 'Цель — 1 день в неделю' && after.weeks === 'Недель в ритме: 1' && after.status === 'Сохранено.', 'the rhythm block after is ' + JSON.stringify(after));
+    const met = (await A.api('GET', '/api/onboarding')).body;
+    A.need(met.rhythm?.weeksMet === 1 && met.journey?.weeklyTarget === 1, 'the server rhythm after is ' + JSON.stringify({ rhythm: met.rhythm, target: met.journey?.weeklyTarget }));
+    const milestone = met.milestones.find(item => item.key === 'RHYTHM_WEEK');
+    A.need(milestone?.state === 'DONE', 'RHYTHM_WEEK after a met week is ' + JSON.stringify(milestone));
+    await sleep(1500);
+    const toast = await read(A, `return [...document.querySelectorAll('.toast, [role="status"].toast, app-toast')].map(t => norm(t.textContent)).filter(t => t.startsWith('Цель недели выполнена'));`);
+    A.need(toast.length === 0, 'a lowered target in the profile celebrated the week: ' + JSON.stringify(toast));
+    // Nothing of the rhythm in the header.
+    const header = await read(A, `return norm(document.querySelector('header, app-header, .masthead')?.textContent ?? '');`);
+    A.need(!/ритм|недел/i.test(header), 'the header mentions the rhythm: ' + header);
+    await shoot(A, 'onboarding-rhythm-profile-met-1440.png');
+    for (const [label, metrics] of [['390', PHONE], ['320', NARROW]]) {
+      await A.metrics(metrics);
+      await A.frames();
+      const narrow = await block();
+      A.need(narrow !== null && !narrow.overflow, `the rhythm block overflows at ${label} px`);
+      await shoot(A, `onboarding-rhythm-profile-${label}.png`);
+    }
+    await A.metrics(DESKTOP);
+    await A.frames();
+    // Back to the default, so the later stages see the journey they expect.
+    const reset = await A.api('PUT', '/api/onboarding/preferences', { commandId: crypto.randomUUID(), rowVersion: met.journey.rowVersion, weeklyTarget: 3 });
+    A.need(reset.status === 200, 'the target could not be reset: ' + reset.status);
+    return { summaryOfTheWeek: before.summary, loweredTargetMetTheWeek: true, weeksMetShownInTheProfile: after.weeks, rhythmWeek: milestone.state, noToastForALoweredTarget: true, noHeader: true,
+      noHorizontalScroll: ['1440', '390', '320'] };
   });
 
   await stage('path_hint', ['own_finale'], async () => {

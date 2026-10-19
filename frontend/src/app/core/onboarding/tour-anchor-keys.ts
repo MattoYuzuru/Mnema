@@ -29,6 +29,8 @@ export const TOUR_ANCHORS = {
     navNewDeck: 'nav.newDeck',
     /** The question «Для чего вам Mnema?» on the profile while the goal is unanswered (hint of «Путь»). */
     profileGoal: 'profile.goal',
+    /** The rhythm block of the profile: the week, the target and the weeks in rhythm (hint of «Путь», OB-401). */
+    profileRhythm: 'profile.rhythm',
     /** `/decks/:deckId`: «Добавить материал» (hint of «Путь»). */
     hubAddMaterial: 'hub.addMaterial',
     /** `/decks/:deckId`: the list of materials, where a material's exercises are opened (hint of «Путь»). */

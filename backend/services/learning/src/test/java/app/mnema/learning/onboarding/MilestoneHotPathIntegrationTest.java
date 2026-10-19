@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The hot path of a study session (OB-301), as the gate keeps it: how many statements the milestone recorder adds to the transaction that completes a session, counted at the JDBC
  * connection (every {@code prepareStatement} of the thread), with small fixtures that are removed afterwards. Replay adds none; once {@code FIRST_SESSION} and {@code TWO_DAYS} are
  * achieved the added cost is ONE primary-key range read; before that, the read, an upsert for each milestone that grows, and, only while {@code TWO_DAYS} is below its target, one
- * existence probe. The latency of those statements and their plans on a big table are {@link MilestoneHotPathEvidenceTest} (opt-in).
+ * existence probe. The weekly rhythm (OB-401) adds nothing while it is off, which is this context. The latency of those statements and their plans on a big table are {@link MilestoneHotPathEvidenceTest} (opt-in).
  */
 @SpringBootTest(properties = {"learning.onboarding.enabled=true", "learning.onboarding.eligible-from=2026-01-01T00:00:00Z", "spring.datasource.hikari.maximum-pool-size=4"})
 @Import(StatementCounting.class)
@@ -34,6 +34,7 @@ class MilestoneHotPathIntegrationTest extends PostgresIntegrationTest {
     private static final int SESSIONS = 40;
 
     @Autowired private MilestoneRecorder recorder;
+    @Autowired private WeeklyRhythm rhythm;
     @Autowired private OnboardingService onboarding;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
@@ -94,6 +95,8 @@ class MilestoneHotPathIntegrationTest extends PostgresIntegrationTest {
         LocalDate today = jdbc.sql("SELECT CURRENT_DATE").query(LocalDate.class).single();
         try {
             assertThat(counted(() -> recorder.sessionCompleted(spread, "REPLAY", today))).as("a replay").isEmpty();
+            // the weekly rhythm is off in this context (the default): a completion pays nothing for it, whatever the session; WeeklyRhythmIntegrationTest counts it switched on
+            assertThat(counted(() -> rhythm.sessionCompleted(spread, "SCHEDULED", today))).as("the rhythm switched off").isEmpty();
 
             set(spread, "FIRST_SESSION", 1, true);
             set(spread, "TWO_DAYS", 2, true);
@@ -115,7 +118,7 @@ class MilestoneHotPathIntegrationTest extends PostgresIntegrationTest {
 
             // the read of the path by the view is one statement of the ledger
             StatementCounting.start();
-            onboarding.read(spread, false);
+            onboarding.read(spread, false, null, null);
             assertThat(StatementCounting.stop().stream().filter(sql -> sql.contains("account_milestone"))).as("one primary-key range read of the path per view").hasSize(1);
         } finally {
             for (UUID account : new UUID[] {spread, sameDay}) {

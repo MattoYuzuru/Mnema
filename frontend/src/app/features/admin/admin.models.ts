@@ -220,6 +220,52 @@ export interface PromoPage {
     readonly next: string | null;
 }
 
+export type CampaignOfferType = 'DISCOUNT_PERCENT' | 'TIER_DAYS';
+
+/**
+ * A campaign of the reward for a finished «Путь» (OB-402, `adminCampaignView` of `contracts/usage/promo.json`). Its offer is immutable (a new offer is a new
+ * campaign, so every issued code keeps the terms it was issued under); only `enabled` changes. At most one campaign is enabled at a time.
+ */
+export interface AdminCampaign {
+    readonly campaignId: string;
+    readonly type: 'PATH_REWARD';
+    readonly offerType: CampaignOfferType;
+    readonly percent: number | null;
+    readonly plan: 'PLUS' | 'PRO' | null;
+    readonly days: number | null;
+    readonly enabled: boolean;
+    readonly createdAt: string;
+    readonly issued: number;
+    readonly redeemed: number;
+    readonly issuedLast24h: number;
+}
+
+/** `POST /api/admin/promo-campaigns`: a discount names its percent (and optionally the plan it applies to), a tier names its plan and days. */
+export interface CampaignCreate {
+    readonly type: 'PATH_REWARD';
+    readonly offerType: CampaignOfferType;
+    readonly percent: number | null;
+    readonly plan: 'PLUS' | 'PRO' | null;
+    readonly days: number | null;
+}
+
+export interface CampaignPage {
+    readonly campaigns: readonly AdminCampaign[];
+}
+
+/** One personal code issued by a campaign: only its hint, the dates and whether it was redeemed leave the server (never an account, an e-mail or the code). */
+export interface AdminIssuance {
+    readonly codeHint: string;
+    readonly issuedAt: string;
+    readonly expiresAt: string;
+    readonly redeemedAt: string | null;
+}
+
+export interface IssuancePage {
+    readonly issuances: readonly AdminIssuance[];
+    readonly next: string | null;
+}
+
 export interface AuditEntry {
     readonly auditId: string;
     readonly actorAccountId: string;
@@ -630,6 +676,65 @@ export function parsePromoPage(value: unknown): PromoPage {
         codes: array(o['codes'], parsePromo),
         next: nullable(o['next'], uuid)
     };
+}
+
+function bounded(value: unknown, minimum: number, maximum: number): number {
+    const result = integer(value);
+    if (result < minimum || result > maximum)
+        throw new AdminProtocolError();
+    return result;
+}
+
+export function parseCampaign(value: unknown): AdminCampaign {
+    const o = object(value);
+    const offerType = enumeration(o['offerType'], ['DISCOUNT_PERCENT', 'TIER_DAYS'] as const);
+    const plan = nullable(o['plan'], value => enumeration(value, ['PLUS', 'PRO'] as const));
+    const percent = nullable(o['percent'], value => bounded(value, 1, 90));
+    const days = nullable(o['days'], value => bounded(value, 1, 366));
+    // A discount carries a percent and no days; a tier carries a plan and days and no percent.
+    if (offerType === 'DISCOUNT_PERCENT' ? percent === null || days !== null : plan === null || days === null || percent !== null)
+        throw new AdminProtocolError();
+    const issued = integer(o['issued']);
+    const redeemed = integer(o['redeemed']);
+    if (redeemed > issued)
+        throw new AdminProtocolError();
+    return {
+        campaignId: uuid(o['campaignId']),
+        type: enumeration(o['type'], ['PATH_REWARD'] as const),
+        offerType,
+        percent,
+        plan,
+        days,
+        enabled: flag(o['enabled']),
+        createdAt: instant(o['createdAt']),
+        issued,
+        redeemed,
+        issuedLast24h: integer(o['issuedLast24h'])
+    };
+}
+
+export function parseCampaignPage(value: unknown): CampaignPage {
+    const o = object(value);
+    return { campaigns: array(o['campaigns'], parseCampaign) };
+}
+
+export function parseIssuance(value: unknown): AdminIssuance {
+    const o = object(value);
+    const issuedAt = instant(o['issuedAt']);
+    const expiresAt = instant(o['expiresAt']);
+    if (Date.parse(expiresAt) <= Date.parse(issuedAt))
+        throw new AdminProtocolError();
+    return { codeHint: str(o['codeHint'], 64), issuedAt, expiresAt, redeemedAt: nullable(o['redeemedAt'], instant) };
+}
+
+export function parseIssuancePage(value: unknown): IssuancePage {
+    const o = object(value);
+    return { issuances: array(o['issuances'], parseIssuance), next: nullable(o['next'], value => {
+        const cursor = str(value, 512);
+        if (cursor.length === 0)
+            throw new AdminProtocolError();
+        return cursor;
+    }) };
 }
 
 export function parseAuditPage(value: unknown): AuditPage {

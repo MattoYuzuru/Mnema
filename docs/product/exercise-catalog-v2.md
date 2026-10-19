@@ -122,7 +122,10 @@ Evaluator возвращает outcome одного P0 objective:
 личную колоду, включая выбранные private changes, а не только чужую source revision.
 Versioned scheduler policy преобразует evidence в transition только для
 `SCHEDULED`. `REPLAY` и `PRACTICE` возвращают feedback, но не пишут canonical
-study state, introduction/exposure, due, streak или experiment outcome. Повторная
+study state, introduction/exposure, due, streak (`correctStreak` в `StudyState`) или experiment outcome.
+Недельный ритм онбординга ([ADR-ONB-004](../engineering/onboarding/adr/adr-onb-004-rhythm.md), OB-401) — продуктовая
+статистика, а не canonical credit: завершённое `PRACTICE`-занятие засчитывает день ритма так же, как `SCHEDULED`
+(`REPLAY` — нет), но по-прежнему не меняет StudyState, due и evidence. Повторная
 отправка того же `attemptId` и payload возвращает сохранённый outcome; повторное
 использование ID с другим payload — idempotency conflict. Cancel, navigation away,
 timeout или evaluator failure не становятся incorrect attempt.

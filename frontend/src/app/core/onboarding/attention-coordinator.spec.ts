@@ -48,8 +48,8 @@ describe('AttentionCoordinator', () => {
         expect(coordinator.visible()).toEqual([]);
     });
 
-    it('keeps the order system error > study > tour > first entry > hint > promo > milestone', () => {
-        expect([...SURFACES]).toEqual(['system-error', 'study', 'tour', 'first-entry', 'hint', 'promo', 'milestone']);
+    it('keeps the order system error > study > tour > first entry > hint > reward > promo > milestone', () => {
+        expect([...SURFACES]).toEqual(['system-error', 'study', 'tour', 'first-entry', 'hint', 'reward', 'promo', 'milestone']);
     });
 
     it('lets only the highest surface on the screen speak, whatever else is reported', () => {
@@ -72,7 +72,9 @@ describe('AttentionCoordinator', () => {
         };
         for (const [index, holder] of SURFACES.entries()) {
             hold(holder, true);
-            expect(SURFACES.filter(surface => coordinator.canShow(surface)), holder).toEqual(SURFACES.slice(0, index + 1));
+            // The one exception is the documented exclusion of the reward by an open promo window (see the reward describe below).
+            const allowed = SURFACES.slice(0, index + 1).filter(surface => !(surface === 'reward' && holder === 'promo'));
+            expect(SURFACES.filter(surface => coordinator.canShow(surface)), holder).toEqual(allowed);
             hold(holder, false);
         }
     });
@@ -89,6 +91,48 @@ describe('AttentionCoordinator', () => {
                 if (holder === 'study') quiet.set(false); else if (holder === 'tour') active.set(false); else coordinator.report('first-entry', false);
             }
             expect(coordinator.canShow('hint')).toBe(true);
+        });
+    });
+
+    describe('the congratulation of the finished path (reward)', () => {
+        it('waits for the study session, the tour, the first entry and the hint, and keeps the promo window and the milestone toasts quiet', () => {
+            for (const holder of ['study', 'tour', 'first-entry', 'hint'] as const) {
+                if (holder === 'study') quiet.set(true); else if (holder === 'tour') active.set(true); else coordinator.report(holder, true);
+                expect(coordinator.canShow('reward'), holder).toBe(false);
+                if (holder === 'study') quiet.set(false); else if (holder === 'tour') active.set(false); else coordinator.report(holder, false);
+            }
+            expect(coordinator.canShow('reward')).toBe(true);
+            coordinator.report('reward', true);
+            expect(coordinator.speaking()).toBe('reward');
+            expect(all()).toEqual(['system-error', 'study', 'tour', 'first-entry', 'hint', 'reward']);
+        });
+
+        it('does not open over a promo window that is already up, and holds back a promo window that would open over it', () => {
+            coordinator.report('promo', true);
+            expect(coordinator.canShow('reward')).toBe(false);
+            coordinator.report('promo', false);
+            expect(coordinator.canShow('reward')).toBe(true);
+            coordinator.report('reward', true);
+            expect(coordinator.canShow('promo')).toBe(false);
+            expect(coordinator.canShow('milestone')).toBe(false);
+            coordinator.report('reward', false);
+            expect(coordinator.canShow('promo')).toBe(true);
+        });
+
+        it('keeps off the study route itself, even when no answer is open, and may open on any other page', async () => {
+            const router = TestBed.inject(Router);
+            await router.navigateByUrl('/decks/1/study');
+            expect(coordinator.canShow('reward')).toBe(false);
+            await router.navigateByUrl('/decks/1/study?x=1#a');
+            expect(coordinator.canShow('reward')).toBe(false);
+            await router.navigateByUrl('/profile/path');
+            expect(coordinator.canShow('reward')).toBe(true);
+        });
+
+        it('is not held back by a paused tour, a plaque is not a loud surface', () => {
+            active.set(true);
+            paused.set(true);
+            expect(coordinator.canShow('reward')).toBe(true);
         });
     });
 

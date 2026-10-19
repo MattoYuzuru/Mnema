@@ -2,6 +2,7 @@ package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.community.DeckEngagement;
 import app.mnema.learning.onboarding.MilestoneRecorder;
+import app.mnema.learning.onboarding.WeeklyRhythm;
 import app.mnema.learning.moderation.ContentTakedowns;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -24,11 +25,13 @@ class AttemptRepository {
 
     private final DeckEngagement engagement;
     private final MilestoneRecorder milestones;
+    private final WeeklyRhythm rhythm;
 
-    AttemptRepository(JdbcClient jdbc, DeckEngagement engagement, MilestoneRecorder milestones) {
+    AttemptRepository(JdbcClient jdbc, DeckEngagement engagement, MilestoneRecorder milestones, WeeklyRhythm rhythm) {
         this.jdbc = jdbc;
         this.engagement = engagement;
         this.milestones = milestones;
+        this.rhythm = rhythm;
     }
 
     record Presentation(UUID accountId, UUID sessionId, UUID presentationId, UUID deckId, String mode,
@@ -295,6 +298,8 @@ class AttemptRepository {
             engagement.studied(actor, session);
             // «Путь Mnema»: FIRST_SESSION and TWO_DAYS (SCHEDULED or PRACTICE; the recorder ignores a replay)
             milestones.sessionCompleted(actor, completed.get().mode(), completed.get().studyDate());
+            // the weekly rhythm (OB-401): SCHEDULED or PRACTICE, once the milestones have written
+            rhythm.sessionCompleted(actor, completed.get().mode(), completed.get().studyDate());
         }
     }
 

@@ -76,7 +76,7 @@ class MilestoneContractTest {
     void theExamplesAreWhatTheCodeBuilds() {
         PathState fresh = PathState.of(java.util.Map.of(), java.util.EnumSet.of(MilestoneKey.AI_EXPLANATION, MilestoneKey.VOICE_ANSWER, MilestoneKey.WORKSHOP_APPROVED,
                 MilestoneKey.RHYTHM_WEEK, MilestoneKey.COMMUNITY_COPY));
-        JsonNode view = OnboardingView.notOffered(SampleDeckState.unavailable(3), fresh);
+        JsonNode view = OnboardingView.notOffered(SampleDeckState.unavailable(3), fresh, null, null);
         JsonNode example = REGISTRY.path("examples").path("fresh");
         assertThat(view.path("milestones")).isEqualTo(example.path("milestones"));
         assertThat(view.path("path")).isEqualTo(example.path("path"));

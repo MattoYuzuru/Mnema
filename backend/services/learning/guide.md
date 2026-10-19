@@ -2691,9 +2691,10 @@ and `PUT /api/onboarding/preferences` follow the blanket scope rule (`learning.r
   (checked before the body is read), the owner report keeps working. The disabled `GET` is answered by `OnboardingController` before the transactional
   read, so a switched-off tour costs no transaction and no query. The local full stack turns it on (`compose.local-full-stack.yml`:
   `LEARNING_ONBOARDING_ENABLED`, `LEARNING_ONBOARDING_ELIGIBLE_FROM`, `LEARNING_ONBOARDING_EXPERIMENT_ENABLED`); production config is untouched and stays off.
-- **Eligibility.** The first `GET` of an account inserts the `OFFERED` row (`INSERT … ON CONFLICT DO NOTHING`, so concurrent first reads create exactly one) only when the
+- **Eligibility.** The first `GET` of an account inserts the `OFFERED` row, or turns its stored `NOT_OFFERED` row (V75, below) into it (`OnboardingRepository.offer`: one
+  `INSERT … ON CONFLICT DO UPDATE … WHERE state = 'NOT_OFFERED'`, so concurrent first reads create or upgrade exactly one and count one exposure) only when the
   flag is on, the database time is at or after `eligible-from`, Identity marks the account new (`IdentityClaims.signals(request).newAccount()`; an absent or malformed
-  `mnema_new_account` is unknown, which is not new) and the account owns no `deck` row with `deleted_at IS NULL`. Anything else is the `NOT_OFFERED` view and no row.
+  `mnema_new_account` is unknown, which is not new) and the account owns no `deck` row with `deleted_at IS NULL`. Anything else is the `NOT_OFFERED` view and no new row.
 - **Holdout (`learning.experiments.onboarding_v1`, `control:15,tour:85`, disabled by default, `client=false`).** The cohort is frozen on the row when it is created:
   `ExperimentAssignments.assigned` (empty for a disabled experiment or a missing `MNEMA_EXPERIMENT_SECRET`, unlike `variant`, which then says `control`) `control`
   gives `CONTROL`, any other variant `TOUR`, and an account the experiment did not bucket is stored `UNASSIGNED`: it gets the tour (nobody is held out by accident) and
@@ -2708,7 +2709,7 @@ and `PUT /api/onboarding/preferences` follow the blanket scope rule (`learning.r
   are one transaction, a repeat returns the stored view with `Idempotency-Replayed: true`) and compare-and-set on `row_version`: stale `412 VERSION_CONFLICT`, missing `428`.
   Order of checks: body shape (400, state independent; a missing `rowVersion` counts only once the rest of the body is valid) → missing version (428) → stale
   version (412) → transition table (`409 ONBOARDING_TRANSITION`) → a branch step must match the stored or the commanded branch (400; also for a `REPLAY` that
-  creates the row, whose branch is empty). `REPLAY` from `NOT_OFFERED` inserts the row at `row_version` 1 (one change past "no row"). A `branch` in a command must come with a `stepKey` of that branch. `PUT /preferences` needs a row, at least one of `experience`/`weeklyTarget`; `null` clears.
+  creates the row, whose branch is empty). `REPLAY` from `NOT_OFFERED` inserts the row at `row_version` 1 (one change past "no row"). A `branch` in a command must come with a `stepKey` of that branch. `PUT /preferences` needs at least one of `experience`/`weeklyTarget` (`null` clears) and works in every state: without a row (`rowVersion` 0) it inserts the `NOT_OFFERED` row at version 1 (a concurrent insert is 412).
 - **Report.** `GET /api/admin/onboarding/experiment?from=&to=` (`OnboardingReportController`): the console owner on the admin client (`AdminConsoleAccess`), the console
   window (`AdminReportRange`, UTC dates, 1-90 days). One grouped statement over the cohort rows of the window by `offered_at`: accounts, activated (a COMPLETE SCHEDULED
   `study_session` completed within 7 days after the offer) and returned (COMPLETE SCHEDULED or PRACTICE sessions on two distinct `local_study_date`s within 14 days);
@@ -2823,7 +2824,7 @@ on the public `MilestoneRecorder` only.
   `mnema_path_milestone_total{key,source="LIVE"}` counts the milestones reached (also for a hidden one, also with the tour off). No log line carries an account or a parameter.
 - **Visibility (`PathVisibility`).** Hidden by the operator's switches, never by a breaker or a budget: `learning.features.ai-assessment.enabled` (`AI_EXPLANATION`),
   `speech-to-text` (`VOICE_ANSWER`), `ai-generation` (`WORKSHOP_APPROVED`), `learning.community.catalog.enabled` AND `learning.community.public-routes.enabled` AND `learning.community.forks.enabled` (a copy must be possible) AND at least one listed deck (`COMMUNITY_COPY`; `CatalogAvailability`: one
-  `EXISTS` over the partial index of listed decks, kept per instance for `facets-ttl`, nothing when the catalogue is off), and `RHYTHM_WEEK` always (OB-401 writes it).
+  `EXISTS` over the partial index of listed decks, kept per instance for `facets-ttl`, nothing when the catalogue is off), and `RHYTHM_WEEK` while `learning.onboarding.rhythm.enabled` is off (OB-401).
 - **View.** `OnboardingService` reads `milestones` and `path` with ONE primary-key range read of the account's rows (`MilestoneRepository.all`) in every view and command answer while the tour is
   on (`PathState`: visible milestones in registry order, `DONE`/`PARTIAL`/`TODO`, `achievedAt` cut to seconds, `path.hidden` by registry order); the disabled view stays `[]`/`null` and reads nothing.
   The command receipt stores the view of the first execution, so a replayed command answers its milestones as they were; a `GET` is always current.
@@ -2881,3 +2882,62 @@ The milestones of an account that existed before OB-301 are restored from histor
 - **Tests.** `OnboardingBackfillSemanticsIntegrationTest` (each key's positive and negative cases through the real writers, the merge with LIVE rows, a live event after the backfill),
   `OnboardingBackfillJobIntegrationTest` (3000 synthetic accounts: rerun changes nothing, an interrupted run ends in the same table, no notification, the executor runs the queue, the lock, the plans),
   `OnboardingBackfillScheduleTest`.
+
+## Onboarding weekly rhythm (OB-401; migration `V75__onboarding_rhythm.sql`)
+
+Contract: [`contracts/onboarding`](../../../contracts/onboarding/README.md) «Weekly rhythm»; decision [ADR-ONB-004](../../../docs/engineering/onboarding/adr/adr-onb-004-rhythm.md).
+
+- **Switch.** `learning.onboarding.rhythm.enabled` (default `false`, `RhythmSettings`). Off: nothing is written, `rhythm` is `null`, `RHYTHM_WEEK` is hidden (`PathVisibility`).
+  On: `rhythm` is in every view while `learning.onboarding.enabled` is on too; the writers run whatever the tour flag says (like the milestones).
+- **Storage.** No new table: `weekly_target`, `weeks_met`, `last_met_week` (V72) of `onboarding_journey`. An account never offered the tour gets a row in state `NOT_OFFERED` (V75: no cohort,
+  no `offered_at`; CHECKs bind both to the state and `weeks_met` to `last_met_week`, which is a Monday), created by the first met week or by `PUT /preferences`; on the wire it reads like no row.
+  Journey commands from it take the update path (`REPLAY` sets `offered_at`); the first `GET` of an eligible account upgrades it to `OFFERED`.
+- **Writer.** `WeeklyRhythm.sessionCompleted(account, mode, studyDate)` (`MANDATORY`) right after `MilestoneRecorder.sessionCompleted` in `StudySessionRepository.complete` and
+  `AttemptRepository.completeSessionIfTerminal`: SCHEDULED or PRACTICE only; the week is the ISO week (Monday) of the stored `local_study_date`. One PK read of the journey row; if
+  `last_met_week` is this week or later, nothing more. Otherwise `pg_advisory_xact_lock(hashtextextended('onboarding.rhythm:'||account,0))`, the row again, the distinct dates of the week
+  (`RhythmRepository.DAYS`, answered from the partial index `study_session_study_dates` of V74 — `WeeklyRhythmIntegrationTest` checks the plan), and when they reach the target (default 3)
+  the guarded upsert `… ON CONFLICT DO UPDATE SET weeks_met = weeks_met + 1, last_met_week = :week WHERE last_met_week IS NULL OR last_met_week < :week`, then `RHYTHM_WEEK` through the recorder.
+  `row_version` is never touched (it is the client's compare-and-set for tour commands). The lock makes two completions that meet the week together count it once (the second waits and
+  sees the first's session); it is taken before anything that publishes, and `PUT /preferences` takes it before it updates the row, so the two never wait for each other in opposite
+  orders. A lowered target that the current week already meets is counted by `PUT /preferences` (`targetChanged`, the week of today in the token's `zoneinfo`).
+- **View.** `WeeklyRhythm.state`: today = the database clock in the token's `zoneinfo` (UTC when absent or invalid, Study's rule), `weekStart` its Monday, the days of that week, the target,
+  `weeksMet`. The controller passes `zoneinfo` to every view-returning endpoint.
+- **Cost on a completion** (JDBC statements, `MilestoneHotPathIntegrationTest`): rhythm off 0; REPLAY 0; week already met 1; week not met yet 4 (read, lock, read, days); the completion
+  that meets it 6.
+- **Known edges.** A late completion of an older week after a newer one was counted does not count; weeks are counted from the moment the switch is on (no history).
+- **Tests.** `WeeklyRhythmIntegrationTest` (counting, week boundary, time-zone change, races, once per week, `NOT_OFFERED` rows, lowered target, plan), `WeeklyRhythmOffIntegrationTest`,
+  `WeeklyRhythmOnboardingOffIntegrationTest`, the rhythm cases of `OnboardingHttpIntegrationTest`.
+
+## Onboarding path reward (OB-402; migration `V76__path_reward.sql`)
+
+Contracts: [`contracts/onboarding`](../../../contracts/onboarding/README.md) «Path reward», [`contracts/usage/promo.json`](../../../contracts/usage/promo.json) (campaign endpoints, personal
+codes), `PATH_REWARD_READY` in [`contracts/notifications`](../../../contracts/notifications/README.md); decision [ADR-ONB-005](../../../docs/engineering/onboarding/adr/adr-onb-005-path-reward.md).
+
+- **Switches.** `learning.onboarding.reward.enabled` (default `false`, `RewardSettings`; the global kill switch) and `daily-limit` (default 200, 1–10000, issuances per campaign in 24 h;
+  a bad value stops startup). The owner's switch is the campaign itself: `promo_campaign` (type `PATH_REWARD`, offer `DISCOUNT_PERCENT` with an optional plan or `TIER_DAYS` with plan and
+  days), created disabled, immutable but for `enabled`, at most one enabled per type (partial unique index; the API answers `409 PROMO_CAMPAIGN_ACTIVE` first). Admin endpoints
+  `/api/admin/promo-campaigns` (`PromoCampaignController`/`Service`/`Repository`), the admin check of the promo console, idempotent create, journal actions `PROMO_CAMPAIGN_CREATE`,
+  `PROMO_CAMPAIGN_ENABLE`, `PROMO_CAMPAIGN_DISABLE` on actual changes only; the issuance list carries code hints and times, never an account or a code.
+- **Personal codes** (`PersonalPromoCodes`): `promo_code.campaign_id` + `recipient_id`. `PromoService.redeemLocked` answers `PROMO_INVALID` for a code of another recipient before every other
+  rule, as for an unknown code. The plain code is never stored: `PromoCodes.derive` = 12 characters of the promo alphabet from HMAC-SHA256(promo secret, `path-reward-code:<codeId>`)
+  (rejection sampling, about 59 bits); the stored hash is the ordinary one; a hash collision draws another code id. Valid from a minute before the issuance (clock skew between the
+  database and the application) to `expires_at`. `listPromoCodes` leaves campaign codes out (`promo_code_admin_list`).
+- **Issuance** (`RewardIssuer`, never throws to the caller, refuses to run inside a transaction). `GET /api/onboarding` calls it through `PathReward.current` BEFORE the read's own
+  transaction (one connection at a time; nested, it held two per read while it waited for a lock): a lock-free pre-check (no reward, every visible milestone done, the secret, an enabled
+  campaign, the unlocked daily count below the limit), then the issuing transaction (timeout 5 s), only when the account has no reward, every
+  visible milestone is done (`PathState`, total ≥ 1) and Identity says `mnema_trusted` for this request. Why the read and not the milestone's transaction: the last milestone is often
+  reached in a worker without request signals (AI grading, speech) and a new account usually reaches 100 % before it is 3 days old (trusted), while the client re-reads the view after
+  every `PATH_MILESTONE`. Under `pg_advisory_xact_lock('onboarding.reward:'||account)`: an existing reward → nothing; then the promo secret, the enabled campaign, the milestones recounted
+  in this transaction, the campaign re-read `FOR SHARE` (a disable in flight stops it), the daily limit (counted under a campaign lock), the code, `onboarding_reward` (PK `account_id`: once per account, a replayed tour never issues again), and
+  `PATH_REWARD_READY` (`path:reward`, params `expiresAt`, route `PATH`) as the last write. `expires_at = issued_at + 7 days`. Metric `mnema_path_reward_total{outcome}`
+  (`issued`, `no_campaign`, `not_complete`, `limited`, `unavailable`, `failed`); logs name no account (a failure logs the exception class only).
+- **View.** `reward` in every view (one PK join per `GET` while the switch is on): `ACTIVE` (with the display code), `REDEEMED` (a redemption of the code exists), `EXPIRED`; an active
+  code that cannot be derived any more (rotated secret, a development process with a random one) shows no reward. Commands show an existing reward and never issue.
+- **Costs and edges.** A qualifying account re-attempts on each read while there is no campaign or the limit is reached: plain reads, no lock and no transaction
+  (`PathRewardConnectionsIntegrationTest`: a pool of 3, 8 issuing reads held at the issuer, every GET 200). AI grading takes the rhythm lock before it pays (`AssessmentService`):
+  the ledger may publish a usage notice mid-transaction, and the rhythm writers must hold their lock before the first publication. Codes already issued stay valid when any switch goes off (no revocation).
+- **Tests.** `PathRewardIntegrationTest` (race of reads and of the last milestones → one code, untrusted then trusted, campaign off, hidden milestones, replay, redemption by the recipient
+  and refusal for others, expiry, view states), `PathRewardDailyLimitIntegrationTest`, `PathRewardOffIntegrationTest`, `PathRewardOnboardingOffIntegrationTest`,
+  `PathRewardFailureIntegrationTest`, `PathRewardUnavailableIntegrationTest`, `RewardIssuerTest`, `PersonalPromoCodesTest`, `PromoCampaignHttpTest`.
+- TODO(account-deletion task; owner: Learning's account-purge epic #409): `onboarding_reward` by `account_id`; personal `promo_code` rows follow the promo retention decision
+  ([legal checklist](../../../docs/product/russia-legal-launch-checklist-2026.md)).

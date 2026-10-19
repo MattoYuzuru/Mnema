@@ -1,6 +1,6 @@
 import contract from '../../../../../contracts/onboarding/journey.json';
 import { JourneyAction } from '../../core/onboarding/onboarding.models';
-import { FakeJourneyStore } from './onboarding-test-data';
+import { FakeJourneyStore, RHYTHM_VIEW } from './onboarding-test-data';
 
 const STATES = contract.constants.states;
 const ACTIONS = contract.constants.actions as JourneyAction[];
@@ -55,10 +55,21 @@ describe('the fake journey store', () => {
         expect(store.journey()).toMatchObject({ state: 'PAUSED', finishedAt: null });
     });
 
-    it('answers 409 to the preferences of an account with no journey yet, like the server', async () => {
+    it('takes the preferences of an account with no journey yet and makes its row (version 0 -> 1), like the server since OB-401', async () => {
         const store = storeIn('NOT_OFFERED');
-        await expect(store.setPreferences({ experience: 'NEW' })).resolves.toMatchObject({ status: 'refused' });
-        expect(store.journey()?.experience).toBeNull();
+        await expect(store.setPreferences({ experience: 'NEW' })).resolves.toMatchObject({ status: 'applied' });
+        expect(store.journey()).toMatchObject({ state: 'NOT_OFFERED', experience: 'NEW' });
+        expect(store.rejections).toEqual([]);
+    });
+
+    it('moves the target of the rhythm with the weekly target, and back to the default when it is cleared', async () => {
+        const store = new FakeJourneyStore({}, { rhythm: RHYTHM_VIEW.rhythm });
+        await store.setPreferences({ weeklyTarget: 2 });
+        expect(store.view()?.rhythm?.target).toBe(2);
+        await store.setPreferences({ weeklyTarget: null });
+        expect(store.view()?.rhythm?.target).toBe(3);
+        await store.setPreferences({ experience: 'NEW' });
+        expect(store.view()?.rhythm?.target).toBe(3);
     });
 
     it('rejects a weekly target outside the contract and keeps the journey as it was', async () => {

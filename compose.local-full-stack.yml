@@ -85,6 +85,10 @@ x-learning-environment: &learning-environment
   # LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID and restart Learning (it marks the deck as the template when it starts); production keeps the switch off.
   LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED: ${LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED:-true}
   LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID: ${LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID:-}
+  # The weekly rhythm (OB-401) and the path reward (OB-402) are on locally; production keeps both off. The reward issues nothing until the owner creates and enables
+  # a «Награда за «Путь»» campaign in /manage/promos, and only to a trusted account (verified e-mail, at least 3 days old).
+  LEARNING_ONBOARDING_RHYTHM_ENABLED: ${LEARNING_ONBOARDING_RHYTHM_ENABLED:-true}
+  LEARNING_ONBOARDING_REWARD_ENABLED: ${LEARNING_ONBOARDING_REWARD_ENABLED:-true}
   # Billing (#389) against the owner's T-Bank DEMO terminal; names only, off by default (docs/deploy/selfhost-local.md). The bank cannot reach a
   # local NotificationURL, so a local order is confirmed by the return page's GetState refresh and the reconciler.
   MNEMA_BILLING_CHECKOUT: ${MNEMA_BILLING_CHECKOUT:-OFF}

@@ -3,6 +3,7 @@ package app.mnema.learning.study.session;
 import app.mnema.learning.catalog.item.ItemRevisionVisibility;
 import app.mnema.learning.community.DeckEngagement;
 import app.mnema.learning.onboarding.MilestoneRecorder;
+import app.mnema.learning.onboarding.WeeklyRhythm;
 import app.mnema.learning.moderation.ContentTakedowns;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -60,11 +61,13 @@ class StudySessionRepository {
 
     private final DeckEngagement engagement;
     private final MilestoneRecorder milestones;
+    private final WeeklyRhythm rhythm;
 
-    StudySessionRepository(JdbcClient jdbc, DeckEngagement engagement, MilestoneRecorder milestones) {
+    StudySessionRepository(JdbcClient jdbc, DeckEngagement engagement, MilestoneRecorder milestones, WeeklyRhythm rhythm) {
         this.jdbc = jdbc;
         this.engagement = engagement;
         this.milestones = milestones;
+        this.rhythm = rhythm;
     }
 
     record DeckHead(UUID deckId, UUID ownerId, UUID scopeId, UUID revisionId, long sequence, UUID exercisesRootId,
@@ -631,8 +634,9 @@ class StudySessionRepository {
         // Community/3: the completion of a scheduled session of a copy is an engagement of its source, in this transaction (a non-copy deck costs two primary-key probes).
         if (completed == 1) {
             engagement.studied(session.accountId(), session.sessionId());
-            // «Путь Mnema»: FIRST_SESSION and TWO_DAYS; a replay completes through here too and counts for nothing
+            // «Путь Mnema»: FIRST_SESSION and TWO_DAYS; a replay completes through here too and counts for nothing. The weekly rhythm (OB-401) follows, after the milestones.
             milestones.sessionCompleted(session.accountId(), session.mode().name(), session.localStudyDate());
+            rhythm.sessionCompleted(session.accountId(), session.mode().name(), session.localStudyDate());
         }
     }
 

@@ -24,6 +24,7 @@ import app.mnema.learning.media.MediaStorageUnavailableException;
 import app.mnema.learning.media.MediaUploadConflictException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
+import app.mnema.learning.promo.PromoCampaignActiveException;
 import app.mnema.learning.promo.PromoRejectedException;
 import app.mnema.learning.speech.PayloadTooLargeException;
 import app.mnema.learning.speech.SpeechConsentOutdatedException;
@@ -110,6 +111,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             case VELOCITY -> ApiErrorCode.PROMO_VELOCITY;
         };
         return response(code, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(PromoCampaignActiveException.class)
+    ResponseEntity<Object> handlePromoCampaignActive(PromoCampaignActiveException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.PROMO_CAMPAIGN_ACTIVE, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(AccessForbiddenException.class)

@@ -94,6 +94,10 @@ export class AdminAuditPageComponent implements OnInit {
             PROMO_CREATE: 'Создан промокод',
             PROMO_ENABLE: 'Промокод включён',
             PROMO_DISABLE: 'Промокод выключен',
+            // pending owner approval (S4, OB-402): the journal actions of the reward campaigns for a finished «Путь»
+            PROMO_CAMPAIGN_CREATE: 'Создана кампания награды за «Путь»',
+            PROMO_CAMPAIGN_ENABLE: 'Кампания награды за «Путь» включена',
+            PROMO_CAMPAIGN_DISABLE: 'Кампания награды за «Путь» выключена',
             EVENT_CREATE: 'Создана новость',
             EVENT_REPLACE: 'Изменена новость',
             EVENT_DELETE: 'Удалена новость',

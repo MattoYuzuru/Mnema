@@ -339,6 +339,48 @@ describe('NotificationCenter', () => {
         });
     });
 
+    describe('the reward of a finished «Путь»', () => {
+        const reward = (seq: number): AppNotification => note(seq, { kind: 'PATH_REWARD_READY', route: 'PATH', params: { expiresAt: '2026-10-29T18:41:00Z' } });
+
+        it('toasts it as an ordinary quiet notification with the link to the page, and makes the journey read again for the card and the congratulation', async () => {
+            await signIn(page([note(1)], { readUpto: '1' }));
+            answers(page([reward(2)], { unreadCount: 1, readUpto: '1' }));
+            await settle(IDLE_POLL_MS);
+            expect(toasts.visible().map(toast => [toast.text, toast.link])).toEqual([
+                ['Вы освоили Mnema полностью. Подарок за «Путь» действует до 29 октября, 21:41\u00a0МСК.', { label: 'Открыть «Путь»', commands: ['/profile', 'path'] }]
+            ]);
+            expect(journeyLoad).toHaveBeenCalledExactlyOnceWith({ refresh: true });
+        });
+
+        it('is held through the quiet zone like any other notification, but the journey is read again at once', async () => {
+            await signIn(page([note(1)], { readUpto: '1' }));
+            const quiet = TestBed.inject(QuietZone);
+            quiet.set(true);
+            TestBed.tick();
+            answers(page([reward(2)], { unreadCount: 1, readUpto: '1' }));
+            await settle(IDLE_POLL_MS);
+            expect(toasts.visible()).toEqual([]);
+            expect(toasts.queuedCount()).toBe(1);
+            expect(journeyLoad).toHaveBeenCalledExactlyOnceWith({ refresh: true });
+            quiet.set(false);
+            TestBed.tick();
+            expect(toasts.visible()).toHaveLength(1);
+        });
+
+        it('makes the journey read again while the panel is open, and lists the reward in the inbox with its link', async () => {
+            await signIn(page([reward(2), note(1)], { unreadCount: 2 }));
+            expect(center.entries()[0].presented.link?.commands).toEqual(['/profile', 'path']);
+            center.open();
+            api.list.mockReturnValue(of(page([reward(2), note(1)], { readUpto: '0' })));
+            await settle();
+            answers(page([reward(3)], { unreadCount: 1, readUpto: '2' }));
+            api.setReadCursor.mockReturnValue(of({ readUpto: '3', unreadCount: 0 }));
+            await settle(IDLE_POLL_MS);
+            expect(toasts.visible()).toEqual([]);
+            expect(journeyLoad).toHaveBeenCalledTimes(1);
+        });
+    });
+
     it('opening the panel reloads, then moves the read cursor once with the newest seq on screen', async () => {
         await signIn(page([note(42), note(41)], { unreadCount: 2, readUpto: '40' }));
         api.list.mockReturnValueOnce(of(page([note(42), note(41)], { unreadCount: 2, readUpto: '40' })));

@@ -13,7 +13,10 @@ import {
     JOURNEY_ACTIONS,
     JOURNEY_STATES,
     JourneyCommand,
+    OnboardingProtocolError,
     PreferencesCommand,
+    REWARD_OFFER_TYPES,
+    REWARD_STATES,
     SAMPLE_FREE_AI_CHECKS,
     STEP_BRANCH,
     STEP_KEYS,
@@ -50,6 +53,7 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
             expect([...EXPERIENCES]).toEqual(contract.constants.experiences);
             expect(WEEKLY_TARGET.min).toBe(contract.constants.weeklyTarget.min);
             expect(WEEKLY_TARGET.max).toBe(contract.constants.weeklyTarget.max);
+            expect(WEEKLY_TARGET.default).toBe(contract.constants.weeklyTarget.default);
             expect([...WEEKLY_TARGET.surveyOptions]).toEqual(contract.constants.weeklyTarget.surveyOptions);
         });
 
@@ -59,6 +63,11 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
                 expect(view.sampleDeck.freeChecksLeft, name).toBeGreaterThanOrEqual(0);
                 expect(view.sampleDeck.freeChecksLeft, name).toBeLessThanOrEqual(contract.constants.sampleDeck.freeAiChecks);
             }
+        });
+
+        it('has the reward states and offer types of the contract', () => {
+            expect([...REWARD_STATES]).toEqual(contract.constants.reward.states);
+            expect([...REWARD_OFFER_TYPES]).toEqual(contract.constants.reward.offers);
         });
 
         it('takes the step and branch rules of every action from the transition table', () => {
@@ -90,6 +99,173 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
             expect(() => parseOnboardingView({ ...contract.views.offered, extra: 1 })).toThrow();
             expect(() => parseOnboardingView({ ...contract.views.disabled, journey: contract.views.offered.journey })).toThrow();
             expect(() => parseOnboardingView({ ...contract.views.offered, journey: null })).toThrow();
+        });
+    });
+
+    describe('rhythm', () => {
+        const week = contract.views.rhythmWeek;
+        const rhythm = week.rhythm;
+        const viewWith = (patch: Record<string, unknown>): unknown => ({ ...week, rhythm: { ...rhythm, ...patch } });
+
+        it('parses the week of the fixture: the Monday, today and the studied days of the week, ascending, with the weeks in rhythm', () => {
+            const parsed = parseOnboardingView(week);
+            expect(parsed.rhythm).toEqual({ weekStart: '2026-10-19', today: '2026-10-22', target: 5, days: ['2026-10-19', '2026-10-20', '2026-10-22'], weeksMet: 2 });
+            expect(parsed.rhythm?.target).toBe(parsed.journey?.weeklyTarget);
+        });
+
+        it('takes no rhythm from the views whose flag is off', () => {
+            for (const [name, view] of Object.entries(contract.views).filter(([name]) => name !== 'rhythmWeek' && !name.startsWith('reward'))) expect(parseOnboardingView(view).rhythm, name).toBeNull();
+        });
+
+        it('accepts the edges: a week without a session, a full week, today on Monday and on Sunday, a target of one and seven', () => {
+            expect(parseOnboardingView(viewWith({ days: [] })).rhythm?.days).toEqual([]);
+            const all = ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25'];
+            expect(parseOnboardingView(viewWith({ days: all, target: 7, today: '2026-10-25' })).rhythm?.days).toEqual(all);
+            expect(parseOnboardingView(viewWith({ today: '2026-10-19', days: ['2026-10-19'], target: 1, weeksMet: 0 })).rhythm?.target).toBe(1);
+        });
+
+        it.each<[string, Record<string, unknown>]>([
+            ['a week that does not start on a Monday', { weekStart: '2026-10-20' }],
+            ['a week start that is not a date', { weekStart: '2026-02-30' }],
+            ['a week start with a time', { weekStart: '2026-10-19T00:00:00Z' }],
+            ['today before the week', { today: '2026-10-18' }],
+            ['today after the week', { today: '2026-10-26' }],
+            ['today that is not a date', { today: 'today' }],
+            ['a studied day before the week', { days: ['2026-10-18', '2026-10-19'] }],
+            ['a studied day after the week', { days: ['2026-10-19', '2026-10-26'] }],
+            ['days that descend', { days: ['2026-10-22', '2026-10-20'] }],
+            ['a day twice', { days: ['2026-10-20', '2026-10-20'] }],
+            ['days that are not a list', { days: '2026-10-20' }],
+            ['more than seven days', { days: ['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25', '2026-10-25'] }],
+            ['a target of zero', { target: 0 }],
+            ['a target of eight', { target: 8 }],
+            ['a fractional target', { target: 2.5 }],
+            ['a target as text', { target: '5' }],
+            ['negative weeks in rhythm', { weeksMet: -1 }],
+            ['fractional weeks in rhythm', { weeksMet: 1.5 }],
+            ['weeks in rhythm as text', { weeksMet: '2' }],
+            ['a member the contract does not have', { streak: 4 }]
+        ])('refuses %s as a protocol error', (_name, patch) => {
+            expect(() => parseOnboardingView(viewWith(patch))).toThrow(OnboardingProtocolError);
+        });
+
+        it.each(['weekStart', 'today', 'target', 'days', 'weeksMet'])('refuses a rhythm without %s', key => {
+            const { [key]: _removed, ...rest } = rhythm as Record<string, unknown>;
+            expect(() => parseOnboardingView({ ...week, rhythm: rest })).toThrow(OnboardingProtocolError);
+        });
+
+        it('refuses a rhythm that is not an object', () => {
+            for (const value of [[], 'week', 3, true]) expect(() => parseOnboardingView({ ...week, rhythm: value })).toThrow(OnboardingProtocolError);
+        });
+
+        it('sends the preferences of an account without a tour (row version 0) as they are, and the client accepts them', async () => {
+            const command = contract.commands.preferencesWithoutTour;
+            expect(command.rowVersion).toBe('0');
+            expect(() => validatePreferencesCommand(command)).not.toThrow();
+            const result = firstValueFrom(api.preferences(command));
+            const request = http.expectOne('/api/onboarding/preferences');
+            expect(request.request.body).toEqual(command);
+            request.flush(week, { headers });
+            await expect(result).resolves.toMatchObject({ view: { rhythm: { target: 5 } } });
+        });
+    });
+
+    describe('reward', () => {
+        const ready = contract.views.rewardReady;
+        const reward = ready.reward;
+        const viewWith = (patch: Record<string, unknown>): unknown => ({ ...ready, reward: { ...reward, ...patch } });
+        const offerWith = (patch: Record<string, unknown>): unknown => viewWith({ offer: { ...reward.offer, ...patch } });
+
+        it('parses the active reward of the fixture with its code, its discount and the end of the offer', () => {
+            expect(parseOnboardingView(ready).reward).toEqual({
+                state: 'ACTIVE', code: 'K7PM-W2QX-H9RT', offer: { type: 'DISCOUNT_PERCENT', percent: 10, plan: null, days: null },
+                issuedAt: '2026-10-22T18:41:00Z', expiresAt: '2026-10-29T18:41:00Z'
+            });
+        });
+
+        it('parses the redeemed reward without a code and its tier offer', () => {
+            expect(parseOnboardingView(contract.views.rewardRedeemed).reward).toEqual({
+                state: 'REDEEMED', code: null, offer: { type: 'TIER_DAYS', percent: null, plan: 'PLUS', days: 30 },
+                issuedAt: '2026-10-22T18:41:00Z', expiresAt: '2026-10-29T18:41:00Z'
+            });
+        });
+
+        it('takes no reward from the views that carry none', () => {
+            for (const [name, view] of Object.entries(contract.views).filter(([name]) => !name.startsWith('reward'))) {
+                expect(view.reward, name).toBeNull();
+                expect(parseOnboardingView(view).reward, name).toBeNull();
+            }
+        });
+
+        it('accepts an expired reward, a discount for one plan, and the bounds of both offers', () => {
+            expect(parseOnboardingView(viewWith({ state: 'EXPIRED', code: null })).reward?.state).toBe('EXPIRED');
+            expect(parseOnboardingView(offerWith({ plan: 'PRO' })).reward?.offer).toMatchObject({ plan: 'PRO', percent: 10 });
+            expect(parseOnboardingView(offerWith({ percent: 1 })).reward?.offer.percent).toBe(1);
+            expect(parseOnboardingView(offerWith({ percent: 90 })).reward?.offer.percent).toBe(90);
+            const tier = { type: 'TIER_DAYS', percent: null, plan: 'PRO' };
+            expect(parseOnboardingView(offerWith({ ...tier, days: 1 })).reward?.offer.days).toBe(1);
+            expect(parseOnboardingView(offerWith({ ...tier, days: 366 })).reward?.offer.days).toBe(366);
+        });
+
+        it.each<[string, Record<string, unknown>]>([
+            ['a state outside the contract', { state: 'GRANTED' }],
+            ['an active reward without a code', { code: null }],
+            ['a redeemed reward that still carries its code', { state: 'REDEEMED' }],
+            ['an expired reward that still carries its code', { state: 'EXPIRED' }],
+            ['a code that is not text', { code: 12345678 }],
+            ['a code with a space', { code: 'K7PM W2QX' }],
+            ['a code that is too short', { code: 'K7PM-W2' }],
+            ['a code that is too long', { code: 'K7PM-W2QX-H9RT-K7PM-W2QX-H9RT-K' }],
+            ['an end that is the beginning', { expiresAt: '2026-10-22T18:41:00Z' }],
+            ['an end before the beginning', { expiresAt: '2026-10-22T18:40:00Z' }],
+            ['an end that is not a timestamp', { expiresAt: 'next week' }],
+            ['a beginning that is not a timestamp', { issuedAt: '2026-10-22' }],
+            ['an offer that is not an object', { offer: 'DISCOUNT_PERCENT' }],
+            ['a member the contract does not have', { score: 1 }],
+            ['no offer', { offer: undefined }]
+        ])('refuses a reward with %s as a protocol error', (_name, patch) => {
+            expect(() => parseOnboardingView(viewWith(patch))).toThrow(OnboardingProtocolError);
+        });
+
+        it.each<[string, Record<string, unknown>]>([
+            ['a type outside the contract', { type: 'GIFT_CARD' }],
+            ['a discount of zero', { percent: 0 }],
+            ['a discount over ninety', { percent: 91 }],
+            ['a fractional discount', { percent: 10.5 }],
+            ['a discount as text', { percent: '10' }],
+            ['a discount without a percent', { percent: null }],
+            ['a discount that carries days', { days: 7 }],
+            ['a plan outside the contract', { plan: 'MAX' }],
+            ['a member the contract does not have', { currency: 'RUB' }]
+        ])('refuses a discount with %s as a protocol error', (_name, patch) => {
+            expect(() => parseOnboardingView(offerWith(patch))).toThrow(OnboardingProtocolError);
+        });
+
+        it.each<[string, Record<string, unknown>]>([
+            ['no plan', { plan: null }],
+            ['no days', { days: null }],
+            ['zero days', { days: 0 }],
+            ['more than 366 days', { days: 367 }],
+            ['fractional days', { days: 1.5 }],
+            ['a percent', { percent: 10 }]
+        ])('refuses a tier with %s as a protocol error', (_name, patch) => {
+            expect(() => parseOnboardingView(offerWith({ type: 'TIER_DAYS', percent: null, plan: 'PLUS', days: 30, ...patch }))).toThrow(OnboardingProtocolError);
+        });
+
+        it.each(['state', 'code', 'offer', 'issuedAt', 'expiresAt'])('refuses a reward without %s', key => {
+            const { [key]: _removed, ...rest } = reward as Record<string, unknown>;
+            expect(() => parseOnboardingView({ ...ready, reward: rest })).toThrow(OnboardingProtocolError);
+        });
+
+        it.each(['type', 'percent', 'plan', 'days'])('refuses an offer without %s', key => {
+            const { [key]: _removed, ...rest } = reward.offer as Record<string, unknown>;
+            expect(() => parseOnboardingView({ ...ready, reward: { ...reward, offer: rest } })).toThrow(OnboardingProtocolError);
+        });
+
+        it('refuses a view that lacks the reward member altogether, and a reward that is not an object', () => {
+            const { reward: _removed, ...rest } = ready;
+            expect(() => parseOnboardingView(rest)).toThrow(OnboardingProtocolError);
+            for (const value of [[], 'ACTIVE', 7, true]) expect(() => parseOnboardingView({ ...ready, reward: value })).toThrow(OnboardingProtocolError);
         });
     });
 

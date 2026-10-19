@@ -88,7 +88,7 @@ public class PromoAdminService {
         String normalized = PromoCodes.normalize(command.vanity()).orElseThrow(() -> InvalidRequestException.because("code"));
         PromoRepository.Code row = new PromoRepository.Code(UUID.randomUUID(), PromoCodes.hint(normalized), command.type(), command.plan(),
                 command.days(), command.months(), command.percent(), from, command.validUntil(), command.maxRedemptions(),
-                command.oncePerAccount(), command.channel(), true, now, admin);
+                command.oncePerAccount(), command.channel(), true, now, admin, null, null);
         if (!repository.insertCode(row, PromoCodes.hash(settings.hashSecret, normalized))) throw InvalidRequestException.because("code_taken");
         log.info("promo code created code_id={} admin_id={} type={} max_redemptions={}", row.codeId(), admin, row.type(), row.maxRedemptions());
         ObjectNode view = view(row, 0);

@@ -136,7 +136,9 @@ access and deletion rules before an account-purge implementation. Inventory:
 - `promo_attempt`, `promo_popup_state`, `promo_discount` and `promo_redemption`
   linked by `owner_id`, including campaign choices, discounts, redemption audit
   and address/device hashes;
-- the administrator identity in `promo_code.created_by`;
+- the administrator identity in `promo_code.created_by` and `promo_campaign.created_by`;
+- personal codes of a campaign (OB-402, V76): `promo_code.recipient_id` and `onboarding_reward`
+  (`account_id`, campaign, code, issue and expiry times) — the issuance audit of the path reward;
 - promo-scoped `command_receipt` rows (`command_scope='promo'`): `actor_id`, stored
   `result`, keyed-derived fingerprint and operation timestamps.
 

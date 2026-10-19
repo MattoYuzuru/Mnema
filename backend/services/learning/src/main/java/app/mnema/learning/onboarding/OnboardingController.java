@@ -26,8 +26,8 @@ import java.util.UUID;
 /**
  * The first-entry journey ({@code GET /api/onboarding}, {@code PUT /api/onboarding/journey}, {@code PUT /api/onboarding/preferences}, {@code POST /api/onboarding/sample-deck}; contract
  * {@code contracts/onboarding/journey.json}). Reading needs {@code learning.read}, writing {@code learning.write}: the blanket rule of the security chain; the
- * owner is the token subject. Every answer is {@code private, no-store} and carries a strong {@code ETag}, the hash of the canonical JSON of the view, so the
- * tag changes exactly when the view does; a {@code GET} whose {@code If-None-Match} names it is a 304.
+ * owner is the token subject; its {@code zoneinfo} claim is the zone of the rhythm's «today» in every view. Every answer is {@code private, no-store} and carries a strong
+ * {@code ETag}, the hash of the canonical JSON of the view, so the tag changes exactly when the view does; a {@code GET} whose {@code If-None-Match} names it is a 304.
  */
 @RestController
 @RequestMapping(value = "/onboarding", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -42,11 +42,12 @@ public final class OnboardingController {
 
     @GetMapping
     ResponseEntity<JsonNode> read(@AuthenticationPrincipal Jwt identity, HttpServletRequest request) {
-        // The anti-abuse signal Identity reported for this request; unknown (absent claim) is not new.
-        boolean newAccount = Boolean.TRUE.equals(IdentityClaims.signals(request).newAccount());
+        // The anti-abuse signals Identity reported for this request; unknown (absent claim) is not new and not trusted (the path reward is issued only to a trusted account).
+        IdentityClaims.AccountSignals signals = IdentityClaims.signals(request);
+        boolean newAccount = Boolean.TRUE.equals(signals.newAccount());
         UUID owner = PromoBodies.owner(identity);
-        // The flag is checked here, before the transactional read: a switched-off tour must not cost a transaction or a query.
-        JsonNode view = service.enabled() ? service.read(owner, newAccount) : service.disabledView();
+        // The flag is checked here, before the read: a switched-off tour must not cost a transaction or a query. The read issues the path reward before it opens its own transaction.
+        JsonNode view = service.enabled() ? service.read(owner, newAccount, identity.getClaimAsString("zoneinfo"), signals.trusted()) : service.disabledView();
         String tag = etag(view);
         if (matches(request.getHeaders(HttpHeaders.IF_NONE_MATCH), tag)) {
             return ResponseEntity.status(HttpStatus.NOT_MODIFIED).headers(headers(tag)).build();
@@ -58,14 +59,14 @@ public final class OnboardingController {
     ResponseEntity<JsonNode> journey(@AuthenticationPrincipal Jwt identity, InputStream body) {
         UUID owner = PromoBodies.owner(identity);
         service.requireEnabled();
-        return answer(service.journey(owner, OnboardingCommands.journey(body)));
+        return answer(service.journey(owner, OnboardingCommands.journey(body), identity.getClaimAsString("zoneinfo")));
     }
 
     @PutMapping(value = "/preferences", consumes = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<JsonNode> preferences(@AuthenticationPrincipal Jwt identity, InputStream body) {
         UUID owner = PromoBodies.owner(identity);
         service.requireEnabled();
-        return answer(service.preferences(owner, OnboardingCommands.preferences(body)));
+        return answer(service.preferences(owner, OnboardingCommands.preferences(body), identity.getClaimAsString("zoneinfo")));
     }
 
     /** The sample deck: 201 with the new copy, 200 with the live one. A switched-off tour or sample deck is refused before the body is read. */
@@ -73,7 +74,8 @@ public final class OnboardingController {
     ResponseEntity<JsonNode> sampleDeck(@AuthenticationPrincipal Jwt identity, InputStream body, HttpServletRequest request) {
         UUID owner = PromoBodies.owner(identity);
         service.requireSampleDeck();
-        OnboardingService.SampleResult result = service.sampleDeck(owner, OnboardingCommands.sampleDeck(body), IdentityClaims.signals(request));
+        OnboardingService.SampleResult result = service.sampleDeck(owner, OnboardingCommands.sampleDeck(body), IdentityClaims.signals(request),
+                identity.getClaimAsString("zoneinfo"));
         var response = ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK).headers(headers(etag(result.view())));
         if (result.replayed()) response.header("Idempotency-Replayed", "true");
         return response.body(result.view());

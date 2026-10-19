@@ -18,7 +18,8 @@ export type Branch = typeof BRANCHES[number];
 export const EXPERIENCES = ['NEW', 'FAMILIAR', 'CONFIDENT'] as const;
 export type Experience = typeof EXPERIENCES[number];
 
-export const WEEKLY_TARGET = { min: 1, max: 7, surveyOptions: [2, 3, 5, 7] } as const;
+/** The weekly target in days: the range, the options of the survey, and what the rhythm uses while the learner has not chosen (`constants.weeklyTarget`). */
+export const WEEKLY_TARGET = { min: 1, max: 7, default: 3, surveyOptions: [2, 3, 5, 7] } as const;
 
 /** The closed registry of step keys and the branch each belongs to (`null`: shared by every branch). */
 export const STEP_BRANCH = {
@@ -83,16 +84,59 @@ export interface SampleDeck {
 }
 
 /**
+ * The weekly rhythm of the account (`rhythm` of the view, OB-401, `contracts/onboarding/journey.json` `views.rhythmWeek`). `weekStart` is
+ * the Monday of the ISO week of `today`, the learner's local date; `days` are the distinct local dates of the week with a completed
+ * SCHEDULED or PRACTICE session, ascending; `target` is 1–7. The week is met when `days.length` reaches `target` (the client derives it, there
+ * is no flag). `weeksMet` is shown in the profile only.
+ */
+export interface Rhythm {
+    readonly weekStart: string;
+    readonly today: string;
+    readonly target: number;
+    readonly days: readonly string[];
+    readonly weeksMet: number;
+}
+
+export const REWARD_STATES = ['ACTIVE', 'REDEEMED', 'EXPIRED'] as const;
+export type RewardState = typeof REWARD_STATES[number];
+export const REWARD_OFFER_TYPES = ['DISCOUNT_PERCENT', 'TIER_DAYS'] as const;
+export type RewardOfferType = typeof REWARD_OFFER_TYPES[number];
+export const REWARD_PLANS = ['PLUS', 'PRO'] as const;
+export type RewardPlan = typeof REWARD_PLANS[number];
+/** The bounds of the offer a campaign can make (`contracts/usage/promo.json` `createPromoCampaign`): a discount of 1–90 %, a tier for 1–366 days. */
+export const REWARD_BOUNDS = { percent: { min: 1, max: 90 }, days: { min: 1, max: 366 } } as const;
+
+/** What the reward gives: a percent off (optionally for one plan) or a plan for some days. The members that do not belong to the type are `null`. */
+export type RewardOffer =
+    | { readonly type: 'DISCOUNT_PERCENT'; readonly percent: number; readonly plan: RewardPlan | null; readonly days: null }
+    | { readonly type: 'TIER_DAYS'; readonly percent: null; readonly plan: RewardPlan; readonly days: number };
+
+/**
+ * The reward of a finished «Путь» (OB-402, `reward` of the view, `contracts/onboarding/journey.json`): a personal promo code the server issued
+ * once. `code` (display form, with dashes) is present only while `ACTIVE`; `expiresAt` is the end of its validity on the server, shown as a date
+ * and a time, never as a countdown.
+ */
+export interface PathReward {
+    readonly state: RewardState;
+    readonly code: string | null;
+    readonly offer: RewardOffer;
+    readonly issuedAt: string;
+    readonly expiresAt: string;
+}
+
+/**
  * The view of the account's onboarding. While `enabled` is false `journey` is `null`, `milestones` is `[]` and `path` is `null`, and the
  * client shows neither «Начало пути», the tour nor «Путь». `milestones` lists the visible milestones in registry order and `path` their
- * count (`contracts/onboarding/milestones.json`). `rhythm` is reserved for OB-E4 (`null` until then) and kept as received.
+ * count (`contracts/onboarding/milestones.json`). `rhythm` is the weekly rhythm, `null` while `learning.onboarding.rhythm.enabled` is off. `reward` is the
+ * reward of the finished path, `null` while `learning.onboarding.reward.enabled` is off or the account has none.
  */
 export interface OnboardingView {
     readonly enabled: boolean;
     readonly journey: Journey | null;
     readonly milestones: readonly Milestone[];
     readonly path: PathSummary | null;
-    readonly rhythm: unknown;
+    readonly rhythm: Rhythm | null;
+    readonly reward: PathReward | null;
     readonly sampleDeck: SampleDeck;
 }
 

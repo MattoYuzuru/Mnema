@@ -332,7 +332,10 @@ shows the same disclosure state. A pair check is durable and idempotent and neve
 
 Session mode is immutable. `SCHEDULED` presentations may create current-epoch
 exposure when issued and evidence when submitted. `REPLAY`/`PRACTICE` never write
-canonical exposure, evidence, `StudyState`, due, streak or experiment outcome.
+canonical exposure, evidence, `StudyState`, due, streak (`correctStreak`) or experiment outcome. The onboarding
+weekly rhythm (OB-401, [`contracts/onboarding`](../onboarding/README.md)) is product statistics outside this
+state: a completed `PRACTICE` session counts a rhythm day like a `SCHEDULED` one (`REPLAY` does not), with no
+canonical credit.
 
 ## Attempt and idempotency semantics
 

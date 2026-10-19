@@ -1,4 +1,5 @@
 import { JourneyStore } from '../../core/onboarding/journey.store';
+import { Rhythm } from '../../core/onboarding/onboarding.models';
 import { isSampleDeck, sampleCheckHint } from '../../core/onboarding/sample-deck';
 import { TourEvents } from '../../core/onboarding/tour-events';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
@@ -17,6 +18,7 @@ import { LearnerExerciseComponent, PairChecker } from './learner-exercise.compon
 import { LearnerFeedbackComponent, feedbackTitle } from './learner-feedback.component';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/capabilities-api.service';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
+import { RhythmSummaryComponent } from '../onboarding/rhythm-summary.component';
 import { PromoPopupService } from '../promo/promo-popup.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
@@ -32,6 +34,7 @@ import {
     ScheduledStudyPreset,
     SelfCheckAttempt,
     StudyPresentation,
+    StudyMode,
     StudyResponse,
     StudySession,
     StudyStartIntent,
@@ -51,7 +54,7 @@ const TASK_OPEN: readonly Phase[] = ['answering', 'revealed', 'submitting', 'sel
 @Component({
     selector: 'app-study-session-page',
     imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerFeedbackComponent, NewBadgeComponent, AutoLoadComponent,
-        AssessmentWaitingComponent, AssessmentSelfCheckComponent],
+        AssessmentWaitingComponent, AssessmentSelfCheckComponent, RhythmSummaryComponent],
     providers: [StudyAssessmentFlow],
     templateUrl: './study-session-page.component.html',
     styleUrl: './study-session-page.component.css',
@@ -96,6 +99,19 @@ export class StudySessionPageComponent {
     readonly practiceOrder = signal<PracticeOrder>('SEEDED');
     readonly scheduledPreset = signal<ScheduledStudyPreset>('STANDARD');
     readonly supportLoading = signal(true);
+    /** The journey view was read again after the completion of this session: the rhythm block of the summary may show. */
+    readonly rhythmReady = signal(false);
+    /**
+     * The rhythm block of the summary: once the view was read again after the completion, with onboarding and the rhythm on, and only when
+     * the local study date of the session just completed is among the studied days (an older view, or a week that does not hold the day, is
+     * not drawn rather than drawn with a wrong number).
+     */
+    readonly sessionRhythm = computed<Rhythm | null>(() => {
+        const view = this.rhythmReady() ? this.journey.view() : null;
+        const rhythm = view?.enabled === true ? view.rhythm : null;
+        const studiedOn = this.session()?.localStudyDate;
+        return rhythm !== null && studiedOn !== undefined && rhythm.days.includes(studiedOn) ? rhythm : null;
+    });
     readonly current = computed(() => this.session()?.presentations[0] ?? null);
     /** The text of the answer in assessment, `null` when this tab no longer holds it (a reload after it was sent). */
     readonly submittedText = computed(() => { const value = this.submitted(); return value?.kind === 'TEXT' ? value.text : null; });
@@ -159,6 +175,7 @@ export class StudySessionPageComponent {
     private disputeOutcomeUnknown = false;
     private assessmentStartedAt: number | null = null;
     private pollCount = 0;
+    private rhythmRound = 0;
 
     constructor() {
         // A task is open (answering, revealing, sending): new toasts wait. Feedback, the end of the session and
@@ -482,7 +499,7 @@ export class StudySessionPageComponent {
             this.phase.set('empty'); this.recovery.clear(); this.loadSupportingState(); return;
         }
         if (session.status === 'COMPLETE') {
-            this.phase.set('complete'); this.recovery.clear(); this.loadSupportingState();
+            this.phase.set('complete'); this.recovery.clear(); this.loadSupportingState(); this.refreshRhythm(session.mode);
             return;
         }
         if (session.presentations.length === 0) {
@@ -687,6 +704,20 @@ export class StudySessionPageComponent {
         this.deckPreparing.set(code === 'DECK_PREPARING');
         this.message.set(code === 'RESOURCE_NOT_FOUND' ? 'Колода или сессия недоступна этому аккаунту.'
             : code === 'DECK_PREPARING' ? 'Колода ещё готовится. Загляните сюда позже.' : fallback);
+    }
+
+    /**
+     * The weekly rhythm counts the session that has just been completed (OB-401), so the journey view is read again; the block of the
+     * summary appears when that answer is here and not before (no spinner, nothing waits on it). A replay does not count, and a view that
+     * could not be read shows nothing.
+     */
+    private refreshRhythm(mode: StudyMode): void {
+        const round = ++this.rhythmRound;
+        this.rhythmReady.set(false);
+        if (mode === 'REPLAY') return;
+        void this.journey.load({ refresh: true }).then(() => {
+            if (round === this.rhythmRound && this.journey.error() !== 'load') this.rhythmReady.set(true);
+        });
     }
 
     private loadSupportingState(): void {

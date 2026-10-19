@@ -14,6 +14,7 @@ import { TourPauseComponent } from '../../shared/tour-pause.component';
 import { FinaleComponent } from './finale.component';
 import { FirstEntryComponent } from './first-entry.component';
 import { QuestHostComponent } from './quest-host.component';
+import { RewardCongratulationComponent } from './reward-congratulation.component';
 import { OnboardingFlow } from './onboarding-flow.service';
 
 /** How long a surface that waits for another modal dialog to close looks again, in ms. */
@@ -22,16 +23,17 @@ const MODAL_RECHECK_MS = 1_000;
 /**
  * The place of the onboarding in the shell: loads the journey once per entry, opens the first entry when the journey asks for it and
  * the attention coordinator and the page allow, picks up a paused tour, and draws the surfaces the tour has beyond the spotlight: the
- * finale and the offer of «Своя колода». Mounted for learners only (not on the admin host); a guest has no journey, and nothing here
+ * finale and the offer of «Своя колода», and the one-time congratulation for a finished «Путь» with its reward. Mounted for learners only (not on the admin host); a guest has no journey, and nothing here
  * ever blocks a page: without an answer from the server there is simply no onboarding.
  */
 @Component({
     selector: 'app-onboarding-host',
-    imports: [FirstEntryComponent, FinaleComponent, QuestHostComponent, TourNudgeComponent, TourPauseComponent],
+    imports: [FirstEntryComponent, FinaleComponent, QuestHostComponent, RewardCongratulationComponent, TourNudgeComponent, TourPauseComponent],
     template: `
       <app-first-entry />
       <app-finale />
       <app-quest-host />
+      <app-reward-congratulation />
       @if (flow.pausedCard() !== null && flow.card() === null && !engine.active() && !studying()) {
         <app-tour-pause (resumed)="flow.resumeSurface()" />
       }

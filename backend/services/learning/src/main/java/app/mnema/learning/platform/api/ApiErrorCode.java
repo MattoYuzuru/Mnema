@@ -125,6 +125,11 @@ enum ApiErrorCode {
             "Promo code unavailable",
             "Promo codes cannot be redeemed from this network right now."
     ),
+    PROMO_CAMPAIGN_ACTIVE(
+            HttpStatus.CONFLICT,
+            "Promo campaign already enabled",
+            "Another promo campaign of this type is enabled; switch it off first."
+    ),
     ONBOARDING_TRANSITION(
             HttpStatus.CONFLICT,
             "Journey transition not allowed",

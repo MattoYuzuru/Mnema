@@ -18,7 +18,15 @@ import {
     OnboardingRead,
     OnboardingReadResult,
     OnboardingView,
+    PathReward,
     PreferencesCommand,
+    REWARD_BOUNDS,
+    REWARD_OFFER_TYPES,
+    REWARD_PLANS,
+    REWARD_STATES,
+    Rhythm,
+    RewardOffer,
+    RewardPlan,
     SAMPLE_FREE_AI_CHECKS,
     SampleDeck,
     SampleDeckCommand,
@@ -38,12 +46,19 @@ import {
     isMilestoneKey,
     milestoneDefinition
 } from './path.models';
+import { isInWeek, isIsoDate, isMonday } from './rhythm-format';
 
 const ROW_VERSION = /^(?:0|[1-9][0-9]{0,18})$/u;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const MAX_MILESTONES = 100;
-const VIEW_KEYS = ['enabled', 'journey', 'milestones', 'path', 'rhythm', 'sampleDeck'];
+const VIEW_KEYS = ['enabled', 'journey', 'milestones', 'path', 'rhythm', 'reward', 'sampleDeck'];
+const REWARD_KEYS = ['state', 'code', 'offer', 'issuedAt', 'expiresAt'];
+const REWARD_OFFER_KEYS = ['type', 'percent', 'plan', 'days'];
+/** The display form of a personal code: letters and digits, in groups with dashes; without the dashes it is 8–24 characters (the redemption's normal form). */
+const REWARD_CODE = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/u;
+const RHYTHM_KEYS = ['weekStart', 'today', 'target', 'days', 'weeksMet'];
+const RHYTHM_WEEK_DAYS = 7;
 const JOURNEY_KEYS = ['state', 'eligible', 'autoOffer', 'tourVersion', 'branch', 'stepKey', 'experience', 'weeklyTarget', 'offeredAt', 'finishedAt',
     'replayCount', 'rowVersion'];
 
@@ -170,6 +185,71 @@ function parseJourney(value: unknown): Journey {
     };
 }
 
+/**
+ * `rhythm` of the view: `null`, or the week of the contract. The dates are real calendar dates in ISO form, `weekStart` is a Monday, `today`
+ * and every studied day lie in the seven days from it, the days are ascending and without a repeat, the target is 1–7 and `weeksMet` a
+ * count. Anything else is a protocol error, like the rest of the view.
+ */
+function parseRhythm(value: unknown): Rhythm {
+    const body = exact(value, RHYTHM_KEYS);
+    const weekStart = body['weekStart'];
+    const today = body['today'];
+    if (!isIsoDate(weekStart) || !isMonday(weekStart)) throw protocol('The week must start on a Monday.');
+    if (!isIsoDate(today) || !isInWeek(weekStart, today)) throw protocol('Today is outside the week.');
+    const listed = body['days'];
+    if (!Array.isArray(listed) || listed.length > RHYTHM_WEEK_DAYS) throw protocol('Invalid days.');
+    const days = listed.map((day): string => {
+        if (!isIsoDate(day) || !isInWeek(weekStart, day)) throw protocol('A studied day is outside the week.');
+        return day;
+    });
+    // ISO dates order as text, so ascending and unique is strictly increasing.
+    if (days.some((day, index) => index > 0 && day <= days[index - 1])) throw protocol('The days are not ascending and distinct.');
+    return { weekStart, today, target: weeklyTarget(body['target']), days, weeksMet: count(body['weeksMet']) };
+}
+
+function boundedInteger(value: unknown, bounds: { readonly min: number; readonly max: number }): number {
+    const number = count(value, bounds.min);
+    if (number > bounds.max) throw protocol('Number out of range.');
+    return number;
+}
+
+function mustBeNull(value: unknown): null {
+    if (value !== null) throw protocol('The member does not belong to this offer.');
+    return null;
+}
+
+function parseRewardOffer(value: unknown): RewardOffer {
+    const body = exact(value, REWARD_OFFER_KEYS);
+    const plan = nullable(body['plan'], item => oneOf<RewardPlan>(item, REWARD_PLANS));
+    if (oneOf(body['type'], REWARD_OFFER_TYPES) === 'DISCOUNT_PERCENT') {
+        return { type: 'DISCOUNT_PERCENT', percent: boundedInteger(body['percent'], REWARD_BOUNDS.percent), plan, days: mustBeNull(body['days']) };
+    }
+    // A tier for some days names its plan.
+    if (plan === null) throw protocol('A tier offer needs a plan.');
+    return { type: 'TIER_DAYS', percent: mustBeNull(body['percent']), plan, days: boundedInteger(body['days'], REWARD_BOUNDS.days) };
+}
+
+function rewardCode(value: unknown): string {
+    const normalized = typeof value === 'string' ? value.replace(/-/gu, '') : '';
+    if (typeof value !== 'string' || !REWARD_CODE.test(value) || normalized.length < 8 || normalized.length > 24) throw protocol('Invalid code.');
+    return value;
+}
+
+/**
+ * `reward` of the view: `null`, or the personal code of the finished path. The code is present exactly while the reward is `ACTIVE` (it is
+ * never kept for a redeemed or an expired one), the offer carries only the members of its type, and the offer ends after it was issued.
+ */
+function parseReward(value: unknown): PathReward {
+    const body = exact(value, REWARD_KEYS);
+    const state = oneOf(body['state'], REWARD_STATES);
+    const code = nullable(body['code'], rewardCode);
+    if ((state === 'ACTIVE') !== (code !== null)) throw protocol('The code belongs to an active reward only.');
+    const issuedAt = instant(body['issuedAt']);
+    const expiresAt = instant(body['expiresAt']);
+    if (Date.parse(expiresAt) <= Date.parse(issuedAt)) throw protocol('The reward ends before it begins.');
+    return { state, code, offer: parseRewardOffer(body['offer']), issuedAt, expiresAt };
+}
+
 function parseSampleDeck(value: unknown): SampleDeck {
     const body = exact(value, ['available', 'deckId', 'updateAvailable', 'freeChecksLeft']);
     const deckId = nullable(body['deckId'], item => {
@@ -244,10 +324,10 @@ export function parseOnboardingView(value: unknown): OnboardingView {
     const journey = nullable(body['journey'], parseJourney);
     // Disabled means no tour state at all; enabled always has a journey (`NOT_OFFERED` when there is no row).
     if (enabled !== (journey !== null)) throw protocol('The journey must be present exactly when onboarding is enabled.');
-    const rhythm = body['rhythm'];
-    if (rhythm !== null && (typeof rhythm !== 'object' || Array.isArray(rhythm))) throw protocol('Invalid rhythm.');
+    const rhythm = nullable(body['rhythm'], parseRhythm);
+    const reward = nullable(body['reward'], parseReward);
     const { milestones, path } = parsePath(body['milestones'], body['path'], enabled);
-    return { enabled, journey, milestones, path, rhythm, sampleDeck: parseSampleDeck(body['sampleDeck']) };
+    return { enabled, journey, milestones, path, rhythm, reward, sampleDeck: parseSampleDeck(body['sampleDeck']) };
 }
 
 function parseRead(response: HttpResponse<unknown>, validatorRequired: boolean, statuses: readonly number[] = [200]): OnboardingRead {
