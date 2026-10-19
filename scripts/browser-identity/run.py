@@ -89,9 +89,10 @@ def recs_switches():
 def onboarding_switches(now=None):
     """`--onboarding` only (OB-E1): the first-entry journey ships off. The ordinary Learning of this disposable run gets the flag and a release instant before the
     run, so every account the scenario registers is eligible (an account is new for 48 hours, owns no deck, and the clock is past `eligible-from`). The experiment
-    `onboarding_v1` stays off, so nobody is held out and everybody gets the tour. Nothing here reaches another process or the retained local stack."""
+    `onboarding_v1` stays off, so nobody is held out and everybody gets the tour. The weekly rhythm (OB-401) is on; the path reward (OB-402) stays off (it needs an account
+    Identity calls trusted, at least 3 days old, which a run cannot make). Nothing here reaches another process or the retained local stack."""
     instant = (now or datetime.datetime.now(datetime.timezone.utc)) - datetime.timedelta(minutes=5)
-    return {"LEARNING_ONBOARDING_ENABLED": "true", "LEARNING_ONBOARDING_ELIGIBLE_FROM": instant.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    return {"LEARNING_ONBOARDING_ENABLED": "true", "LEARNING_ONBOARDING_ELIGIBLE_FROM": instant.strftime("%Y-%m-%dT%H:%M:%SZ"), "LEARNING_ONBOARDING_RHYTHM_ENABLED": "true"}
 
 
 def catalogue_fixture_enabled(args):

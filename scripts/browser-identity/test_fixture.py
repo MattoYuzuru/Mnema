@@ -507,13 +507,14 @@ module.main()
         self.assertNotIn("Fetch.fulfillRequest", source)
         self.assertNotIn("Fetch.failRequest", source)
         self.assertIn("openGuestTab", driver)
-        for stage in ("welcome", "survey", "own_details", "own_create_deck", "pause_resume", "own_material", "own_exercise", "own_study", "own_finale", "replay", "hold", "skip",
+        for stage in ("welcome", "survey", "own_details", "own_create_deck", "pause_resume", "own_material", "own_exercise", "own_study", "own_finale", "rhythm", "replay", "hold", "skip",
                       "community", "a11y", "sign_out"):
             self.assertIn(f"stage('{stage}'", source)
         # The flag of the journey and the release instant are for the ordinary Learning of this disposable run (inside the community branch), never for another process.
         instant = datetime.datetime(2026, 10, 17, 12, 0, tzinfo=datetime.timezone.utc)
         switches = HARNESS.onboarding_switches(instant)
-        self.assertEqual({"LEARNING_ONBOARDING_ENABLED": "true", "LEARNING_ONBOARDING_ELIGIBLE_FROM": "2026-10-17T11:55:00Z"}, switches)
+        self.assertEqual({"LEARNING_ONBOARDING_ENABLED": "true", "LEARNING_ONBOARDING_ELIGIBLE_FROM": "2026-10-17T11:55:00Z", "LEARNING_ONBOARDING_RHYTHM_ENABLED": "true"}, switches)
+        self.assertNotIn("LEARNING_ONBOARDING_REWARD_ENABLED", switches)
         self.assertNotIn("LEARNING_ONBOARDING_EXPERIMENT_ENABLED", switches)
         self.assertEqual(1, runner.count("**onboarding_switches()"))
         self.assertIn("**recs_switches()", runner)
