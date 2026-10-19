@@ -29,7 +29,8 @@ artifact:
 ## Статус задач
 
 Коммиты в столбце «Commit» для OB-0xx…OB-2xx — исходные коммиты ветки `feat/517-onboarding`; в main они входят одним
-squash-коммитом 1e4f764e (ветка удалена после merge, исходные SHA в истории main не встречаются).
+squash-коммитом 1e4f764e (ветка удалена после merge, исходные SHA в истории main не встречаются). Так же OB-301…OB-305: исходные
+коммиты `feat/531-onboarding-path`, в main — squash 1f708643 (MattoYuzuru/Mnema#561, 2026-10-18).
 
 | ID | Статус | Commit | Evidence / handoff | Заметки |
 |---|---|---|---|---|
@@ -45,11 +46,11 @@ squash-коммитом 1e4f764e (ветка удалена после merge, и
 | OB-202 | merged (шаблон только на local stack) | студия вне git; ea723063, c9eb70c5 | [runbook](../evidence/onboarding/ob-e2/sample-template-runbook.md), [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | Шаблон на local stack (deck d59520c8-…, LINK); production — отдельное поручение |
 | OB-203 | merged | 691d1919, 96c15aaf, 729e6fd4 | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md), [снимки](../evidence/onboarding/ob-e2/) | «ИИ-бюджет» не показывает бесплатные проверки |
 | OB-204 | merged | 3ecff102 (gate) | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) | |
-| OB-301 | local complete, delivery pending | 09953172, 870a8117 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md), [hot path](../evidence/onboarding/ob-e3/hot-path.md), `contracts/onboarding/milestones.json` | V74; `PATH_MILESTONE` только при `learning.onboarding.enabled`; RHYTHM_WEEK скрыта до OB-401 |
-| OB-302 | local complete, delivery pending | 870a8117 | [backfill](../evidence/onboarding/ob-e3/backfill.md) | `learning.onboarding.backfill.enabled=false` по умолчанию; объём H не измерен |
-| OB-303 | local complete, delivery pending | d0519bdd, d550caa4 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md), [browser](../evidence/onboarding/ob-e3/path-results.json) | Открыт AC «скринридер» (VoiceOver не проверялся); 72 строки на утверждение |
-| OB-304 | local complete, delivery pending | d0519bdd, d550caa4, 181794c1 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) | Открыты AC «end-to-end с вехой в браузере», «a11y/mobile» |
-| OB-305 | local complete, delivery pending | 181794c1 (+ handoff) | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) | 2 review, harness `--onboarding`, полный gate |
+| OB-301 | merged | 09953172, 870a8117 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md), [hot path](../evidence/onboarding/ob-e3/hot-path.md), `contracts/onboarding/milestones.json` | V74; `PATH_MILESTONE` только при `learning.onboarding.enabled`; RHYTHM_WEEK скрыта до OB-401 |
+| OB-302 | merged | 870a8117 | [backfill](../evidence/onboarding/ob-e3/backfill.md) | `learning.onboarding.backfill.enabled=false` по умолчанию; объём H не измерен |
+| OB-303 | merged | d0519bdd, d550caa4 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md), [browser](../evidence/onboarding/ob-e3/path-results.json) | Открыт AC «скринридер» (VoiceOver не проверялся); 72 строки на утверждение |
+| OB-304 | merged | d0519bdd, d550caa4, 181794c1 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) | Открыты AC «end-to-end с вехой в браузере», «a11y/mobile» |
+| OB-305 | merged | 181794c1 (+ handoff) | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) | 2 review, harness `--onboarding`, полный gate |
 | OB-401 | not started | — | — | |
 | OB-402 | not started | — | — | Флаг в production после OB-002 |
 | OB-403 | not started | — | — | |

@@ -5,8 +5,7 @@ artifact:
   title: "Onboarding: research, RFC, architecture and backlog"
   status: accepted
   created_at: "2026-10-14"
-  updated_at: "2026-10-17"
-  updated_at: "2026-10-14"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
 ---
 
@@ -14,7 +13,7 @@ artifact:
 
 Пакет по поручению владельца 2026-10-14: исследование онбордингов, RFC, архитектура,
 ADR, четыре эпика с задачами, промпты и решения владельца. Решения приняты владельцем 2026-10-14
-(`accepted`); OB-E1 и OB-E2 влиты в main (MattoYuzuru/Mnema#554, 1e4f764e) за выключенными флагами, OB-E3 — ветка `feat/531-onboarding-path`; фактический статус в [progress](progress.md). Задачи опубликованы как Issues в Mnema Kanban (Backlog);
+(`accepted`); OB-E1 и OB-E2 влиты в main (MattoYuzuru/Mnema#554, 1e4f764e), OB-E3 — (MattoYuzuru/Mnema#561, 1f708643), всё за выключенными флагами; OB-E4 — ветка `feat/537-onboarding-rhythm-reward`; фактический статус в [progress](progress.md). Задачи опубликованы как Issues в Mnema Kanban (Backlog);
 номера — в [manifest](manifest.json). Соседний пакет — [learning core](../learning-core/README.md).
 
 ## Начать здесь
