@@ -43,7 +43,7 @@ artifact:
 - [x] Никаких отрицательных сообщений о пропуске; цель меняется в профиле. — блок «Недельный ритм» в профиле (цель и опыт), тексты без потерь ([строки S4](../../evidence/onboarding/ob-e4/texts-for-approval-s4.md))
 - [x] Ритм не в шапке; поздравление уважает QuietZone и reduced motion. — `path-toasts` (тихая зона, координатор, 30 с), `reward-congratulation` (поверхность `reward`, статичные звёзды), harness `onboarding_rhythm` (шапка без ритма)
 - [x] Награда выдаётся один раз verified аккаунту, с реальным сроком, аудитом и kill switch. — [OB-402](../tasks/ob-402.md); выдача при чтении «Пути», а не в транзакции вехи ([ADR-ONB-005, уточнение S4](../adr/adr-onb-005-path-reward.md))
-- [ ] Полный gate; evidence границ недели и часовых поясов.
+- [x] Полный gate; evidence границ недели и часовых поясов. — `checks.py run` + `verify` на HEAD PR ([S4](../../evidence/onboarding/ob-e4/handoff-session-4.md), описание PR); `WeeklyRhythmIntegrationTest` (граница недели, смена пояса)
 
 ## Риски и rollback
 

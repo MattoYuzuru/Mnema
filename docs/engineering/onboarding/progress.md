@@ -5,7 +5,7 @@ artifact:
   title: "Onboarding: progress ledger and handoff index"
   status: current
   created_at: "2026-10-14"
-  updated_at: "2026-10-18"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
 ---
 
@@ -22,9 +22,9 @@ artifact:
 | Поле | Значение |
 |---|---|
 | Пакет документов | `docs/engineering/onboarding/` (в main) |
-| Ветка реализации | E1/E2: `feat/517-onboarding` влита в main squash-коммитом 1e4f764e (MattoYuzuru/Mnema#554, 2026-10-17) за выключенными флагами, ветка удалена. E3: `feat/531-onboarding-path` от `origin/main` 5c432a9b (S3) |
-| База ветки | E1/E2: `origin/main` 42e35d0f (S0) + b6f14df8 (S1). E3: 5c432a9b (после #557, #497–#499, #555, #559, #560) |
-| Последний handoff | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) (E3, ветка `feat/531-onboarding-path`); S2 влита в #554 (1e4f764e) — пометка «ветка не запушена» в S2 устарела |
+| Ветка реализации | E4: `feat/537-onboarding-rhythm-reward` от `origin/main` 1f708643 (S4). E1/E2: `feat/517-onboarding` влита в main squash-коммитом 1e4f764e (MattoYuzuru/Mnema#554, 2026-10-17) за выключенными флагами, ветка удалена. E3: `feat/531-onboarding-path` от `origin/main` 5c432a9b (S3) |
+| База ветки | E4: 1f708643 (после #561). E1/E2: `origin/main` 42e35d0f (S0) + b6f14df8 (S1). E3: 5c432a9b (после #557, #497–#499, #555, #559, #560) |
+| Последний handoff | [S4](../evidence/onboarding/ob-e4/handoff-session-4.md) (E4, ветка `feat/537-onboarding-rhythm-reward`); S3 влита в #561 (1f708643) |
 
 ## Статус задач
 
@@ -51,9 +51,9 @@ squash-коммитом 1e4f764e (ветка удалена после merge, и
 | OB-303 | merged | d0519bdd, d550caa4 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md), [browser](../evidence/onboarding/ob-e3/path-results.json) | Открыт AC «скринридер» (VoiceOver не проверялся); 72 строки на утверждение |
 | OB-304 | merged | d0519bdd, d550caa4, 181794c1 | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) | Открыты AC «end-to-end с вехой в браузере», «a11y/mobile» |
 | OB-305 | merged | 181794c1 (+ handoff) | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) | 2 review, harness `--onboarding`, полный gate |
-| OB-401 | not started | — | — | |
-| OB-402 | not started | — | — | Флаг в production после OB-002 |
-| OB-403 | not started | — | — | |
+| OB-401 | local complete, delivery pending | adf8824f, b99f28d9, e9433e2c, 15a5d06c, d0fa355e | [S4](../evidence/onboarding/ob-e4/handoff-session-4.md), [harness](../evidence/onboarding/ob-e4/onboarding-results.json), `contracts/onboarding` «Weekly rhythm» | V75; `learning.onboarding.rhythm.enabled=false`; 24 строки на утверждение |
+| OB-402 | local complete, delivery pending | 040dd5a3, 65cc0a09, be2a9441, 15a5d06c, d0fa355e | [S4](../evidence/onboarding/ob-e4/handoff-session-4.md), `contracts/usage/promo.json` | V76; `learning.onboarding.reward.enabled=false`; выдача при чтении «Пути» (уточнение ADR-ONB-005); флаг и кампания в production — после OB-002 и решения владельца; 8 строк + кабинет на утверждение |
+| OB-403 | local complete, delivery pending | ca27aac7 (+ handoff) | [S4](../evidence/onboarding/ob-e4/handoff-session-4.md) | 2 review, harness `--onboarding` (этап `rhythm`), полный gate |
 
 ## Журнал сессий
 
@@ -64,6 +64,7 @@ squash-коммитом 1e4f764e (ветка удалена после merge, и
 | 2026-10-16/17 | S1 | Claude Opus 5.5 (lead), 2 × Sonnet 5.5 high (backend, frontend), Sonnet 5.5 high (harness), 3 × Opus 5.5 high review | 71ab1c89 + merge b6f14df8 → 748043a2 (+ handoff) | OB-101…OB-105 local complete; полный gate и harness `--onboarding` зелёные | [S1](../evidence/onboarding/ob-e1/handoff-session-1.md) |
 | 2026-10-17 | S2 | Claude Opus 5.5 (lead), Sonnet 5.5 high: backend, frontend, импортёр студии, автор pack; Opus 5.5 high: review кода и содержания | 05c1d45c → 3ecff102 (+ handoff) | OB-201…204 local complete; шаблон установлен на local stack; gate зелёный | [S2](../evidence/onboarding/ob-e2/handoff-session-2.md) |
 | 2026-10-18 | S3 | Claude Opus 5.5 (lead), Opus 5.5 medium (research), 2 × Sonnet 5.5 high (backend, frontend), 2 × Opus 5.5 high (review) | 5c432a9b → 181794c1 (+ handoff) | OB-301…OB-305 local complete; harness `--onboarding` и полный gate зелёные | [S3](../evidence/onboarding/ob-e3/handoff-session-3.md) |
+| 2026-10-19 | S4 | Claude Opus 5.5 (lead), Opus 5.5 medium (research), 2 × Sonnet 5.5 high (OB-401 backend/frontend), 2 × Sonnet 5.5 high (OB-402 backend/frontend), 2 × Opus 5.5 high (review), 2 × Sonnet 5.5 high (исправления review) | 1f708643 → ca27aac7 (+ handoff) | OB-401…OB-403 local complete; harness `--onboarding` и полный gate — в [S4](../evidence/onboarding/ob-e4/handoff-session-4.md) | [S4](../evidence/onboarding/ob-e4/handoff-session-4.md) |
 
 Handoff-файлы кладутся в `docs/engineering/evidence/onboarding/<epic>/handoff-session-<N>.md` ветки
 реализации и перечисляются здесь.
