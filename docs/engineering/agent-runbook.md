@@ -11,10 +11,12 @@ artifact:
 
 # Agent runbook: how to run things
 
-Deterministic commands for coding agents. Facts were checked on 2026-10-01 on the owner's
-macOS workstation (Colima as the Docker runtime); the table at the end says which were
-re-run then and which are carried over from earlier sessions. CI uses the repository
-toolchains, not whatever is first on `PATH`: release claims never rest on a workstation JDK/Node.
+Deterministic commands for coding agents on the owner's macOS workstation (Colima as the Docker
+runtime). CI uses the repository toolchains, not whatever is first on `PATH`: release claims never
+rest on a workstation JDK/Node. Exact versions are owned by the build files
+(`backend/build.gradle.kts`, `frontend/package.json`, workflows); the
+[repository guide](./repository-guide.md#platform-baseline) lists them.
+
 Policy (what must pass before a push or merge) lives in root [`AGENTS.md`](../../AGENTS.md);
 module map and versions in the [repository guide](./repository-guide.md).
 
@@ -24,7 +26,7 @@ The default `java` and `node` are newer than the repository baseline. Set these 
 the defaults are not the baseline.
 
 ```bash
-# Backend: JDK 25 (default java here is 26 and is not the baseline)
+# Backend: the repository toolchain JDK (25); the default java on this Mac is newer and is not the baseline
 export JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home
 export PATH="$JAVA_HOME/bin:$PATH"   # run.py and the local launcher call plain `java`/`keytool`
 
@@ -33,7 +35,7 @@ export DOCKER_HOST=unix:///Users/yuzuru/.colima/default/docker.sock
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 export TESTCONTAINERS_RYUK_DISABLED=true
 
-# Node must be exactly 24.x for the browser harness and the frontend gate (CI/images use 24.21.0)
+# Node must be 24.x for the browser harness and the frontend gate (the CI/image version is in the workflows)
 NODE24=/opt/homebrew/opt/node@24/bin/node
 export PATH="/opt/homebrew/opt/node@24/bin:$PATH"   # npm ci/lint/test/build use this Node, not the newer default
 ```
@@ -363,20 +365,3 @@ scripts/mnema-local-full-stack.sh reset-certificates --confirm
   Fix `colima ssh -- sudo systemctl disable --now systemd-timesyncd`, repeat after every
   `colima delete`. Runbook: [Colima clock](../deploy/selfhost-local.md#colima-clock).
 - Full user-facing description: [persistent local runtime](../deploy/selfhost-local.md).
-
-## What was verified on 2026-10-01
-
-| Item | State |
-|---|---|
-| `JAVA_HOME` path exists, reports JDK 25.0.4.1 (Temurin-compatible OpenJDK); default `java` is 26.0.2 | verified |
-| `./gradlew clean quality` with JDK 25 / Gradle 9.8.0 / Spring Boot 4.1.1 | earlier passing evidence; full gate not re-run for the 2026-10-01 workstation inventory |
-| Colima socket present, `docker version` answers (29.5.2) with that `DOCKER_HOST` | verified |
-| Testcontainers env above: `:services:identity-account:test --tests '*AccountTransferIntegrationTest'` ran 4 tests, 0 skipped, passed | verified |
-| `/opt/homebrew/opt/node@24/bin/node` is v24.21.0 (npm 11.19.0); default `node` is 26.9 | verified |
-| `run.py --help` lists `--authoring --media --mechanics --keep-on-failure --node`; `--mute-audio` and temp-dir behaviour read from source | verified (source) |
-| `verify_docs.py` passes; `unittest discover scripts/tests -p 'test_*.py'` 188 tests OK | verified |
-| MinIO digest `14cea493…` present in the local Docker image cache | verified |
-| `systemd-timesyncd` inactive and disabled in the Colima VM now | verified |
-| Launcher subcommands, env overrides and SKI/AKI issuance | verified (source) |
-| Full `npm ci/lint/test/build`, a real `run.py` run, `start`/`smoke` | earlier evidence; not re-run for the 2026-10-01 workstation inventory |
-| `TESTCONTAINERS_RYUK_DISABLED` necessity; Python strict-X.509 failure mode | owner-reported / doc-stated, not reproduced |

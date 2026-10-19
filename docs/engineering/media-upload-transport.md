@@ -1,7 +1,7 @@
 # Media upload transport (#235)
 
 The canonical Learning runtime owns direct S3-compatible transfers. This is the
-transport boundary for [Epic #76](epic-76-refinement.md); verified bytes, codecs,
+transport boundary of the [media platform](../architecture/media-platform.md); verified bytes, codecs,
 variants and processing jobs belong to #236. The former media service is not used.
 
 ## API and state

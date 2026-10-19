@@ -276,7 +276,7 @@ protected squash; merge alone is not live verification.
 
 - The removed v1 `media` module and S3 rows/URLs are historical evidence only.
 - Extend the implemented Learning media lifecycle through its current guide,
-  migrations V10–V15 and [accepted #76 contract](./epic-76-refinement.md).
+  migrations V10–V15 and the [media platform](../architecture/media-platform.md).
 - Keep logical references authorized through native content capabilities; a hash
   or object key alone grants no access. Recheck finalize races, variants,
   tombstones, GC and offline manifests with object-protocol evidence when changed.
@@ -314,13 +314,14 @@ Canonical reading order:
 Existing contracts: deck-local identities; immutable Deck/Item revisions; native
 projection capabilities; command idempotency; row-version CAS; owner ACL; stable
 Problem Details; fail-closed Identity; counted membership/storage roots. Do not
-redefine them during Study refinement without evidence of a conflict.
+redefine them when changing Study without evidence of a conflict.
 
-Owner decisions are accepted in [Epic #75 refinement](./epic-75-refinement.md), and
-the exact shared examples live in [`contracts/study`](../../contracts/study/README.md).
-The epic was split into protected slices #212–#219, #58 and closure #221;
-#220 supplies the persistent local launcher. The
-[integrated acceptance record](./evidence/epic-75/verification/integrated-main-2026-09-24.md)
+Owner decisions live in the [Study contract](../../contracts/study/README.md)
+(`MemoryObjective`, `mnema-baseline-v1`, receipt-first attempts, learning epoch and
+restart, progress states, 30-day raw-response retention), the
+[session budget presets](../product/authoring-and-study-workflows.md#одна-точка-входа-и-три-режима-сессии)
+and the [Study architecture](../architecture/content-platform-v2.md#study-state-and-exercises).
+The [integrated acceptance record](./evidence/epic-75/verification/integrated-main-2026-09-24.md)
 maps every P0 criterion to its executable test or real local flow. Run the gate
 above plus the persistent smoke and real browser harness when changing Study.
 Manual device/assistive-technology testing, live 50k database latency and cohort

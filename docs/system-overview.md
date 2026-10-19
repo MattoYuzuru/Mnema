@@ -187,7 +187,7 @@ admission описаны в [production delivery](./operations/production-delive
 
 1. #147 — отдельная судьба старых данных и purge; новый production использует новую БД и сохраняет старые данные.
 2. #77 — AI-слой допущен в production, Issue остаётся открытым для оставшейся работы
-   ([архитектура](./architecture/ai-generation-platform.md), [refinement](./engineering/epic-77-refinement.md)).
+   ([архитектура и решения реализации](./architecture/ai-generation-platform.md)).
 3. [Learning core](./engineering/learning-core/README.md) — предложенный, не реализованный пакет.
 
 Интеграционная проверка #75 и её пределы: [acceptance evidence](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md);

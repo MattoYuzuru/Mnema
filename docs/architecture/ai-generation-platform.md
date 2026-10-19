@@ -3,28 +3,29 @@ artifact:
   id: ai-generation-platform
   type: architecture
   title: "Mnema AI layer: generation, speech input, media and usage"
-  status: accepted
+  status: current
   created_at: "2026-10-02"
-  updated_at: "2026-10-16"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
   source_tasks: ["Epic #77 reactivation", "owner decisions 2026-10-01/02"]
-  base_revision: "origin/main 9d462f7b (#274) for code facts"
   assumptions:
     - "Primary storage, Identity, payments and learning history stay in Russian hosting. Owner decision 2026-10-04: providers unreachable from Russia are called through a stateless HTTP CONNECT egress proxy on the owner's VPS in Finland (INFRA-02, #340); keys and data stay in Russia."
     - "The backend platform upgrade (Java 25, Gradle 9.8.0, Spring Boot 4.1.1, #278) and the frontend upgrade (Angular 22.2.1, Node 24 LTS, Vitest, zoneless, #306) are delivered. AI code is written to be portable."
     - "The seven exercise mechanics come from the server registry; ORDER/CATEGORIZE (#268) are merged: all seven mechanics exist in the registry and in contracts/study."
-  unresolved_questions:
-    - "TTS for Russian: Google Gemini 3.8 Flash TTS through the egress proxy (primary candidate since 2026-10-04) or Yandex SpeechKit v1 (needs the owner's exception); decided by the #297 spike."
-    - "STT: self-host (GigaAM-v3 / Qwen3-ASR) on the target VPS or Gemini transcription through the egress proxy; decided by the #298 spike."
 ---
 
 # AI-слой Mnema: генерация, голосовой ввод, медиа и usage
 
-Этот документ — принятая архитектура AI-слоя после реактивации Epic #77. Он не
-утверждает, что что-либо из него реализовано. Продуктовые решения — в
-[AI layer product contract](../product/ai-layer-2026-10.md); исследование и
+Этот документ описывает архитектуру реализованного AI-слоя (Epic #77) и причины решений.
+Продуктовые решения — в [AI layer product contract](../product/ai-layer-2026-10.md); точное
+поведение API — в [`contracts/generation`](../../contracts/generation/README.md),
+[`contracts/usage`](../../contracts/usage/README.md) и
+[`contracts/notifications`](../../contracts/notifications/README.md); исследование и
 альтернативы — в [research index](../reviews/ai-layer-research-2026-10/README.md).
-Факты о коде проверены на `origin/main` `9d462f7b`.
+Доступность функции зависит от флагов, настроенного адаптера и бюджета (capability gates
+fail-closed); production-значения задаёт `deploy/production/compose.yaml`. Epic #77
+остаётся открытым в [Issue #77](https://github.com/MattoYuzuru/Mnema/issues/77); оставшаяся
+работа (в том числе приёмка владельцем оценки AI-17, #300) ведётся там, а не здесь.
 
 ## 1. Решения
 
@@ -41,6 +42,49 @@ artifact:
 | A9 | Общий durable центр уведомлений с read watermark; producer в той же транзакции | Отдельная outbox-доставка |
 | A10 | У модели нет agency: вывод — данные; ссылки только из allowlist; медиа — untrusted upload через pipeline #76; промпты без ПД | Tool calling с побочными эффектами; хранение raw prompts |
 | A11 | `ai-semantic` evaluator реализует существующий `SemanticAssessmentProvider`; строгость — серверная политика по состоянию objective; AI не пишет `StudyState` | Отдельный классификатор; строгость, выбранная моделью |
+
+### Решения реализации
+
+Решения, принятые при поставке и действующие сейчас (детали — в контрактах и
+[Learning guide](../../backend/services/learning/guide.md)):
+
+- **Правила поставки.** CI использует только Stub-адаптеры; live-проверка провайдеров — opt-in
+  Gradle-задача с ключами из локального окружения. Реальные пользовательские данные идут
+  в провайдеров только после юридического gate и golden-eval как gate (AI-17). Откат — protected
+  revert; схема развивается forward-миграциями.
+- **Стоимость и usage.** Режим усилия `AUTO` для материалов оценивается, исполняется и списывается
+  как `MEDIUM`. Сессионный резерв для шагов, отложенных daily burst, продлевает
+  `UsageLedger.renew`; вид окна входит в dedupe-ключ `USAGE_EXHAUSTED`; недоступность ledger — `503 USAGE_UNAVAILABLE`. Курс
+  для стоимости задаёт `learning.generation.usd-rub-rate`. Лимит сессии: 20 материалов или 60
+  упражнений.
+- **Approve и удаление.** Bulk approve — не больше 20 артефактов за команду; массовое удаление
+  больше 100 материалов идёт чанками с честным `PARTIAL` (потолок 500). Дочерние command id —
+  name-based UUID v4 (политика допускает только v4/v7). «Вернуть» после последнего отклонения
+  переоткрывает закрытую сессию; архивация заметок не трогает заметки, закреплённые живыми
+  артефактами; источник-заметка закрепляется снимком текста, потому что заметки изменяемы.
+  Lifetime шага — `PT1H`.
+- **Контент.** Блоки кода разрешены в MBM (`code_block`); `MEDIA_READY` как тип уведомления не
+  вводился. Варианты `CHOICE` перемешиваются сохранённой при выдаче перестановкой, а не seed
+  от nonce. Контекст генерации упражнений — `<data_policy>` + `exercises.md` без полного L0–L2
+  префикса. Re-pin упражнений — только если весь показанный модели текст не изменился.
+  Выпущенные секции prompt library не меняются, новые добавляются.
+- **Правки по выделению.** Медиа внутри диапазона остаётся на месте; цели — подряд идущие
+  блоки; revert — в пределах текущего поколения черновика; EDIT-шаги в приоритете с
+  таймаутом очереди. Правки упражнений сессий `EXERCISES` запрещены — только `REVISE_EXERCISE`;
+  голос в нём — модель + Stub-исполнитель, asset не меняется.
+- **Семантическая проверка.** SLA по §11 (p50 ≤3 с, p95 ≤8 с, «Оценить себя» на 5-й секунде,
+  deadline 20 с). Неуверенность грейдера, включая противоречие в одном из двух прогонов, —
+  self-check, не `UNSURE`; dispute восстанавливает `last_assessed_at/next_due`. Golden set
+  проверки размечен агентом; ревью владельца — вход gate AI-17.
+- **Планировщик.** Батч-hold `PLAN_READY` истекает по TTL резерва; Pro-план по тиру не
+  выбирается, только эскалация после невалидного плана.
+- **Провайдеры и egress.** Недоступные из РФ провайдеры идут через stateless HTTP CONNECT
+  egress-шлюз (`deploy/ai-egress-proxy/`) с kill-switch и fallback; шлюз видит только имена
+  хостов. Голос на внешнего провайдера уходит только по явному согласию. Pexels исключён;
+  источники изображений — Pixabay, Openverse, Wikimedia Commons.
+- **Не входят.** Генерация видео и изображений, AI-оценка произношения, live-STT.
+- **Acceptance.** Capability gates fail-closed; прямой API не обходит квоты и флаги; AI не пишет
+  `StudyState`; REPLAY/PRACTICE без canonical effects.
 
 ## 2. Границы и зависимости
 
@@ -532,6 +576,6 @@ AI-код пишется переносимо: JDK `HttpClient`, без spring-r
 [native-v1 contract](../../contracts/content/native-v1/README.md),
 [Study contract](../../contracts/study/README.md),
 [exercise catalog](../product/exercise-catalog-v2.md),
-[media refinement #76](../engineering/epic-76-refinement.md),
+[media platform](./media-platform.md),
 [media GC](../engineering/media-gc.md), [Learning guide](../../backend/services/learning/guide.md).
 Внешние источники с датой доступа — в [research index](../reviews/ai-layer-research-2026-10/README.md).

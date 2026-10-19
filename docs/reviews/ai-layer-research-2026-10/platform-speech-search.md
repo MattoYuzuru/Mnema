@@ -15,7 +15,7 @@ artifact:
 решение: цены, terms и санкционные оговорки меняются, юридические выводы требуют юриста.
 Предыдущие исследования, на которые отчёт опирается и которые частично обновляет:
 `economics.md` этого пакета (в истории Git), `docs/product/ai-layer-2026-10.md`,
-`docs/engineering/epic-77-refinement.md` (INFRA-01).
+`docs/architecture/ai-generation-platform.md` (INFRA-01).
 
 Курс для пересчёта: **1 USD = 83,2454 ₽** (ЦБ РФ на 02.10.2026,
 [cbr.ru XML_daily](https://www.cbr.ru/scripts/XML_daily.asp)). Для округлённых оценок ниже — 83 ₽/$.
@@ -710,5 +710,5 @@ qwen3-tts-flash ≈ $95 (если цена подтвердится); русск
   Этот отчёт её обновляет: SpeechKit TTS без FR/ES/JA/ZH/KO; EU Art. 5n(1)(g) закрывает
   Mistral; Qwen3-ASR / GigaAM / Parakeet как CPU-альтернативы faster-whisper; Exa и Tavily
   исключают Россию.
-- `docs/engineering/epic-77-refinement.md` (INFRA-01), `docs/architecture/ai-generation-platform.md`.
+- `docs/architecture/ai-generation-platform.md` (INFRA-01).
 - Устаревшее наследие v1: `scripts/local-audio-gateway/`, `docs/deploy/model-matrix.md` (удалён, история Git).

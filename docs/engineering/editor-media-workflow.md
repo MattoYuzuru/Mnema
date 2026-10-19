@@ -12,7 +12,7 @@ artifact:
 
 # Медиа в редакторе LearningItem
 
-Эта реализация следует [Epic #76 refinement](epic-76-refinement.md) и
+Эта реализация следует [media platform](../architecture/media-platform.md) и
 [upload transport](media-upload-transport.md). Редактор хранит в native node
 только логический `assetId`; подписанный URL и объектный ключ в документ не
 попадают. `DraftService` извлекает ссылки только из поддерживаемых native v1
@@ -29,7 +29,7 @@ image/audio/video nodes и заменяет `draft_media_ref` в той же т�
 Кнопка «Вставить» доступна после получения `assetId`, поэтому публикация может
 обогнать `READY`. Автор затем задаёт alt/title и вставляет node через native
 editor. В Browse/Study pending/failed состояния отображаются отдельно; правила
-Study описаны в refinement.
+Study описаны в [media platform](../architecture/media-platform.md#решения).
 
 Передача: две параллельные задачи в одной вкладке, внутри каждого multipart
 части идут последовательно и запрашивают подписанные URL пачками до 16. Это

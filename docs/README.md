@@ -49,7 +49,7 @@ refinement или решения, не реализовано; `historical` — 
 | current | [Claude Code adapter](../CLAUDE.md) | Импортирует `AGENTS.md` и ведёт к тем же scoped-правилам; не отдельная политика. |
 | current | [Engineering standards](./engineering/engineering-standards.md) | Полная формулировка общих правил (research, UX/a11y, backend, frontend, tests, TODO, нагрузка и styleguide-first, формат ответа); краткая форма — в `AGENTS.md`. |
 | current | [Domain truth map](./engineering/domain-truth-map.md) | Источник истины по доменным вопросам (включая онбординг и колоды сообщества) и глоссарий. |
-| current | [Agent runbook](./engineering/agent-runbook.md) | Команды и настройка рабочей машины с пометкой verified/not re-run. |
+| current | [Agent runbook](./engineering/agent-runbook.md) | Команды, quality gate и настройка рабочей машины. |
 
 ## Product
 
@@ -76,7 +76,7 @@ refinement или решения, не реализовано; `historical` — 
 | current | [System overview](./system-overview.md) | Топология production, компоненты и границы. |
 | accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; реализованы content/Study, медиа, AI-слой, колоды сообщества; отдельные границы будущей работы названы в тексте. |
 | accepted | [Native content format](./architecture/learning-content-format-v2.md) | Persisted native document contract. |
-| accepted | [AI generation platform](./architecture/ai-generation-platform.md) | Архитектура AI-слоя: модули в Learning, Мастерская, MBM, провайдеры, usage, уведомления, безопасность. |
+| current | [AI generation platform](./architecture/ai-generation-platform.md) | Реализованная архитектура AI-слоя и решения реализации: модули в Learning, Мастерская, MBM, провайдеры, usage, уведомления, безопасность. |
 | current | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. Таблица состояния реализации по частям. |
 | current | [Revision storage and runtime boundaries](./architecture/revision-storage-and-runtime-boundaries.md) | Выбранное и реализованное storage-направление. |
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Counted-page/structural invariants. |
@@ -91,7 +91,7 @@ refinement или решения, не реализовано; `historical` — 
 
 | Статус | Документ | Назначение |
 |---|---|---|
-| accepted | [Epic #76 refinement](./engineering/epic-76-refinement.md) | Scope, архитектурные границы и задачи. |
+| current | [Media platform](./architecture/media-platform.md) | Модель asset, форматы, лимиты, обработка, доступность и принятые решения. |
 | current | [Upload transport](./engineering/media-upload-transport.md) | Прямая передача в S3-совместимое хранилище, API и состояния. |
 | current | [Playback](./engineering/media-playback.md) | Подписанные playback URL и обновление. |
 | current | [Offline manifest](./engineering/media-offline-manifest.md) | Неизменяемый inventory media колоды. |
@@ -119,8 +119,6 @@ refinement или решения, не реализовано; `historical` — 
 | current | [Onboarding package](./engineering/onboarding/README.md) | Реализовано и включено в production с 2026-10-19: что включено, proposal (поведение), architecture (устройство), пять ADR; wire — [`contracts/onboarding`](../contracts/onboarding/README.md). |
 | current | [Capability inventory](./engineering/capability-inventory.yaml) | Машиночитаемый список команд и harnesses; при расхождении приоритетнее runbook и `--help`. |
 | current | [Evidence index](./engineering/evidence/README.md) | Правило: evidence живёт в PR и Issue; в репозитории остаётся только то, на что ссылаются документы, контракты и тесты. |
-| accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения и реализованные delivery slices. |
-| accepted | [Epic #77 refinement](./engineering/epic-77-refinement.md) | AI-слой: delivery slices, принятые отличия от плана и acceptance эпика; статус задач — в Issues. |
 | historical | [Epic #74 dependency decisions](./engineering/epic-74-dependency-decisions.md) | Принятые зависимости и ответы владельца для хранилища и редактора; на него ссылается [архитектура хранения](./architecture/revision-storage-and-runtime-boundaries.md). |
 
 ## Operations

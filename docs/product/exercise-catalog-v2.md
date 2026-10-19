@@ -282,15 +282,13 @@ alias и не получает transition.
 ### P1 — разнообразие без AI
 
 Реализовано в #266/#268: multiple select, matching, ordering, categorization, listening
-dictation (как аудио-условие `FREE_RESPONSE`). Остальное ниже не реализовано.
+dictation (как аудио-условие `FREE_RESPONSE`). Не реализовано (возможное развитие):
 
-- multiple select и true/false + correction;
+- true/false + correction;
 - multi-value recall;
 - matching/categorization с per-objective outcomes;
-- ordering/assembly при однозначном decomposition;
 - structured contrast/context decisions;
 - limited self/human-graded explanation experiment;
-- listening dictation;
 - image labeling/occlusion только при cohort evidence;
 - confidence calibration и targeted interleaving experiments.
 

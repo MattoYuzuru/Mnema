@@ -320,6 +320,6 @@ archive/trash/copies, число лимитов, цена и состав под
 долгосрочное архивирование compact evidence — последующая инженерная работа. Editor
 engine (#74), точные schemas, material progress, reducer, replay/practice policy,
 live-row retention и интегрированная browser-проверка (#221) реализованы по
-[Epic #75 refinement](../engineering/epic-75-refinement.md); `MATCH`, `ORDER` и
+[контракту Study](../../contracts/study/README.md); `MATCH`, `ORDER` и
 `CATEGORIZE` вошли в #266/#268. Community и paid packaging получают отдельный
 refinement после полезного own-deck loop.

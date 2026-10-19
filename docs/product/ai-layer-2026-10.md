@@ -20,8 +20,8 @@ artifact:
 
 Источник — голосовое ТЗ владельца 2026-10-01 и его ответы 2026-10-02 на итоги
 исследования. Этот документ принимает продуктовые решения; архитектура — в
-[AI generation platform](../architecture/ai-generation-platform.md), delivery —
-в [Epic #77 refinement](../engineering/epic-77-refinement.md), исходные отчёты с
+[AI generation platform](../architecture/ai-generation-platform.md), реализованные решения —
+в [разделе «Решения реализации»](../architecture/ai-generation-platform.md#решения-реализации), исходные отчёты с
 источниками — в [research index](../reviews/ai-layer-research-2026-10/README.md).
 Он заменяет deferred-статус AI в [product direction](./product-direction-v2.md)
 (D-04); тарифы и usage этого документа являются текущим продуктовым контрактом.
