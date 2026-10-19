@@ -162,7 +162,7 @@ namespaces.
 | `learning.usage.low-threshold-percent` | Usage: первый порог `USAGE_LOW` и подсветки fair-use (`warn` — строго выше порога); 90 и 100 фиксированы | Percent; `80`; 50–89 |
 | `learning.usage.reservation-ttl` | Usage: TTL осиротевшей reservation; фактический срок = min(TTL, конец периода). Решение AI-01: с запасом больше границы запуска шагов `PT1H`; живую reservation продлевает `UsageLedger.renew` (тот же TTL) | Duration; `PT2H`; `PT1M`–`P1D`, целое число секунд |
 | `learning.usage.expiry-interval` / `expiry-initial-delay` | Usage: частота воркера, который возвращает осиротевшие reservations и удаляет счётчики окон старше 90 дней (до 20 пачек по 200 за запуск) | Duration; `PT1M` / `PT1M`; положительное значение Spring scheduler |
-| `learning.usage.entitlements.default-plan` | Usage: `EntitlementSource` до billing (#79) — план всех аккаунтов; на локальном стенде с одним владельцем это способ получить платный план | Enum `FREE`/`PLUS`/`PRO`/`MAX`; `FREE` |
+| `learning.usage.entitlements.default-plan` | Usage: конфигурационный `EntitlementSource` — план аккаунтов без действующего снимка в `entitlement_inbox` (оплаченный период или промокод); на локальном стенде с одним владельцем это способ получить платный план | Enum `FREE`/`PLUS`/`PRO`/`MAX`; `FREE` |
 | `learning.usage.entitlements.overrides.<accountUuid>` | Usage: план конкретного аккаунта (UUID субъекта токена); не меняет остальных | Enum `FREE`/`PLUS`/`PRO`/`MAX`; не задан; UUID в каноническом виде |
 | `learning.plans.year-discount-percent.plus` / `pro` / `max` | Paywall (#301): скидка годовой цены относительно 12 месяцев, в процентах; цена года = месяц × 12 × (100 − скидка) / 100, до целых рублей; решение владельца 2026-10-05 | Integer; `5` / `10` / `10`; 0–50 |
 | `learning.plans.max-teaser.enabled` | Paywall: показывать ли Max как тизер «В работе» (не выбирается); без флага Max не приходит в `GET /api/plans` | Boolean; `false` |
@@ -181,9 +181,7 @@ namespaces.
 | `learning.onboarding.backfill.enabled` / `batch` / `slice-budget` / `pause`; очередь `onboarding.backfill` (`learning.jobs.onboarding.backfill.*`) | Backfill вех «Пути» по истории (OB-302): при `true` worker ставит одну задачу на версию реестра (`onboarding.backfill:v1`), которая слайсами по `slice-budget` с паузой `pause` и пачками по `batch` аккаунтов сливает историю в `account_milestone` (`source=BACKFILL`, без уведомлений, прогресс не понижается); `learning.jobs.onboarding.backfill.enabled=false` — kill switch очереди | Boolean `false`; Count `1000` (100–5000); Duration `PT3S` (PT0.5S–PT20S); Duration `PT1S` (0–PT1M) |
 | `learning.onboarding.rhythm.enabled` (`LEARNING_ONBOARDING_RHYTHM_ENABLED`) | Недельный ритм (OB-401, [контракт](../../contracts/onboarding/README.md), ADR-ONB-004): при `true` завершение SCHEDULED/PRACTICE-занятия засчитывает день ISO-недели (по сохранённой `local_study_date`; REPLAY — нет), неделя, в которой дней стало не меньше цели (`weeklyTarget`, по умолчанию 3), увеличивает `weeks_met` один раз и в первый раз даёт веху `RHYTHM_WEEK`; `rhythm` в `GET /api/onboarding` (при включённом `learning.onboarding.enabled`) и веха видна в «Пути». `false` — rollback: ничего не пишется, `rhythm: null`, `RHYTHM_WEEK` скрыта; записанные недели сохраняются. Недели считаются с момента включения, история не пересчитывается. В production включён с 2026-10-19 (политика ПДн 1.8, `deploy/production/compose.yaml`) | Boolean `false` |
 | `learning.onboarding.reward.enabled` (`LEARNING_ONBOARDING_REWARD_ENABLED`) / `daily-limit` (`LEARNING_ONBOARDING_REWARD_DAILY_LIMIT`) | Награда за полный «Путь» (OB-402, ADR-ONB-005): при `true` `GET /api/onboarding` аккаунта, у которого все видимые вехи выполнены и который Identity считает доверенным (`mnema_trusted`), выдаёт один раз персональный код включённой кампании `PATH_REWARD` (`/manage/promos`; кампания — второй, владельческий выключатель) на 7 дней и `PATH_REWARD_READY`; `daily-limit` — не больше стольких выдач кампании за 24 ч (дальше — при следующем чтении). `false` — новые коды не выдаются и `reward: null`; выданные коды остаются действительны до своего срока (не отзываются). Без `MNEMA_PROMO_HASH_SECRET` в production не выдаётся. В production выключено (решение владельца 2026-10-19); кампания не создаётся без решения владельца | Boolean `false`; Count `200` (1–10000) |
-| `learning.generation.max-exercise-targets` / `max-exercises-per-target` / `max-exercises-per-session` | Estimate (#281) и далее admission AI-13 (#291): материалы, упражнения на материал и на сессию; выше — `422 RESOURCE_LIMIT_EXCEEDED` без усечения; решение владельца 2026-10-02 | Count; `20` / `10` / `60`; 1–1000 |
-| `learning.generation.max-artifacts-per-session` / `max-sources` | Estimate (#281) и далее admission AI-04 (#287): артефакты сессии `MATERIALS` и pinned источники спеки; выше — `422 RESOURCE_LIMIT_EXCEEDED` (`ARTIFACTS_PER_SESSION` / `SOURCES`) | Count; `20` / `20`; 1–1000 |
-| `learning.features.<capability>.enabled` | Переключатель capability: `ai-assessment`, `speech-to-text`, `ai-generation`, `text-to-speech`, `image-search`, `image-generation`, `video-generation`, `web-search`. Флаг сам ничего не включает: нужен адаптер (`flag && adapter configured`) | Boolean; `false` |
+| `learning.features.<capability>.enabled` | Переключатель capability: `ai-assessment`, `speech-to-text`, `ai-generation`, `text-to-speech`, `image-search`, `image-generation`, `video-generation`, `web-search`. Флаг сам ничего не включает: нужен адаптер (`flag && adapter configured`). В production включены все, кроме `image-generation` и `video-generation` (см. «AI в production») | Boolean; `false` |
 | `learning.ai.provider` | `stub` выбирает детерминированный Stub на всех текстовых маршрутах (local/CI) и пишет WARN при старте; только так Stub регистрируется — запись `stub:...` в маршруте — ошибка конфигурации. Пусто — маршруты ниже | `` / `stub`; пусто |
 | `learning.ai.routes.text-fast` / `text-strong` / `assess` / `plan` / `plan-strong` | Упорядоченные `provider:model`; первая пригодная запись основная, остальные — fallback (429/5xx/timeout/invalid после repair). Запись без ключа пропускается; неизвестная модель без цены — ошибка старта | List; fallback прямого DeepSeek — OpenRouter с теми же моделями (решение владельца 2026-10-04), GigaChat последним: `deepseek:deepseek-flash,openrouter:deepseek/deepseek-v4.1-flash,gigachat:GigaChat-2` / `deepseek:deepseek-v4-pro,openrouter:deepseek/deepseek-v4-pro` / как `text-fast` (`assess`) / как `text-fast` (планировщик, thinking/reasoning включён) / как `text-strong` (эскалация планировщика) |
 | `learning.ai.providers.<id>.enabled` | Kill-switch провайдера (`deepseek`, `gigachat`, `openrouter`), без релиза | Boolean; `true` |
@@ -226,7 +224,7 @@ namespaces.
 | `learning.ai.stt.call-timeout` / `min-avg-logprob` / `max-no-speech-prob` / `gemini-prompt` | Потолок одного вызова STT (внутри `learning.speech.deadline`); порог `garbled` для self-host: средний `avg_logprob` сегментов (взвешенный длительностью) ниже порога или `no_speech_prob` выше порога у ответа с текстом; инструкция моделям Gemini, кроме `*-transcribe` (без персональных данных) | Duration `PT25S` (≤2 мин); Decimal `-1.0` (−10…0) / `0.6` (0–1); String (≤400) |
 | `learning.speech.rate-limit` / `rate-window` | Речевые вводы на аккаунт в окне (хранится в БД, `speech_input_use`, под advisory-lock аккаунта; повтор по `Idempotency-Key` место не занимает); следующий — `429 RATE_LIMITED` с `Retry-After` | Count `20` (1–1000); Duration `PT10M` (10 с–1 сутки) |
 | `learning.speech.ttl` / `deadline` / `sweep-interval` | Жизнь строки речевого ввода (текст и метаданные, **не аудио**: аудио удаляется с концом распознавания) после создания; срок одного ввода до терминального состояния (позже — `FAILED UNAVAILABLE`, в том числе после падения воркера); частота sweep воркера (claim, просроченные, чистка) | Duration `PT15M` (1 мин–24 ч) / `PT30S` (1 с–`ttl`) / `PT2S` (≤5 мин) |
-| `learning.speech.max-hints` / `consent-version` | Сколько терминов колоды (заголовки текущих материалов, без почты, ссылок и длинных чисел) уходит провайдеру подсказкой; версия текста согласия на обработку голоса — новая версия спрашивает всех заново | Count `60` (0–200); `speech-2026-10-2` |
+| `learning.speech.max-hints` / `consent-version` | Сколько терминов колоды (заголовки текущих материалов, без почты, ссылок и длинных чисел) уходит провайдеру подсказкой; версия текста согласия на обработку голоса — новая версия спрашивает всех заново | Count `60` (0–200); `speech-2026-10-3` |
 | `learning.ai.providers.<id>.egress` | `direct` или `proxy`; `proxy` без активного egress proxy — адаптера нет, capability `PROVIDER_NOT_CONFIGURED`, route идёт в fallback | Enum; `direct` |
 | `learning.ai.user-key.secret` / `key-id` | Секрет HMAC opaque user key (`MNEMA_AI_USER_KEY_SECRET`, ≥16 символов; без дефолта) и его идентификатор для ротации | String; пусто / `k1` |
 | `learning.ai.prompt.version` / `max-input-tokens` / `working-input-tokens` | Активная версия prompt library; жёсткий потолок входа (оценка) и рабочий размер, выше которого сборщик только помечает | `v1` / `32000` / `25000` |
@@ -236,7 +234,7 @@ namespaces.
 | `management.server.port` / `management.server.address` / `management.endpoints.web.exposure.include` | Метрики на отдельном порту, привязанном к приватному адресу, не на публичном API: публичный/wildcard адрес или hostname вместо приватного IP literal, совпадающий порт и расширение выше `health,info` без собственного порта — отказ при старте (`ManagementExposureGuard`); порт отвечает на GET/HEAD без токена. Окружение: `MANAGEMENT_SERVER_PORT`, `MANAGEMENT_SERVER_ADDRESS`, `MNEMA_MANAGEMENT_EXPOSURE` | Порт; адрес; список; выключено (`health,info`, один порт) |
 | `learning.generation.session-retention` | Generation: `expires_at` сессии = последняя активность + срок; он же граница media-hold артефактов | Duration; `P30D` |
 | `learning.generation.max-active-sessions` | Generation: активные сессии на аккаунт (PLANNING, PLAN_READY, RUNNING, REVIEW с PROPOSED/REVISING/STALE); сверх — `422 RESOURCE_LIMIT_EXCEEDED` (`ACTIVE_SESSIONS`) | Count; `3` (1–100) |
-| `learning.generation.max-sources` / `max-artifacts-per-session` / `max-exercise-targets` / `max-exercises-per-target` / `max-exercises-per-session` | Generation (читает usage): лимиты спецификации; сверх — `422 RESOURCE_LIMIT_EXCEEDED` без молчаливого клампа; MATERIALS — до 20 артефактов | Count `20/20/20/10/60` (1–1000) |
+| `learning.generation.max-sources` / `max-artifacts-per-session` / `max-exercise-targets` / `max-exercises-per-target` / `max-exercises-per-session` | Generation (читает usage; Estimate #281, admission AI-04 #287 и AI-13 #291): материалы, упражнения на материал и на сессию, артефакты сессии `MATERIALS` (до 20) и pinned источники спецификации; сверх — `422 RESOURCE_LIMIT_EXCEEDED` (`ARTIFACTS_PER_SESSION` / `SOURCES`) без молчаливого клампа и усечения; решение владельца 2026-10-02 | Count `20/20/20/10/60` (1–1000) |
 | `learning.generation.planner.enabled` | Generation: планировщик «Сначала показать план» (AI-14, #295); при `false` `planFirst: true` — `422 SPEC_NOT_SUPPORTED` | Boolean; `true` |
 | `learning.generation.planner.deadline` | Generation: бюджет одного запуска шага `PLAN` (вызов с thinking и repair) | Duration; `PT4M` (>0, ≤30 мин) |
 | `learning.generation.planner.max-output-tokens` | Generation: потолок ответа планировщика, рассуждение thinking-модели включено | Count; `16000` (1000–65536) |
@@ -279,35 +277,33 @@ Manifest и GC contracts описаны в
 
 ## Колоды сообщества: состояние в production
 
-Эпик [#419](https://github.com/MattoYuzuru/Mnema/issues/419). Публичные функции выходили выключенными;
-релиз включения после Share/16 (тексты) и Share/17 (проверка) задаёт три выключателя в
+Публичные функции колод сообщества включаются выключателями в
 `deploy/production/compose.yaml`. Остальные ключи берут значения по умолчанию из `application.properties`. Подробности каждого ключа — в таблице выше, поведение — в
-[guide Learning](../../backend/services/learning/guide.md), состояние по задачам —
-[evidence эпика 1](./evidence/community-decks/epic-1/README.md).
+[guide Learning](../../backend/services/learning/guide.md).
 
 | Выключатель из §14 архитектуры | Ключ | Production | Что произойдёт при `true` |
 |---|---|---|---|
 | Публичные маршруты | `learning.community.public-routes.enabled` | `true` (compose) | Открываются `GET /api/public/decks/{code}…`, запросы доступа, превью ссылок и подача жалобы на колоду; без них `/d/{код}` показывает «Колода не найдена». |
 | Каталог и поиск | `learning.community.catalog.enabled` | `true` (compose, с 15.10.2026 вместе с политикой 1.6) | Открываются фасеты, полки, список и поиск колод, колоды автора и `sitemap.xml` (нужен и `public-routes`). Полка владельца редактируется и при `false`. |
 | События и интересы | `learning.community.events.enabled` | `true` (compose, с 15.10.2026) | После политики 1.6 включается запись действий/показов и активный ночной профиль; retention продолжает работать и при выключении. |
-| «Для вас» | `learning.community.for-you.enabled` | `true` (compose, с 15.10.2026) | Только для вошедших; требует каталог и frontend launch flag. Формула по контракту, полка скрыта при нехватке кандидатов. Включается владельцем отдельным шагом после проверки каталога/политики. |
+| «Для вас» | `learning.community.for-you.enabled` | `true` (compose, с 15.10.2026) | Только для вошедших; требует каталог и frontend launch flag. Формула по контракту, полка скрыта при нехватке кандидатов.  |
 | Публичные медиа | `learning.community.public-media.enabled` | `true` (compose) | Выдача подписанных ссылок на медиа материалов (нужен и `public-routes`). |
 | Создание копий | `learning.community.forks.enabled` | `true` (compose) | Работает «Добавить к себе». Существующие копии работают при любом значении. |
 | Жалобы | `learning.community.complaints.enabled` | `true` | Включена заранее; жалоба на колоду достижима, только когда включены `public-routes`. |
 | Очередь копий | `learning.jobs.deck.copy.materialize.enabled` | `true` (по умолчанию) | Выключенная очередь копии не готовит. |
 | Фоновые задачи Learning | `learning.jobs.enabled` | `true` | Общий выключатель исполнителя. |
-| Автообновления копий, «Для вас» | нет | нет | Функций ещё нет (эпики 2 и 4); выключатели появятся вместе с ними. |
+| Автоприём обновлений копий | `learning.updates.auto.enabled` | `false` (по умолчанию; в compose не задан) | Публикация автора ставит задачу веера, безопасные изменения применяются к активным копиям с включённым «Принимать безопасное автоматически»; включение — решение владельца. |
 
-Лимиты эпика в production равны значениям по умолчанию таблицы выше: публичное чтение `120` / `600` / `600` / `600`
+Лимиты колод сообщества в production равны значениям по умолчанию таблицы выше: публичное чтение `120` / `600` / `600` / `600`
 в минуту (гость, `/48`, overflow, аккаунт) и `max-concurrent` `3`; публичные медиа `240` / `1200` / `3000` / `600`,
 ссылки живут `PT10M`; копии `20` в час и `10` неготовых на аккаунт, срез `200`; жалобы `10` новых в сутки,
 поиск профиля `5` / `10` в минуту; выдача по логину `10` / `40` в минуту; очередь задач `4` срезов на процесс,
-хранение завершённых задач `P7D`. Метрики эпика (все без настроек): `mnema_learning_jobs_*`,
+хранение завершённых задач `P7D`. Метрики колод сообщества (все без настроек): `mnema_learning_jobs_*`,
 `mnema_public_deck_requests_total`, `mnema_public_media_requests_total`, `mnema_published_media_drift_total`,
 `mnema_deck_access_total`, `mnema_deck_forks_total`, `mnema_deck_fork_materialization_*`, `mnema_complaints_total`,
 `mnema_content_unavailable_total`.
 
-Часть эпика живёт вне Learning:
+Часть функций живёт вне Learning:
 
 | Что | Где | Значение |
 |---|---|---|
@@ -376,7 +372,7 @@ algorithm; изменение требует нового policy version/hash и
 [`contracts/decks/access.json`](../../contracts/decks/access.json) и проверяются `AccessServiceIntegrationTest`.
 Константы публикации (Share/8, #430) — контракт, а не ключи: не более 5 тегов по 1–32 символа, «Что нового» 1–500 символов,
 уровень из одного закрытого списка (A1–C2, начальный, средний, продвинутый); порог каталога 10 материалов и 1 упражнение
-только показывается (каталог — эпик 3); заголовки для подсказки языка и темы берутся у не более 20 материалов. Они зафиксированы
+применяется каталогом; заголовки для подсказки языка и темы берутся у не более 20 материалов. Они зафиксированы
 в [`contracts/decks/publication.json`](../../contracts/decks/publication.json).
 Жалобы (Share/15, #437): текст до 1000 символов, срок рассмотрения 30 дней, хранение 3 года, причины — закрытый список
 ([`contracts/moderation`](../../contracts/moderation/README.md)); это константы, как и строка «Срок и хранение жалобы» выше.
@@ -390,18 +386,21 @@ Planner query/memory bounds и CSS tokens имеют другие причины
 проверять default, края диапазона и независимость соседних областей. Если
 новый предел вызывает нагрузку или ломает UX, вернуть предыдущий default для
 новых операций; существующие revision/attempt IDs и format versions не менять.
-Среда только локальная, rollout и восстановление серверных данных здесь не
-заявлены.
+Production работает на VPS `mnema`; выпуск, rollback и восстановление серверных данных —
+в [production delivery](../operations/production-delivery.md) и
+[VPS runtime](../operations/vps-runtime.md).
 
 
-## AI production admission — 2026-10-15/16
+## AI в production
 
-The owner confirmed the RKN and quality review gates in the launch chat. The production Compose
-explicitly enables `ai-generation`, `ai-assessment`, `text-to-speech`, `speech-to-text`, `image-search` and `web-search`; actual availability still requires a provider and a usable route.
-The owner admitted original-audio ABROAD speech-to-text on 2026-10-16; each account still consents
-before recording under the shared `speech-2026-10-3` disclosure, and may withdraw in the profile.
-Image/video generation stay off. The existing `all` topology and v1 prompt remain. Secrets are
-explicitly allowlisted in `deploy/production/app-config.keys`, delivered from `prod` Environment
-secrets and interpolated only into Learning. Host-generated HMAC and egress credentials stay in
-root-only runtime.env and are not on the CI allowlist. The optional split overlay is not activated.
-Individual voice consent, budgets, kill switches and current tariff allowances remain in force.
+Production Compose (`deploy/production/compose.yaml`, сервис Learning) явно включает
+`ai-generation`, `ai-assessment`, `text-to-speech`, `speech-to-text`, `image-search` и
+`web-search`; `image-generation` и `video-generation` выключены. Фактическая доступность
+capability требует провайдера и пригодного маршрута.
+
+| Область | Состояние |
+|---|---|
+| Речь в текст | Допущена обработка оригинального аудио за рубежом (регион `ABROAD`, решение владельца 2026-10-16). Аккаунт даёт согласие перед записью по общему тексту `speech-2026-10-3` и отзывает его в профиле |
+| Топология и промпт | Топология `all`, промпт v1; необязательный split overlay (`compose.ai-worker.yaml`) не активирован |
+| Секреты | Явный allowlist в `deploy/production/app-config.keys`, значения приходят из секретов Environment `prod` и подставляются только в Learning. HMAC и egress-учётные данные, созданные на хосте, лежат в `runtime.env` (доступ только root) и в allowlist CI не входят |
+| Ограничения | Индивидуальное согласие на голос, бюджеты, kill switches и текущие квоты тарифов действуют |

@@ -5,7 +5,7 @@ artifact:
   title: "Mnema domain truth map and glossary"
   status: current
   created_at: "2026-10-01"
-  updated_at: "2026-10-13"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
 ---
 
@@ -23,24 +23,26 @@ competing copy.
 | Question | Canonical source | Not a source of truth |
 |---|---|---|
 | Exercise mechanics, wire shapes, evaluators, session modes, errors, fixtures | [`contracts/study/README.md`](../../contracts/study/README.md) and the JSON fixtures beside it (executed by backend and frontend tests) | `docs/system-overview.md` counts of mechanics, v1 review/scheduler code |
-| Why exercises and evidence work this way (objective vs exercise vs attempt, evidence classes, retention) | [Exercise catalog](../product/exercise-catalog-v2.md) | Epic refinements as backlog |
-| Proposed improvement of learning core, scientific critique, task bodies | [Learning core backlog](./learning-core/README.md) (`proposed`; actual behavior still comes from Study) | Chat hypotheses as accepted requirements |
+| Why exercises and evidence work this way (objective vs exercise vs attempt, evidence classes, retention) | [Exercise catalog](../product/exercise-catalog-v2.md) | Epic or task bodies as current behavior |
+| Proposed improvement of learning core, scientific critique, task bodies | [Learning core backlog](./learning-core/README.md) (`proposed`, not implemented; actual behavior still comes from Study) | Chat hypotheses as accepted requirements |
+| Onboarding: first-entry tour, sample deck, «Путь Mnema», weekly rhythm, reward, holdout report | [`contracts/onboarding`](../../contracts/onboarding/README.md) (wire and fixtures), [onboarding package](./onboarding/README.md) (proposal, architecture, ADRs; implemented, switches in its «Что включено в production») | `design/prototype/onboarding` (design evidence) |
+| Community decks: access, publication, copies and updates, catalogue, search, rank, recommendations, complaints | [Product contract](../product/community-decks.md), [architecture](../architecture/community-decks.md), contracts [decks](../../contracts/decks/README.md), [community](../../contracts/community/README.md), [moderation](../../contracts/moderation/README.md); switches in [runtime policy index](./runtime-policy-index.md) | `docs/reviews/community-decks-2026-10/rfc.md` as current behaviour (decision record only) |
 | Authoring, Capture («На потом»), drafts, Study modes, restart | [Authoring and Study workflows](../product/authoring-and-study-workflows.md) | UX refinement notes superseded by the contract |
 | Owner decisions and open questions | [Owner decisions](../decisions/owner-decisions-2026-08.md) | Reviews, research, launch hypotheses (`proposed`) |
 | Product direction, economics, legal | [`docs/product/`](../README.md#product): only `accepted` rows are requirements; `proposed` are hypotheses | |
 | Content model and persisted document format | [Native content format](../architecture/learning-content-format-v2.md), [`contracts/content/`](../../contracts/content/native-v1) | v1 template/field/card model |
 | Deck, item, authoring command shapes | [`contracts/decks`](../../contracts/decks/README.md), [`contracts/items`](../../contracts/items/README.md), [`contracts/authoring`](../../contracts/authoring/README.md) | |
 | AI sessions, approval, edits, speech, usage and notifications | [Generation](../../contracts/generation/README.md), [speech](../../contracts/speech/README.md), [usage](../../contracts/usage/README.md), [billing](../../contracts/billing/README.md), [notifications](../../contracts/notifications/README.md); operating flags: [AI runbook](../operations/ai-runbook.md) | frozen run evidence and research prompts |
-| Runtime behaviour, database shape, routes | Service guides ([Identity](../../backend/services/identity-account/guide.md), [Learning](../../backend/services/learning/guide.md)), ordered migrations, controllers/tests, `frontend/src/app/app.routes.ts` | `docs/services/*`, `docs/core-entities-schema.md` (legacy v1) |
+| Runtime behaviour, database shape, routes | Service guides ([Identity](../../backend/services/identity-account/guide.md), [Learning](../../backend/services/learning/guide.md)), ordered migrations, controllers/tests, `frontend/src/app/app.routes.ts` | the `v1-apache-final` tag (legacy v1) |
 | Owner console, financial/reporting accuracy, ticket operations | [Console product](../product/admin-console.md), [architecture](../architecture/admin-console.md), [admin contract](../../contracts/admin/README.md), [UX](../frontend/admin-console-ux.md) | Legacy v1 admin #56/#59; credits/current plans as payment evidence |
 | Public events, editorial access, feedback boundary | [Events contract](../../contracts/events/README.md), [public updates and feedback](../architecture/public-updates-and-feedback.md) | Telegram handles as authentication; private notifications as release notes |
 | UI direction, tokens, a11y boundaries | [Design and experience](../frontend/design-and-experience-2026-09.md), [Brand and UI contract](../frontend/mnema-brand-and-ui-contract.md), `frontend/src/theme/tokens.css` | `design/prototype` (evidence), Liquid Glass, the 2026-08 experience audit |
 | Delivery, what “done” means, deployment | [Production delivery](../operations/production-delivery.md) and root `AGENTS.md` | removed Kubernetes staging/recovery runbooks (Git history only) |
-| Issue / PR / Project status format | [Work item standard](./work-item-standard.md); live status is read from GitHub | [GitHub execution model](./github-execution-model.md) (historical setup) |
-| Commands, machine setup | [Agent runbook](./agent-runbook.md) | prose in evidence files, old session handoffs |
-| What was proven, when, on which revision | [Evidence index](./evidence/README.md) | Anything under `evidence/` as current behaviour |
+| Issue / PR / Project status format, epic completion | [Work item standard](./work-item-standard.md); live status is read from GitHub Issues and the Kanban | Status copied into docs |
+| Commands, machine setup | [Agent runbook](./agent-runbook.md) | prose in evidence files |
+| Reproducible measurements kept next to the docs | [Evidence index](./evidence/README.md); other evidence lives in the PR or Issue | Anything under `evidence/` as current behaviour |
 
-Historical evidence, `legacy` v1 docs, the `v1-apache-final` tag and Git history explain *why*
+Retained evidence, the `v1-apache-final` tag and Git history explain *why*
 something looked the way it did. They are read-only: never copy a rule, name or table from them
 into new work (greenfield rule in root `AGENTS.md`).
 
@@ -62,4 +64,4 @@ into new work (greenfield rule in root `AGENTS.md`).
 | **EditingDraft / CaptureNote** | Server-side unsaved edits (expire) vs. quick notes «На потом» (no idle TTL, outside Study). | each other |
 | **Capability** | Two unrelated senses. (1) Server feature flag + provider, e.g. `aiAssessment`/`speechToText`, reported by `GET /api/capabilities`; off by default, availability depends on configuration, provider health and budget. Publication of a dependent exercise fails `CAPABILITY_UNAVAILABLE` when its capability is unavailable. (2) Native-content projection capabilities that authorize media/logical references. | the agent “capability inventory” in `docs/engineering/capability-inventory.yaml` (tool/command catalog) |
 | **Epic #77** | AI generation/Workshop, assessment/speech, usage/plans/promo; current contracts and runtime guides own behavior. | v1 `ai` service or a promise that every production flag is enabled |
-| **Epic #74 / #75 / #76, epic #265 (#266 / #267 / #268)** | Content+authoring / Study / media; #266 unified the exercise mechanics, #267 rebuilt the exercise editor as one step-by-step page with the stateless `POST /api/exercise-previews` boundary, #268 added `ORDER` and `CATEGORIZE` (seven total). Epic records are historical; the contract is current. | backlog |
+| **Epic #74 / #75 / #76, epic #265 (#266 / #267 / #268)** | Content+authoring / Study / media; #266 unified the exercise mechanics, #267 rebuilt the exercise editor as one step-by-step page with the stateless `POST /api/exercise-previews` boundary, #268 added `ORDER` and `CATEGORIZE` (seven total). Behavior comes from `contracts/study`, the [media platform](../architecture/media-platform.md) and the Learning guide. | Epic or task bodies |

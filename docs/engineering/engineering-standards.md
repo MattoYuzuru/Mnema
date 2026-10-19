@@ -5,7 +5,7 @@ artifact:
   title: "Mnema engineering, UX and response standards"
   status: current
   created_at: "2026-10-01"
-  updated_at: "2026-10-01"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
 ---
 
@@ -165,6 +165,29 @@ The exact commands and the local-machine setup are in the
   - constraints/risks
 
   Avoid vague TODOs like “refactor later”.
+
+## Load, UI reuse and review rules (community decks execution rules)
+
+Binding owner requirements for any feature that adds shared state, lists or access
+control; they were first set for community decks and apply to all later work.
+
+1. **Zero load and high MAU.** Check every architectural decision twice: with zero load
+   (empty tables, empty states, idle jobs) and at high monthly active users, using
+   scenario H of [community decks architecture §12](../architecture/community-decks.md#12-нагрузка-ноль-и-высокий-mau)
+   as the model. Record the conclusion in the pull request.
+2. **Styleguide first.** A new shared UI element (menu, card, chip, panel, comparison
+   columns, filters, glyphs) is added to `/styleguide`
+   ([styleguide](../frontend/styleguide.md)) before screens use it.
+3. **Reuse existing components.** `app-auto-load` (infinite loading, no page buttons),
+   `app-mnema-select` (drop-down lists), `.check-row`/`.check-field` (checkboxes),
+   `app-segmented-choice`, `app-toggletip`, toasts. If more is needed, extend the
+   component instead of duplicating it.
+4. **Full gate and review.** The full gate from [`AGENTS.md`](../../AGENTS.md) runs on the
+   exact commit. UI work is checked on desktop and mobile, with keyboard, screen
+   reader and reduced motion. ACL, media and invitation changes get an independent
+   security review.
+5. **Key migrations** run in a maintenance window with a backup (greenfield: no `/v2`,
+   no dual writes, no adapters).
 
 ## Output expectations (was §9)
 

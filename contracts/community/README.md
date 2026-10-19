@@ -30,9 +30,9 @@ the behaviour [the product contract](../../docs/product/community-decks.md) («�
   `VERSION_CONFLICT` (412), `RATE_LIMITED` (429), `PUBLIC_READ_BUSY` (503); the editorial `PUT` adds `PRECONDITION_REQUIRED`
   (428), `VERSION_CONFLICT` (412) and `IDEMPOTENCY_CONFLICT` (409).
 
-## Clarifications of the backend (Community/2, #449; Community/6, #453; Community/7, #454)
+## Route behaviour
 
-These do not change a shape of [`catalog.json`](catalog.json); they fix what the examples and rules left open. The backend tests execute them.
+These rules complete the shapes of [`catalog.json`](catalog.json); the backend tests execute them.
 
 - **Parameters.** An unknown parameter name is 400, like a repeated one. An EMPTY value (`topic=`, `sort=`, `cursor=`) is the same as an absent parameter, so a form may send its blank fields; a repeated
   parameter is 400 even when one occurrence is empty. `media` and `mechanics` take a comma-separated list without empty or repeated entries. `learn` is a language code of two or three lower-case letters
@@ -84,7 +84,7 @@ The parent writes events only for authenticated accounts, without search text; c
 
 Executable requests and replies are the `profile`, `select`, `reset`, `event`, `exposure`, `recommendations` and `emptyRecommendations` entries; `invariants` define validation, privacy, retention, jobs, load boundaries and the ranking rules. The single-card recommendation example exercises the parser; a real shelf is omitted below four cards.
 
-### Storage and reset boundaries (Recs/1–2)
+### Storage and reset boundaries
 
 Telemetry receipt deduplication lasts seven days (`community.events` scope only). Its cleanup is separate from the thirteen-calendar-month raw-event retention. Aggregate exposure commands contain at most 48 actually visible cards; batching does not sample. Interest command receipts persist only an acknowledgement; a replay returns the current profile, preserving idempotency without retaining a profile erased by reset. `If-Match` is the quoted ETag, for example `"0"`; `rowVersion` in the body is the raw decimal string `"0"`.
 

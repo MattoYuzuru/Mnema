@@ -136,11 +136,11 @@ matching не пытается поместить весь конспект в �
 
 An author profile has visibility settings, public decks, last update and current subscriber/usage count. No creator payouts and no update-notification subscriptions in v2.
 
-Будущий onboarding предлагает создать свою колоду или выбрать качественную колоду
-сообщества. Каталог, рекомендации, likes/quality signals и рейтинг — гипотезы
-community release; обещание готового большого каталога допустимо в маркетинге
-только после появления реального предложения. На текущем макете каталог не
-показывается. Notification mechanics остаются отдельным будущим решением.
+Онбординг «Начало пути» предлагает создать свою колоду или выбрать колоду сообщества
+(реализован, [пакет](../engineering/onboarding/README.md)); каталог и рекомендации
+сообщества тоже реализованы ([community decks](./community-decks.md)). Likes/quality
+signals и рейтинг остаются гипотезами; обещание готового большого каталога допустимо в
+маркетинге только после появления реального предложения.
 
 ## Roadmap by product evidence
 
@@ -175,9 +175,9 @@ community release; обещание готового большого катал
 
 - multiple select, matching, ordering/assembly, listening dictation, multi-value recall and measured image occlusion/labeling;
 - coauthors + publication review;
-- cheap editable forks, selective update previews and conflict UI; automatic tracking only after a separate choice;
-- public author profiles/reputation signals;
-- community catalog/onboarding experiments and a separately specified payment/entitlement pilot;
+- cheap editable forks, selective update previews and conflict UI (implemented, [community decks](./community-decks.md)); automatic tracking only after a separate choice (implemented, off by default);
+- public author profiles (implemented) and reputation signals;
+- community catalog and onboarding (implemented, experiments continue through the holdout report) and a separately specified payment/entitlement pilot;
 - evidence-calibrated exercise policies and targeted interleaving.
 
 ### P2 — segment depth

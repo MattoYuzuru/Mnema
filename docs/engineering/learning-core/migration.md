@@ -27,7 +27,7 @@ outcomes/idempotency; learningEpoch/restart/dispute; nearest due/streak; privacy
 ## Этап LC-E1
 
 1. Закрепить actual HEAD и Flyway inventory fresh main + pending epics; выбрать следующий
-   свободный номер, не заранее V72. Прочитать latest V59 и account lifecycle.
+   свободный номер (на 2026-10-19 последняя — V76), не заранее. Прочитать V59 и последующие миграции и account lifecycle.
 2. Добавить compact observation schema с source/quality/version и индексированными
    account/objective/time lookups, atomic writer и bounded maintenance. Existing API path
    заменяется непосредственно; временной dual product path нет.

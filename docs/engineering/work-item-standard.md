@@ -5,7 +5,7 @@ artifact:
   title: "Mnema work item and pull request standard"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-10-14"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
 ---
 
@@ -186,17 +186,44 @@ PR отвечает на пять вопросов:
 
 ## Статусы
 
+### Где живёт статус
+
+Статус эпика и задачи живёт только в GitHub Issue и на доске «Mnema Kanban» (Project #4).
+Документация описывает реализованное поведение и принятые решения; она не хранит статусы
+задач, журналы PR и коммитов, промпты сессий, backlog, оценки и handoff. Evidence конкретной
+проверки (команды, результаты, снимки) прикладывается к PR или Issue.
+
 ### Пакеты задач в документации
 
-Большой пакет эпиков можно подготовить в документации: parent/child/spike bodies с
-`artifact.status: proposed`, стабильными local IDs и manifest dependencies. Не придумывайте
-GitHub numbers и не ставьте Ready/Done за подготовленный файл.
+Большой пакет эпиков можно подготовить в документации (например, `proposed`-пакет
+[learning core](./learning-core/README.md)): parent/child/spike bodies с `artifact.status: proposed`,
+стабильными local IDs и manifest dependencies. Не придумывайте GitHub numbers и не ставьте
+Ready/Done за подготовленный файл.
 
 Публикация пакета: прочитать live repository/Project/status fields, найти существующие issues
 по ID/outcome, создать или обновить bodies без дубликатов, связать parents/dependencies,
 сохранить mapping ID→number в manifest и проверить read-back. Unknown creation outcome
 сначала разрешается read/deduplication, не повторным create. После публикации источник
-статуса — Issue и Project, а не manifest. Пример: [learning core package](./learning-core/README.md).
+статуса — Issue и Project, а не manifest.
+
+### Завершение эпика
+
+Пакет планирования временный. Когда эпик влит и (если применимо) включён, до закрытия Issue:
+
+- [ ] Реализованное поведение перенесено в канонические документы: продуктовый и архитектурный
+      документ (настоящее время, без «планируется»), `contracts/` для wire-поведения, guide сервиса,
+      [domain truth map](./domain-truth-map.md) и индекс [`docs/README.md`](../README.md).
+- [ ] Долговременные решения и их причины записаны в ADR; отменённые решения помечены `superseded`,
+      а не удалены.
+- [ ] Файлы планирования удалены: эпики, задачи, backlog, ход работ, промпты сессий, handoff,
+      промежуточные отчёты и «Уточнено реализацией»-приложения (их содержание влито в тело документа).
+      История остаётся в Git.
+- [ ] Evidence остаётся в репозитории только если на него ссылается канонический документ,
+      контракт или тест; остальное — в PR и Issue.
+- [ ] Ссылки на удалённые файлы исправлены (`python3 scripts/verify_docs.py`, а также поиск по
+      `.js`, `.json`, `.java`, `.ts`, `.py`, которые `verify_docs.py` не проверяет).
+- [ ] Статус `Done` выставлен после merged/applied и проверки; production-включение записано как
+      отдельный факт (какие флаги включены, с какой даты).
 
 ### Значения статусов
 

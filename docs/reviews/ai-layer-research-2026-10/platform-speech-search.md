@@ -14,8 +14,8 @@ artifact:
 `origin-main` (Spring Boot 3.5.16, Java 21, Angular 22.1.5). Это исследование, не
 решение: цены, terms и санкционные оговорки меняются, юридические выводы требуют юриста.
 Предыдущие исследования, на которые отчёт опирается и которые частично обновляет:
-`docs/reviews/ai-layer-research-2026-10/economics.md`, `docs/product/ai-layer-2026-10.md`,
-`docs/engineering/epic-77-refinement.md` (INFRA-01).
+`economics.md` этого пакета (в истории Git), `docs/product/ai-layer-2026-10.md`,
+`docs/architecture/ai-generation-platform.md` (INFRA-01).
 
 Курс для пересчёта: **1 USD = 83,2454 ₽** (ЦБ РФ на 02.10.2026,
 [cbr.ru XML_daily](https://www.cbr.ru/scripts/XML_daily.asp)). Для округлённых оценок ниже — 83 ₽/$.
@@ -492,7 +492,7 @@ terms вендора.
 Selectel / Yandex Cloud / Cloud.ru / Timeweb не проверялись). Зарубежный GPU для
 российского юрлица закрыт: Art. 5n(1)(h), FAQ 39 Еврокомиссии.
 
-Наследие v1 — `scripts/local-audio-gateway` и `docs/deploy/model-matrix.md` (Piper,
+Наследие v1 — `scripts/local-audio-gateway` и `docs/deploy/model-matrix.md` (удалён, история Git) (Piper,
 Qwen3-TTS, Kokoro). Новый дизайн на нём строить не стоит: у Piper GPL и лицензии голосов,
 у Kokoro нет RU/KO.
 
@@ -706,9 +706,9 @@ qwen3-tts-flash ≈ $95 (если цена подтвердится); русск
 ## 6. Ссылки на документы репозитория
 
 - `docs/product/ai-layer-2026-10.md` — тиры, лимиты STT, экономика credits.
-- `docs/reviews/ai-layer-research-2026-10/economics.md` — предыдущие цены STT/TTS/поиска.
+- `economics.md` этого пакета (в истории Git) — предыдущие цены STT/TTS/поиска.
   Этот отчёт её обновляет: SpeechKit TTS без FR/ES/JA/ZH/KO; EU Art. 5n(1)(g) закрывает
   Mistral; Qwen3-ASR / GigaAM / Parakeet как CPU-альтернативы faster-whisper; Exa и Tavily
   исключают Россию.
-- `docs/engineering/epic-77-refinement.md` (INFRA-01), `docs/architecture/ai-generation-platform.md`.
-- Устаревшее наследие v1: `scripts/local-audio-gateway/`, `docs/deploy/model-matrix.md`.
+- `docs/architecture/ai-generation-platform.md` (INFRA-01).
+- Устаревшее наследие v1: `scripts/local-audio-gateway/`, `docs/deploy/model-matrix.md` (удалён, история Git).

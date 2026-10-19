@@ -113,47 +113,54 @@ Do not expose hashes as entity identity. Identical text can represent separate l
 ## Context and components
 
 Identity and User source is consolidated into Identity & Account. The
-[Learning API runtime](../../backend/services/learning/guide.md) implements platform,
-storage, private content/authoring contracts, bounded Study session snapshots,
-deterministic attempts and baseline scheduling state; progress and remaining P0
-adapters remain in progress and the
-future library scope is limited to seams. Legacy core/media/import/AI remain
-replacement input. The selected target puts content/library/study in one modular Learning API; separate
-media/import/AI and bulk workers receive independent capacity when their capability
-is introduced. This lets a busy importer scale without multiplying API replicas.
-The distinction, real-project evidence and remaining database/failure boundaries
-are explained in [runtime rationale](./revision-storage-and-runtime-boundaries.md#runtime-decision-and-evidence).
+[Learning API runtime](../../backend/services/learning/guide.md) is one modular
+deployable that implements platform, storage, content/authoring, Study, media, community decks,
+the AI layer, usage, billing and onboarding. Legacy core/media/import/AI remain replacement
+input only. Heavy work does not get a second deployable: it runs as durable jobs
+(`platform.jobs`) and role-scoped workers of the same Learning image (an `api`/`worker` split is
+available for the AI work), and media is processed by a one-shot `media-worker` container per job
+started by a trusted host runner. The distinction, real-project evidence and database/failure
+boundaries are explained in [runtime rationale](./revision-storage-and-runtime-boundaries.md#runtime-decision-and-evidence);
+the production layout is in [system overview](../system-overview.md#топология-production).
 
 ```mermaid
 flowchart LR
     Web[Angular web app] --> Identity[Identity & Account]
     Web --> API[Learning API]
-    API --> Catalog[Catalog and content module]
-    API --> Library[Library module]
-    API --> Study[Study module]
+    API --> Catalog[catalog: decks, items, exercises, authoring]
+    API --> Study[study: sessions, attempts, evidence, StudyState]
+    API --> Library[library, fork, update, moderation, community: sharing and catalogue]
+    API --> Media[media: upload, playback, GC, offline manifest]
+    API --> AI[ai, generation, speech, usage, billing, promo]
+    API --> Onb[onboarding, events, notification]
+    Jobs[platform.jobs and role workers] --> Library
+    Jobs --> AI
     Identity --> PG[(PostgreSQL)]
     Catalog --> PG
-    Library --> PG
     Study --> PG
-    API --> S3[(Object storage)]
-    Worker[Later media/import/AI workers] --> Integration[Integration commands and owned inbox]
-    Integration --> Catalog
-    Integration --> PG
-    Worker --> S3
-    Worker --> Providers[Approved future providers]
+    Library --> PG
+    AI --> PG
+    Media --> S3[(Object storage)]
+    Media --> Runner[Host media runner and media-worker containers]
+    AI --> Providers[AI providers, some through the egress proxy]
 ```
 
-Workers may write only integration-owned inbox/job tables or call an application command. They must not update catalog/library/study tables directly. Deployment boundaries may change when measurements show different scaling, security or failure-isolation needs; source modules should not depend on that choice.
+Workers write only through the owning module's commands and tables; they never update another module's tables directly. Deployment boundaries may change when measurements show different scaling, security or failure-isolation needs; source modules should not depend on that choice.
 
-### Proposed domain modules
+### Domain modules
 
-- `catalog`: personal decks, structured learning items and publication; later shared discovery.
-- `library`: personal ownership and access; later forks, subscriptions and upstream conflicts.
+Packages of `app.mnema.learning` (the [repository guide](../engineering/repository-guide.md#learning) lists them):
+
+- `catalog`: personal decks, structured learning items, exercises, native content and publication.
+- `library`, `fork`, `update`, `moderation`, `community`: access levels, grants and invitations, public reads, copies, upstream updates, complaints, and the public catalogue with search, rank and recommendations ([community decks](./community-decks.md)).
 - `study`: exercise selection, memory state, review events and aggregate progress.
-- `integration`: idempotent commands/inbox for capabilities introduced by later epics.
+- `media`, `storage`: asset lifecycle, playback, offline manifest, GC and the immutable block/page storage.
+- `ai`, `generation`, `speech`, `usage`, `billing`, `promo`, `experiment`: the AI layer, budgets, plans and promo ([AI generation platform](./ai-generation-platform.md)).
+- `onboarding`, `events`, `notification`, `profile`, `admin`, `capability`: first-entry journey, public events, the notification center, learner profile data, the owner console API and server-owned feature availability.
+- `platform`: API errors, idempotency receipts, ids, security, wake-ups and the durable job executor.
 - `identity-account` (separate deployable): credentials, issuer, federated identity, account/profile and avatar ownership.
 
-No Kafka or additional database is required for the first replacement. PostgreSQL-backed workers are sufficient when a later capability needs them and reclaim, idempotency and observability are correct.
+No Kafka or additional database is used. PostgreSQL-backed jobs and workers are sufficient while reclaim, idempotency and observability stay correct.
 
 ## Data ownership and contracts
 
@@ -294,9 +301,9 @@ of already-authorized fork content. See the
 Private ownership is the initial behavior. *Updated 2026-10-10:* the accepted
 levels are private, by link, by invitation and public
 ([community decks](./community-decks.md)). Invitation access requires an explicit
-grant, not an unguessable URL; "by link" is a separately named weaker level. Catalog, likes,
-recommendations and community onboarding are future product phases, not primary
-navigation requirements for the current frontend.
+grant, not an unguessable URL; "by link" is a separately named weaker level. The public
+catalogue, search and recommendations are implemented ([community decks](./community-decks.md));
+likes and star ratings are not part of the product.
 
 Future collaborator roles and publication review bind approval to the exact
 draft/base checksum; changing approved material invalidates that approval.

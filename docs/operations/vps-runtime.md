@@ -12,13 +12,15 @@ artifact:
 # Production VPS runtime
 
 Production serves https://mnema.app and https://auth.mnema.app on the Russian VPS
-`mnema` / `135.106.175.30` (Ubuntu 24.04, 6 CPU / 12 GB; `ssh mnema`). Five Compose
-containers (all on loopback host networking) and the root `mnema-media-runner` service run behind host Caddy; the minute health timer and the daily local backup
-are active. The current release is whatever `mnema-deploy status` and the latest
+`mnema` / `135.106.175.30` (Ubuntu 24.04, 6 CPU / 12 GB; `ssh mnema`). Four Compose
+containers (`postgres`, `identity-account`, `learning`, `frontend`; all on loopback host
+networking) run behind host Caddy, and the root `mnema-media-runner` systemd service starts a
+throw-away `media-worker` container per media job (the fifth published image, never a standing
+container). The optional `compose.ai-worker.yaml` overlay (a separate `learning-ai-worker`)
+is not part of the default rollout. The minute health timer and the daily local backup are
+active. The current release is whatever `mnema-deploy status` and the latest
 successful `deploy-production` run report; do not assume a later main commit is
-deployed (docs-only merges are intentionally not released). Public browser acceptance
-remains separate #349 work; a saved Codex browser permission currently prevents that
-surface's check.
+deployed (docs-only merges are intentionally not released).
 
 The owner approved a new empty database; old databases, objects and backups are
 preserved. Every release takes a verified pre-migration dump with an isolated restore
@@ -233,14 +235,13 @@ It opens only while these `prod` Environment secrets are set
 | `MNEMA_IDENTITY_ADMIN_ORIGIN` | Exactly `https://admin.mnema.app`: registers the public OAuth client `mnema-admin-web` (callback `/auth/callback`, S256, 20-minute access token) and allows that browser origin. Console routes accept only tokens issued to this client. | The client is not registered (and removed with its grants if it existed); sign-in on `admin.mnema.app` is refused. |
 | `MNEMA_ADMIN_SUPPORT_ENDPOINT`, `MNEMA_ADMIN_SUPPORT_SECRET` | Fixed `https://…/internal/support` bridge to the Telegram bot and its 32–256 character base64url machine credential; both empty or both set. `MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP` is hard-wired `false` in production. | Support shows "Поддержка недоступна" in the console; no request leaves Learning. |
 
-**Before the first release after this merge, independent of enabling the console**, the administrator must install
-`deploy/production/compose.yaml`, `deploy/production/Caddyfile` and `deploy/production/mnema-deploy.py` (as
-`/usr/local/sbin/mnema-deploy`) from `main` on the host and confirm `mnema-deploy status` shows their hashes equal to the
-repository. `compose.yaml` and `mnema-deploy` changed (admin keys, the empty-by-default admin origin, dispatcher validation);
-the `Caddyfile` only gained comments. The deploy job's drift check (`scripts/deploy-vps.sh`, step 1) fails the release and
-names every file that still differs, so approving first would only waste the approval.
+The host copies of `deploy/production/compose.yaml`, `deploy/production/Caddyfile` and
+`deploy/production/mnema-deploy.py` (installed as `/usr/local/sbin/mnema-deploy`) must equal
+`main` before approval; `mnema-deploy status` shows their hashes. The deploy job's drift check
+(`scripts/deploy-vps.sh`, step 1) fails the release and names every file that still differs, so
+approving first only wastes the approval.
 
-Order of enabling (done 2026-10-10): the owner secrets are set and released first, so Identity registers the client before the
+Order of enabling: the owner secrets are set and released first, so Identity registers the client before the
 `Caddyfile` serves the console host; then the `Caddyfile` with the console block is installed. Disabling is the reverse: restore the
 `admin.mnema.app` redirect to `https://mnema.app/manage/events`, install it, then clear the two secrets and release.
 **Support** additionally needs a transport that does not exist yet: Learning accepts only an HTTPS bridge, while the bot

@@ -17,10 +17,10 @@ into the head of `index.html`; there is no server-side rendering and no change t
 | any failure of the call (Learning down, slow, disabled, limited) | the unchanged `index.html`, `200`, exactly as before this change (its own validators and cache policy) |
 | everything else (`/`, `/login`, assets, `/api`, `/app-config.js`) | untouched |
 
-`/u/{username}`: Learning answers `/api/public/meta/profiles/{username}` with the generic card for every login and does not ask Identity (the
-integrated review of epic 1 closed an anonymous drain of Identity's by-username budget this way). The web server does not wire it either, because the
-application has no `/u/` route (the product «Профиль автора» is epic 3). Epic 3 brings the real profile card back behind the shared lookup budget, then
-copies the deck location with a second pair of maps and the `/profiles/` URLs.
+`/u/{username}`: the author page is a route of the application (`/u/:username`), but the web server does not wire a preview for it. Learning answers
+`/api/public/meta/profiles/{username}` with the generic card for every login and does not ask Identity, because a real card would need one by-username
+lookup per anonymous request against Identity's 60 per 15 minutes per address budget, and an anonymous caller could drain it. A link to `/u/{username}`
+therefore gets the unchanged `index.html` and the application renders the page.
 
 ## Design and why
 
@@ -170,4 +170,4 @@ curl -sI https://mnema.app/d/<link-only-code>  # X-Mnema-Preview: generic, X-Rob
   the preview they took for much longer and do not re-read it**: after a deck is unpublished or lowered to LINK, or an author withdraws the consent, old
   links in chats still show the old title, description and author until the messenger refreshes them (the owner can ask the messenger's bot to re-read the
   link). A card taken while Identity was slow has no author until then. The by-username lookup of a profile hits Identity's 60 per 15 minutes per address
-  limit with Learning's address, which is why `/u/` is not wired yet.
+  limit with Learning's address, which is why nginx does not wire `/u/`.

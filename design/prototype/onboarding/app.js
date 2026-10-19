@@ -1,5 +1,5 @@
-// OB-001 onboarding prototype. Design evidence only: no API, no persistence, state lives in the tab.
-// Do not port this router/state into Angular; the accepted architecture is docs/engineering/onboarding/architecture.md §8.
+// Onboarding prototype (approved 2026-10-16). Design evidence only: no API, no persistence, state lives in the tab.
+// Do not port this router/state into Angular; the implemented architecture is docs/engineering/onboarding/architecture.md §8.
 import { t, days, ordinal } from './texts.js';
 
 const HOLD_MS = 2000;

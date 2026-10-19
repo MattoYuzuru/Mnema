@@ -89,7 +89,7 @@ Production работает на https://mnema.app; сервис аккаунт�
 
 ```text
 feature branch → полный local gate → hosted PR checks → protected squash → main checks
-→ четыре проверенных образа → одно подтверждение Environment `prod` → admission, deploy и verify на VPS → live smoke
+→ пять проверенных образов → одно подтверждение Environment `prod` → admission, deploy и verify на VPS → live smoke
 ```
 
 Публикация и выкатка выполняются автоматически в `Main CI` при изменении runtime

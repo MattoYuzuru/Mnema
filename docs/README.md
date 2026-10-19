@@ -4,19 +4,21 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-10-13"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
 ---
 
 # Mnema Docs
 
 Это единственная каноническая точка навигации. Статусы означают:
-`current` — фактический checkout/runtime; `accepted` — принятое решение или input;
-`proposed` — требует refinement/решения; `historical` — evidence прошлого этапа;
-`superseded` — заменено указанным источником; `legacy` — v1 replacement input.
-Каждый `current`/`accepted` документ ниже доступен не более чем за два перехода от
-этой страницы; историческое evidence вынесено в отдельный раздел и не является
-текущим поведением.
+`current` — реализовано, описывает фактический checkout/runtime; `accepted` — принятое
+решение или input, реализация неполна или не предполагается; `proposed` — требует
+refinement или решения, не реализовано; `historical` — доказательство или решение, оставленное
+потому, что на него ссылается канонический документ; `superseded` — заменено указанным
+источником. Журналов задач, промптов сессий и backlog здесь нет: статус эпиков и задач живёт
+в GitHub Issues и на доске «Mnema Kanban». Старый v1-код — только в теге
+[`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) и в Git history.
+Каждый `current`/`accepted` документ ниже доступен не более чем за два перехода от этой страницы.
 
 ## Маршрут implementation-агента
 
@@ -31,12 +33,12 @@ artifact:
 | Запустить, проверить, открыть Style Guide | [Agent runbook](./engineering/agent-runbook.md) |
 | Найти модуль, версию, owning tests или полный gate | [Repository guide](./engineering/repository-guide.md) |
 | Изменить Study | [Study contract](../contracts/study/README.md); продукт — [exercise catalog](./product/exercise-catalog-v2.md) |
-| Улучшить core обучения | [Исследование, два эпика и entrypoint](./engineering/learning-core/README.md) (`proposed`, не действующий контракт) |
-| Спроектировать или реализовать онбординг | [Исследование, RFC, архитектура и четыре эпика](./engineering/onboarding/README.md) (`accepted` 2026-10-14; OB-E1…E3 влиты за выключенными флагами, OB-E4 в работе; [промпты сессий](./engineering/onboarding/prompts.md), [ход работ](./engineering/onboarding/progress.md)) |
+| Улучшить core обучения | [Исследование, два эпика и entrypoint](./engineering/learning-core/README.md) (`proposed`, не реализовано и не действующий контракт) |
+| Онбординг: «Начало пути», «Путь Mnema», ритм | [Пакет онбординга](./engineering/onboarding/README.md): реализован и включён в production с 2026-10-19 (Путь и ритм включены; учебная колода выключена до шаблона владельца; награда выключена); wire — [`contracts/onboarding`](../contracts/onboarding/README.md) |
 | Изменить authoring/content | [Learning guide](../backend/services/learning/guide.md) и [native content contract](../contracts/content/native-v1/README.md) |
 | Изменить media | Раздел [Media](#media-epic-76) ниже |
-| Колоды сообщества: доступ, публикация, копии, жалобы | [Product contract](./product/community-decks.md) (раздел «Статус реализации»), затем [architecture](./architecture/community-decks.md) и разделы эпика в [Learning guide](../backend/services/learning/guide.md); состояние задач — evidence [эпика 1](./engineering/evidence/community-decks/epic-1/README.md) [эпика 2](./engineering/evidence/community-decks/epic-2/README.md) [эпика 3](./engineering/evidence/community-decks/epic-3/README.md) и [эпика 4](./engineering/evidence/community-decks/epic-4/README.md) |
-| Изменить AI | [Generation](../contracts/generation/README.md), [speech](../contracts/speech/README.md), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md); смысл — [product contract](./product/ai-layer-2026-10.md) |
+| Колоды сообщества: доступ, публикация, копии, обновления, каталог, рекомендации, жалобы | [Product contract](./product/community-decks.md), затем [architecture](./architecture/community-decks.md) и разделы в [Learning guide](../backend/services/learning/guide.md); выключатели — [runtime policy index](./engineering/runtime-policy-index.md) |
+| Изменить AI | [Generation](../contracts/generation/README.md), [speech](../contracts/speech/README.md), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md); смысл — [product contract](./product/ai-layer-2026-10.md); значения и выключатели — [runtime policy index](./engineering/runtime-policy-index.md) |
 | GitHub Issue/PR | [Work item standard](./engineering/work-item-standard.md) |
 | Публикация или deployment | [Production delivery](./operations/production-delivery.md), только в scope соответствующего поручения |
 
@@ -45,11 +47,9 @@ artifact:
 | Статус | Документ | Назначение |
 |---|---|---|
 | current | [Claude Code adapter](../CLAUDE.md) | Импортирует `AGENTS.md` и ведёт к тем же scoped-правилам; не отдельная политика. |
-| current | [Engineering standards](./engineering/engineering-standards.md) | Полная формулировка общих правил (research, UX/a11y, backend, frontend, tests, TODO, формат ответа); краткая форма — в `AGENTS.md`. |
-| current | [Domain truth map](./engineering/domain-truth-map.md) | Источник истины по доменным вопросам и глоссарий. |
-| current | [Agent runbook](./engineering/agent-runbook.md) | Команды и настройка рабочей машины с пометкой verified/not re-run. |
-| superseded | [Старый agent guide](./engineering/agent-guide.md) | Указатель на `AGENTS.md`; не копировать правила обратно. |
-| historical | [Epic #74 execution prompt](./engineering/prompts/epic-74-end-to-end.md) | Исходное поручение; не текущая инструкция. |
+| current | [Engineering standards](./engineering/engineering-standards.md) | Полная формулировка общих правил (research, UX/a11y, backend, frontend, tests, TODO, нагрузка и styleguide-first, формат ответа); краткая форма — в `AGENTS.md`. |
+| current | [Domain truth map](./engineering/domain-truth-map.md) | Источник истины по доменным вопросам (включая онбординг и колоды сообщества) и глоссарий. |
+| current | [Agent runbook](./engineering/agent-runbook.md) | Команды, quality gate и настройка рабочей машины. |
 
 ## Product
 
@@ -61,11 +61,11 @@ artifact:
 | accepted | [Exercise catalog](./product/exercise-catalog-v2.md) | Механики, attempt/evidence, reducer и retention boundaries. |
 | accepted | [UX refinement 2026-09-29](./product/ux-improvements-2026-09-29.md) | Приёмочные сценарии доработки редактора, упражнений и основных экранов. |
 | accepted | [Final polish 2026-09-29](./product/final-polish-2026-09-29.md) | Удаление, заметки «На потом», пропуски и режимы проверки текста. |
-| accepted | [Owner console](./product/admin-console.md) | Кабинет владельца: пользователи, расходы/usage, промокоды, новости, поддержка; billing отдельно. |
-| accepted | [AI layer contract](./product/ai-layer-2026-10.md) | Принятые решения AI-слоя: слои, сценарии, UX, usage, тарифы, промокоды, legal gates. |
+| accepted | [Owner console](./product/admin-console.md) | Кабинет владельца: пользователи, расходы/usage, промокоды и кампании, новости, поддержка, жалобы, полка сообщества, отчёт онбординга. |
+| accepted | [AI layer contract](./product/ai-layer-2026-10.md) | Принятые решения AI-слоя (допущен в production 2026-10-15/16; Issue #77 открыт для остального): слои, сценарии, UX, usage, тарифы, промокоды, legal gates. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Текущий статус РКН/эквайринга и оставшиеся human gates; не юридическая гарантия. |
-| accepted | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. Эпики 1 (доступ, публикация, копии, жалобы) и 2 (обновления копий) закрыты и выкачены; эпики 3 и 4 влиты (#502, #541); каталог, запись событий и «Для вас» включены с политикой 1.6, раздел «Уточнено реализацией» фиксирует отличия от плана. |
+| current | [Колоды сообщества](./product/community-decks.md) | Доступ, публикация, копии и обновления, «Сообщество», поиск, профили, рекомендации и правила. Реализовано; каталог, запись событий и «Для вас» включены в production с политикой 1.6 (2026-10-15), автоприём обновлений выключен. |
 
 ## Architecture и backend
 
@@ -73,17 +73,17 @@ artifact:
 |---|---|---|
 | accepted | [Owner console architecture](./architecture/admin-console.md) | Owner boundary, точность отчётности, admin-host и приватный support bridge; [admin contract](../contracts/admin/README.md). |
 | current | [Public events and feedback](./architecture/public-updates-and-feedback.md) | События, редактор владельца, Telegram inbox и исследованная граница подтверждения аккаунта. |
-| current | [System overview](./system-overview.md) | Replacement topology и legacy boundary. |
-| accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; P0 content/Study реализованы, P1/P2 — границы будущей работы. |
+| current | [System overview](./system-overview.md) | Топология production, компоненты и границы. |
+| accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; реализованы content/Study, медиа, AI-слой, колоды сообщества; отдельные границы будущей работы названы в тексте. |
 | accepted | [Native content format](./architecture/learning-content-format-v2.md) | Persisted native document contract. |
-| accepted | [AI generation platform](./architecture/ai-generation-platform.md) | Принятая архитектура AI-слоя: модули в Learning, Мастерская, MBM, провайдеры, usage, уведомления, безопасность. |
-| accepted | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. Таблица статуса реализации по частям: эпики 1–4 выкачены, каталог эпика 3, события и «Для вас» эпика 4 включены в production. |
+| current | [AI generation platform](./architecture/ai-generation-platform.md) | Реализованная архитектура AI-слоя и решения реализации: модули в Learning, Мастерская, MBM, провайдеры, usage, уведомления, безопасность. |
+| current | [Community decks architecture](./architecture/community-decks.md) | Линия ревизий, DeckAccess, явная публикация, копии O(1), обновления, медиа для чужих, каталог/поиск/ранг, нагрузка 0 и высокий MAU. Таблица состояния реализации по частям. |
 | current | [Revision storage and runtime boundaries](./architecture/revision-storage-and-runtime-boundaries.md) | Выбранное и реализованное storage-направление. |
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Counted-page/structural invariants. |
 | current | [Identity & Account guide](../backend/services/identity-account/guide.md) | Identity runtime. |
 | current | [Learning API guide](../backend/services/learning/guide.md) | Content, exercise, Study и media runtime. |
 | current | [Learning runtime policy index](./engineering/runtime-policy-index.md) | Реестр runtime policies Learning, включая выключатели, лимиты и метрики колод сообщества с значениями в production. |
-| current | Контракты: [study](../contracts/study/README.md), [authoring](../contracts/authoring/README.md), [decks](../contracts/decks/README.md) (метаданные, публичное чтение, публикация, доступ, копии, превью), [moderation](../contracts/moderation/README.md) (жалобы и снятие), [identity](../contracts/identity/README.md) (публичный профиль), [items](../contracts/items/README.md), [native content](../contracts/content/native-v1/README.md) | Общие fixtures backend/frontend. |
+| current | Контракты: [study](../contracts/study/README.md), [authoring](../contracts/authoring/README.md), [decks](../contracts/decks/README.md) (метаданные, публичное чтение, публикация, доступ, копии, превью), [community](../contracts/community/README.md) (каталог, события, интересы, «Для вас»), [moderation](../contracts/moderation/README.md) (жалобы и снятие), [onboarding](../contracts/onboarding/README.md) (тур, «Путь», ритм, награда), [identity](../contracts/identity/README.md) (публичный профиль), [events](../contracts/events/README.md), [admin](../contracts/admin/README.md), [items](../contracts/items/README.md), [native content](../contracts/content/native-v1/README.md) | Общие fixtures backend/frontend. |
 | accepted | AI-контракты: [generation](../contracts/generation/README.md) (состояния, HTTP, события, ошибки, [MBM v1](../contracts/generation/mbm-v1/README.md), [упражнения](../contracts/generation/exercises/README.md)), [usage](../contracts/usage/README.md), [billing](../contracts/billing/README.md), [notifications](../contracts/notifications/README.md), [speech input](../contracts/speech/README.md) и [prompt library](../backend/services/learning/src/main/resources/ai/prompts/README.md) | Исполняемые fixtures для реализованных AI/Workshop, speech, usage/plans/promo, billing (T-Bank checkout и уведомления) и notifications; доступность функций задаёт runtime-конфигурация. |
 | historical | [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) | Последний полный срез старых сервисов и миграций. |
 
@@ -91,25 +91,23 @@ artifact:
 
 | Статус | Документ | Назначение |
 |---|---|---|
-| accepted | [Epic #76 refinement](./engineering/epic-76-refinement.md) | Scope, архитектурные границы и задачи. |
+| current | [Media platform](./architecture/media-platform.md) | Модель asset, форматы, лимиты, обработка, доступность и принятые решения. |
 | current | [Upload transport](./engineering/media-upload-transport.md) | Прямая передача в S3-совместимое хранилище, API и состояния. |
 | current | [Playback](./engineering/media-playback.md) | Подписанные playback URL и обновление. |
 | current | [Offline manifest](./engineering/media-offline-manifest.md) | Неизменяемый inventory media колоды. |
 | current | [Reachability and GC](./engineering/media-gc.md) | Holds, tombstones и физическое удаление. |
 | current | [Editor media workflow](./engineering/editor-media-workflow.md) | Загрузка и вставка media в редакторе. |
-| historical | [Epic #76 acceptance evidence](./engineering/evidence/epic-76/integrated-browser/README.md) | Локальный browser/Study run; ещё [worker](./engineering/evidence/epic-76/phone-worker.md) и [visual](./engineering/evidence/epic-76/media-visual/README.md). |
+| historical | [Epic #76 acceptance evidence](./engineering/evidence/epic-76/integrated-browser/README.md) | Локальный browser/Study run; ещё [worker](./engineering/evidence/epic-76/phone-worker.md) и [visual](./engineering/evidence/epic-76/media-visual/README.md). Остальное evidence — по [правилу](./engineering/evidence/README.md). |
 
 ## Frontend
 
 | Статус | Документ | Назначение |
 |---|---|---|
 | current | [Mnema brand and UI contract](./frontend/mnema-brand-and-ui-contract.md) | Правила оформления и проверки изменений в действующем Angular UI. |
-| accepted | [Owner console UX](./frontend/admin-console-ux.md) | Фильтры, карточка пользователя, источник каждого показателя, тикеты/доставка и styleguide reuse. |
+| current | [Owner console UX](./frontend/admin-console-ux.md) | Фильтры, карточка пользователя, источник каждого показателя, тикеты/доставка и styleguide reuse. |
 | current | [Frontend styleguide](./frontend/styleguide.md) | Живой каталог `/styleguide` (только dev-сборка): правила «бери из стайлгайда», как открыть, карта разделов. |
 | accepted | [Design and experience](./frontend/design-and-experience-2026-09.md) | Выбранное paper/antiquity/indigo направление и a11y boundaries. |
-| historical | [Frontend brand restoration evidence](./engineering/evidence/frontend-brand-2026-09-28/README.md) | Снимки production Angular и результат реального HTTPS-сценария. |
 | historical | [Interactive prototype](../design/prototype/README.md) | Design evidence, не production architecture. |
-| superseded | [Experience audit 2026-08](./frontend/experience-audit-2026-08.md) | Findings сохранены, Liquid Glass/Focused Study Desk direction отклонено. |
 
 ## Engineering и quality
 
@@ -117,18 +115,11 @@ artifact:
 |---|---|---|
 | current | [Repository guide](./engineering/repository-guide.md) | Карта кода, версии, change routes и gate. |
 | current | [Work item standard](./engineering/work-item-standard.md) | Issue/PR/Project status contract. |
-| proposed | [Learning core improvement backlog](./engineering/learning-core/README.md) | Научная критика, current-source map, два ограниченных эпика, 12 task bodies, migration и автономные prompts; задачи — Issues #503–#516. |
-| accepted | [Onboarding package](./engineering/onboarding/README.md) | Словарь и evidence онбордингов, карта существующего кода, RFC (historical), принятые решения владельца 2026-10-14, архитектура, пять ADR, эпики OB-E1…E4 (Issues #517–#540), manifest, ход работ и промпты сессий с протоколом handoff. |
+| proposed | [Learning core improvement backlog](./engineering/learning-core/README.md) | Научная критика, current-source map, два ограниченных эпика, task bodies и migration; не реализовано, задачи — Issues #503–#516. |
+| current | [Onboarding package](./engineering/onboarding/README.md) | Реализовано и включено в production с 2026-10-19: что включено, proposal (поведение), architecture (устройство), пять ADR; wire — [`contracts/onboarding`](../contracts/onboarding/README.md). |
 | current | [Capability inventory](./engineering/capability-inventory.yaml) | Машиночитаемый список команд и harnesses; при расхождении приоритетнее runbook и `--help`. |
-| current | [Evidence index](./engineering/evidence/README.md) | Короткий вход в большие evidence-наборы. |
-| accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения и реализованные delivery slices. |
-| accepted | [Epic #77 refinement](./engineering/epic-77-refinement.md) | AI-слой: delivery slices, пять прогонов и acceptance эпика. |
-| current | [Epic #77 prompts](./engineering/prompts/epic-77-ai-layer.md) | Промпты последовательных прогонов агента для реактивированного AI-эпика. |
-| accepted | [Community decks refinement](./engineering/community-decks-refinement.md) | Четыре эпика (#419–#422), задачи, зависимости и правила исполнения; статус всех четырёх эпиков, включая локальные эпики 3–4. |
-| current | [Community decks prompts](./engineering/prompts/community-decks.md) | Промпты сессий ведущего агента для четырёх эпиков колод сообщества. |
-| historical | [Epic #74 refinement](./engineering/epic-74-refinement.md), [dependency decisions](./engineering/epic-74-dependency-decisions.md), [hardware handoff](./engineering/epic-74-hardware-handoff.md) | Выполненный план, принятые зависимости и session handoff #74. |
-| historical | [GitHub execution model](./engineering/github-execution-model.md) | Исходная настройка Project #4; текущие статусы читаются из GitHub. |
-| proposed | [Greenfield delivery plan](./engineering/v2-delivery-plan-2026-08.md) | Sequencing proposal; GitHub state и этот navigator приоритетнее. |
+| current | [Evidence index](./engineering/evidence/README.md) | Правило: evidence живёт в PR и Issue; в репозитории остаётся только то, на что ссылаются документы, контракты и тесты. |
+| historical | [Epic #74 dependency decisions](./engineering/epic-74-dependency-decisions.md) | Принятые зависимости и ответы владельца для хранилища и редактора; на него ссылается [архитектура хранения](./architecture/revision-storage-and-runtime-boundaries.md). |
 
 ## Operations
 
@@ -136,14 +127,14 @@ artifact:
 |---|---|---|
 | current | [Production delivery](./operations/production-delivery.md), [VPS runtime](./operations/vps-runtime.md), [image publication](./operations/vps-image-publication.md) | Работающий production, publication/admission/deploy и verification. |
 | current | [Identity abuse protection](./operations/turnstile.md) | Production password sign-in и registration проходят Cloudflare Turnstile (`required`); `blocked` — kill switch, OAuth не затрагивается. Публичные политика ПДн и соглашение публикуются из frontend; статус уведомлений — в [legal checklist](./product/russia-legal-launch-checklist-2026.md). |
-| current | [Persistent local runtime](./deploy/selfhost-local.md) | HTTPS-запуск Identity, Learning, Angular, media и Colima clock; historical v1 часть помечена отдельно. |
+| current | [Persistent local runtime](./deploy/selfhost-local.md) | HTTPS-запуск Identity, Learning, Angular, media и Colima clock. |
 | current | [Security automation triage](./operations/security-triage.md) | Dependabot/dependency review/CodeQL policy. |
-| current | [CI artifact boundary](./operations/ci-artifact-security-boundary.md) | Artifact and token policy для ручной публикации четырёх образов. |
+| current | [CI artifact boundary](./operations/ci-artifact-security-boundary.md) | Artifact and token policy для публикации пяти образов Main CI. |
 | current | [AI operations runbook](./operations/ai-runbook.md) | Роли api/worker, ключи только на worker, kill switches и бюджеты, метрики на отдельном порту, инциденты провайдеров, хранение данных, eval-gate. |
 | current | [AI egress proxy](./operations/ai-egress-proxy.md) | Stateless Squid CONNECT proxy в Финляндии для AI-провайдеров, недоступных из РФ; kill switch и fallback. |
 | current | [Browser security headers](./operations/browser-security-headers.md) | Проверяемый response-security contract. |
 | current | [Link previews](./operations/link-previews.md) | OG-превью `/d/*` без SSR: nginx SSI + `GET /api/public/meta/…` Learning, три конфигурации web-сервера, порядок установки. |
-| current | [Production image inventory](./operations/production-image-inventory.md), [release security evidence](./operations/release-security-evidence.md) | Пины и supply-chain evidence четырёх VPS images. |
+| current | [Production image inventory](./operations/production-image-inventory.md), [release security evidence](./operations/release-security-evidence.md) | Пины и supply-chain evidence пяти VPS images. |
 | proposed | [Reset/capacity/offline plan](./operations/v2-reset-capacity-and-offline-plan.md) | Остаточные purge/capacity/offline решения с legacy inventory; текущий VPS сохраняет старые данные. |
 
 Production работает на RU VPS; deployment идёт через Main CI и protected VPS workflow.
@@ -152,45 +143,15 @@ Kubernetes-доставка (staging/production workflows, `k8s/`, recovery и p
 состояние и проверку; [publication](./operations/vps-image-publication.md) — candidate
 и security evidence; [dispatcher](../deploy/production/README.md) — admission.
 
-## Historical evidence (только чтение)
+## Evidence и исследования (только чтение)
 
-- **historical:** [Evidence index](./engineering/evidence/README.md) — acceptance
-  Epic #74/#75/#76, storage, browser, security и research evidence. Ключевые записи:
-  [закрытие #74](./engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md),
-  [закрытие #75](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
-- **historical:** [Community decks, эпик 1: evidence задач](./engineering/evidence/community-decks/epic-1/README.md) — PR, коммиты, миграции V49–V58,
-  состояние production (функции включены релизом #481) и проверка каждой задачи; начиная с [прототипа линии хранения](./engineering/evidence/community-decks/epic-1/share-3-lineage-prototype.md).
-- **historical:** [Community decks, эпик 2: evidence задач](./engineering/evidence/community-decks/epic-2/README.md) — PR, коммиты, миграции V59–V65,
-  релизы, ревью и браузерная проверка обновлений копий, критерии эпика #420.
-- **current:** [Community decks, эпик 3: evidence задач](./engineering/evidence/community-decks/epic-3/README.md) — Community/0–8,
-  EXPLAIN каталога на 10⁴–10⁵, browser harness `--catalog`, состояние поставки и
-  [handoff сессии 1](./engineering/evidence/community-decks/epic-3/handoff-session-1.md) со следующими шагами.
-- **historical:** [Community decks research and RFC](./reviews/community-decks-2026-10/README.md) — факты кода,
-  варианты, исследования конкурентов/права/поиска, аудит индексов и ответы владельца 2026-10-10.
-- **historical:** [Owner console delivery record](./engineering/evidence/admin-console-2026-10/README.md) — первый снимок реализации эпика #398, его задачи, локальная проверка и границы.
-- **historical:** [AI layer research 2026-10](./reviews/ai-layer-research-2026-10/README.md) —
-  исследования архитектуры, экономики, UX, контекста и платформы; принятые
-  решения перенесены в product/architecture docs.
-- **historical:** [Project review](./reviews/project-review-2026-08.md) и
-  [September refinement research](./reviews/product-refinement-2026-09.md) —
-  исходные findings; принятые решения перенесены в owner/architecture docs.
+Evidence конкретных изменений лежит в PR и Issues. В репозитории остаётся то, на что ссылаются
+канонические документы, контракты и тесты — [правило и список](./engineering/evidence/README.md).
+Исследования хранятся ради решений, которые на них ссылаются:
 
-## Legacy v1 (не часть маршрута реализации)
-
-Объясняют только старый runtime; точный код сохранён тегом `v1-apache-final` и Git
-history. Не переносите из них правила, имена и таблицы.
-
-- **legacy:** [v1 schema](./core-entities-schema.md);
-- **legacy:** сервисные описания
-  [auth](./services/auth-service.md), [user](./services/user-service.md),
-  [core](./services/core-service.md), [media](./services/media-service.md),
-  [import](./services/import-service.md), [ai](./services/ai-service.md) и
-  [frontend overview](./services/frontend.md);
-- **legacy:** [public self-host](./deploy/selfhost-public.md) и
-  [model matrix](./deploy/model-matrix.md).
+- **historical:** [Community decks RFC](./reviews/community-decks-2026-10/rfc.md) — факты кода, варианты, отклонённые решения и ответы владельца 2026-10-10; поведение задают [продуктовый контракт](./product/community-decks.md) и [архитектура](./architecture/community-decks.md).
+- **historical:** [AI layer research 2026-10](./reviews/ai-layer-research-2026-10/README.md) — отчёты по UX, контексту и качеству, платформе и речи; принятые решения перенесены в product/architecture docs.
 
 При расхождении prose с executable sources сначала проверяйте build files,
 migrations, routes, tests и workflows, затем исправляйте канонический документ —
 не создавайте ещё один конкурирующий источник.
-
-- **current:** [Community decks, эпик 4: локальная реализация и проверки](./engineering/evidence/community-decks/epic-4/README.md) — Recs/1–4, контракт событий/интересов/подбора, синтетическое сравнение ранкеров, границы проверки и [handoff сессии1](./engineering/evidence/community-decks/epic-4/handoff-session-1.md) после восстановления GitHub.

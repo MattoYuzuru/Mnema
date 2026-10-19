@@ -56,9 +56,8 @@ single-column mobile layout, forced-colors borders and reduced-motion fallback.
 The real HTTPS run verified keyboard order, visible skip-link focus transfer,
 reduced-motion behavior, no horizontal overflow at 390 CSS px, a 44 px publication
 target, and existing own-deck evidence at 1440/390 plus 320 CSS px at 2x raster
-scale. Current authoring screenshots are
-[editor 390](authoring-browser/authoring-editor-390.png) and
-[Browse 1440](authoring-browser/authoring-browse-1440.png).
+scale. The screenshots (editor 390, Browse 1440) were not retained in the repository;
+rerun `python3 scripts/browser-identity/run.py --authoring` to regenerate them.
 
 This is code/browser evidence, not a claim of physical-device certification.
 Chrome's real contenteditable path, native insertion, paste sanitation, ruby,
@@ -113,8 +112,7 @@ receive a server draft acknowledgement, reload and restore it, explicitly publis
 render the item in Browse, and directly re-read the preserved Capture source and
 conversion. This duration is local evidence, not a production SLO.
 
-The sanitized raw summaries are [browser.json](authoring-browser/browser.json) and
-[fixture.json](authoring-browser/fixture.json). The run recorded 0 browser runtime
+The sanitized raw summaries were not retained in the repository. The run recorded 0 browser runtime
 errors, 0 external requests, no executed unsafe markup, fresh Identity validation,
 logout revocation and two-account isolation. Private keys, credentials, bearer
 tokens and service logs were deleted by the harness and are not evidence artifacts.

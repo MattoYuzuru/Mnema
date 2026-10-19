@@ -152,8 +152,8 @@ lane's artifact ownership.
 ### Component visual follow-up
 
 The lead checked the original #183 screenshot acceptance before merge. An isolated
-production Angular component harness now supplies [five real Chrome captures and
-reproduction sources](./visual/README.md):320/390/1440, keyboard focus and invalid
+production Angular component harness supplied five real Chrome captures (not retained in
+the repository):320/390/1440, keyboard focus and invalid
 state. All viewport/semantic/overflow assertions passed; the lead inspected the
 images and matched production source hashes. An initial focus harness also called
 `.focus()` and was rejected as confounded keyboard evidence. That hook was removed

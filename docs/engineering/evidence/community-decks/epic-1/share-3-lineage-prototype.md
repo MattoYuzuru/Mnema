@@ -3,7 +3,7 @@ artifact:
   id: community-decks-share-3-lineage-prototype
   type: verification-evidence
   title: "Share/3: несколько колод в одной линии хранения (прототип и план миграции)"
-  status: current
+  status: historical
   created_at: "2026-10-10"
   updated_at: "2026-10-10"
   owners: ["project-owner"]

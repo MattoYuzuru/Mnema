@@ -809,8 +809,9 @@ exactly what the tour takes over. About 40 s of browser time; with the start of 
 The composition is the one of `--catalog` (the ordinary Learning with the three community kill switches, the catalogue switch, a short rank schedule, the frontend launch
 flag opened for this loopback run, the fixture endpoints) plus, for the ordinary Learning of this run only:
 
-- `LEARNING_ONBOARDING_ENABLED=true` and `LEARNING_ONBOARDING_ELIGIBLE_FROM=<five minutes before the start of the run>` (the journey ships off, and `eligible-from` is
-  required, and validated at startup, when it is on). An account is offered the tour when the clock is past that instant, Identity marks it new (`mnema_new_account`, 48
+- `LEARNING_ONBOARDING_ENABLED=true` and `LEARNING_ONBOARDING_ELIGIBLE_FROM=<five minutes before the start of the run>` (the application default is off, and `eligible-from` is
+  required, and validated at startup, when it is on); also `LEARNING_ONBOARDING_RHYTHM_ENABLED=true` (the weekly rhythm stage). The path reward stays off: it needs an
+  account Identity calls trusted (at least 3 days old), which a run cannot make. An account is offered the tour when the clock is past that instant, Identity marks it new (`mnema_new_account`, 48
   hours) and it owns no live deck: every account the scenario registers is. The experiment `onboarding_v1` stays off (`LEARNING_ONBOARDING_EXPERIMENT_ENABLED` is not set),
   so nobody is held out and everybody gets the tour. The holdout itself is not exercised here.
 - `LEARNING_COMMUNITY_EVENTS_ENABLED` and `LEARNING_COMMUNITY_FOR_YOU_ENABLED` (the switches of `--recs`): the second question of the survey is the interest picker of «Для вас»,

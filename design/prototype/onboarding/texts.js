@@ -1,5 +1,5 @@
-// OB-001 texts under owner review. One source for the prototype and for
-// docs/engineering/evidence/onboarding/ob-prep/texts-for-approval.md (same IDs). Edit here, not in markup.
+// Onboarding texts approved by the owner (2026-10-16). One source for the prototype; the product copies them verbatim into
+// frontend/src/app/core/onboarding/onboarding-texts.ts (same IDs, checked by its spec). Edit here, not in markup.
 // Placeholders in {braces} are filled by the product at runtime.
 export const T = {
   // Welcome and skip
@@ -163,7 +163,7 @@ export const T = {
   'rhythm.met.toast': 'Цель недели выполнена: вы занимались {days}.',
   'rhythm.profile.weeks': 'Недель в ритме: {n}',
 
-  // Reward (production only after OB-002)
+  // Reward
   'reward.eyebrow': 'Путь пройден',
   'reward.title': 'Вы освоили Mnema полностью',
   'reward.gift': 'Ваш подарок: −10 % на подписку до {date}.',
