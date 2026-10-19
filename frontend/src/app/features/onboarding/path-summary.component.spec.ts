@@ -56,7 +56,7 @@ describe('PathSummaryComponent (the «Путь Mnema» block of the profile)', (
             const card = root.querySelector('app-reward-card')!;
             expect(card.querySelector('h3')?.textContent).toBe('Вы освоили Mnema полностью');
             expect(plain(card.querySelector('.gift')!.textContent)).toBe('Ваш подарок: −10 % на подписку до 29 октября, 21:41 МСК.');
-            expect(card.querySelector('a.button.primary')!.getAttribute('href')).toBe('/plans?promo=K7PMW2QXH9RT');
+            expect(card.querySelector('a.button.primary')!.getAttribute('href')).toBe('/plans?promo=K7PM-W2QX-H9RT');
             expect(card.compareDocumentPosition(root.querySelector('a[href="/profile/path"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         });
 

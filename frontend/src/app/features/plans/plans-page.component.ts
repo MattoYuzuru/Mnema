@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -94,11 +94,11 @@ export class PlansPageComponent {
     private readonly now = signal(new Date());
     private readonly bar = viewChild<ElementRef<HTMLElement>>('ctaBar');
 
-    /** A campaign link (`?promo=CODE`) fills the promo field; it is never applied for the reader. */
-    protected readonly prefill = computed(() => {
-        const code = this.query().get('promo') ?? '';
-        return /^[A-Za-z0-9 _-]{1,64}$/u.test(code) ? code : '';
-    });
+    /**
+     * A campaign link (`?promo=CODE`) fills the promo field; it is never applied for the reader. The code is kept here and the parameter is
+     * taken off the address (see the constructor), so a personal code does not stay in the history or in a copied address.
+     */
+    protected readonly prefill = signal('');
     /** «Plus до 20 октября, без автопродления» once a promo or a payment gives a tier; null on the plan the account has by default. */
     protected readonly entitlement = computed(() => {
         const current = this.catalog()?.current;
@@ -164,6 +164,15 @@ export class PlansPageComponent {
         this.destroyRef.onDestroy(() => { view?.removeEventListener('pageshow', restored); this.cancelAnnouncement(); });
         void this.load();
         void this.goals.load();
+        // The code of the link goes into the field once; the address then loses the parameter (replacing the entry, other parameters stay).
+        effect(() => {
+            const link = this.query().get('promo');
+            if (link === null) return;
+            untracked(() => {
+                if (/^[A-Za-z0-9 _-]{1,64}$/u.test(link)) this.prefill.set(link);
+                void this.router.navigate([], { queryParams: { promo: null }, queryParamsHandling: 'merge', replaceUrl: true });
+            });
+        });
         // The sticky bar's height becomes scroll padding of the viewport (the scroller), so a focused control is never
         // hidden behind it (WCAG 2.4.11). `.plans-page` is not a scroll container, so the property lives on the root.
         effect(onCleanup => {

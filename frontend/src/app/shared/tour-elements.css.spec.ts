@@ -129,6 +129,15 @@ describe('stylesheet contract of the tour elements', () => {
             expect(css).toMatch(/\.reward-night app-night-sky\s*\{\s*min-block-size:\s*100dvh/u);
         });
 
+        it('draws a lavender focus ring on the night for the code and the button, over the global ring of an input (which is !important), and Highlight in forced colours', () => {
+            const source = read('shared/reward-code.component.ts');
+            expect(source).toMatch(/:host\(\.night\) \.code:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--mn-star-lavender\)\s*!important[^}]*outline-offset:\s*2px\s*!important/u);
+            expect(source).toMatch(/:host\(\.night\) \.button:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--mn-star-lavender\)/u);
+            const forced = media(source, 'forced-colors: active');
+            expect(forced).toMatch(/:host\(\.night\) \.code:focus-visible[^{]*\{[^}]*outline-color:\s*Highlight/u);
+            expect(forced).toMatch(/:host\(\.night\) \.button:focus-visible[^{]*\{[^}]*outline-color:\s*Highlight/u);
+        });
+
         it('lets the code be selected whole and keeps it inside a 320px window', () => {
             const source = read('shared/reward-code.component.ts');
             expect(source).toMatch(/user-select:\s*all/u);

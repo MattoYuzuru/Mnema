@@ -277,7 +277,7 @@ export const ONBOARDING_TEXTS = {
     'reward.later': 'Позже',
     // pending owner approval (S4, OB-402): the gift of a discount for one plan, the gift of a tier, the code element, the redeemed line, the notification
     'reward.gift.plan': 'Ваш подарок: −{percent}\u00a0% на подписку {plan} до {date}.',
-    'reward.gift.tier': 'Ваш подарок: {plan} на {days} — до {date}.',
+    'reward.gift.tier': 'Ваш подарок: {plan} на {days}. Активировать до {date}.',
     'reward.code.label': 'Ваш промокод',
     'reward.code.copy': 'Скопировать',
     'reward.code.copied': 'Промокод скопирован.',

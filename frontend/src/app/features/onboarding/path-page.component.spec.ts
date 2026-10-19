@@ -245,7 +245,7 @@ describe('PathPageComponent («Путь Mnema»)', () => {
             expect(plain(card.querySelector('.gift')!.textContent)).toBe('Ваш подарок: −10 % на подписку до 29 октября, 21:41 МСК.');
             expect(card.querySelector<HTMLInputElement>('app-reward-code input')!.value).toBe('K7PM-W2QX-H9RT');
             expect(plain(card.querySelector('.hint')!.textContent)).toContain('на странице тарифов');
-            expect(card.querySelector('a.button.primary')!.getAttribute('href')).toBe('/plans?promo=K7PMW2QXH9RT');
+            expect(card.querySelector('a.button.primary')!.getAttribute('href')).toBe('/plans?promo=K7PM-W2QX-H9RT');
         });
 
         it('keeps the heading levels: the reward is an h2 under the h1, and no level is skipped', async () => {

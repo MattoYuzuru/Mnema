@@ -27,7 +27,7 @@ export function rewardPlanLabel(plan: RewardPlan): string {
 
 /**
  * The gift sentence of a reward: a discount («Ваш подарок: −10 % на подписку до 29 октября, 21:41 МСК.», with the plan when the campaign names
- * one) or a tier for some days («Ваш подарок: Plus на 30 дней — до …»). The date is the end of the offer; there is no countdown.
+ * one) or a tier for some days («Ваш подарок: Plus на 30 дней. Активировать до …»). The date is the end of the offer; there is no countdown.
  */
 export function rewardGift(reward: PathReward): string {
     const date = rewardDate(reward.expiresAt);
@@ -38,7 +38,10 @@ export function rewardGift(reward: PathReward): string {
         : onboardingText('reward.gift.plan', { percent: offer.percent, plan: PLAN_LABEL[offer.plan], date });
 }
 
-/** The query of the link to the plans page: the plans page fills its promo field from `?promo=` and never applies it for the reader. */
+/**
+ * The query of the link to the plans page: the plans page fills its promo field from `?promo=` (and takes the parameter off the address
+ * again) and never applies it for the reader. The code keeps the dashes of its display form, so the field shows the same code as the card.
+ */
 export function rewardPlansQuery(code: string): { readonly promo: string } {
-    return { promo: code.replace(/-/gu, '') };
+    return { promo: code };
 }

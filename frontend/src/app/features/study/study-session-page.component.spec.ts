@@ -748,6 +748,21 @@ describe('StudySessionPageComponent', () => {
             expect(block()!.querySelectorAll('ol.week > li')).toHaveLength(7);
         });
 
+        it('announces the block politely: its region is on the page before the rhythm arrives, holds the block alone, and nothing else announces it', async () => {
+            journeyReading({ rhythm: AFTER });
+            complete('SCHEDULED');
+            const region = page().querySelector<HTMLElement>('.completion [aria-live=polite]')!;
+            expect(region).not.toBeNull();
+            expect(region.textContent?.trim()).toBe('');
+            refresh!();
+            await settle();
+            // The very element that was there: content arrived in it, which is what a screen reader announces.
+            expect(page().querySelector('.completion [aria-live=polite]')).toBe(region);
+            expect(region.contains(block())).toBe(true);
+            expect(region.querySelectorAll('[aria-live], [role=status], [role=alert]')).toHaveLength(0);
+            expect(page().querySelectorAll('.completion [aria-live], .completion [role=status]')).toHaveLength(1);
+        });
+
         it('keeps every text of the summary and puts the block inside it, with no weeks counted', async () => {
             journeyReading({ rhythm: AFTER }, false);
             complete('SCHEDULED');

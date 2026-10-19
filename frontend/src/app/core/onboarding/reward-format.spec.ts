@@ -39,7 +39,7 @@ describe('reward format', () => {
 
         it('names the plan and the days of a tier, with the form of «день» the number asks for', () => {
             const tier = (days: number): PathReward => reward({ offer: { type: 'TIER_DAYS', percent: null, plan: 'PLUS', days } });
-            expect(rewardGift(tier(30))).toBe(`Ваш подарок: Plus на 30${NBSP}дней — до 29 октября, 21:41${NBSP}МСК.`);
+            expect(rewardGift(tier(30))).toBe(`Ваш подарок: Plus на 30${NBSP}дней. Активировать до 29 октября, 21:41${NBSP}МСК.`);
             expect(rewardGift(tier(1))).toContain(`на 1${NBSP}день`);
             expect(rewardGift(tier(3))).toContain(`на 3${NBSP}дня`);
             expect(rewardGift(tier(21))).toContain(`на 21${NBSP}день`);
@@ -58,7 +58,7 @@ describe('reward format', () => {
         expect([rewardPlanLabel('PLUS'), rewardPlanLabel('PRO')]).toEqual(['Plus', 'Pro']);
     });
 
-    it('drops the dashes of the code for the link to the plans', () => {
-        expect(rewardPlansQuery('K7PM-W2QX-H9RT')).toEqual({ promo: 'K7PMW2QXH9RT' });
+    it('keeps the dashes of the display form in the link to the plans, so the field shows the code of the card', () => {
+        expect(rewardPlansQuery('K7PM-W2QX-H9RT')).toEqual({ promo: 'K7PM-W2QX-H9RT' });
     });
 });

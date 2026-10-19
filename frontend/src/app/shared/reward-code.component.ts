@@ -38,10 +38,12 @@ let nextCode = 0;
       .code { box-sizing: border-box; inline-size: calc(var(--chars, 14) * .72em + 1.9rem); min-inline-size: 0; max-inline-size: 100%; border: 1px solid var(--reward-code-edge); border-radius: var(--mn-radius); padding: .55rem .8rem;
         color: inherit; background: transparent; font: 600 1.15rem/1.3 var(--mn-font-mono); letter-spacing: .08em; text-align: center; user-select: all; }
       .code:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 2px; }
-      :host(.night) .code:focus-visible { outline-color: var(--mn-star-lavender); }
+      /* On the night the global --mn-focus ring is ~1.2:1: the field and the button take the lavender of the night's own focus ring (components.css). The global ring of an input is !important, so this one is as well, and its selector is the more specific. */
+      :host(.night) .code:focus-visible { outline: 3px solid var(--mn-star-lavender) !important; outline-offset: 2px !important; }
       :host(.night) .button { border-color: var(--mn-on-night); color: var(--mn-on-night); }
+      :host(.night) .button:focus-visible { outline: 3px solid var(--mn-star-lavender); outline-offset: 3px; }
       .status { min-block-size: 1.4em; margin: 0; color: inherit; font-size: .9rem; line-height: 1.5; }
-      @media (forced-colors: active) { .code { border-color: CanvasText; } }
+      @media (forced-colors: active) { .code { border-color: CanvasText; } :host(.night) .code:focus-visible, :host(.night) .button:focus-visible { outline-color: Highlight !important; } }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
 })

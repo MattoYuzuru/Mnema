@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, OnInit, afterNextRender, afterRenderEffect, computed, inject, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { firstValueFrom, map } from 'rxjs';
+import { distinctUntilChanged, firstValueFrom, map } from 'rxjs';
 
 import { daysLabel } from '../../core/onboarding/rhythm-format';
 import { AutoLoadComponent } from '../../shared/auto-load.component';
@@ -78,7 +78,7 @@ export class AdminRewardCampaignsComponent implements OnInit {
     }
 
     ngOnInit(): void {
-        this.form.controls.offerType.valueChanges.pipe(takeUntilDestroyed(this.destroy)).subscribe(type => {
+        this.form.controls.offerType.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroy)).subscribe(type => {
             this.offerType.set(type);
             // A tier names its plan, a discount may leave it open.
             this.form.controls.plan.setValue(type === 'TIER_DAYS' ? 'PLUS' : '');
@@ -89,7 +89,7 @@ export class AdminRewardCampaignsComponent implements OnInit {
     /** «Скидка 10 % на любой тариф», «Plus на 30 дней». */
     protected offer(campaign: AdminCampaign): string {
         if (campaign.offerType === 'TIER_DAYS') return `${PLAN_NAME[campaign.plan ?? 'PLUS']} на ${daysLabel(campaign.days ?? 0)}`;
-        return `Скидка ${campaign.percent} % ${campaign.plan === null ? 'на любой тариф' : `на ${PLAN_NAME[campaign.plan]}`}`;
+        return `Скидка ${campaign.percent}\u00a0% ${campaign.plan === null ? 'на любой тариф' : `на ${PLAN_NAME[campaign.plan]}`}`;
     }
 
     protected async reload(): Promise<void> {
@@ -164,7 +164,8 @@ export class AdminRewardCampaignsComponent implements OnInit {
         this.uncertain.set(false);
         this.actionError.set('');
         this.notice.set('');
-        this.form.disable();
+        // Without events: disabling and enabling re-emit every control's value, which must not run the offer-type reset of the plan.
+        this.form.disable({ emitEvent: false });
         try {
             if (mutation.kind === 'create') {
                 await firstValueFrom(this.api.createCampaign(mutation.body, mutation.commandId).pipe(takeUntilDestroyed(this.destroy)));
@@ -194,7 +195,7 @@ export class AdminRewardCampaignsComponent implements OnInit {
             if (this.isActiveConflict(failure)) void this.reload();
         } finally {
             this.busy.set(false);
-            if (!this.uncertain()) this.form.enable();
+            if (!this.uncertain()) this.form.enable({ emitEvent: false });
         }
     }
 

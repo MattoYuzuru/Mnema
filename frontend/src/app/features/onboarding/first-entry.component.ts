@@ -21,8 +21,6 @@ const SAME_CARD_BRANCH_LABEL: Readonly<Record<Branch, 'branch.sample' | 'branch.
     SAMPLE: 'branch.sample', COMMUNITY: 'branch.community', OWN: 'branch.own'
 };
 
-export { daysLabel };
-
 /**
  * «Начало пути»: the first-entry surface, a full-screen modal `<dialog>` on the night: the welcome (with the stars; the survey and the
  * branch choice are the same night without them), up to four survey cards, and the branch choice. The cards themselves are decided by

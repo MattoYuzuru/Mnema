@@ -32,7 +32,7 @@ const MODAL_RECHECK_MS = 1_000;
     imports: [NightSkyComponent, RewardCodeComponent, RouterLink],
     template: `
       @if (shown(); as reward) {
-        <dialog #surface class="reward-night" aria-labelledby="reward-title" aria-describedby="reward-gift" (cancel)="later($event)">
+        <dialog #surface class="reward-night" aria-labelledby="reward-title" aria-describedby="reward-gift" (cancel)="later($event)" (close)="closed()">
           <app-night-sky layout="panel" seed="mnema-reward">
             <p class="eyebrow">{{ text.eyebrow }}</p>
             <h1 #heading id="reward-title" tabindex="-1">{{ text.title }}</h1>
@@ -123,6 +123,11 @@ export class RewardCongratulationComponent {
         this.dismiss(true);
     }
 
+    /** Whatever else closes the dialog (a `close()` from outside, a form method): the same way out, so the congratulation and its place with the coordinator are always released. */
+    protected closed(): void {
+        if (this.shown() !== null) this.dismiss(true);
+    }
+
     /** «Выбрать тариф»: the link goes to the plans, the night goes away behind it. */
     protected followed(): void {
         this.dismiss(false);
@@ -133,7 +138,9 @@ export class RewardCongratulationComponent {
         const reward = this.pending();
         if (reward === null || this.shown() !== null || this.auth.status() !== 'authenticated' || !this.attention.canShow('reward')) return;
         if (this.otherModalOpen()) { this.recheck = setTimeout(() => this.attempt(), MODAL_RECHECK_MS); return; }
-        this.returnTo = this.document.activeElement instanceof HTMLElement ? this.document.activeElement : null;
+        // With nothing focused the active element is the body: that is no place to return to, the heading of the page is.
+        const active = this.document.activeElement;
+        this.returnTo = active instanceof HTMLElement && active !== this.document.body ? active : null;
         this.focusRequested = true;
         // Shown once on this device: marked as it opens.
         this.preferences.markRewardShown(reward.issuedAt);
@@ -142,8 +149,9 @@ export class RewardCongratulationComponent {
 
     private dismiss(restoreFocus: boolean): void {
         const dialog = this.surface()?.nativeElement;
-        if (dialog?.open === true) dialog.close();
+        // Released first: the `close` event of the dialog comes back here (`closed()`) and finds nothing left to do.
         this.shown.set(null);
+        if (dialog?.open === true) dialog.close();
         const target = this.returnTo;
         this.returnTo = null;
         this.focusRequested = false;

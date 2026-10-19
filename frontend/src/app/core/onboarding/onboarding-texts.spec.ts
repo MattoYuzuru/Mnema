@@ -75,7 +75,7 @@ describe('onboarding texts', () => {
 
     it('fills the sentences of the reward', () => {
         expect(onboardingText('reward.gift', { percent: 10, date: '29 октября, 21:41\u00a0МСК' })).toBe('Ваш подарок: −10\u00a0% на подписку до 29 октября, 21:41\u00a0МСК.');
-        expect(onboardingText('reward.gift.tier', { plan: 'Plus', days: '30\u00a0дней', date: '29 октября, 21:41\u00a0МСК' })).toBe('Ваш подарок: Plus на 30\u00a0дней — до 29 октября, 21:41\u00a0МСК.');
+        expect(onboardingText('reward.gift.tier', { plan: 'Plus', days: '30\u00a0дней', date: '29 октября, 21:41\u00a0МСК' })).toBe('Ваш подарок: Plus на 30\u00a0дней. Активировать до 29 октября, 21:41\u00a0МСК.');
     });
 
     it('says nothing of a countdown, a rush or a loss in any reward string', () => {

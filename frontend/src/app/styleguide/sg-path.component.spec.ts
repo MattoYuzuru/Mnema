@@ -108,13 +108,13 @@ describe('SgPathComponent', () => {
             expect(figures).toHaveLength(6);
             expect(figures.map(figure => plain(figure.querySelector('.gift')?.textContent ?? null))).toEqual([
                 'Ваш подарок: −10 % на подписку до 29 октября, 21:41 МСК.', 'Ваш подарок: −15 % на подписку Pro до 29 октября, 21:41 МСК.',
-                'Ваш подарок: Plus на 30 дней — до 29 октября, 21:41 МСК.', 'Ваш подарок: −10 % на подписку до 29 октября, 21:41 МСК.', '', ''
+                'Ваш подарок: Plus на 30 дней. Активировать до 29 октября, 21:41 МСК.', 'Ваш подарок: −10 % на подписку до 29 октября, 21:41 МСК.', '', ''
             ]);
             expect(figures[3].querySelector('h3')?.textContent).toBe('Вы освоили Mnema полностью');
             expect(figures[0].querySelector('h2')?.textContent).toBe('Вы освоили Mnema полностью');
             expect(plain(figures[4].querySelector('.redeemed')?.textContent ?? null)).toBe('Подарок за «Путь» использован.');
             expect(figures[5].querySelector('app-reward-card')!.children).toHaveLength(0);
-            expect(figures[0].querySelector('a.button.primary')?.getAttribute('href')).toBe('/plans?promo=K7PMW2QXH9RT');
+            expect(figures[0].querySelector('a.button.primary')?.getAttribute('href')).toBe('/plans?promo=K7PM-W2QX-H9RT');
         });
 
         it('shows the code on paper and on the night, and the 320 px frame', () => {

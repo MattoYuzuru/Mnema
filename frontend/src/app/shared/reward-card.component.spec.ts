@@ -39,7 +39,7 @@ describe('RewardCardComponent (the reward on the page of the path and in the pro
             expect(root.querySelector<HTMLInputElement>('app-reward-code input')!.value).toBe('K7PM-W2QX-H9RT');
             const link = root.querySelector<HTMLAnchorElement>('a.button.primary')!;
             expect(link.textContent).toBe('Выбрать тариф');
-            expect(link.getAttribute('href')).toBe('/plans?promo=K7PMW2QXH9RT');
+            expect(link.getAttribute('href')).toBe('/plans?promo=K7PM-W2QX-H9RT');
         });
 
         it('names itself by its heading and takes the heading level of the page it sits in', async () => {
@@ -53,7 +53,7 @@ describe('RewardCardComponent (the reward on the page of the path and in the pro
         it('tells a tier by its plan and days, with no countdown or urgency', async () => {
             const tier: PathReward = { ...REWARD_ACTIVE, offer: { type: 'TIER_DAYS', percent: null, plan: 'PRO', days: 14 } };
             const { root } = await render(tier);
-            expect(plain(root.querySelector('.gift')!.textContent)).toBe('Ваш подарок: Pro на 14 дней — до 29 октября, 21:41 МСК.');
+            expect(plain(root.querySelector('.gift')!.textContent)).toBe('Ваш подарок: Pro на 14 дней. Активировать до 29 октября, 21:41 МСК.');
             expect(root.textContent).not.toMatch(/\d+:\d+:\d+|осталось|успей|скорее|последн/iu);
         });
     });

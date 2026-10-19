@@ -97,7 +97,7 @@ describe('RewardCongratulationComponent (the congratulation for a finished «П�
         it('links «Выбрать тариф» to the plans with the code (without dashes) for the promo field, never applying it', () => {
             const link = root.querySelector<HTMLAnchorElement>('.actions a.button.primary')!;
             expect(link.textContent).toBe('Выбрать тариф');
-            expect(link.getAttribute('href')).toBe('/plans?promo=K7PMW2QXH9RT');
+            expect(link.getAttribute('href')).toBe('/plans?promo=K7PM-W2QX-H9RT');
             expect(root.querySelector('.actions button')!.textContent).toBe('Позже');
         });
 
@@ -129,6 +129,18 @@ describe('RewardCongratulationComponent (the congratulation for a finished «П�
             dialog()!.dispatchEvent(cancel);
             await settle();
             expect(cancel.defaultPrevented).toBe(true);
+            expect(dialog()).toBeNull();
+        });
+
+        it('is released whenever the dialog is closed from outside, with the focus back on the page', async () => {
+            dialog()!.close();
+            await settle();
+            await Promise.resolve();
+            expect(dialog()).toBeNull();
+            expect(attention.visible()).toEqual([]);
+            expect(attention.speaking()).toBeNull();
+            store.view.set({ ...store.view()! });
+            await settle();
             expect(dialog()).toBeNull();
         });
 
@@ -166,6 +178,19 @@ describe('RewardCongratulationComponent (the congratulation for a finished «П�
             root.querySelector<HTMLButtonElement>('.actions button')!.click();
             await settle();
             await vi.waitFor(() => expect(document.activeElement).toBe(before));
+        });
+
+        it('returns to the heading of the page when nothing had the focus (the body is no place to return to)', async () => {
+            const main = document.createElement('main');
+            main.id = 'main-content';
+            main.innerHTML = '<h1 tabindex="-1">Профиль</h1>';
+            document.body.append(main);
+            (document.activeElement as HTMLElement | null)?.blur();
+            expect(document.activeElement).toBe(document.body);
+            await render();
+            root.querySelector<HTMLButtonElement>('.actions button')!.click();
+            await settle();
+            await vi.waitFor(() => expect(document.activeElement).toBe(main.querySelector('h1')));
         });
 
         it('returns to the heading of the page when the place it came from is gone', async () => {

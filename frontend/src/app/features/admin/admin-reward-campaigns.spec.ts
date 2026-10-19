@@ -191,6 +191,23 @@ describe('the console section «Награда за «Путь»» (OB-402)', ()
             expect(root.querySelector('[role="alert"]')!.textContent).toContain('Кампания не создана');
             expect((root.querySelector('[formControlName="percent"]') as HTMLInputElement).disabled).toBe(false);
         });
+
+        it('keeps the chosen plan of a tier after a refused create (disabling and enabling the form is not a change of the offer), and the retry carries it', async () => {
+            await open([]);
+            fill('offerType', 'TIER_DAYS');
+            fill('plan', 'PRO');
+            await click('Создать кампанию');
+            http.expectOne(request => request.method === 'POST').flush({ code: 'INVALID_REQUEST' }, { status: 400, statusText: 'Bad Request' });
+            await settle();
+            expect(root.querySelector('[role="alert"]')!.textContent).toContain('Кампания не создана');
+            expect((root.querySelector('[formControlName="plan"]') as HTMLSelectElement).value).toBe('PRO');
+            await click('Создать кампанию');
+            const retry = http.expectOne(request => request.method === 'POST');
+            expect(retry.request.body).toEqual({ type: 'PATH_REWARD', offerType: 'TIER_DAYS', percent: null, plan: 'PRO', days: 30 });
+            retry.flush({ ...other, enabled: false, plan: 'PRO' });
+            await settle();
+            http.expectOne(URL).flush({ campaigns: [] });
+        });
     });
 
     describe('enabling and disabling', () => {
@@ -199,7 +216,7 @@ describe('the console section «Награда за «Путь»» (OB-402)', ()
             await click('Включить', rows()[0]);
             const box = rows()[0].querySelector<HTMLElement>('[role="group"]')!;
             expect(box.textContent).toContain('Включить эту кампанию?');
-            expect(box.textContent).toContain('Скидка 10 % на любой тариф');
+            expect(plain(box.textContent)).toContain('Скидка 10 % на любой тариф');
             expect(document.activeElement).toBe(box);
             http.expectNone(request => request.method === 'PATCH');
         });
