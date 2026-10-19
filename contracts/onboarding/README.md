@@ -107,4 +107,20 @@ Backend tests and the frontend contract spec both execute the fixture.
   week also achieves `RHYTHM_WEEK`. Nothing is negative: a missed day or week changes nothing and a new week starts empty. The
   weeks are counted from the moment the rhythm is on; history is not replayed (a past week's target is unknown).
 
-Account purge (#409) deletes `onboarding_journey` (the `NOT_OFFERED` rows of the rhythm included) and `account_milestone` by `account_id` (TODO in the repositories, like `learning_profile`).
+- **Path reward (OB-402, [ADR-ONB-005](../../docs/engineering/onboarding/adr/adr-onb-005-path-reward.md)).** `reward` is `null` unless
+  `learning.onboarding.reward.enabled` (default off) is on and the account has a reward; otherwise
+  `{state: ACTIVE|REDEEMED|EXPIRED, code, offer: {type, percent, plan, days}, issuedAt, expiresAt}`. The reward is a **personal
+  promo code** of the owner's enabled `PATH_REWARD` campaign ([promo contract](../usage/promo.json): the owner creates it in the
+  console, a discount percent or a tier for N days, one enabled at a time, the console's kill switch). It is issued by the
+  server, never claimed: the `GET` of an account whose visible milestones are all done (`path.done = path.total`) and that
+  Identity calls trusted (`mnema_trusted`: verified e-mail, at least 3 days old) issues it once, under an account-scoped lock,
+  in its own transaction that cannot fail the read (the client re-reads the view after every `PATH_MILESTONE`, so the read
+  follows the last milestone; an untrusted account is retried on a later read). One per account for ever
+  (`onboarding_reward.account_id` is the key): a replayed tour or a new campaign issues nothing more. `expiresAt` is
+  `issuedAt + 7 days`, the end of the code's validity on the server; the client shows that date and time as text, never a
+  countdown. `code` (display form) is present only while `ACTIVE`: it is derived from the code id under the promo secret, never
+  stored, and only its recipient can redeem it on `/plans` through the ordinary redemption (another account gets
+  `PROMO_INVALID`). The issuance publishes `PATH_REWARD_READY` ([notifications](../notifications/README.md)). At most
+  `learning.onboarding.reward.daily-limit` codes per campaign in 24 hours. Codes already issued are not revoked by any switch.
+
+Account purge (#409) deletes `onboarding_journey` (the `NOT_OFFERED` rows of the rhythm included), `account_milestone` and `onboarding_reward` by `account_id` (TODO in the repositories, like `learning_profile`).

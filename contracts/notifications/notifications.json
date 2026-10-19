@@ -384,6 +384,28 @@
         "createdAt": "2026-10-22T10:00:00Z",
         "expiresAt": "2026-11-21T10:00:00Z"
       }
+    },
+    "PATH_REWARD_READY": {
+      "severity": "INFO",
+      "route": "PATH",
+      "producer": "onboarding path reward (OB-402, #539): RewardIssuer in the transaction that issues the personal code",
+      "when": "The account's personal code of the enabled PATH_REWARD campaign was issued (100 % of the visible milestones, a verified account, learning.onboarding.reward.enabled on). Once per account; never again after a tour replay.",
+      "params": {
+        "expiresAt": "timestamp: the end of the offer (issuedAt + 7 days)"
+      },
+      "dedupeKey": "path:reward",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-000000000061",
+        "seq": "62",
+        "kind": "PATH_REWARD_READY",
+        "severity": "INFO",
+        "params": {
+          "expiresAt": "2026-10-29T18:41:00Z"
+        },
+        "route": "PATH",
+        "createdAt": "2026-10-22T18:41:00Z",
+        "expiresAt": "2026-11-21T18:41:00Z"
+      }
     }
   },
   "endpoints": [

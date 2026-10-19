@@ -61,6 +61,24 @@
       ],
       "weekStartsOn": "MONDAY",
       "zone": "the zoneinfo claim of the token, UTC when absent or invalid (as Study)"
+    },
+    "reward": {
+      "validDays": 7,
+      "offers": [
+        "DISCOUNT_PERCENT",
+        "TIER_DAYS"
+      ],
+      "states": [
+        "ACTIVE",
+        "REDEEMED",
+        "EXPIRED"
+      ],
+      "channel": "path-reward",
+      "dailyLimit": {
+        "default": 200,
+        "min": 1,
+        "max": 10000
+      }
     }
   },
   "steps": [
@@ -315,6 +333,7 @@
         ]
       },
       "rhythm": null,
+      "reward": null,
       "sampleDeck": {
         "available": false,
         "deckId": null,
@@ -408,6 +427,7 @@
         ]
       },
       "rhythm": null,
+      "reward": null,
       "sampleDeck": {
         "available": false,
         "deckId": null,
@@ -501,6 +521,7 @@
         ]
       },
       "rhythm": null,
+      "reward": null,
       "sampleDeck": {
         "available": false,
         "deckId": null,
@@ -594,6 +615,7 @@
         ]
       },
       "rhythm": null,
+      "reward": null,
       "sampleDeck": {
         "available": false,
         "deckId": null,
@@ -607,6 +629,7 @@
       "milestones": [],
       "path": null,
       "rhythm": null,
+      "reward": null,
       "sampleDeck": {
         "available": false,
         "deckId": null,
@@ -700,6 +723,7 @@
         ]
       },
       "rhythm": null,
+      "reward": null,
       "sampleDeck": {
         "available": true,
         "deckId": "33333333-3333-4333-8333-333333333333",
@@ -817,6 +841,7 @@
         ]
       },
       "rhythm": null,
+      "reward": null,
       "sampleDeck": {
         "available": false,
         "deckId": null,
@@ -925,6 +950,251 @@
           "2026-10-22"
         ],
         "weeksMet": 2
+      },
+      "reward": null,
+      "sampleDeck": {
+        "available": false,
+        "deckId": null,
+        "updateAvailable": false,
+        "freeChecksLeft": 3
+      }
+    },
+    "rewardReady": {
+      "enabled": true,
+      "journey": {
+        "state": "NOT_OFFERED",
+        "eligible": false,
+        "autoOffer": false,
+        "tourVersion": 1,
+        "branch": null,
+        "stepKey": null,
+        "experience": null,
+        "weeklyTarget": 5,
+        "offeredAt": null,
+        "finishedAt": null,
+        "replayCount": 0,
+        "rowVersion": "2"
+      },
+      "milestones": [
+        {
+          "key": "GOAL_TOLD",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-01T09:00:00Z"
+        },
+        {
+          "key": "FIRST_DECK",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-01T09:05:00Z"
+        },
+        {
+          "key": "FIRST_SESSION",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-01T09:20:00Z"
+        },
+        {
+          "key": "OWN_MATERIAL",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-02T18:00:00Z"
+        },
+        {
+          "key": "MEDIA_IN_MATERIAL",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-10-22T18:20:00Z"
+        },
+        {
+          "key": "CAPTURE_NOTE",
+          "state": "DONE",
+          "progress": 2,
+          "target": 2,
+          "achievedAt": "2026-10-22T18:30:00Z"
+        },
+        {
+          "key": "OWN_EXERCISES",
+          "state": "DONE",
+          "progress": 3,
+          "target": 3,
+          "achievedAt": "2026-10-22T18:40:00Z"
+        },
+        {
+          "key": "RHYTHM_WEEK",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-10-08T19:00:00Z"
+        },
+        {
+          "key": "TWO_DAYS",
+          "state": "DONE",
+          "progress": 2,
+          "target": 2,
+          "achievedAt": "2026-09-02T18:30:00Z"
+        }
+      ],
+      "path": {
+        "done": 9,
+        "total": 9,
+        "hidden": [
+          "AI_EXPLANATION",
+          "VOICE_ANSWER",
+          "WORKSHOP_APPROVED",
+          "COMMUNITY_COPY"
+        ]
+      },
+      "rhythm": {
+        "weekStart": "2026-10-19",
+        "today": "2026-10-22",
+        "target": 5,
+        "days": [
+          "2026-10-19",
+          "2026-10-20",
+          "2026-10-21",
+          "2026-10-22"
+        ],
+        "weeksMet": 2
+      },
+      "reward": {
+        "state": "ACTIVE",
+        "code": "K7PM-W2QX-H9RT",
+        "offer": {
+          "type": "DISCOUNT_PERCENT",
+          "percent": 10,
+          "plan": null,
+          "days": null
+        },
+        "issuedAt": "2026-10-22T18:41:00Z",
+        "expiresAt": "2026-10-29T18:41:00Z"
+      },
+      "sampleDeck": {
+        "available": false,
+        "deckId": null,
+        "updateAvailable": false,
+        "freeChecksLeft": 3
+      }
+    },
+    "rewardRedeemed": {
+      "enabled": true,
+      "journey": {
+        "state": "NOT_OFFERED",
+        "eligible": false,
+        "autoOffer": false,
+        "tourVersion": 1,
+        "branch": null,
+        "stepKey": null,
+        "experience": null,
+        "weeklyTarget": 5,
+        "offeredAt": null,
+        "finishedAt": null,
+        "replayCount": 0,
+        "rowVersion": "2"
+      },
+      "milestones": [
+        {
+          "key": "GOAL_TOLD",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-01T09:00:00Z"
+        },
+        {
+          "key": "FIRST_DECK",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-01T09:05:00Z"
+        },
+        {
+          "key": "FIRST_SESSION",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-01T09:20:00Z"
+        },
+        {
+          "key": "OWN_MATERIAL",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-09-02T18:00:00Z"
+        },
+        {
+          "key": "MEDIA_IN_MATERIAL",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-10-22T18:20:00Z"
+        },
+        {
+          "key": "CAPTURE_NOTE",
+          "state": "DONE",
+          "progress": 2,
+          "target": 2,
+          "achievedAt": "2026-10-22T18:30:00Z"
+        },
+        {
+          "key": "OWN_EXERCISES",
+          "state": "DONE",
+          "progress": 3,
+          "target": 3,
+          "achievedAt": "2026-10-22T18:40:00Z"
+        },
+        {
+          "key": "RHYTHM_WEEK",
+          "state": "DONE",
+          "progress": 1,
+          "target": 1,
+          "achievedAt": "2026-10-08T19:00:00Z"
+        },
+        {
+          "key": "TWO_DAYS",
+          "state": "DONE",
+          "progress": 2,
+          "target": 2,
+          "achievedAt": "2026-09-02T18:30:00Z"
+        }
+      ],
+      "path": {
+        "done": 9,
+        "total": 9,
+        "hidden": [
+          "AI_EXPLANATION",
+          "VOICE_ANSWER",
+          "WORKSHOP_APPROVED",
+          "COMMUNITY_COPY"
+        ]
+      },
+      "rhythm": {
+        "weekStart": "2026-10-19",
+        "today": "2026-10-22",
+        "target": 5,
+        "days": [
+          "2026-10-19",
+          "2026-10-20",
+          "2026-10-21",
+          "2026-10-22"
+        ],
+        "weeksMet": 2
+      },
+      "reward": {
+        "state": "REDEEMED",
+        "code": null,
+        "offer": {
+          "type": "TIER_DAYS",
+          "percent": null,
+          "plan": "PLUS",
+          "days": 30
+        },
+        "issuedAt": "2026-10-22T18:41:00Z",
+        "expiresAt": "2026-10-29T18:41:00Z"
       },
       "sampleDeck": {
         "available": false,
