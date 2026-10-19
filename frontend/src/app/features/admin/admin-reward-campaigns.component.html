@@ -1,0 +1,141 @@
+<!-- Console strings of the reward for a finished «Путь» (OB-402): pending owner approval (S4). -->
+<section class="rule-section" aria-labelledby="reward-campaigns-title">
+  <h2 id="reward-campaigns-title">Награда за «Путь»</h2>
+  <p class="hint">
+    Персональный промокод, который сервер выдаёт один раз каждому подтверждённому аккаунту, прошедшему «Путь» целиком. Включена может быть только одна кампания.
+    Условия кампании не меняются: новое предложение — новая кампания. Выключение останавливает новые выдачи и не отзывает выданные коды.
+  </p>
+  @if (notice()) {<p class="notice success" role="status">{{ notice() }}</p>}
+  @if (actionError()) {<p class="notice error" role="alert">{{ actionError() }}</p>}
+  @if (uncertain()) {
+    <button class="button primary" type="button" (click)="submit()" [disabled]="busy()">Повторить ту же команду</button>
+  }
+  <h3 id="reward-campaign-create">Создать кампанию</h3>
+  <form class="editor" [formGroup]="form" (ngSubmit)="create()" aria-labelledby="reward-campaign-create">
+    <div class="editor-grid">
+      <label class="field">
+        <span>Тип предложения</span>
+        <select formControlName="offerType">
+          <option value="DISCOUNT_PERCENT">Скидка, %</option><option value="TIER_DAYS">Тариф на дни</option>
+        </select>
+      </label>
+      @if (offerType() === 'DISCOUNT_PERCENT') {
+        <label class="field">
+          <span>Скидка, 1–90 %</span><input type="number" formControlName="percent" min="1" max="90" required>
+        </label>
+        <label class="field">
+          <span>Тариф, к которому относится скидка</span>
+          <select formControlName="plan">
+            <option value="">Любой тариф</option><option value="PLUS">Plus</option><option value="PRO">Pro</option>
+          </select>
+        </label>
+      } @else {
+        <label class="field">
+          <span>Тариф</span>
+          <select formControlName="plan">
+            <option value="PLUS">Plus</option><option value="PRO">Pro</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Дни, 1–366</span><input type="number" formControlName="days" min="1" max="366" required>
+        </label>
+      }
+    </div>
+    <p class="hint">Новая кампания создаётся выключенной. Код действует 7 дней с момента выдачи.</p>
+    <div class="actions">
+      <button class="button primary" type="submit" [disabled]="busy() || uncertain()">
+        {{ busy() && mutationKind() === 'create' ? 'Выполняем…' : 'Создать кампанию' }}
+      </button>
+    </div>
+  </form>
+
+  <h3 id="reward-campaign-list">Кампании</h3>
+  <div class="actions">
+    <button class="button" type="button" (click)="reload()" [disabled]="loading() || busy() || uncertain()">Обновить</button>
+  </div>
+  @if (loading()) {<p role="status">Загружаем кампании…</p>}
+  @if (error()) {
+    <div class="notice error" role="alert">
+      <p>{{ error() }}</p><button class="button" type="button" (click)="reload()">Повторить</button>
+    </div>
+  }
+  <ul class="campaigns" aria-labelledby="reward-campaign-list">
+    @for (campaign of campaigns(); track campaign.campaignId) {
+      <li class="campaign">
+        <p class="campaign-offer"><strong>{{ offer(campaign) }}</strong> · {{ campaign.enabled ? 'Включена' : 'Выключена' }}</p>
+        <p class="hint">
+          Выдано: {{ campaign.issued }} · Использовано: {{ campaign.redeemed }} · За 24 часа: {{ campaign.issuedLast24h }}<br>
+          Создана: {{ date(campaign.createdAt) }}
+        </p>
+        <div class="actions">
+          <button class="button small" type="button" [id]="'reward-campaign-switch-' + campaign.campaignId" (click)="ask(campaign)" [disabled]="busy() || uncertain()">
+            {{ campaign.enabled ? 'Выключить' : 'Включить' }}
+          </button>
+          <button class="button small" type="button" (click)="toggleIssuances(campaign)" [attr.aria-expanded]="opened() === campaign.campaignId"
+            [attr.aria-controls]="'reward-issuances-' + campaign.campaignId">
+            {{ opened() === campaign.campaignId ? 'Скрыть выдачи' : 'Выдачи' }}
+          </button>
+        </div>
+        @if (confirming()?.campaignId === campaign.campaignId) {
+          <div #confirmBox class="notice warning" role="group" tabindex="-1" aria-labelledby="reward-confirm-title">
+            <p id="reward-confirm-title"><strong>{{ confirming()?.enable ? 'Включить эту кампанию?' : 'Выключить эту кампанию?' }}</strong></p>
+            <p>
+              @if (confirming()?.enable) {
+                С этого момента каждый подтверждённый аккаунт, прошедший «Путь» целиком, получит персональный промокод: {{ offer(campaign) }}.
+                Выдача происходит сама, отозвать её нельзя; выключение остановит только новые выдачи.
+              } @else {
+                Новые коды выдаваться перестанут. Уже выданные коды действуют до своего срока.
+              }
+            </p>
+            <div class="actions">
+              <button class="button primary" type="button" (click)="confirm()" [disabled]="busy()">
+                {{ confirming()?.enable ? 'Да, включить' : 'Да, выключить' }}
+              </button>
+              <button class="button" type="button" (click)="cancel()" [disabled]="busy()">Отмена</button>
+            </div>
+          </div>
+        }
+        @if (opened() === campaign.campaignId && issuances(); as list) {
+          <div class="issuances" [id]="'reward-issuances-' + campaign.campaignId">
+            @if (list.loading()) {<p role="status">Загружаем выдачи…</p>}
+            @if (list.error()) {
+              <div class="notice error" role="alert">
+                <p>{{ list.error() }}</p><button class="button" type="button" (click)="list.reload()">Повторить</button>
+              </div>
+            }
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Выданные коды кампании">
+              <table #rows class="data-table">
+                <caption>Новые выдачи сверху, следующие подгружаются при прокрутке. Код целиком не хранится: видна только подсказка.</caption>
+                <thead>
+                  <tr><th scope="col">Подсказка кода</th><th scope="col">Выдан</th><th scope="col">Действует до</th><th scope="col">Использован</th></tr>
+                </thead>
+                <tbody>
+                  @for (row of list.items(); track row.issuedAt + row.codeHint) {
+                    <tr>
+                      <th scope="row">{{ row.codeHint }}</th>
+                      <td>{{ date(row.issuedAt) }}</td>
+                      <td>{{ date(row.expiresAt) }}</td>
+                      <td>{{ row.redeemedAt ? date(row.redeemedAt) : 'Нет' }}</td>
+                    </tr>
+                  }
+                  @empty {
+                    @if (!list.loading() && !list.error()) {
+                      <tr><td colspan="4">Эта кампания ещё ничего не выдала.</td></tr>
+                    }
+                  }
+                </tbody>
+              </table>
+            </div>
+            <app-auto-load [content]="rows" [context]="list.context()" [continuation]="list.next()" [loading]="list.loadingMore()" [error]="list.moreError()"
+              loadingText="Загружаем следующие выдачи…" (loadNext)="list.more()" />
+          </div>
+        }
+      </li>
+    }
+    @empty {
+      @if (!loading() && !error()) {
+        <li class="hint">Кампаний пока нет. Создайте первую: она создаётся выключенной.</li>
+      }
+    }
+  </ul>
+</section>

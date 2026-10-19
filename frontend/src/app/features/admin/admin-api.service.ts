@@ -11,9 +11,9 @@ import {
     parseComplaintPage, parseJournalPage, parseUnitsPage
 } from './admin-complaints.models';
 import {
-    AdminAccess, AdminPromo, AdminReport, OnboardingExperimentReport, parseOnboardingReport, AuditPage, CommandReceipt, Conversation, DirectoryDetail, DirectoryPage,
+    AdminAccess, AdminCampaign, AdminPromo, AdminReport, CampaignCreate, CampaignPage, IssuancePage, OnboardingExperimentReport, parseOnboardingReport, AuditPage, CommandReceipt, Conversation, DirectoryDetail, DirectoryPage,
     PromoCreate, PromoPage, SupportPage, TicketCommand, UserReport, object, parseAccess, parseAuditPage,
-    parseConversation, parseDetail, parseDirectory, parsePromo, parsePromoPage, parseReceipt, parseReport,
+    parseCampaign, parseCampaignPage, parseConversation, parseDetail, parseIssuancePage, parseDirectory, parsePromo, parsePromoPage, parseReceipt, parseReport,
     parseSupportPage, parseUserReport, str
 } from './admin.models';
 @Injectable({
@@ -109,6 +109,30 @@ export class AdminApiService {
         return this.protect(this.http.patch<unknown>(`${this.learning}/promo-codes/${id}`, {
             enabled
         }).pipe(timeout(10000), map(parsePromo)));
+    }
+    /** The campaigns of the reward for a finished «Путь», newest first (at most 100): the owner's console of OB-402. */
+    campaigns(): Observable<CampaignPage> {
+        return this.get(`${this.learning}/promo-campaigns`, {}, parseCampaignPage);
+    }
+    /** A new campaign is created disabled. The same `commandId` is the same command: a retry after an unknown outcome returns the same campaign. */
+    createCampaign(body: CampaignCreate, commandId: string): Observable<AdminCampaign> {
+        return this.protect(this.http.post<unknown>(`${this.learning}/promo-campaigns`, body, {
+            headers: {
+                'Idempotency-Key': commandId
+            }
+        }).pipe(timeout(10000), map(parseCampaign)));
+    }
+    /** Enabling is refused with a 409 `PROMO_CAMPAIGN_ACTIVE` while another campaign of the type is enabled; disabling is the kill switch and revokes no code. */
+    switchCampaign(id: string, enabled: boolean): Observable<AdminCampaign> {
+        return this.protect(this.http.patch<unknown>(`${this.learning}/promo-campaigns/${id}`, {
+            enabled
+        }).pipe(timeout(10000), map(parseCampaign)));
+    }
+    /** The codes a campaign issued, newest first, paged by an opaque cursor. */
+    issuances(id: string, after: string | null): Observable<IssuancePage> {
+        return this.get(`${this.learning}/promo-campaigns/${id}/issuances`, {
+            after
+        }, parseIssuancePage);
     }
     audit(source: 'learning' | 'identity', before: string | null): Observable<AuditPage> {
         return this.get(source === 'learning' ? `${this.learning}/console/audit` : `${this.identity}/audit`, {

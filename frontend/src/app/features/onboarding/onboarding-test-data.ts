@@ -7,7 +7,7 @@ import contract from '../../../../../contracts/onboarding/journey.json';
 import { AuthService } from '../../auth.service';
 import { ToastService } from '../../core/notifications/toast.service';
 import { JourneyStore } from '../../core/onboarding/journey.store';
-import { ActionOptions, Journey, JourneyAction, JourneyResult, OnboardingView, StepKey, WEEKLY_TARGET } from '../../core/onboarding/onboarding.models';
+import { ActionOptions, Journey, JourneyAction, JourneyResult, OnboardingView, PathReward, StepKey, WEEKLY_TARGET } from '../../core/onboarding/onboarding.models';
 import { TOUR_PERSISTENCE, TourEngine } from '../../core/onboarding/tour-engine.service';
 import { TourEvents } from '../../core/onboarding/tour-events';
 import { COMMUNITY_LAUNCH } from '../../shared/community-launch';
@@ -23,6 +23,14 @@ import { OnboardingFlow } from './onboarding-flow.service';
 export const OFFERED_VIEW = contract.views.offered as OnboardingView;
 /** The view of a week of the rhythm with three studied days of a target of five (`views.rhythmWeek` of the contract). */
 export const RHYTHM_VIEW = contract.views.rhythmWeek as OnboardingView;
+/** The reward of a finished path with its code, a discount of 10 % (`views.rewardReady` of the contract; every other view carries `reward: null`). */
+export const REWARD_ACTIVE = contract.views.rewardReady.reward as PathReward;
+/** The reward after its code was redeemed: a tier for 30 days, no code (`views.rewardRedeemed` of the contract). */
+export const REWARD_REDEEMED = contract.views.rewardRedeemed.reward as PathReward;
+/** The reward after its time ran out: no code, nothing to say about it. */
+export const REWARD_EXPIRED: PathReward = { ...REWARD_ACTIVE, state: 'EXPIRED', code: null };
+/** The account of a finished path whose reward was issued: every milestone done, the reward as given (`views.rewardReady`). */
+export const REWARD_VIEW = contract.views.rewardReady as OnboardingView;
 /** The id of the sample copy the fake store makes (`views.sampleReady` of the contract). */
 export const SAMPLE_DECK_ID = contract.views.sampleReady.sampleDeck.deckId as string;
 /** The sample deck of a view where the learner may choose it. */

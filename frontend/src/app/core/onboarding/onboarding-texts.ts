@@ -266,14 +266,37 @@ export const ONBOARDING_TEXTS = {
     'quest.explain.what.body1': 'В заданиях со свободным ответом вы объясняете мысль своими словами, а ИИ проверяет, понятна ли она, и подсказывает, чего не хватает.',
     'quest.explain.what.body2': 'Оценку можно оспорить, а если ИИ занят, оценить себя самому.',
     'quest.explain.study.title': 'Пройдите занятие',
-    'quest.explain.study.body': 'Нажмите «Учить». Задание со свободным ответом попадается не в каждом занятии: если его не было, начните занятие ещё раз или добавьте такое упражнение в материал. Задание закончится, когда ИИ проверит ответ.'
+    'quest.explain.study.body': 'Нажмите «Учить». Задание со свободным ответом попадается не в каждом занятии: если его не было, начните занятие ещё раз или добавьте такое упражнение в материал. Задание закончится, когда ИИ проверит ответ.',
+    // The reward of the finished «Путь» (OB-402). The eyebrow, title, terms, action and «Позже» are the approved texts of the prototype; the gift sentence is the approved
+    // «Ваш подарок: −10 % на подписку до {date}.» with the percent of the campaign in place of 10.
+    'reward.eyebrow': 'Путь пройден',
+    'reward.title': 'Вы освоили Mnema полностью',
+    'reward.gift': 'Ваш подарок: −{percent}\u00a0% на подписку до {date}.',
+    'reward.terms': 'Предложение действует один раз. Условия и сочетание с промокодами — на странице тарифов.',
+    'reward.action': 'Выбрать тариф',
+    'reward.later': 'Позже',
+    // pending owner approval (S4, OB-402): the gift of a discount for one plan, the gift of a tier, the code element, the redeemed line, the notification
+    'reward.gift.plan': 'Ваш подарок: −{percent}\u00a0% на подписку {plan} до {date}.',
+    'reward.gift.tier': 'Ваш подарок: {plan} на {days} — до {date}.',
+    'reward.code.label': 'Ваш промокод',
+    'reward.code.copy': 'Скопировать',
+    'reward.code.copied': 'Промокод скопирован.',
+    'reward.code.manual': 'Браузер не дал скопировать сам. Промокод выделен — скопируйте его.',
+    'reward.redeemed': 'Подарок за «Путь» использован.',
+    'reward.notification': 'Подарок за «Путь» действует до {date}.'
 } as const;
+
+/** The reward strings of the approved list of the prototype (`reward.gift` is the approved sentence with its percent as a placeholder: see the texts spec). */
+export const REWARD_APPROVED_KEYS: readonly OnboardingTextKey[] = ['reward.eyebrow', 'reward.title', 'reward.gift', 'reward.terms', 'reward.action', 'reward.later'];
 
 /** The strings of the goal block of the profile: all of them await approval. */
 const GOAL_PROFILE_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('goal.profile.'));
 
 /** The strings of the rhythm week and the rhythm block of the profile that are not in the approved list: all of them await approval (S4). */
 const RHYTHM_NEW_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('rhythm.week.') || key.startsWith('rhythm.settings.'));
+
+/** The strings of the reward that are not in the approved list (the sentence of the gift with its percent, the code element, the redeemed line, the notification): they await approval (S4). */
+const REWARD_NEW_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('reward.') && !REWARD_APPROVED_KEYS.includes(key));
 
 /** The strings of the side quests: all of them await approval. */
 const QUEST_TEXT_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('quest.'));
@@ -282,7 +305,7 @@ const QUEST_TEXT_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).f
 export const UNLISTED_TEXT_KEYS: readonly OnboardingTextKey[] = ['tour.slider.label', 'survey.progress.label', 'survey.progress.value', 'replay.own.title', 'replay.own.new',
     'path.eyebrow', ...GOAL_PROFILE_KEYS, ...MILESTONE_KEYS.map(key => `path.event.${key}` as const), 'path.toast.many', 'path.show', 'path.loading',
     'hint.PROFILE_GOAL', 'hint.DECKS', 'hint.STUDY', 'hint.MATERIAL_NEW', 'hint.EXERCISE_NEW', 'hint.COMMUNITY',
-    'hint.PROFILE_RHYTHM', ...RHYTHM_NEW_KEYS, ...QUEST_TEXT_KEYS];
+    'hint.PROFILE_RHYTHM', ...RHYTHM_NEW_KEYS, ...REWARD_NEW_KEYS, ...QUEST_TEXT_KEYS];
 
 export type OnboardingTextKey = keyof typeof ONBOARDING_TEXTS;
 

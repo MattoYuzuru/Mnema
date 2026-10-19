@@ -1,5 +1,6 @@
 import { onboardingText } from '../onboarding/onboarding-texts';
 import { MilestoneKey, isMilestoneKey } from '../onboarding/path.models';
+import { rewardDate } from '../onboarding/reward-format';
 import { AppNotification, NotificationSeverity } from './notification.models';
 
 /** A destination the client derives from the route key; the server never sends a URL. */
@@ -23,6 +24,7 @@ const EXERCISES: Plural = ['упражнение', 'упражнения', 'уп
 const ACCESS_REQUESTS: Plural = ['запрос', 'запроса', 'запросов'];
 const PATH_ITEMS: Plural = ['пункт', 'пункта', 'пунктов'];
 const PUBLIC_CODE = /^[A-Za-z0-9_-]{4,64}$/u;
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
 const NBSP = ' ';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
@@ -107,6 +109,7 @@ function sentence(notification: AppNotification): string | null {
         case 'DECK_HIDDEN': return text(params, 'deckId') === null ? null : 'Ваша колода скрыта из Сообщества после жалобы. Вам она доступна как раньше';
         case 'DECK_CONTENT_TAKEN_DOWN': return takenDown(params);
         case 'PATH_MILESTONE': return pathMilestone(params);
+        case 'PATH_REWARD_READY': return pathRewardReady(params);
         default: return null;
     }
 }
@@ -122,6 +125,17 @@ export function pathMilestoneParams(params: Readonly<Record<string, unknown>>): 
 function pathMilestone(params: Readonly<Record<string, unknown>>): string | null {
     const milestone = pathMilestoneParams(params);
     return milestone === null ? null : onboardingText('path.toast', { event: onboardingText(`path.event.${milestone.key}`), done: milestone.done, total: milestone.total });
+}
+
+/**
+ * The reward of a finished «Путь» is ready (OB-402): «Вы освоили Mnema полностью. Подарок за «Путь» действует до 29 октября, 21:41 МСК.». The end of the offer
+ * (`expiresAt`) is shown as text in Moscow time, never a countdown; the code itself never travels in a notification: «Путь» carries it. A missing or unreadable
+ * `expiresAt` shows nothing.
+ */
+function pathRewardReady(params: Readonly<Record<string, unknown>>): string | null {
+    const expiresAt = params['expiresAt'];
+    if (typeof expiresAt !== 'string' || !INSTANT.test(expiresAt) || Number.isNaN(Date.parse(expiresAt))) return null;
+    return `${onboardingText('reward.title')}. ${onboardingText('reward.notification', { date: rewardDate(expiresAt) })}`;
 }
 
 /** One toast for several milestones that arrived together: «Путь: отмечено 3 пункта · 8 из 12». */

@@ -74,7 +74,7 @@ export class PathToasts {
         inject(DestroyRef).onDestroy(() => this.clearTimer());
     }
 
-    /** A milestone notification arrived (any state of the panel): the page and the profile read the view again. */
+    /** A milestone notification, or the one of the ready reward (`PATH_REWARD_READY`), arrived (any state of the panel): the page, the profile and the congratulation read the view again. */
     noteArrival(): void {
         void this.journey.load({ refresh: true });
     }

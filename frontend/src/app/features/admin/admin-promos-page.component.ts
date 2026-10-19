@@ -4,6 +4,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { firstValueFrom, map } from 'rxjs';
 import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { AdminApiService, AdminSession } from './admin-api.service';
+import { AdminRewardCampaignsComponent } from './admin-reward-campaigns.component';
 import { AdminPromo, AdminProtocolError, PromoCreate, PromoKind } from './admin.models';
 import { CursorList } from './cursor-list';
 import { dateTime, errorText, isForbidden, unknownOutcome } from './admin-presenters';
@@ -42,7 +43,7 @@ function utcFromMoscow(value: string): string | null {
     host: {
         '(window:beforeunload)': 'protectBeforeUnload($event)'
     },
-    imports: [ReactiveFormsModule, AutoLoadComponent],
+    imports: [ReactiveFormsModule, AutoLoadComponent, AdminRewardCampaignsComponent],
     templateUrl: './admin-promos-page.component.html',
     styleUrl: './admin-page.css',
     changeDetection: ChangeDetectionStrategy.OnPush

@@ -213,7 +213,7 @@ describe('PathToasts (the milestone toast policy)', () => {
         const RHYTHM: Rhythm = { weekStart: '2026-10-19', today: '2026-10-22', target: 3, days: ['2026-10-19', '2026-10-20'], weeksMet: 0 };
         const MET: Rhythm = { ...RHYTHM, days: ['2026-10-19', '2026-10-20', '2026-10-22'] };
         const MESSAGE = 'Цель недели выполнена: вы занимались 3\u00a0дня.';
-        const show = (rhythm: Rhythm | null): void => { view.set({ enabled: true, journey: null, milestones: [], path: null, rhythm, sampleDeck: { available: false, deckId: null, updateAvailable: false, freeChecksLeft: 3 } }); TestBed.tick(); };
+        const show = (rhythm: Rhythm | null): void => { view.set({ enabled: true, journey: null, milestones: [], path: null, rhythm, reward: null, sampleDeck: { available: false, deckId: null, updateAvailable: false, freeChecksLeft: 3 } }); TestBed.tick(); };
         const rhythmToasts = (): unknown[][] => notify.mock.calls.filter(call => String(call[0]).startsWith('rhythm-met-'));
 
         it('shows it when a newer view of the same week reaches the target the previous view was below, with no link and as information', async () => {

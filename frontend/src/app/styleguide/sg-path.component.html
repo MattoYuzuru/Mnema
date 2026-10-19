@@ -129,4 +129,56 @@
     [tokens]="['--mn-ink', '--mn-sheet']">
     <div class="actions"><button type="button" class="button" (click)="showRhythmToast()">Показать тост цели недели</button></div>
   </app-sg-specimen>
+
+  <app-sg-specimen title="Награда за «Путь»: карточка" selector="<app-reward-card>"
+    when="Тихий блок на странице «Путь» (над главами, h2) и в блоке «Путь Mnema» профиля (h3, без второй рамки): «Путь пройден», «Вы освоили Mnema полностью», подарок одной фразой с концом предложения датой и временем по Москве текстом (никакого обратного отсчёта, секунд и слов срочности), промокод в поле, условия и «Выбрать тариф» — ссылка на /plans, где код подставлен в поле промокода и применяется только самим пользователем. Три вида подарка: скидка (при скидке на один тариф фраза называет его) и тариф на дни. Награда уже использована — одна приглушённая строка. Награда истекла или её нет — ничего, без сообщения о потере."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-sheet', '--mn-muted']"
+    usage='<app-reward-card [reward]="view.reward" [level]="2" />'>
+    <div class="sg-reward-cards">
+      <figure><figcaption>Скидка на подписку</figcaption><app-reward-card [reward]="rewards.percent" /></figure>
+      <figure><figcaption>Скидка на один тариф</figcaption><app-reward-card [reward]="rewards.plan" /></figure>
+      <figure><figcaption>Тариф на дни</figcaption><app-reward-card [reward]="rewards.tier" /></figure>
+      <figure><figcaption>В профиле (h3, внутри листа блока)</figcaption><app-reward-card [reward]="rewards.percent" [level]="3" /></figure>
+      <figure><figcaption>Награда использована</figcaption><app-reward-card [reward]="rewards.redeemed" /></figure>
+      <figure><figcaption>Награда истекла (ничего не показывается)</figcaption><app-reward-card [reward]="rewards.expired" /></figure>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Награда за «Путь»: на 320 px" selector="<app-reward-card> в узкой колонке"
+    when="Блок перестраивается без горизонтальной прокрутки: длинное предложение переносится, поле кода и «Скопировать» встают в столбец, «Выбрать тариф» остаётся в колонке касания 44 px."
+    [tokens]="['--mn-touch-min']">
+    <div class="sg-path-narrow"><app-reward-card [reward]="rewards.tier" /></div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Промокод награды" selector="<app-reward-code>"
+    when="Персональный код как текст, который можно прочитать, выделить и скопировать: поле только для чтения моноширинным шрифтом с видимой подписью «Ваш промокод» (она же имя поля), которое само выделяется целиком при фокусе и нажатии, и кнопка «Скопировать». Копирует по нажатию пользователя; если браузер не дал, код остаётся выделенным, а строка состояния (role=status, уже на странице) просит скопировать его самому. Лежит на бумаге (tone=paper) и на ночи (tone=night)."
+    [tokens]="['--mn-ink', '--mn-on-night', '--mn-focus', '--mn-star-lavender']"
+    usage='<app-reward-code code="K7PM-W2QX-H9RT" tone="paper" />'>
+    <div class="sg-night-pair">
+      <div class="sg-reward-code-paper"><app-reward-code code="K7PM-W2QX-H9RT" /></div>
+      <app-night-sky layout="panel" [stars]="false"><app-reward-code code="K7PM-W2QX-H9RT" tone="night" /></app-night-sky>
+    </div>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Поздравление с наградой" selector="<app-reward-congratulation>"
+    when="Один раз на устройстве, когда в виде «Пути» появилась действующая награда: модальный &lt;dialog&gt; на ночи со звёздами (та же поверхность, что у приветствия и финала знакомства) — «Путь пройден», «Вы освоили Mnema полностью», подарок с датой конца предложения, код, условия, «Выбрать тариф» (/plans с кодом в поле) и «Позже». Заголовок h1 принимает фокус; «Позже» и Esc закрывают и возвращают фокус на прежнее место. Это громкая поверхность: не во время тура, первого входа, подсказки, промо-окна и открытого ответа в занятии, не на странице занятия и не поверх другого модального окна; дождавшись, появляется сама. Звёзды конечные и неподвижны при уменьшенном движении, в forced-colors фон Canvas. Ниже — те же элементы в рамке-образце."
+    [tokens]="['--mn-night', '--mn-on-night', '--mn-on-night-muted', '--mn-star-lavender', '--mn-glow']">
+    <app-night-sky layout="panel" seed="mnema-reward">
+      <p class="eyebrow">{{ rewardNight.eyebrow }}</p>
+      <h2>{{ rewardNight.title }}</h2>
+      <p class="lead">{{ rewardNight.gift }}</p>
+      <app-reward-code code="K7PM-W2QX-H9RT" tone="night" />
+      <p class="muted">{{ rewardNight.terms }}</p>
+      <div class="actions">
+        <a class="button primary" href="#path">{{ rewardNight.action }}</a>
+        <button type="button" class="button quiet">{{ rewardNight.later }}</button>
+      </div>
+    </app-night-sky>
+  </app-sg-specimen>
+
+  <app-sg-specimen title="Тост: награда готова" selector="ToastService.notify(PATH_REWARD_READY)"
+    when="«Вы освоили Mnema полностью. Подарок за «Путь» действует до 29 октября, 21:41 МСК.» со ссылкой «Открыть «Путь»». Обычный тихий тост по правилам уведомлений (во время ответа в занятии ждёт паузы), не веха и не часть сводки вех. Код в уведомлении не приходит: он на странице «Путь». Приход уведомления заставляет перечитать вид «Пути»."
+    [tokens]="['--mn-ink', '--mn-sheet']">
+    <div class="actions"><button type="button" class="button" (click)="showRewardToast()">Показать тост награды</button></div>
+  </app-sg-specimen>
 </section>

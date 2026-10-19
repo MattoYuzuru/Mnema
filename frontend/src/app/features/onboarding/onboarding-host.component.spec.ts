@@ -6,7 +6,7 @@ import { QuietZone } from '../../core/notifications/quiet-zone';
 import { AttentionCoordinator } from '../../core/onboarding/attention-coordinator';
 import { TourHints } from '../../core/onboarding/tour-hints';
 import { OnboardingHostComponent } from './onboarding-host.component';
-import { Setup, setup } from './onboarding-test-data';
+import { REWARD_ACTIVE, Setup, setup } from './onboarding-test-data';
 
 describe('OnboardingHostComponent', () => {
     let fixture: ComponentFixture<OnboardingHostComponent>;
@@ -155,6 +155,29 @@ describe('OnboardingHostComponent', () => {
             await settle();
             expect(s.flow.card()).toBeNull();
             expect(TestBed.inject(AttentionCoordinator).visible()).not.toContain('first-entry');
+        });
+    });
+
+    describe('the congratulation for a finished «Путь»', () => {
+        beforeEach(() => localStorage.clear());
+        afterEach(() => localStorage.clear());
+
+        it('opens once for an active reward when nothing louder is up, after the first entry has been dealt with', async () => {
+            await render({ journey: { state: 'COMPLETED', autoOffer: false }, view: { reward: REWARD_ACTIVE } });
+            expect(root.querySelector('dialog.first-entry')).toBeNull();
+            expect(root.querySelector('dialog.reward-night')!.hasAttribute('open')).toBe(true);
+            expect(TestBed.inject(AttentionCoordinator).speaking()).toBe('reward');
+        });
+
+        it('waits behind the first entry, and comes up when it is closed', async () => {
+            await render({ view: { reward: REWARD_ACTIVE } });
+            expect(root.querySelector('dialog.first-entry')!.hasAttribute('open')).toBe(true);
+            expect(root.querySelector('dialog.reward-night')).toBeNull();
+            // «Мне это знакомо — сразу к делу»: the first entry is dealt with.
+            root.querySelector<HTMLButtonElement>('dialog.first-entry .actions .quiet')!.click();
+            await settle();
+            // The dialog of the first entry may still be in the page for a moment: the congratulation looks again within a second.
+            await vi.waitFor(() => expect(root.querySelector('dialog.reward-night')).not.toBeNull(), { timeout: 3_000 });
         });
     });
 

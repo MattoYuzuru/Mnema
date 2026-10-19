@@ -169,4 +169,32 @@ describe('notification presenter', () => {
             expect(pathMilestonesSummary(21, 9, 12)).toBe('Путь: отмечено 21 пункт · 9 из 12');
         });
     });
+
+    describe('PATH_REWARD_READY (the reward of a finished «Путь»)', () => {
+        const ready = (params: Record<string, unknown>, route: AppNotification['route'] = 'PATH'): AppNotification => make('PATH_REWARD_READY', params, { route });
+
+        it('says the path is done and when the gift ends, as a date in Moscow time, and links to the page of the path', () => {
+            const presented = presentNotification(ready({ expiresAt: '2026-10-29T18:41:00Z' }));
+            expect(presented?.text).toBe('Вы освоили Mnema полностью. Подарок за «Путь» действует до 29 октября, 21:41\u00a0МСК.');
+            expect(presented?.severity).toBe('INFO');
+            expect(presented?.link).toEqual({ label: 'Открыть «Путь»', commands: ['/profile', 'path'] });
+        });
+
+        it('shows the Moscow day whatever the zone of the reader, and never a countdown, a second or an urgent word', () => {
+            const sentence = text(ready({ expiresAt: '2026-10-28T22:30:45Z' }))!;
+            expect(sentence).toContain('до 29 октября, 01:30\u00a0МСК');
+            expect(sentence).not.toMatch(/\d+:\d+:\d+|осталось|успей|скорее|последн|спешите/iu);
+        });
+
+        it('shows nothing for params that do not fit, and carries no code', () => {
+            for (const params of [{}, { expiresAt: 'soon' }, { expiresAt: '2026-10-29' }, { expiresAt: 1790000000 }, { expiresAt: null }, { expiresAt: '2026-13-45T18:41:00Z' }]) {
+                expect(presentNotification(ready(params)), JSON.stringify(params)).toBeNull();
+            }
+            expect(text(ready({ expiresAt: '2026-10-29T18:41:00Z', code: 'K7PM-W2QX-H9RT' }))).not.toContain('K7PM');
+        });
+
+        it('shows the sentence without a link for a route the older list sent as NONE', () => {
+            expect(presentNotification(ready({ expiresAt: '2026-10-29T18:41:00Z' }, 'NONE'))?.link).toBeNull();
+        });
+    });
 });

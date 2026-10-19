@@ -1,0 +1,6 @@
+:host { display: contents; }
+/* A full-screen modal: the night is the dialog's own ground, there is no frame and no second veil (as the first entry and the congratulation of the tour). */
+.reward-night { box-sizing: border-box; inline-size: 100%; max-inline-size: none; block-size: 100%; max-block-size: none; margin: 0; border: 0; padding: 0; overflow: auto; color: var(--mn-on-night); background: var(--mn-night); }
+.reward-night::backdrop { background: var(--mn-night); }
+.reward-night app-night-sky { min-block-size: 100dvh; }
+@media (forced-colors: active) { .reward-night { color: CanvasText; background: Canvas; } }

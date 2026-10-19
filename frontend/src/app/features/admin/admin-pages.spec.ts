@@ -14,7 +14,7 @@ import { AdminReportPageComponent } from './admin-report-page.component';
 import { AdminShellComponent } from './admin-shell.component';
 import { AdminSupportPageComponent } from './admin-support-page.component';
 import { AdminUsersPageComponent } from './admin-users-page.component';
-import { clone, ownerId, promo, wire } from './admin-test-data';
+import { campaign, clone, issuance, ownerId, promo, wire } from './admin-test-data';
 let http: HttpTestingController;
 let fixture: ComponentFixture<any>;
 let root: HTMLElement;
@@ -402,6 +402,10 @@ describe('user directory and context', () => {
         expect(root.textContent).not.toContain('synthetic@example.test');
     });
 });
+/** The section of the reward for a finished «Путь» reads its campaigns when the page opens. */
+function flushCampaigns(campaigns: readonly object[] = [campaign]): void {
+    http.expectOne('/api/admin/promo-campaigns').flush({ campaigns });
+}
 describe('promo operations', () => {
     async function setupPromo(): Promise<void> {
         await setup(AdminPromosPageComponent);
@@ -409,6 +413,7 @@ describe('promo operations', () => {
             codes: [promo],
             next: null
         });
+        flushCampaigns();
         await settle();
     }
     it('protects dirty input on browser close but permits departure after authentication ends', async () => {
@@ -510,6 +515,7 @@ describe('promo operations', () => {
     it('continues the code list on demand, keeps filters over loaded rows and shows a failed page with explicit retry', async () => {
         await setup(AdminPromosPageComponent);
         http.expectOne('/api/admin/promo-codes').flush({ codes: [promo], next: promo.codeId });
+        flushCampaigns();
         await settle();
         const more = () => fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
         more();
@@ -539,6 +545,7 @@ describe('promo operations', () => {
             codes: [],
             next: null
         });
+        flushCampaigns([]);
         await settle();
         TestBed.inject(AdminSession).access.set({
             owner: true,
@@ -785,6 +792,19 @@ describe('separate action journals', () => {
         await settle();
         expect(rows()).toBe(4);
         expect(root.querySelectorAll('section')[1].querySelectorAll('tbody tr')).toHaveLength(3);
+    });
+    it('labels the journal actions of the reward campaigns in words', async () => {
+        await setup(AdminAuditPageComponent);
+        const entries = ['PROMO_CAMPAIGN_CREATE', 'PROMO_CAMPAIGN_ENABLE', 'PROMO_CAMPAIGN_DISABLE'].map((action, index) =>
+            ({ ...wire.audit.entries[0], auditId: `0199c478-a000-7000-8000-00000000001${index}`, action }));
+        http.expectOne('/api/admin/console/audit').flush({ entries, next: null });
+        http.expectOne(`${identity}/audit`).flush({ entries: [], next: null });
+        await settle();
+        const text = root.textContent ?? '';
+        expect(text).toContain('Создана кампания награды за «Путь»');
+        expect(text).toContain('Кампания награды за «Путь» включена');
+        expect(text).toContain('Кампания награды за «Путь» выключена');
+        expect(text).not.toContain('PROMO_CAMPAIGN_');
     });
     it('keeps the other source useful after a source outage and supports retry', async () => {
         await setup(AdminAuditPageComponent);

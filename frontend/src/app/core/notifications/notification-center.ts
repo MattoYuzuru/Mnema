@@ -21,6 +21,7 @@ const CATCH_UP_PAGES = 5;
 /** The server keeps at most this many per account. */
 const RETENTION = 200;
 const PATH_MILESTONE = 'PATH_MILESTONE';
+const PATH_REWARD_READY = 'PATH_REWARD_READY';
 
 /**
  * The owner's notification center (contracts/notifications): server state in signals, a visibility-aware poll, the
@@ -251,8 +252,8 @@ export class NotificationCenter {
         const known = new Set(this.items().map(item => item.notificationId));
         const added = arrived.filter(item => !known.has(item.notificationId) && !this.dismissed.has(item.notificationId));
         if (added.length > 0) this.items.set(sortNewestFirst([...added, ...this.items()]).slice(0, RETENTION));
-        // A milestone changes the «Путь» view whatever the panel or the toast policy do with it.
-        if (added.some(item => item.kind === PATH_MILESTONE)) this.pathToasts.noteArrival();
+        // A milestone, and the reward of a finished path, change the «Путь» view whatever the panel or the toast policy do with it.
+        if (added.some(item => item.kind === PATH_MILESTONE || item.kind === PATH_REWARD_READY)) this.pathToasts.noteArrival();
         this.applyCounters(page.unreadCount, page.readUpto, page.activeWork);
         // The panel is open, or the item was already read elsewhere: nothing to interrupt with.
         if (this.panelOpen()) await this.markShownRead(); else this.toast(added);

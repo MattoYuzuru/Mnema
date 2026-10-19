@@ -145,4 +145,5 @@
     </div><app-auto-load [content]="rows" [context]="codes.context()" [continuation]="codes.next()" [loading]="codes.loadingMore()" [error]="codes.moreError()" [enabled]="!busy() && !uncertain()"
       loadingText="Загружаем следующие промокоды…" (loadNext)="codes.more()" />
   </section>
+  <app-admin-reward-campaigns />
 }

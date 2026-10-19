@@ -15,6 +15,8 @@ import {
     JourneyCommand,
     OnboardingProtocolError,
     PreferencesCommand,
+    REWARD_OFFER_TYPES,
+    REWARD_STATES,
     SAMPLE_FREE_AI_CHECKS,
     STEP_BRANCH,
     STEP_KEYS,
@@ -63,6 +65,11 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
             }
         });
 
+        it('has the reward states and offer types of the contract', () => {
+            expect([...REWARD_STATES]).toEqual(contract.constants.reward.states);
+            expect([...REWARD_OFFER_TYPES]).toEqual(contract.constants.reward.offers);
+        });
+
         it('takes the step and branch rules of every action from the transition table', () => {
             const table = contract.transitions as unknown as Record<string, { stepKey: string; branch: string }>;
             for (const action of JOURNEY_ACTIONS) {
@@ -107,7 +114,7 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
         });
 
         it('takes no rhythm from the views whose flag is off', () => {
-            for (const [name, view] of Object.entries(contract.views).filter(([name]) => name !== 'rhythmWeek')) expect(parseOnboardingView(view).rhythm, name).toBeNull();
+            for (const [name, view] of Object.entries(contract.views).filter(([name]) => name !== 'rhythmWeek' && !name.startsWith('reward'))) expect(parseOnboardingView(view).rhythm, name).toBeNull();
         });
 
         it('accepts the edges: a week without a session, a full week, today on Monday and on Sunday, a target of one and seven', () => {
@@ -160,6 +167,105 @@ describe('Onboarding wire contract (contracts/onboarding/journey.json)', () => {
             expect(request.request.body).toEqual(command);
             request.flush(week, { headers });
             await expect(result).resolves.toMatchObject({ view: { rhythm: { target: 5 } } });
+        });
+    });
+
+    describe('reward', () => {
+        const ready = contract.views.rewardReady;
+        const reward = ready.reward;
+        const viewWith = (patch: Record<string, unknown>): unknown => ({ ...ready, reward: { ...reward, ...patch } });
+        const offerWith = (patch: Record<string, unknown>): unknown => viewWith({ offer: { ...reward.offer, ...patch } });
+
+        it('parses the active reward of the fixture with its code, its discount and the end of the offer', () => {
+            expect(parseOnboardingView(ready).reward).toEqual({
+                state: 'ACTIVE', code: 'K7PM-W2QX-H9RT', offer: { type: 'DISCOUNT_PERCENT', percent: 10, plan: null, days: null },
+                issuedAt: '2026-10-22T18:41:00Z', expiresAt: '2026-10-29T18:41:00Z'
+            });
+        });
+
+        it('parses the redeemed reward without a code and its tier offer', () => {
+            expect(parseOnboardingView(contract.views.rewardRedeemed).reward).toEqual({
+                state: 'REDEEMED', code: null, offer: { type: 'TIER_DAYS', percent: null, plan: 'PLUS', days: 30 },
+                issuedAt: '2026-10-22T18:41:00Z', expiresAt: '2026-10-29T18:41:00Z'
+            });
+        });
+
+        it('takes no reward from the views that carry none', () => {
+            for (const [name, view] of Object.entries(contract.views).filter(([name]) => !name.startsWith('reward'))) {
+                expect(view.reward, name).toBeNull();
+                expect(parseOnboardingView(view).reward, name).toBeNull();
+            }
+        });
+
+        it('accepts an expired reward, a discount for one plan, and the bounds of both offers', () => {
+            expect(parseOnboardingView(viewWith({ state: 'EXPIRED', code: null })).reward?.state).toBe('EXPIRED');
+            expect(parseOnboardingView(offerWith({ plan: 'PRO' })).reward?.offer).toMatchObject({ plan: 'PRO', percent: 10 });
+            expect(parseOnboardingView(offerWith({ percent: 1 })).reward?.offer.percent).toBe(1);
+            expect(parseOnboardingView(offerWith({ percent: 90 })).reward?.offer.percent).toBe(90);
+            const tier = { type: 'TIER_DAYS', percent: null, plan: 'PRO' };
+            expect(parseOnboardingView(offerWith({ ...tier, days: 1 })).reward?.offer.days).toBe(1);
+            expect(parseOnboardingView(offerWith({ ...tier, days: 366 })).reward?.offer.days).toBe(366);
+        });
+
+        it.each<[string, Record<string, unknown>]>([
+            ['a state outside the contract', { state: 'GRANTED' }],
+            ['an active reward without a code', { code: null }],
+            ['a redeemed reward that still carries its code', { state: 'REDEEMED' }],
+            ['an expired reward that still carries its code', { state: 'EXPIRED' }],
+            ['a code that is not text', { code: 12345678 }],
+            ['a code with a space', { code: 'K7PM W2QX' }],
+            ['a code that is too short', { code: 'K7PM-W2' }],
+            ['a code that is too long', { code: 'K7PM-W2QX-H9RT-K7PM-W2QX-H9RT-K' }],
+            ['an end that is the beginning', { expiresAt: '2026-10-22T18:41:00Z' }],
+            ['an end before the beginning', { expiresAt: '2026-10-22T18:40:00Z' }],
+            ['an end that is not a timestamp', { expiresAt: 'next week' }],
+            ['a beginning that is not a timestamp', { issuedAt: '2026-10-22' }],
+            ['an offer that is not an object', { offer: 'DISCOUNT_PERCENT' }],
+            ['a member the contract does not have', { score: 1 }],
+            ['no offer', { offer: undefined }]
+        ])('refuses a reward with %s as a protocol error', (_name, patch) => {
+            expect(() => parseOnboardingView(viewWith(patch))).toThrow(OnboardingProtocolError);
+        });
+
+        it.each<[string, Record<string, unknown>]>([
+            ['a type outside the contract', { type: 'GIFT_CARD' }],
+            ['a discount of zero', { percent: 0 }],
+            ['a discount over ninety', { percent: 91 }],
+            ['a fractional discount', { percent: 10.5 }],
+            ['a discount as text', { percent: '10' }],
+            ['a discount without a percent', { percent: null }],
+            ['a discount that carries days', { days: 7 }],
+            ['a plan outside the contract', { plan: 'MAX' }],
+            ['a member the contract does not have', { currency: 'RUB' }]
+        ])('refuses a discount with %s as a protocol error', (_name, patch) => {
+            expect(() => parseOnboardingView(offerWith(patch))).toThrow(OnboardingProtocolError);
+        });
+
+        it.each<[string, Record<string, unknown>]>([
+            ['no plan', { plan: null }],
+            ['no days', { days: null }],
+            ['zero days', { days: 0 }],
+            ['more than 366 days', { days: 367 }],
+            ['fractional days', { days: 1.5 }],
+            ['a percent', { percent: 10 }]
+        ])('refuses a tier with %s as a protocol error', (_name, patch) => {
+            expect(() => parseOnboardingView(offerWith({ type: 'TIER_DAYS', percent: null, plan: 'PLUS', days: 30, ...patch }))).toThrow(OnboardingProtocolError);
+        });
+
+        it.each(['state', 'code', 'offer', 'issuedAt', 'expiresAt'])('refuses a reward without %s', key => {
+            const { [key]: _removed, ...rest } = reward as Record<string, unknown>;
+            expect(() => parseOnboardingView({ ...ready, reward: rest })).toThrow(OnboardingProtocolError);
+        });
+
+        it.each(['type', 'percent', 'plan', 'days'])('refuses an offer without %s', key => {
+            const { [key]: _removed, ...rest } = reward.offer as Record<string, unknown>;
+            expect(() => parseOnboardingView({ ...ready, reward: { ...reward, offer: rest } })).toThrow(OnboardingProtocolError);
+        });
+
+        it('refuses a view that lacks the reward member altogether, and a reward that is not an object', () => {
+            const { reward: _removed, ...rest } = ready;
+            expect(() => parseOnboardingView(rest)).toThrow(OnboardingProtocolError);
+            for (const value of [[], 'ACTIVE', 7, true]) expect(() => parseOnboardingView({ ...ready, reward: value })).toThrow(OnboardingProtocolError);
         });
     });
 

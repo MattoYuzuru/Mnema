@@ -9,16 +9,22 @@ import { TourEngine } from './tour-engine.service';
 
 /**
  * The loud surfaces of the app, highest priority first (architecture §8): a system error, the study session, the guided tour, the first
- * entry (welcome, survey, branch choice), the in-place hint of «Путь» (the learner asked for it), the promo window, the toasts of
- * milestones. Only the highest of those on the screen speaks.
+ * entry (welcome, survey, branch choice), the in-place hint of «Путь» (the learner asked for it), the congratulation of the finished path
+ * with its reward (OB-402: a full-screen night, shown once; it ranks above the promo window so that a window that opens later does not cover
+ * it, and it never opens over a promo window that is already up, see `canShow`), the promo window, the toasts of milestones. Only the highest of
+ * those on the screen speaks.
  */
-export const SURFACES = ['system-error', 'study', 'tour', 'first-entry', 'hint', 'promo', 'milestone'] as const;
+export const SURFACES = ['system-error', 'study', 'tour', 'first-entry', 'hint', 'reward', 'promo', 'milestone'] as const;
 export type Surface = typeof SURFACES[number];
 
 /**
  * One loud surface at a time. Owners report what they have on the screen (`report`); the study session and the tour are read from where
  * they live (the quiet zone, the tour engine), so no owner can forget to say so. `canShow(surface)` is true when no
  * surface of a higher priority is on the screen; asking never shows anything.
+ *
+ * The reward congratulation (a loud, full-screen surface) keeps out of the study route itself like the first entry, and out of a promo window
+ * that is already on the screen. It waits for the way to be free (no tour, first entry or hint; no open answer: study ranks above it) and
+ * is asked again by its host whenever one of those changes.
  *
  * The promo window has more rules (`promoAllowedByJourney`): not before the journey is read, not while the first entry is waiting, not
  * while the journey is `IN_PROGRESS` or `PAUSED`, and not on the local day the journey finished.
@@ -54,8 +60,10 @@ export class AttentionCoordinator {
         const rank = SURFACES.indexOf(surface);
         const blocked = SURFACES.slice(0, rank).some(higher => this.isVisible(higher));
         if (blocked) return false;
-        // The first entry also keeps out of the study route itself (the setup and the summary screens are not «a task open»).
-        if (surface === 'first-entry' && isStudyUrl(this.url())) return false;
+        // The first entry and the reward also keep out of the study route itself (the setup and the summary screens are not «a task open»).
+        if ((surface === 'first-entry' || surface === 'reward') && isStudyUrl(this.url())) return false;
+        // The reward never opens over a promo window that is already up (a promo that comes later is held back by the reward's own rank).
+        if (surface === 'reward' && this.isVisible('promo')) return false;
         return surface !== 'promo' || this.promoAllowedByJourney();
     }
 

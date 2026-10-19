@@ -10,7 +10,7 @@ import { Journey, OnboardingView } from '../../core/onboarding/onboarding.models
 import { PathNavigation } from '../../core/onboarding/path-navigation.service';
 import { PATH_HIDDEN_STORAGE_PREFIX, PATH_NOTICE_STORAGE_PREFIX, PathPreferences } from '../../core/onboarding/path-preferences';
 import { ReplayTourComponent } from './replay-tour.component';
-import { FakeJourneyStore, viewOf } from './onboarding-test-data';
+import { FakeJourneyStore, REWARD_ACTIVE, REWARD_EXPIRED, REWARD_REDEEMED, viewOf } from './onboarding-test-data';
 import { OnboardingFlow } from './onboarding-flow.service';
 import { PathPageComponent, neverOffered } from './path-page.component';
 
@@ -230,6 +230,54 @@ describe('PathPageComponent («Путь Mnema»)', () => {
             const { root } = await render(midway, { error: 'load' });
             expect(root.querySelector('.notice.error')).toBeNull();
             expect(root.querySelectorAll('app-path-milestone')).toHaveLength(12);
+        });
+    });
+
+    describe('the reward of the finished path', () => {
+        const done = journey.views.rewardReady as OnboardingView;
+        const plain = (text: string | null): string => (text ?? '').replace(/\u00a0/gu, ' ').trim();
+
+        it('shows an active reward above the chapters: the gift with its end date, the code, the terms and «Выбрать тариф»', async () => {
+            const { root } = await render(done);
+            const card = root.querySelector('app-reward-card')!;
+            expect(card).not.toBeNull();
+            expect(card.compareDocumentPosition(root.querySelector('app-path-chapter')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+            expect(plain(card.querySelector('.gift')!.textContent)).toBe('Ваш подарок: −10 % на подписку до 29 октября, 21:41 МСК.');
+            expect(card.querySelector<HTMLInputElement>('app-reward-code input')!.value).toBe('K7PM-W2QX-H9RT');
+            expect(plain(card.querySelector('.hint')!.textContent)).toContain('на странице тарифов');
+            expect(card.querySelector('a.button.primary')!.getAttribute('href')).toBe('/plans?promo=K7PMW2QXH9RT');
+        });
+
+        it('keeps the heading levels: the reward is an h2 under the h1, and no level is skipped', async () => {
+            const { root } = await render(done);
+            const headings = Array.from(root.querySelectorAll('h1, h2, h3')).map(heading => heading.tagName);
+            expect(headings.slice(0, 3)).toEqual(['H1', 'H2', 'H2']);
+            for (const [index, heading] of headings.entries()) if (index > 0) expect(Number(heading[1]) - Number(headings[index - 1][1]), `${index}`).toBeLessThanOrEqual(1);
+        });
+
+        it('says one quiet line once the reward was redeemed, with no code', async () => {
+            const { root } = await render({ ...done, reward: REWARD_REDEEMED });
+            expect(plain(root.querySelector('app-reward-card')!.textContent)).toBe('Подарок за «Путь» использован.');
+            expect(root.querySelector('app-reward-code')).toBeNull();
+        });
+
+        it.each([['expired', REWARD_EXPIRED], ['absent', null]] as const)('says nothing when the reward is %s: no card and no message of a loss', async (_name, reward) => {
+            const { root } = await render({ ...done, reward });
+            expect(root.querySelector('app-reward-card')).toBeNull();
+            expect(root.textContent).not.toMatch(/подар/iu);
+        });
+
+        it('shows the reward to a learner who hid «Путь», and follows the view when it is read again', async () => {
+            localStorage.setItem(`${PATH_HIDDEN_STORAGE_PREFIX}acc-1`, '1');
+            const { root, fixture } = await render({ ...done, reward: null });
+            expect(root.querySelector('app-reward-card')).toBeNull();
+            store.view.set({ ...done, reward: REWARD_ACTIVE });
+            fixture.detectChanges();
+            expect(root.querySelector('app-reward-code')).not.toBeNull();
+            store.view.set({ ...done, reward: REWARD_REDEEMED });
+            fixture.detectChanges();
+            expect(root.querySelector('app-reward-code')).toBeNull();
+            expect(plain(root.querySelector('app-reward-card')!.textContent)).toBe('Подарок за «Путь» использован.');
         });
     });
 

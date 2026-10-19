@@ -1,4 +1,4 @@
-import { ONBOARDING_TEXTS, OnboardingTextKey, UNLISTED_TEXT_KEYS, onboardingText } from './onboarding-texts';
+import { ONBOARDING_TEXTS, OnboardingTextKey, REWARD_APPROVED_KEYS, UNLISTED_TEXT_KEYS, onboardingText } from './onboarding-texts';
 
 interface NodeFs { readFileSync(path: string, encoding: 'utf8'): string }
 
@@ -21,7 +21,8 @@ describe('onboarding texts', () => {
         expect(keys.length).toBeGreaterThan(10);
         for (const key of keys.filter(name => !UNLISTED_TEXT_KEYS.includes(name))) {
             expect(approved.has(key), `${key} is an approved text`).toBe(true);
-            expect(ONBOARDING_TEXTS[key], key).toBe(approved.get(key));
+            // The gift sentence is the approved one with the percent of the campaign in place of the approved 10.
+            expect(ONBOARDING_TEXTS[key], key).toBe(key === 'reward.gift' ? approved.get(key)!.replace('−10', '−{percent}') : approved.get(key));
         }
         // The mini-slider's group name is in the prototype's markup, not in its list of texts.
         expect(prototypeScript).toContain(`aria-label="${ONBOARDING_TEXTS['tour.slider.label']}"`);
@@ -56,6 +57,31 @@ describe('onboarding texts', () => {
         // 7 letters + 7 days of the sentence + «и» + 2 week sentences + 6 strings of the profile block + the hint of the place.
         expect(pending).toHaveLength(7 + 7 + 1 + 2 + 6 + 1);
         for (const key of pending) expect(UNLISTED_TEXT_KEYS, key).toContain(key);
+    });
+
+    it('has the approved texts of the reward verbatim (the gift with its percent as a placeholder) and lists every other reward string as awaiting approval (S4)', () => {
+        for (const key of ['reward.eyebrow', 'reward.title', 'reward.terms', 'reward.action', 'reward.later'] as const) {
+            expect(approved.get(key), key).toBe(ONBOARDING_TEXTS[key]);
+            expect(UNLISTED_TEXT_KEYS, key).not.toContain(key);
+        }
+        expect(approved.get('reward.gift')).toBe('Ваш подарок: −10\u00a0% на подписку до {date}.');
+        expect(ONBOARDING_TEXTS['reward.gift']).toBe('Ваш подарок: −{percent}\u00a0% на подписку до {date}.');
+        expect([...REWARD_APPROVED_KEYS].sort()).toEqual(['reward.action', 'reward.eyebrow', 'reward.gift', 'reward.later', 'reward.terms', 'reward.title']);
+        const pending = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('reward.') && !REWARD_APPROVED_KEYS.includes(key));
+        // The gift of a discount for one plan and of a tier, the label, the copy button, its two results, the redeemed line and the notification.
+        expect(pending).toHaveLength(8);
+        for (const key of pending) expect(UNLISTED_TEXT_KEYS, key).toContain(key);
+    });
+
+    it('fills the sentences of the reward', () => {
+        expect(onboardingText('reward.gift', { percent: 10, date: '29 октября, 21:41\u00a0МСК' })).toBe('Ваш подарок: −10\u00a0% на подписку до 29 октября, 21:41\u00a0МСК.');
+        expect(onboardingText('reward.gift.tier', { plan: 'Plus', days: '30\u00a0дней', date: '29 октября, 21:41\u00a0МСК' })).toBe('Ваш подарок: Plus на 30\u00a0дней — до 29 октября, 21:41\u00a0МСК.');
+    });
+
+    it('says nothing of a countdown, a rush or a loss in any reward string', () => {
+        for (const [key, text] of Object.entries(ONBOARDING_TEXTS).filter(([key]) => key.startsWith('reward.'))) {
+            expect(text, key).not.toMatch(/осталось|успей|скорее|последн|спешите|торопитесь|упустите|потеря|только сегодня|\d+:\d+:\d+/iu);
+        }
     });
 
     it('fills the sentences of the rhythm: the ordinal, the days, the toast and the weeks', () => {

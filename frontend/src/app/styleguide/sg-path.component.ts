@@ -16,19 +16,23 @@ import { questDefinition } from '../features/onboarding/quest-definitions';
 import { PathProgressComponent } from '../shared/path-progress.component';
 import { RhythmWeekComponent } from '../shared/rhythm-week.component';
 import { RhythmSummaryComponent } from '../features/onboarding/rhythm-summary.component';
-import { Rhythm } from '../core/onboarding/onboarding.models';
+import { NightSkyComponent } from '../shared/night-sky.component';
+import { RewardCardComponent } from '../shared/reward-card.component';
+import { RewardCodeComponent } from '../shared/reward-code.component';
+import { rewardGift, rewardPlansQuery } from '../core/onboarding/reward-format';
+import { PathReward, Rhythm } from '../core/onboarding/onboarding.models';
 import { daysLabel } from '../core/onboarding/rhythm-format';
 import { SgSpecimenComponent } from './sg-specimen.component';
 
 /** The Monday of the weeks of the rhythm specimens. */
 const WEEK = '2026-10-19';
 
-/** «Путь Mnema»: the milestone in every state, the chapter and the bar, the in-place hint and the toast of a milestone; the week of the rhythm. */
+/** «Путь Mnema»: the milestone in every state, the chapter and the bar, the in-place hint and the toast of a milestone; the week of the rhythm; the reward of the finished path. */
 @Component({
     selector: 'app-sg-path',
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, PathMilestoneComponent, PathChapterComponent, PathProgressComponent, PathHintCardComponent, TourAnchorDirective, QuestChooserComponent,
-        TourCardComponent, TourPauseComponent, RhythmWeekComponent, RhythmSummaryComponent],
+        TourCardComponent, TourPauseComponent, RhythmWeekComponent, RhythmSummaryComponent, RewardCardComponent, RewardCodeComponent, NightSkyComponent],
     templateUrl: './sg-path.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -69,6 +73,31 @@ export class SgPathComponent {
         last: { today: '2026-10-25', days: ['2026-10-20', '2026-10-25'] as readonly string[] }
     } as const;
     protected readonly summaryRhythm: Rhythm = { weekStart: WEEK, ...this.weeks.partial, target: 5, weeksMet: 2 };
+
+    /** The reward of the finished path (OB-402) in the states its card draws: a discount, a discount for one plan, a tier, redeemed, expired. */
+    private static readonly REWARD: PathReward = {
+        state: 'ACTIVE', code: 'K7PM-W2QX-H9RT', offer: { type: 'DISCOUNT_PERCENT', percent: 10, plan: null, days: null },
+        issuedAt: '2026-10-22T18:41:00Z', expiresAt: '2026-10-29T18:41:00Z'
+    };
+    protected readonly rewards = {
+        percent: SgPathComponent.REWARD,
+        plan: { ...SgPathComponent.REWARD, offer: { type: 'DISCOUNT_PERCENT', percent: 15, plan: 'PRO', days: null } } as PathReward,
+        tier: { ...SgPathComponent.REWARD, offer: { type: 'TIER_DAYS', percent: null, plan: 'PLUS', days: 30 } } as PathReward,
+        redeemed: { ...SgPathComponent.REWARD, state: 'REDEEMED', code: null } as PathReward,
+        expired: { ...SgPathComponent.REWARD, state: 'EXPIRED', code: null } as PathReward
+    } as const;
+    protected readonly rewardNight = {
+        eyebrow: onboardingText('reward.eyebrow'), title: onboardingText('reward.title'), gift: rewardGift(SgPathComponent.REWARD), terms: onboardingText('reward.terms'),
+        action: onboardingText('reward.action'), later: onboardingText('reward.later'), query: rewardPlansQuery(SgPathComponent.REWARD.code ?? '')
+    } as const;
+
+    protected showRewardToast(): void {
+        const presented = presentNotification({
+            notificationId: `sg-reward-${this.toastCounter++}`, seq: '1', kind: 'PATH_REWARD_READY', severity: 'INFO', params: { expiresAt: SgPathComponent.REWARD.expiresAt }, route: 'PATH',
+            createdAt: '2026-10-22T18:41:00Z', expiresAt: '2026-11-21T18:41:00Z'
+        });
+        if (presented !== null) this.toasts.notify(`sg-reward-toast-${this.toastCounter}`, presented.text, presented.severity, presented.link);
+    }
 
     protected showToast(): void {
         const presented = presentNotification({
