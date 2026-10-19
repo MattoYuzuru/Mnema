@@ -41,7 +41,8 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
             "/admin/support/tickets", "/admin/support/tickets/{ticketId}", "/admin/support/tickets/{ticketId}/commands",
             "/admin/complaints", "/admin/complaints/journal", "/admin/complaints/{complaintId}", "/admin/complaints/{complaintId}/units",
             "/admin/complaints/{complaintId}:decide", "/admin/complaints/{complaintId}:unhide",
-            "/admin/community/anomalies", "/admin/community/anomalies/{code}:dismiss", "/admin/community/editorial", "/admin/onboarding/experiment");
+            "/admin/community/anomalies", "/admin/community/anomalies/{code}:dismiss", "/admin/community/editorial", "/admin/onboarding/experiment",
+            "/admin/promo-campaigns", "/admin/promo-campaigns/{campaignId}", "/admin/promo-campaigns/{campaignId}/issuances");
 
     @Autowired
     private ApplicationContext applicationContext;
@@ -98,7 +99,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "51:lineage items:SUCCESS", "52:lineage exercises:SUCCESS", "53:deck access:SUCCESS", "54:deck publication:SUCCESS", "55:shared media:SUCCESS",
                         "56:deck invites and requests:SUCCESS", "57:deck forks:SUCCESS", "58:complaints and takedowns:SUCCESS",
                         "59:study snapshot retention:SUCCESS", "60:combined publication:SUCCESS", "61:fork unit decisions:SUCCESS", "63:apply update support:SUCCESS", "64:fork relink:SUCCESS", "65:fork update log:SUCCESS",
-                        "66:catalog search dictionaries:SUCCESS", "67:public deck:SUCCESS", "68:deck engagement and rank:SUCCESS", "69:editorial shelf:SUCCESS", "70:catalog events:SUCCESS", "71:topic interests:SUCCESS", "72:onboarding journey:SUCCESS", "73:deck purpose:SUCCESS", "74:account milestone:SUCCESS");
+                        "66:catalog search dictionaries:SUCCESS", "67:public deck:SUCCESS", "68:deck engagement and rank:SUCCESS", "69:editorial shelf:SUCCESS", "70:catalog events:SUCCESS", "71:topic interests:SUCCESS", "72:onboarding journey:SUCCESS", "73:deck purpose:SUCCESS", "74:account milestone:SUCCESS", "75:onboarding rhythm:SUCCESS", "76:path reward:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -165,7 +166,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "usageController", "estimateController", "generationController", "speechInputController", "plansController", "learningProfileController", "promoController", "promoAdminController", "promoPopupController", "experimentController",
                         "publicEventsController", "adminEventsController", "billingController", "TBankNotificationController",
                         "adminConsoleController", "adminSupportController", "publicDeckController", "publicMetaController", "publicationController", "deckAccessController", "inviteRedeemController", "forkController", "updatePlanController", "applyController", "updateHistoryController",
-                        "complaintController", "complaintAdminController", "anomalyAdminController", "catalogController", "editorialAdminController", "recommendationController", "onboardingController", "onboardingReportController");
+                        "complaintController", "complaintAdminController", "anomalyAdminController", "catalogController", "editorialAdminController", "recommendationController", "onboardingController", "onboardingReportController", "promoCampaignController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {
@@ -180,6 +181,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isUnauthorized());
         // The admin and promo surfaces are private like the rest: no token, no answer (the admin check comes after the token).
         mockMvc.perform(get("/api/admin/promo-codes").contextPath("/api")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/admin/promo-campaigns").contextPath("/api")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/admin/events").contextPath("/api")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/admin/console/report").contextPath("/api")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/admin/support/tickets").contextPath("/api")).andExpect(status().isUnauthorized());

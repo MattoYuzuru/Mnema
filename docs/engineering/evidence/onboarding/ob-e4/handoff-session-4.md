@@ -93,6 +93,7 @@ artifact:
 | Кандидат | Итог | Что нашёл |
 |---|---|---|
 | ca27aac7 | `docs` failed: ссылки на этот handoff, которого ещё не было | ожидаемо; остальные проверки не запускались |
+| 66dafad4 | 7 из 8 проверок passed; `backend-quality` failed: 3488 тестов, 3 падения | инвентарные тесты, которые не входили в targeted-прогоны агентов: история миграций (V75, V76), реестр контроллеров и маршрутов `/admin` (`promoCampaignController`), список видов уведомлений в `GenerationContractFixtureTest` (`PATH_REWARD_READY`) — тесты дополнены |
 | HEAD этого PR | см. описание PR (`checks.py run` + `verify` на точном коммите перед push) | — |
 
 По ходу: targeted backend — 517 (OB-401), 361 + 29 (OB-402), 553 (исправления review) тестов, 0 падений; frontend полный прогон — 4964 теста,
