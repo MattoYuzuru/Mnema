@@ -25,7 +25,8 @@ import java.util.UUID;
 /**
  * The first-entry journey of an account ({@code contracts/onboarding}): the first read of an eligible account creates its {@code OFFERED} row exactly once (or turns its
  * {@code NOT_OFFERED} row of V75 into it) and freezes its holdout cohort; the two commands move the row by compare-and-set on its version, each idempotent by command id through
- * the global receipts (the receipt and the update are one transaction, so a repeat returns the stored answer and a failure leaves nothing behind). The service holds no state.
+ * the global receipts (the receipt and the update are one transaction, so a repeat returns the stored answer and a failure leaves nothing behind). Every view carries the account's path
+ * reward when it has one ({@link PathReward}); only the read issues it. The service holds no state.
  */
 @Service
 public class OnboardingService {
@@ -50,11 +51,12 @@ public class OnboardingService {
     private final MilestoneRepository milestones;
     private final PathVisibility visibility;
     private final WeeklyRhythm rhythm;
+    private final PathReward reward;
 
     @Autowired
     OnboardingService(OnboardingRepository repository, OnboardingSettings settings, ExperimentAssignments assignments, ExperimentEvents experimentEvents,
                       CommandReceiptService receipts, MeterRegistry meters, SampleDeckService samples, MilestoneRepository milestones, PathVisibility visibility,
-                      WeeklyRhythm rhythm) {
+                      WeeklyRhythm rhythm, PathReward reward) {
         this.repository = repository;
         this.settings = settings;
         this.assignments = assignments;
@@ -65,6 +67,7 @@ public class OnboardingService {
         this.milestones = milestones;
         this.visibility = visibility;
         this.rhythm = rhythm;
+        this.reward = reward;
     }
 
     /**
@@ -72,9 +75,14 @@ public class OnboardingService {
      *
      * @param newAccount Identity marks the account new ({@code mnema_new_account}); an absent or malformed claim is false, so the tour is never offered on a guess
      * @param zoneinfo the token's {@code zoneinfo} claim, or null: the zone of the rhythm's «today»
+     * @param trusted Identity's {@code mnema_trusted} of this request ({@code null}: unknown, as for an old Identity). This is the one read that may issue the path reward
+     *                ({@link PathReward}): an account with every visible milestone done that Identity calls trusted gets its personal code here, in a transaction of its own that
+     *                cannot fail the read. The last milestone is often reached in a worker without request signals, and a new account typically reaches 100 % before it is 3 days
+     *                old, so deciding in the milestone's transaction would refuse the reward for ever; the client re-reads this view on every {@code PATH_MILESTONE}, so the read
+     *                follows the last milestone, and an untrusted account is retried by a later read. A replayed tour never issues again; there is no other path.
      */
     @Transactional(timeout = 10)
-    public ObjectNode read(UUID account, boolean newAccount, String zoneinfo) {
+    public ObjectNode read(UUID account, boolean newAccount, String zoneinfo, Boolean trusted) {
         UuidPolicy.requireEntityId(account, "account");
         if (!settings.enabled()) return disabledView();
         Optional<OnboardingRepository.Row> row = repository.find(account);
@@ -82,7 +90,7 @@ public class OnboardingService {
             Instant now = repository.now();
             if (settings.opens(now) && !repository.hasLiveDeck(account)) row = offer(account, now);
         }
-        return view(account, row, zoneinfo);
+        return view(account, row, zoneinfo, trusted);
     }
 
     /** The view of a switched-off tour: no journey, no sample deck, and the free checks the configuration gives. Touches nothing. */
@@ -90,11 +98,17 @@ public class OnboardingService {
         return OnboardingView.disabled(samples.freeAiChecks());
     }
 
+    /** The answer of a command: it shows an existing reward and never issues one ({@code trusted} null). */
     private ObjectNode view(UUID account, Optional<OnboardingRepository.Row> row, String zoneinfo) {
+        return view(account, row, zoneinfo, null);
+    }
+
+    private ObjectNode view(UUID account, Optional<OnboardingRepository.Row> row, String zoneinfo, Boolean trusted) {
         SampleDeckState sample = samples.state(account);
         PathState path = path(account);
         RhythmState week = rhythm.state(account, zoneinfo);
-        return row.map(found -> OnboardingView.of(found, sample, path, week)).orElseGet(() -> OnboardingView.notOffered(sample, path, week));
+        RewardState prize = reward.state(account, path, trusted);
+        return row.map(found -> OnboardingView.of(found, sample, path, week, prize)).orElseGet(() -> OnboardingView.notOffered(sample, path, week, prize));
     }
 
     /** The «Путь» of the account: one primary-key range read of its records, over the milestones the configuration shows. */

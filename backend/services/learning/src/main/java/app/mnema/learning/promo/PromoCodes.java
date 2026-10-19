@@ -5,6 +5,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * The shape of a promo code. A code is normalized (upper case, without spaces, dashes or underscores) before it is hashed, so
@@ -18,6 +19,10 @@ final class PromoCodes {
     /** A vanity code is at least this long: with a 31 character alphabet a generated code has about 60 bits, eight characters are the floor of a chosen one. */
     static final int MIN_LENGTH = 8;
     private static final int MAX_LENGTH = 24;
+    /** Domain separation of the derived personal codes; a normalized code never contains {@code -} or {@code :}, so no hashed code can equal this message. */
+    private static final String PERSONAL_PREFIX = "path-reward-code:";
+    /** The largest multiple of the alphabet size within a byte (31 * 8): a byte at or above it is skipped, so every letter is exactly equally likely. */
+    private static final int UNBIASED_LIMIT = 256 - 256 % ALPHABET.length();
 
     private PromoCodes() { }
 
@@ -46,6 +51,26 @@ final class PromoCodes {
         } catch (GeneralSecurityException failure) {
             throw new IllegalStateException("HMAC-SHA256 is unavailable", failure);
         }
+    }
+
+    /**
+     * The 12-character code of a personal code row, derived from its id so that the plain code is never stored: the bytes of HMAC-SHA256(promo secret,
+     * {@code "path-reward-code:" + codeId}) choose the letters of {@link #ALPHABET} by rejection sampling (bytes of 248 and above are skipped, so there is no modulo bias; a
+     * 32-byte block yields about 31 letters, and in the practically impossible case that it yields fewer than twelve the next block is the HMAC of the same message with
+     * {@code ":1"}, {@code ":2"}... appended). The code is as strong as the id and the secret: about 59 bits, and only a holder of the secret can compute it.
+     *
+     * @return the normalized code (upper case, no dashes); {@link #hash} and {@link #hint} of it are what the row stores
+     */
+    static String derive(byte[] secret, UUID codeId) {
+        StringBuilder code = new StringBuilder(GENERATED_LENGTH);
+        for (int block = 0; code.length() < GENERATED_LENGTH; block++) {
+            byte[] bytes = hash(secret, PERSONAL_PREFIX + codeId + (block == 0 ? "" : ":" + block));
+            for (int index = 0; index < bytes.length && code.length() < GENERATED_LENGTH; index++) {
+                int value = bytes[index] & 0xFF;
+                if (value < UNBIASED_LIMIT) code.append(ALPHABET.charAt(value % ALPHABET.length()));
+            }
+        }
+        return code.toString();
     }
 
     /** First two and last two characters: enough for an admin to tell codes apart, too little to guess one. */

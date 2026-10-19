@@ -133,6 +133,7 @@ class MilestoneInventoryIntegrationTest extends SampleDeckIntegrationTest {
         // ---- the rest of the platform ----
         for (String route : new String[] {
                 "DELETE /admin/events/{eventId}", "POST /admin/events", "PUT /admin/events/{eventId}", "PATCH /admin/promo-codes/{codeId}", "POST /admin/promo-codes",
+                "PATCH /admin/promo-campaigns/{campaignId}", "POST /admin/promo-campaigns",
                 "POST /admin/community/anomalies/{code}:dismiss", "POST /admin/complaints/{complaintId}:decide", "POST /admin/complaints/{complaintId}:unhide",
                 "POST /admin/support/tickets/{ticketId}/commands", "PUT /admin/community/editorial", "POST /billing/checkout", "POST /billing/tbank/notifications",
                 "POST /community/events", "POST /community/exposures", "POST /community/interests:reset", "PUT /community/interests", "POST /experiment-events",

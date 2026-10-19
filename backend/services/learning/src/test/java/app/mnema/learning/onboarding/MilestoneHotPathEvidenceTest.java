@@ -251,7 +251,7 @@ class MilestoneHotPathEvidenceTest extends PostgresIntegrationTest {
 
         // ---- the read of the onboarding view: one more statement for the path ----
         StatementCounting.start();
-        onboarding.read(spread, false, null);
+        onboarding.read(spread, false, null, null);
         List<String> viewLog = StatementCounting.stop();
         System.out.println("HOTPATH view statements=" + viewLog.size() + " : " + viewLog.stream().map(MilestoneHotPathEvidenceTest::shape).map(sql -> sql.substring(0, Math.min(90, sql.length()))).collect(Collectors.joining(" || ")));
         assertThat(viewLog.stream().filter(sql -> sql.contains("account_milestone")).count()).as("one primary-key range read of the path per view").isOne();

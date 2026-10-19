@@ -49,7 +49,9 @@ public enum NotificationKind {
     /** To the owner of a deck when a legal takedown named units of it (Share/15): the number of NEW materials and exercises taken down by that decision. */
     DECK_CONTENT_TAKEN_DOWN(NotificationSeverity.WARNING, NotificationRoute.DECK, param("deckId", UUID), param("materialCount", COUNT), param("exerciseCount", COUNT)),
     /** To the owner of an account when a «Путь Mnema» milestone is reached (OB-301): {@code key} is a key of {@code contracts/onboarding/milestones.json}, {@code done}/{@code total} count the visible milestones. */
-    PATH_MILESTONE(NotificationSeverity.INFO, NotificationRoute.PATH, param("key", TOKEN), param("done", COUNT), param("total", COUNT));
+    PATH_MILESTONE(NotificationSeverity.INFO, NotificationRoute.PATH, param("key", TOKEN), param("done", COUNT), param("total", COUNT)),
+    /** To the owner of an account when its personal code of the path-reward campaign was issued (OB-402): {@code expiresAt} is the end of the offer; the code itself never travels in a notification. */
+    PATH_REWARD_READY(NotificationSeverity.INFO, NotificationRoute.PATH, param("expiresAt", TIMESTAMP));
 
     /** Value type of one params field. */
     enum ParamType { UUID, TOKEN, COUNT, TIMESTAMP }

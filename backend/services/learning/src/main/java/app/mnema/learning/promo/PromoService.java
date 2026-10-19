@@ -34,7 +34,8 @@ import static app.mnema.learning.promo.PromoRejectedException.Reason;
  * address take its place of the hourly limit (an account that is refused cannot burn a shared address's allowance). The code is read under a row lock,
  * so {@code max_redemptions} is exact however many redemptions race; under that lock the address must not be a farm of accounts (the velocity rule,
  * counted under the address's advisory lock so racing accounts of one address cannot slip past it) and a discount must beat the pending one. A tier code publishes an entitlement snapshot to {@link EntitlementInbox} with the same call a payment will use; a discount code
- * stores a pending discount that billing (#79) reads. Nothing here logs a code, an address or an email: ids and counts only.
+ * stores a pending discount that billing (#79) reads. A personal code (issued by a campaign to one account, {@link PersonalPromoCodes}) is redeemable by its recipient only; for any
+ * other account it is {@code PROMO_INVALID}, decided under the row lock before every other rule. Nothing here logs a code, an address or an email: ids and counts only.
  */
 @Service
 public class PromoService {
@@ -93,6 +94,9 @@ public class PromoService {
 
     private JsonNode redeemLocked(UUID owner, byte[] hash, PromoClient client) {
         PromoRepository.Code code = repository.lockByHash(hash).orElseThrow(() -> rejected(owner, Reason.INVALID));
+        // A personal code (OB-402) belongs to its recipient. Decided first, under the row lock, and answered exactly as an unknown code, so a leaked code reveals nothing
+        // (no other rule, and no other reason, is reached by an account that is not its recipient).
+        if (code.recipientId() != null && !code.recipientId().equals(owner)) throw rejected(owner, Reason.INVALID);
         // Acquire every potentially contended redemption lock before reading time: an expiring code cannot borrow time spent waiting.
         // Lock order is code row, account discount (if any). The velocity rule is per code, so the code's row lock already serializes it.
         if (!code.type().grantsTier()) repository.lockKey("promo.discount:owner:" + owner);

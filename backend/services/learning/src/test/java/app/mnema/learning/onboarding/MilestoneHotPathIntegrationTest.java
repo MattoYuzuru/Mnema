@@ -118,7 +118,7 @@ class MilestoneHotPathIntegrationTest extends PostgresIntegrationTest {
 
             // the read of the path by the view is one statement of the ledger
             StatementCounting.start();
-            onboarding.read(spread, false, null);
+            onboarding.read(spread, false, null, null);
             assertThat(StatementCounting.stop().stream().filter(sql -> sql.contains("account_milestone"))).as("one primary-key range read of the path per view").hasSize(1);
         } finally {
             for (UUID account : new UUID[] {spread, sameDay}) {

@@ -54,7 +54,7 @@ class WeeklyRhythmOnboardingOffIntegrationTest extends PostgresIntegrationTest {
                 .param("a", account).query(Long.class).single()).isOne();
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.notification WHERE owner_id=:a").param("a", account).query(Long.class).single()).isZero();
 
-        JsonNode view = onboarding.read(account, true, null);
+        JsonNode view = onboarding.read(account, true, null, null);
         assertThat(view.path("enabled").booleanValue()).isFalse();
         assertThat(view.path("journey").isNull()).isTrue();
         assertThat(view.path("rhythm").isNull()).isTrue();

@@ -41,7 +41,7 @@ class OnboardingCohortTest {
         when(repository.offer(eq(account), any(), eq(NOW))).thenReturn(true);
         when(samples.state(account)).thenReturn(SampleDeckState.unavailable(3));
         service = new OnboardingService(repository, new OnboardingSettings(true, "2026-10-16T00:00:00Z"), assignments, events, mock(CommandReceiptService.class),
-                new SimpleMeterRegistry(), samples, mock(MilestoneRepository.class), mock(PathVisibility.class), mock(WeeklyRhythm.class));
+                new SimpleMeterRegistry(), samples, mock(MilestoneRepository.class), mock(PathVisibility.class), mock(WeeklyRhythm.class), mock(PathReward.class));
     }
 
     private OnboardingRepository.Row created(OnboardingRepository.Cohort cohort) {
@@ -51,7 +51,7 @@ class OnboardingCohortTest {
     private OnboardingRepository.Cohort offeredCohort(Optional<String> variant, OnboardingRepository.Cohort stored) {
         when(assignments.assigned(account, "onboarding_v1")).thenReturn(variant);
         when(repository.find(account)).thenReturn(Optional.empty()).thenReturn(Optional.of(created(stored)));
-        ObjectNode view = service.read(account, true, null);
+        ObjectNode view = service.read(account, true, null, null);
         ArgumentCaptor<OnboardingRepository.Cohort> cohort = ArgumentCaptor.forClass(OnboardingRepository.Cohort.class);
         verify(repository).offer(eq(account), cohort.capture(), eq(NOW));
         assertThat(view.path("journey").path("state").stringValue()).isEqualTo("OFFERED");
@@ -88,7 +88,7 @@ class OnboardingCohortTest {
         when(repository.find(account)).thenReturn(Optional.empty()).thenReturn(Optional.of(created(OnboardingRepository.Cohort.TOUR)));
         TransactionSynchronizationManager.initSynchronization();
         try {
-            service.read(account, true, null);
+            service.read(account, true, null, null);
             verify(events, never()).record(any(), any(), any());
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) synchronization.afterCommit();
             verify(events).record(account, "onboarding_v1", ExperimentEvents.Event.EXPOSURE);
@@ -103,7 +103,7 @@ class OnboardingCohortTest {
         when(repository.find(account)).thenReturn(Optional.empty()).thenReturn(Optional.of(created(OnboardingRepository.Cohort.TOUR)));
         TransactionSynchronizationManager.initSynchronization();
         try {
-            service.read(account, true, null);
+            service.read(account, true, null, null);
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
             verify(events, never()).record(any(), any(), any());
         } finally {
@@ -117,7 +117,7 @@ class OnboardingCohortTest {
         when(assignments.assigned(account, "onboarding_v1")).thenReturn(Optional.of("tour"));
         when(repository.find(account)).thenReturn(Optional.empty()).thenReturn(Optional.of(created(OnboardingRepository.Cohort.TOUR)));
 
-        assertThat(service.read(account, true, null).path("journey").path("state").stringValue()).isEqualTo("OFFERED");
+        assertThat(service.read(account, true, null, null).path("journey").path("state").stringValue()).isEqualTo("OFFERED");
         verify(events, never()).record(any(), any(), any());
     }
 
@@ -125,9 +125,9 @@ class OnboardingCohortTest {
     void anAccountThatIsNotNewOrIsBeforeTheReleaseIsNeverOffered() {
         when(repository.find(account)).thenReturn(Optional.empty());
 
-        assertThat(service.read(account, false, null).path("journey").path("state").stringValue()).isEqualTo("NOT_OFFERED");
+        assertThat(service.read(account, false, null, null).path("journey").path("state").stringValue()).isEqualTo("NOT_OFFERED");
         when(repository.now()).thenReturn(Instant.parse("2026-10-15T23:59:59Z"));
-        assertThat(service.read(account, true, null).path("journey").path("state").stringValue()).isEqualTo("NOT_OFFERED");
+        assertThat(service.read(account, true, null, null).path("journey").path("state").stringValue()).isEqualTo("NOT_OFFERED");
         verify(repository, never()).offer(any(), any(), any());
     }
 }

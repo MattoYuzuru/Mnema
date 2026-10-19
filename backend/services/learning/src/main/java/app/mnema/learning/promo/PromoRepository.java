@@ -22,10 +22,13 @@ import java.util.UUID;
  */
 @Repository
 class PromoRepository {
-    /** A code as stored; {@code plan}, {@code validUntil} and {@code channel} may be null. */
+    /**
+     * A code as stored; {@code plan}, {@code validUntil} and {@code channel} may be null. {@code campaignId} and {@code recipientId} are both set for a personal code
+     * (issued by a campaign to one account, redeemable by that account only) and both null for every other code.
+     */
     record Code(UUID codeId, String hint, PromoType type, String plan, Integer days, Integer months, Integer percent,
                 Instant validFrom, Instant validUntil, int maxRedemptions, boolean oncePerAccount, String channel,
-                boolean enabled, Instant createdAt, UUID createdBy) { }
+                boolean enabled, Instant createdAt, UUID createdBy, UUID campaignId, UUID recipientId) { }
 
     /** A code with the number of redemptions it has had. */
     record CodeWithCount(Code code, long redemptions) { }
@@ -34,7 +37,7 @@ class PromoRepository {
     record Discount(int percent, String plan, Instant validUntil, UUID codeId) { }
 
     private static final String CODE_COLUMNS = "code_id,code_hint,type,plan,days,months,percent,valid_from,valid_until,"
-            + "max_redemptions,once_per_account,channel,enabled,created_at,created_by";
+            + "max_redemptions,once_per_account,channel,enabled,created_at,created_by,campaign_id,recipient_id";
 
     private final JdbcClient jdbc;
 
@@ -53,14 +56,14 @@ class PromoRepository {
                 (Integer) row.getObject("percent"), row.getTimestamp("valid_from").toInstant(),
                 until == null ? null : until.toInstant(), row.getInt("max_redemptions"), row.getBoolean("once_per_account"),
                 row.getString("channel"), row.getBoolean("enabled"), row.getTimestamp("created_at").toInstant(),
-                row.getObject("created_by", UUID.class));
+                row.getObject("created_by", UUID.class), row.getObject("campaign_id", UUID.class), row.getObject("recipient_id", UUID.class));
     }
 
     /** @return whether the code was new; false when its hash is taken */
     boolean insertCode(Code code, byte[] hash) {
         return jdbc.sql("INSERT INTO app_learning.promo_code(code_id,code_hash,code_hint,type,plan,days,months,percent,valid_from,"
-                        + "valid_until,max_redemptions,once_per_account,channel,enabled,created_at,created_by) VALUES (:id,:hash,:hint,"
-                        + ":type,:plan,:days,:months,:percent,:from,:until,:max,:once,:channel,:enabled,:created,:by) "
+                        + "valid_until,max_redemptions,once_per_account,channel,enabled,created_at,created_by,campaign_id,recipient_id) VALUES (:id,:hash,:hint,"
+                        + ":type,:plan,:days,:months,:percent,:from,:until,:max,:once,:channel,:enabled,:created,:by,:campaign,:recipient) "
                         + "ON CONFLICT (code_hash) DO NOTHING")
                 .param("id", code.codeId()).param("hash", hash).param("hint", code.hint()).param("type", code.type().name())
                 .param("plan", code.plan(), java.sql.Types.VARCHAR).param("days", code.days(), java.sql.Types.INTEGER)
@@ -68,7 +71,8 @@ class PromoRepository {
                 .param("from", time(code.validFrom())).param("until", time(code.validUntil()), java.sql.Types.TIMESTAMP)
                 .param("max", code.maxRedemptions()).param("once", code.oncePerAccount())
                 .param("channel", code.channel(), java.sql.Types.VARCHAR).param("enabled", code.enabled())
-                .param("created", time(code.createdAt())).param("by", code.createdBy()).update() == 1;
+                .param("created", time(code.createdAt())).param("by", code.createdBy())
+                .param("campaign", code.campaignId(), java.sql.Types.OTHER).param("recipient", code.recipientId(), java.sql.Types.OTHER).update() == 1;
     }
 
     /** Locks the code row: redemptions of one code are serialized here, so {@code max_redemptions} is exact under concurrency. */
@@ -126,10 +130,13 @@ class PromoRepository {
                 .param("owner", owner).param("code", codeId).update() == 1;
     }
 
-    /** A page of codes, newest first; {@code after} is the last code of the previous page (null for the first page). */
+    /**
+     * A page of the codes an administrator made, newest first; {@code after} is the last code of the previous page (null for the first page). Personal campaign codes are left
+     * out ({@code campaign_id IS NULL}, the predicate of the partial index {@code promo_code_admin_list}): they may be many and the campaign lists its own issuances.
+     */
     List<CodeWithCount> list(UUID after, int limit) {
         return jdbc.sql("SELECT " + CODE_COLUMNS + ",(SELECT count(*) FROM app_learning.promo_redemption r WHERE r.code_id=c.code_id) "
-                        + "AS redemptions FROM app_learning.promo_code c WHERE (CAST(:after AS uuid) IS NULL OR (c.created_at,c.code_id) < "
+                        + "AS redemptions FROM app_learning.promo_code c WHERE c.campaign_id IS NULL AND (CAST(:after AS uuid) IS NULL OR (c.created_at,c.code_id) < "
                         + "(SELECT a.created_at,a.code_id FROM app_learning.promo_code a WHERE a.code_id=CAST(:after AS uuid))) "
                         + "ORDER BY c.created_at DESC,c.code_id DESC LIMIT :limit")
                 .param("after", after, java.sql.Types.OTHER).param("limit", limit)

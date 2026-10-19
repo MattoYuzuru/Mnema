@@ -8,6 +8,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.io.ByteArrayInputStream;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -94,16 +95,16 @@ class OnboardingContractTest {
     void theViewsAreTheFixtureViews() {
         JsonNode views = CONTRACT.path("views");
         SampleDeckState none = SampleDeckState.unavailable(3);
-        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.TOUR, JourneyState.OFFERED, null, null, null, null, 0), none, FRESH, null)).isEqualTo(views.path("offered"));
-        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0), none, FRESH, null)).isEqualTo(views.path("holdout"));
-        assertThat(OnboardingView.notOffered(none, FRESH, null)).isEqualTo(views.path("notOffered"));
+        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.TOUR, JourneyState.OFFERED, null, null, null, null, 0), none, FRESH, null, null)).isEqualTo(views.path("offered"));
+        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0), none, FRESH, null, null)).isEqualTo(views.path("holdout"));
+        assertThat(OnboardingView.notOffered(none, FRESH, null, null)).isEqualTo(views.path("notOffered"));
         assertThat(OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.PAUSED, OnboardingRepository.Cohort.TOUR, JourneyBranch.OWN, "own.material",
-                OnboardingRepository.Experience.NEW, 3, OFFERED_AT, null, 0, 7), none, FRESH, null)).isEqualTo(views.path("paused"));
+                OnboardingRepository.Experience.NEW, 3, OFFERED_AT, null, 0, 7), none, FRESH, null, null)).isEqualTo(views.path("paused"));
         assertThat(OnboardingView.disabled(3)).isEqualTo(views.path("disabled"));
         // a sample deck that is ready, with its copy and two of the three free checks left
         SampleDeckState ready = new SampleDeckState(true, UUID.fromString("33333333-3333-4333-8333-333333333333"), false, 2);
         assertThat(OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.IN_PROGRESS, OnboardingRepository.Cohort.TOUR, JourneyBranch.SAMPLE, "sample.hub",
-                null, null, OFFERED_AT, null, 0, 6), ready, FRESH, null)).isEqualTo(views.path("sampleReady"));
+                null, null, OFFERED_AT, null, 0, 6), ready, FRESH, null, null)).isEqualTo(views.path("sampleReady"));
     }
 
     @Test
@@ -127,7 +128,7 @@ class OnboardingContractTest {
         // a row the preferences created (version 1): a target and nothing else, no cohort, no offer
         OnboardingRepository.Row stored = new OnboardingRepository.Row(1, JourneyState.NOT_OFFERED, null, null, null, null, 5, null, null, 0, 1);
 
-        assertThat(OnboardingView.of(stored, SampleDeckState.unavailable(3), path, rhythm)).isEqualTo(expected);
+        assertThat(OnboardingView.of(stored, SampleDeckState.unavailable(3), path, rhythm, null)).isEqualTo(expected);
         assertThat(members(week)).containsExactlyInAnyOrder("weekStart", "today", "target", "days", "weeksMet");
 
         // the fixture is a week the code could have produced
@@ -139,6 +140,81 @@ class OnboardingContractTest {
         assertThat(path.total()).isEqualTo(expected.path("path").path("total").intValue());
     }
 
+    /** The fixture's view of an account whose whole path is done and whose journey row is a stored NOT_OFFERED one, rebuilt from the fixture's own records with the given reward. */
+    private static ObjectNode rewardView(JsonNode expected, RewardState reward) {
+        Map<MilestoneKey, MilestoneRepository.Row> records = new EnumMap<>(MilestoneKey.class);
+        expected.path("milestones").forEach(milestone -> {
+            int progress = milestone.path("progress").intValue();
+            if (progress == 0) return;
+            String achieved = milestone.path("achievedAt").stringValue(null);
+            records.put(MilestoneKey.valueOf(milestone.path("key").stringValue()), new MilestoneRepository.Row(progress, achieved == null ? null : Instant.parse(achieved)));
+        });
+        EnumSet<MilestoneKey> hidden = EnumSet.noneOf(MilestoneKey.class);
+        expected.path("path").path("hidden").forEach(key -> hidden.add(MilestoneKey.valueOf(key.stringValue())));
+        JsonNode week = expected.path("rhythm");
+        List<LocalDate> days = new ArrayList<>();
+        week.path("days").forEach(day -> days.add(LocalDate.parse(day.stringValue())));
+        RhythmState rhythm = new RhythmState(LocalDate.parse(week.path("weekStart").stringValue()), LocalDate.parse(week.path("today").stringValue()),
+                week.path("target").intValue(), days, week.path("weeksMet").intValue());
+        long version = Long.parseLong(expected.path("journey").path("rowVersion").stringValue());
+        OnboardingRepository.Row stored = new OnboardingRepository.Row(1, JourneyState.NOT_OFFERED, null, null, null, null, expected.path("journey").path("weeklyTarget").intValue(), null, null, 0, version);
+        return OnboardingView.of(stored, SampleDeckState.unavailable(3), PathState.of(records, hidden), rhythm, reward);
+    }
+
+    private static RewardState rewardOf(JsonNode reward) {
+        JsonNode offer = reward.path("offer");
+        return new RewardState(RewardState.State.valueOf(reward.path("state").stringValue()), reward.path("code").stringValue(null),
+                new RewardState.Offer(offer.path("type").stringValue(), offer.path("percent").isNull() ? null : offer.path("percent").intValue(), offer.path("plan").stringValue(null),
+                        offer.path("days").isNull() ? null : offer.path("days").intValue()), Instant.parse(reward.path("issuedAt").stringValue()), Instant.parse(reward.path("expiresAt").stringValue()));
+    }
+
+    @Test
+    void theRewardViewsAreTheFixtureViews() {
+        JsonNode ready = CONTRACT.path("views").path("rewardReady");
+        JsonNode redeemed = CONTRACT.path("views").path("rewardRedeemed");
+
+        assertThat(rewardView(ready, rewardOf(ready.path("reward")))).isEqualTo(ready);
+        assertThat(rewardView(redeemed, rewardOf(redeemed.path("reward")))).isEqualTo(redeemed);
+        assertThat(ready.path("reward").path("state").stringValue()).isEqualTo("ACTIVE");
+        // the code travels only while the reward is ACTIVE, and the members are exactly the contract's
+        assertThat(ready.path("reward").path("code").stringValue()).matches("[A-Z2-9&&[^ILO]]{4}-[A-Z2-9&&[^ILO]]{4}-[A-Z2-9&&[^ILO]]{4}");
+        assertThat(redeemed.path("reward").path("state").stringValue()).isEqualTo("REDEEMED");
+        assertThat(redeemed.path("reward").path("code").isNull()).isTrue();
+        assertThat(members(ready.path("reward"))).containsExactlyInAnyOrder("state", "code", "offer", "issuedAt", "expiresAt");
+        assertThat(members(ready.path("reward").path("offer"))).containsExactlyInAnyOrder("type", "percent", "plan", "days");
+        // the fixture is a reward the issuer could have made: the offer lasts seven days and its terms follow the shape of its type
+        for (JsonNode view : new JsonNode[] {ready, redeemed}) {
+            JsonNode reward = view.path("reward");
+            assertThat(Duration.between(Instant.parse(reward.path("issuedAt").stringValue()), Instant.parse(reward.path("expiresAt").stringValue())))
+                    .isEqualTo(Duration.ofDays(CONTRACT.path("constants").path("reward").path("validDays").intValue()));
+            assertThat(names(CONTRACT.path("constants").path("reward").path("offers"))).contains(reward.path("offer").path("type").stringValue());
+            assertThat(view.path("path").path("done").intValue()).isEqualTo(view.path("path").path("total").intValue());
+        }
+        assertThat(ready.path("reward").path("offer").path("percent").intValue()).isBetween(1, 90);
+        assertThat(redeemed.path("reward").path("offer").path("days").intValue()).isBetween(1, 366);
+    }
+
+    @Test
+    void everyViewCarriesTheRewardMemberAndOnlyTheRewardViewsFillIt() {
+        CONTRACT.path("views").properties().forEach(view -> {
+            assertThat(view.getValue().has("reward")).as(view.getKey()).isTrue();
+            assertThat(view.getValue().path("reward").isNull()).as(view.getKey()).isEqualTo(!view.getKey().startsWith("reward"));
+        });
+        assertThat(OnboardingView.disabled(3).path("reward").isNull()).isTrue();
+    }
+
+    @Test
+    void theRewardConstantsAreTheFixtureOnes() {
+        JsonNode reward = CONTRACT.path("constants").path("reward");
+        assertThat(reward.path("validDays").intValue()).isEqualTo(RewardIssuer.VALID_DAYS);
+        assertThat(names(reward.path("states"))).containsExactly(names(RewardState.State.values()).toArray(String[]::new));
+        assertThat(names(reward.path("offers"))).containsExactly("DISCOUNT_PERCENT", "TIER_DAYS");
+        assertThat(reward.path("channel").stringValue()).isEqualTo(app.mnema.learning.promo.PersonalPromoCodes.CHANNEL);
+        assertThat(reward.path("dailyLimit").path("min").intValue()).isOne();
+        assertThat(reward.path("dailyLimit").path("max").intValue()).isEqualTo(RewardSettings.MAX_DAILY_LIMIT);
+        assertThat(reward.path("dailyLimit").path("default").intValue()).isEqualTo(200);
+    }
+
     @Test
     void aStoredNotOfferedRowReadsLikeNoRowExceptForItsAnswersAndItsVersion() {
         ObjectNode expected = copy(CONTRACT.path("views").path("notOffered"));
@@ -146,7 +222,7 @@ class OnboardingContractTest {
         // whatever tour data the columns hold, the row is not an offer: no cohort, no times, no replays
         OnboardingRepository.Row stored = new OnboardingRepository.Row(1, JourneyState.NOT_OFFERED, null, null, null, OnboardingRepository.Experience.FAMILIAR, 4, null, null, 0, 9);
 
-        assertThat(OnboardingView.of(stored, SampleDeckState.unavailable(3), FRESH, null)).isEqualTo(expected);
+        assertThat(OnboardingView.of(stored, SampleDeckState.unavailable(3), FRESH, null, null)).isEqualTo(expected);
     }
 
     @Test
@@ -163,7 +239,7 @@ class OnboardingContractTest {
         PathState path = PathState.of(records, EnumSet.of(MilestoneKey.RHYTHM_WEEK));
         OnboardingRepository.Row journey = new OnboardingRepository.Row(1, JourneyState.COMPLETED, OnboardingRepository.Cohort.TOUR, JourneyBranch.OWN, "finale.done",
                 OnboardingRepository.Experience.NEW, 3, OFFERED_AT, Instant.parse("2026-10-20T09:12:00Z"), 0, 9);
-        assertThat(OnboardingView.of(journey, SampleDeckState.unavailable(3), path, null)).isEqualTo(midway);
+        assertThat(OnboardingView.of(journey, SampleDeckState.unavailable(3), path, null, null)).isEqualTo(midway);
         assertThat(path.done()).isEqualTo(5);
         assertThat(path.total()).isEqualTo(12);
     }
@@ -191,14 +267,14 @@ class OnboardingContractTest {
         assertThat(path.milestones()).filteredOn(m -> m.key() == MilestoneKey.GOAL_TOLD).singleElement()
                 .satisfies(m -> { assertThat(m.state()).isEqualTo(PathState.State.TODO); assertThat(m.progress()).isZero(); });
         // the time is cut to whole seconds in the view like every other time of the contract
-        JsonNode view = OnboardingView.notOffered(SampleDeckState.unavailable(3), path, null);
+        JsonNode view = OnboardingView.notOffered(SampleDeckState.unavailable(3), path, null, null);
         assertThat(view.path("milestones").get(MilestoneKey.TWO_DAYS.ordinal()).path("achievedAt").stringValue()).isEqualTo("2026-10-21T10:00:00Z");
         assertThat(view.path("path").path("hidden")).isEmpty();
     }
 
     @Test
     void theSampleDeckMemberCarriesEveryFieldOfTheFixtureAndTheUpdateFlag() {
-        JsonNode update = OnboardingView.notOffered(new SampleDeckState(true, UUID.randomUUID(), true, 0), FRESH, null).path("sampleDeck");
+        JsonNode update = OnboardingView.notOffered(new SampleDeckState(true, UUID.randomUUID(), true, 0), FRESH, null, null).path("sampleDeck");
         assertThat(members(update)).containsExactlyInAnyOrder("available", "deckId", "updateAvailable", "freeChecksLeft");
         assertThat(update.path("updateAvailable").booleanValue()).isTrue();
         assertThat(update.path("freeChecksLeft").intValue()).isZero();
@@ -259,16 +335,16 @@ class OnboardingContractTest {
 
     @Test
     void anUnassignedAccountIsEligibleAndAutoOfferedButAHeldOutOneIsNot() {
-        JsonNode unassigned = OnboardingView.of(row(OnboardingRepository.Cohort.UNASSIGNED, JourneyState.OFFERED, null, null, null, null, 0), SampleDeckState.unavailable(3), FRESH, null).path("journey");
+        JsonNode unassigned = OnboardingView.of(row(OnboardingRepository.Cohort.UNASSIGNED, JourneyState.OFFERED, null, null, null, null, 0), SampleDeckState.unavailable(3), FRESH, null, null).path("journey");
         assertThat(unassigned.path("eligible").booleanValue()).isTrue();
         assertThat(unassigned.path("autoOffer").booleanValue()).isTrue();
-        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0), SampleDeckState.unavailable(3), FRESH, null).path("journey").path("autoOffer").booleanValue()).isFalse();
+        assertThat(OnboardingView.of(row(OnboardingRepository.Cohort.CONTROL, JourneyState.OFFERED, null, null, null, null, 0), SampleDeckState.unavailable(3), FRESH, null, null).path("journey").path("autoOffer").booleanValue()).isFalse();
     }
 
     @Test
     void aRowCreatedByReplayIsNotEligibleAndNeverAutoOffered() {
         ObjectNode journey = (ObjectNode) OnboardingView.of(new OnboardingRepository.Row(1, JourneyState.OFFERED, null, null, null, null, null, OFFERED_AT, null, 1, 0),
-                SampleDeckState.unavailable(3), FRESH, null).path("journey");
+                SampleDeckState.unavailable(3), FRESH, null, null).path("journey");
         assertThat(journey.path("eligible").booleanValue()).isFalse();
         assertThat(journey.path("autoOffer").booleanValue()).isFalse();
     }
