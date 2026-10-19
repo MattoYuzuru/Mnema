@@ -173,6 +173,16 @@ services:
       MNEMA_PROMO_POPUP_CTA: ${MNEMA_PROMO_POPUP_CTA:-}
       MNEMA_PROMO_POPUP_CODE: ${MNEMA_PROMO_POPUP_CODE:-}
       MNEMA_PROMO_POPUP_COOLDOWN: ${MNEMA_PROMO_POPUP_COOLDOWN:-P14D}
+      # Onboarding (OB-E1…E4; privacy policy 1.8 of 2026-10-19 covers it): «Начало пути» and the tour for accounts new after eligible-from, the holdout
+      # experiment onboarding_v1 (needs MNEMA_EXPERIMENT_SECRET), «Путь Mnema» with its one-time history backfill, and the weekly rhythm. The sample deck stays
+      # off until the owner installs a production template; the path reward stays off (no campaign).
+      LEARNING_ONBOARDING_ENABLED: "true"
+      LEARNING_ONBOARDING_ELIGIBLE_FROM: "2026-10-19T00:00:00Z"
+      LEARNING_ONBOARDING_EXPERIMENT_ENABLED: "true"
+      LEARNING_ONBOARDING_BACKFILL_ENABLED: "true"
+      LEARNING_ONBOARDING_RHYTHM_ENABLED: "true"
+      LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED: "false"
+      LEARNING_ONBOARDING_REWARD_ENABLED: "false"
       # Billing (#389): T-Bank hosted checkout. OFF unless app.env says TESTERS (only the listed account ids) or ON; real money stays OFF until the
       # launch checklist's bank, legal and receipt gates pass. The terminal password arrives base64-encoded (a bank password may contain '$').
       MNEMA_BILLING_CHECKOUT: ${MNEMA_BILLING_CHECKOUT:-OFF}

@@ -23,8 +23,8 @@ describe('Personal data policy page', () => {
         const root = render(PrivacyPageComponent);
         expect(text(root.querySelector('h1'))).toBe('Политика обработки персональных данных');
         expect(text(root.querySelector('.last-updated'))).toContain(LEGAL_EFFECTIVE_DATE);
-        // 1.7: admitted AI flows; 1.6: interests and recommendations; 1.5: catalogue and author aggregates; 1.4: shared and public decks, complaints; 1.3: plain-language edit; 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
-        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 15 октября 2026 · версия 1.7');
+        // 1.8: onboarding, «Путь» and the weekly rhythm (OB-002); 1.7: admitted AI flows; 1.6: interests and recommendations; 1.5: catalogue and author aggregates; 1.4: shared and public decks, complaints; 1.3: plain-language edit; 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
+        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 19 октября 2026 · версия 1.8');
         expect(root.querySelector('.legal-page')?.getAttribute('lang')).toBe('ru');
         const block = text(root.querySelector('app-legal-operator-block'));
         for (const value of [LEGAL_OPERATOR.name, LEGAL_OPERATOR.inn, LEGAL_OPERATOR.ogrnip, LEGAL_OPERATOR.email]) expect(block).toContain(value);
@@ -133,7 +133,8 @@ describe('Personal data policy page', () => {
         const links = [...root.querySelectorAll('a[href$="#public-profile"]')].filter(link => !link.closest('nav'));
         expect(links).toHaveLength(2);
         links.forEach(link => expect(text(link)).toBe('Публичный профиль и колоды сообщества'));
-        expect(text(root.querySelector('#sources'))).toBe('16. Нормативная база');
+        expect(text(root.querySelector('#sources'))).toBe('17. Нормативная база');
+        expect(text(root.querySelector('#onboarding'))).toBe('16. Знакомство с сервисом, «Путь» и ритм');
         expect(root.querySelector('nav.toc a[href$="#public-profile"]')).not.toBeNull();
     });
 
@@ -143,13 +144,13 @@ describe('Personal data policy page', () => {
         const dataTable = tables.find(table => text(table.querySelector('caption')).startsWith('Категории'))!;
         expect([...dataTable.querySelectorAll('thead th')].map(header => text(header))).toEqual(['Категория', 'Состав', 'Источник']);
         expect([...dataTable.querySelectorAll('tbody th')].map(header => text(header))).toEqual(['Данные аккаунта', 'Вход через стороннего провайдера', 'Профиль', 'Учебные данные',
-            'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Действия в Сообществе', 'Интересы', 'Жалобы', 'Обращения в поддержку']);
+            'Тариф и использование', 'Учебная цель', 'Состояние промо-предложения', 'Технические данные', 'Действия в Сообществе', 'Интересы', 'Знакомство с сервисом и «Путь»', 'Жалобы', 'Обращения в поддержку']);
         const purposes = tables.find(table => text(table.querySelector('caption')).startsWith('Цели'))!;
-        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(13);
+        expect(purposes.querySelectorAll('tbody tr')).toHaveLength(14);
         for (const row of purposes.querySelectorAll('tbody tr')) expect(row.querySelectorAll('td'), text(row)).toHaveLength(3);
         const purposeText = text(purposes);
         for (const purpose of ['Регистрация, вход, ведение аккаунта и профиля', 'Работа сервиса', 'Создание и правка материалов и упражнений, проверка ответов, озвучивание по вашему запросу', 'Распознавание записи голоса',
-            'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки, рекомендация тарифа и подбор колод', 'Подбор подходящих колод и проверка рекомендаций',
+            'Тариф, лимиты использования, промокоды и скидки', 'Учебная цель: подсказки, рекомендация тарифа и подбор колод', 'Знакомство с сервисом, «Путь» и недельный ритм', 'Подбор подходящих колод и проверка рекомендаций',
             'Безопасность', 'Служебные письма', 'Поддержка и обратная связь', 'Рассмотрение жалоб на колоды и профили', 'Резервное копирование и восстановление', 'Выполнение требований закона']) expect(purposeText).toContain(purpose);
         // legal bases per purpose, and the periods of the table
         for (const basis of ['п. 5 ч. 1 ст. 6', 'п. 7 ч. 1 ст. 6', 'п. 2 ч. 1 ст. 6']) expect(purposeText).toContain(basis);
