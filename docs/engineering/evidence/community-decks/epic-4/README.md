@@ -2,31 +2,25 @@
 artifact:
   id: community-decks-epic-4-evidence
   type: verification-evidence
-  title: "Колоды сообщества, эпик 4: локальная реализация и проверки"
+  title: "Колоды сообщества: сравнение ранкеров и границы рекомендаций"
   status: current
   created_at: "2026-10-13"
-  updated_at: "2026-10-13"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
 ---
 
-# Эпик 4: рекомендации и витрины
+# Рекомендации: сравнение ранкеров и пороги
 
-Эпик [#422](https://github.com/MattoYuzuru/Mnema/issues/422), задачи Recs/1–4 (#456–#459).
-Влит [#541](https://github.com/MattoYuzuru/Mnema/pull/541) поверх эпика 3 (база `f033d533`) и выкачен выключенным.
+Воспроизводимое сравнение ранкеров «Для вас» на синтетике и правила повторения на production.
+Статус задач, PR и ревью живут в Issue [#422](https://github.com/MattoYuzuru/Mnema/issues/422)
+и его PR. Поведение — в [продуктовом контракте](../../../../product/community-decks.md),
+техника — в [архитектуре](../../../../architecture/community-decks.md), контракт событий и
+интересов — в [`contracts/community`](../../../../../contracts/community/README.md). Скрипт сравнения
+проверяют тесты `scripts/tests/test_ranker_evaluation.py`.
 
-Канон: [продукт](../../../../product/community-decks.md),
-[архитектура](../../../../architecture/community-decks.md),
-[refinement](../../../community-decks-refinement.md),
-[контракт и исполняемые примеры](../../../../../contracts/community/README.md).
-
-## Состояние реализации
-
-- Recs/1: подготовлена политика 1.6 (публикуется при включении каталога; в релизе эпика 4 остаётся 1.4), контракт событий/показов, backend/client запись и ограниченное обслуживание хранения.
-- Recs/2: реализованы профиль интересов, optional chips, сброс и ночной пересчёт.
-- Recs/3: реализованы ограниченные кандидаты, каноническая формула, строгое разнообразие, исследовательские места и полка.
-- Recs/4: готов воспроизводимый [скрипт сравнения](evaluate-rankers.py),
-  [фикстура](ranker-fixture.json), [синтетические логи](synthetic-logs.json) и
-  [результат](ranker-comparison.json). Добавлен настоящий HTTPS браузерный сценарий `--recs` и регрессии каталога/публикации/обновлений.
+Файлы: [скрипт сравнения](evaluate-rankers.py), [фикстура](ranker-fixture.json),
+[синтетические логи](synthetic-logs.json), [результат](ranker-comparison.json),
+[SQL-экспорт](export-ranker-logs.sql) и [планы и размеры при сценарии H](scale-local-2026-10-13.txt).
 
 ## Сравнение ранкеров на синтетике
 
@@ -88,73 +82,10 @@ production-эксперимент; он не входит в этот локал
 - Давление на диск событий: сначала измерить размер партиций; sampling `DETAIL_VIEW`
   возможен только по решению владельца. Хранение 13 месяцев не меняется.
 
-## Критерии и evidence
+## Границы
 
-| Критерий | Подтверждение |
-|---|---|
-| Не более двух авторов/темы в первых десяти; два исследовательских места; исключение авторских и живых копий | Backend ranker, real PostgreSQL/API integration; [браузерный результат](browser/recs.json) проверяет 12 карточек до и после настоящей копии |
-| Главная тема объясняет полку и сетку; sparse персональная полка скрыта при непустом обычном каталоге | `recs_onboarding_and_shelf`, `recs_sorting_motion_reflow_a11y`, `recs_sparse`; component tests |
-| Видимый и сбрасываемый профиль; старые сигналы не возвращаются | DB reset/goal/copy race tests, `recs_profile_reset`; cached profile refresh/version1→9/reset If-Match9 component regression |
-| Приватность и сроки | Strict input/ACL/idempotency/partitions tests; guest401, no query/content schema, authenticated telemetry, rankVersion attribution в browser; политика 1.6 подготовлена, публикуется при включении каталога |
-| Ноль/H, ограниченные запросы и задачи | [Исходные планы и размеры](scale-local-2026-10-13.txt), таблица архитектуры §12; bounds и выключатели в Learning guide |
-| Сравнение версий и пороги | Воспроизводимая синтетика выше; семь тестов Python, read-only anonymous SQL export; причинная польза ещё не доказана |
-| Поведение эпиков1–3 сохранено | [Каталог](browser/catalog.json), [публикация и обновления](browser/community-updates.json); финальные прогоны повторяются на итоговом HEAD |
-
-### Коммиты, миграции, независимое ревью
-
-База `f033d533`. `f1118581` контракт/политика; `e4cabd08` frontend; `e459290b` исправления UI;
-`623f47cc` backend; `4465582b` ranker/explanation; `59235665` инвалидация выдачи по effective
-copy/drop/goal; `88a19065` актуальный профиль перед сбросом. Последующий Recs/4 commit содержит
-скрипт, browser harness, этот отчёт и документы. Полный диапазон: `f033d533..f4f5e636`.
-Миграции эпика4: `V70__catalog_events.sql`, `V71__topic_interests.sql`; предыдущие V66–V69
-нужны вместе с эпиком3. Новых зависимостей нет.
-
-Независимые backend/security и UI/a11y ревью нашли и повторно подтвердили исправления:
-выбор допустимой exploration-пары при scarcity, live explanation после скрытия темы,
-разделение telemetry navigation epoch, объяснение grid, заранее смонтированный status,
-edit/cancel focus и сохранение explicit popular. Усиленный реальный browser выявил ещё
-неинвалидированный кеш после копии с прежними весами: effective copy/drop/goal теперь
-повышают version ровно один раз, а replay/existing-copy/unchanged night его не повышают.
-После этой правки выполнены27 DB/API/ranker tests без skip; frontend correction375 tests
-в20 файлах, lint/build/no-styleguide зелёные. Повторные независимые ревью замечанийP1/P2 не нашли.
-Recs/4 review исправил missing-target language factor, scarcity/pair модель, duration после await
-и добавил настоящее sparse browser coverage. Скрипты имеют7 и45 целевых тестов соответственно.
-
-### Снимки и границы браузерной проверки
-
-[Первый вход](browser/recs-desktop-first-entry.png), [полка1440](browser/recs-desktop-for-you.png),
-[сетка320](browser/recs-mobile-320.png), [reduced motion](browser/recs-mobile-reduced-motion.png),
-[сброс профиля](browser/recs-profile-reset.png), [sparse](browser/recs-mobile-sparse.png).
-[720px reflow](browser/recs-zoom-200.png) соответствует доступной ширине desktop1440 при200%,
-это не настоящий browser zoom/text scaling. Снимки получены после завершения конечных анимаций.
-Все действия — реальный Chrome/HTTPS/Identity/Learning/PostgreSQL18 с disposable fixtures;
-нет runtime ошибок и внешних сетевых обращений. JSON содержит только результаты; соседние
-`*-digests.json` — SHA256 входных артефактов без tokens/accounts/env.
-
-### Итоговый source-bound gate
-
-После последнего commit выполняются полностью и последовательно:
-`./gradlew clean quality` (JDK25, реальный Docker/PostgreSQL, coverage floors), frontend
-`npm ci`, lint, coverage tests, production build, `verify-no-styleguide`; `verify_docs`,
-полные `scripts/tests` и `browser-identity` unit tests, CI policy/release/security/delivery
-contracts, smoke unit tests, реальный learning-security/cancellation и четыре browser modes
-(`--recs`, `--catalog`, совместный `--community --updates`). Не используются старые green outputs
-или skipped DB evidence. Фактические итоговые HEAD/counts/results и пути receipt указаны в
-финальном отчёте владельцу; `~/.local/state/agent-dev/check-*/result.json` сохраняют HEAD,
-fingerprint до/после, exit, свежие JUnit и log. Их намеренно не добавляем в Git: это позволяет
-проверить именно окончательный commit без нового commit с его собственной SHA.
-
-При будущем delivery после актуализации main gate повторяется перед push/merge. Hosted CI,
-правила PR и deployment пока не проверены. Локальная реализация всех четырёх эпиков завершена;
-эпики3–4 ещё не merged/applied в production. Следующие шаги — [handoff](handoff-session-1.md).
-
-## Непроверенное и риски
-
-Реальные скринридеры, Safari, Firefox, физический touch и production не проверялись.
-Локальный H:5k public/200k copies/100k profiles,2M interests,1M events в одном месяце,
-200k snapshots,100k telemetry receipts,140k exposure rows. Full47M/13months и весь nightly100k
-не исполнялись:9,66GB и16,4min — экстраполяции, а не production capacity claim. На эффективный
-равновесный copy/drop/goal добавлен один PK version UPDATE; отдельный H замер этогоO(1)
-statement не делался. Account purge#409 остаётся отдельной задачей с индексами иTODO;
-read-only production index#462 отложена до2026-10-24. Реальная польза для аудитории требует
-отдельного контролируемого сравнения, не синтетического lift.
+- Реальные скринридеры, Safari, Firefox и физический touch не проверялись.
+- Сценарий H проверен локально (5 тыс. публичных колод, 200 тыс. копий, 100 тыс. профилей,
+  2 млн интересов, 1 млн событий в одном месяце); полный объём за 13 месяцев и весь ночной пересчёт на
+  100 тыс. не исполнялись, это экстраполяции, а не заявление о ёмкости production.
+- Реальная польза для аудитории требует отдельного контролируемого сравнения, не синтетического lift.

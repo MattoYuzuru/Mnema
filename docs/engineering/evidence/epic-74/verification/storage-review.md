@@ -224,7 +224,7 @@ reassess those exact additions without repeating completed work.
 persisted production schema yet.** The evidence establishes a useful structural
 sharing direction and the cost of the measured full-value JSONB control. It does
 not yet establish all critical invariants required by
-[R74-S](../../../epic-74-refinement.md#r74-s-выбрать-реализацию-экономных-revisions).
+R74-S (the storage-choice gate of the former Epic #74 refinement, kept in Git history).
 The storage README reaches the same qualified conclusion at lines 207–210. Moving
 its critical gaps to an implementation ticket does not satisfy that gate.
 

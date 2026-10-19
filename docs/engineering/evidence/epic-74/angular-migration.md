@@ -345,19 +345,12 @@ action remain with the lead.
 
 ## Lead built-browser verification (2026-09-12)
 
-The checked-in [smoke harness](angular-browser/smoke.mjs) runs actual built assets
+The smoke harness used (not retained in the repository; see Git history) ran actual built assets
 in isolated Chrome 152 contexts with Russian locale, reduced motion, and widths
 1440/390. API and external assets are mocked; no production request is sent.
 It uses an already installed external Playwright runtime, not a new app dependency.
 
-```text
-PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node \
-  docs/engineering/evidence/epic-74/angular-browser/smoke.mjs \
-  frontend/dist/mnema-frontend /absolute/path/to/evidence
-```
-
-[Recorded results](angular-browser/results/results.json) and desktop/mobile PNGs
-in the same folder cover landing, protected-profile redirect to login with return
+The recorded results and desktop/mobile PNGs covered landing, protected-profile redirect to login with return
 URL, identifier-to-password keyboard focus, and lazy public-decks empty-state
 rendering without another click. Both widths complete without Angular runtime
 errors. This repeats the real built-output test that found the Zone.js regression;

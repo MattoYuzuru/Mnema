@@ -259,7 +259,14 @@ python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
   `--media` the cached pinned MinIO image plus `mnema-media-worker:local`. It builds and pulls nothing.
 - Flags: `--authoring` (Deck/Capture/draft/publish/Browse + one Study interaction), `--media`
   (needs `--authoring`), `--mechanics` (needs both; default deadline 600 s). Scope and
-  limits: [harness README](../../scripts/browser-identity/README.md).
+  limits: [harness README](../../scripts/browser-identity/README.md); `run.py --help` is the exact list.
+- AI scenarios (Stub provider only, never a real one; both need `--authoring`): `--generation` (composer, Workshop, approval, exercises,
+  planner, selection edits, voice, images, research on the Stub) and `--assessment` (rubric editor and the learner's check of an
+  explanation: waiting, «Оценить себя», result, self-check, dispute).
+- Development aids, never a substitute for the full run (each runs the base flow and then one scenario): `--only-edits`, `--only-images`,
+  `--only-speech`, `--only-voice`, `--only-research`, `--only-ask`, `--only-plan` (all need `--generation`; `--only-images` and
+  `--only-speech` also need `--media`), `--only-plans` (paywall, goal question and public `/ai`; needs `--authoring`) and `--only-promo`
+  (promo codes, A/B assignment and the promo popup; needs `--authoring`).
 - `--community` (no `--authoring` needed): community decks end to end (publication, guest, copy, Study, a complaint, by-invitation access with a request,
   its withdrawal, an approval and an invitation link redeemed by a new account) on desktop and mobile viewports, about 50 s; turns the three
   `learning.community.*` kill switches on for that disposable run only (README, «Community decks»).
@@ -268,6 +275,10 @@ python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
 - `--catalog` (exclusive: the composition of `--community` plus the catalogue switch, the frontend launch flag opened for this loopback run, a console owner and a short rank
   schedule; it starts from an empty catalogue): the community catalogue end to end (shelves, search, filters, infinite scroll, honest counts, the author's page, the masthead entry,
   the editorial shelf and hiding, the guest limit, reduced motion, accessibility smoke) on desktop and mobile viewports, about 4 min (README, «Community catalogue»).
+- `--recs`: recommendations end to end (own disposable catalogue, interest onboarding, «Для вас», telemetry, reset, mobile and accessibility)
+  (README, «Community recommendations»).
+- `--onboarding` (exclusive, signs up accounts of its own): the first-entry tour «Начало пути» end to end with the catalogue composition of `--catalog`
+  and `learning.onboarding.enabled` on for the disposable run (README, «Onboarding tour»).
 - Chrome always runs muted (`--mute-audio`); audio is verified through media-element state.
   `--mechanics` uses Chrome's synthetic microphone, not a real device.
 - Screenshots/evidence go to a `mnema-browser-evidence-*` temp directory. `--keep-on-failure`
@@ -304,8 +315,7 @@ starts only its own loopback process/SQLite and configures one real disposable
 Identity owner; it never loads bot `.env`, starts a Telegram poller, sends a real
 message or restarts the retained local stack. Reply evidence stops at durable
 outbox queuing; actual delivery is covered by bot fixtures, not claimed as a real
-Telegram smoke. See the [console delivery record](./evidence/admin-console-2026-10/README.md) for the first
-snapshot's results and the [console architecture](../architecture/admin-console.md) for admin-host rollout and
+Telegram smoke. See the [console architecture](../architecture/admin-console.md) for admin-host rollout and
 unavailable financial sources. The fixture signs in through the learner web client, which the console now refuses
 on every route; it needs a second origin for `mnema-admin-web` before it runs green again.
 

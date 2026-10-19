@@ -4,7 +4,7 @@ artifact:
   type: architecture-overview
   title: "Mnema current system overview"
   status: current
-  updated_at: "2026-10-09"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
 ---
 
@@ -21,22 +21,60 @@ HTTPS runtime с MinIO и обработкой медиа также реали�
 media lifecycle, playback, offline manifest и безопасный GC в Learning; медиа
 (в том числе аудио) — содержимое упражнения, а не отдельная механика.
 
-Текущие модули поверх этой основы: AI-слой в `learning` (генерация материалов и
-упражнений помощником «Мнема» в Workshop, правки по выделению, семантическая проверка
-ответов, озвучка, распознавание речи (с отдельным согласием), поиск изображений, веб-исследование
-«Источники»; в production функции ИИ выключены флагами), планы и usage (тарифы, кредиты,
-fair-use, независимый выбор плана и цели обучения), промокоды, A/B и промо-попап и
-публичные события продукта со ссылкой на поддержку в Telegram.
+Текущие модули поверх этой основы:
 
-## Shipping и local replacement boundary
+- AI-слой в `learning`: генерация материалов и упражнений помощником «Мнема» в Workshop,
+  правки по выделению, семантическая проверка ответов, озвучка, распознавание речи (с отдельным
+  согласием), поиск изображений, веб-исследование «Источники». Допущен в production 2026-10-15/16
+  (генерация, проверка, озвучка, распознавание речи, поиск изображений и веб-поиск включены флагами;
+  генерация изображений и видео недоступна); провайдеры, недоступные из РФ, вызываются через egress-прокси
+  ([AI runbook](./operations/ai-runbook.md));
+- планы и usage (тарифы, кредиты, fair-use, независимый выбор плана и цели обучения), billing,
+  промокоды и кампании, A/B и промо-попап;
+- колоды сообщества: доступ, публикация, копии и обновления, каталог, поиск, рекомендации, жалобы
+  ([архитектура](./architecture/community-decks.md));
+- онбординг: «Начало пути», «Путь Mnema», недельный ритм; включён в production с 2026-10-19, учебная колода и
+  награда выключены ([пакет](./engineering/onboarding/README.md));
+- публичные события продукта со ссылкой на поддержку в Telegram и кабинет владельца на `admin.mnema.app`.
 
-```text
-Angular 22 SPA
-  ├── OAuth 2.1/OIDC + account API ──> Identity & Account ─┐
-  └── private authoring API ─────────> Learning API ──────┼─> PostgreSQL 18
-                                      │                   │
-                                      └─ validates token + active account via Identity
+## Топология production
+
+```mermaid
+flowchart LR
+    U[Браузер] --> C[Caddy на хосте: mnema.app, auth.mnema.app, admin.mnema.app]
+    C -->|SPA, /d/* с превью ссылок| F[frontend: nginx 18080]
+    C -->|/api| L[Learning 18082, роль all]
+    C -->|auth.mnema.app| I[Identity & Account 18081]
+    F -->|SSI: фрагмент head, sitemap| L
+    L -->|токен и действующий аккаунт, userinfo| I
+    L -->|роль app_learning| PG[(PostgreSQL 18: одна БД mnema, схемы app_learning и app_identity)]
+    I -->|роль app_identity| PG
+    L -->|S3 API| OS[(Yandex Object Storage)]
+    L -->|рабочая папка| R[mnema-media-runner, root-служба]
+    R -->|один контейнер на задачу, без сети| MW[media-worker]
+    L -->|CONNECT через SSH-туннель| EP[egress-прокси в Финляндии]
+    EP --> AI[AI-провайдеры вне РФ]
+    L -->|напрямую| AIRU[провайдеры в РФ]
+    L -->|приватный bridge, только admin| B[бот поддержки в Telegram]
 ```
+
+Реальная раскладка: [VPS runtime](./operations/vps-runtime.md) и [Compose](../deploy/production/compose.yaml).
+
+- Host Caddy — единственный публичный слушатель (80/443); контейнеры frontend, Identity, Learning и PostgreSQL
+  работают на loopback, Caddy закрывает `/actuator`, `/internal`, `/metrics` и `/admin`. `admin.mnema.app` отдаёт ту же
+  SPA и same-origin Learning `/api`; вход идёт клиентом `mnema-admin-web`
+  ([архитектура кабинета](./architecture/admin-console.md)).
+- Frontend nginx отдаёт SPA и подставляет Open Graph-превью `/d/*` и `/sitemap-decks.xml` из Learning без SSR
+  ([link previews](./operations/link-previews.md)).
+- Learning в production запускается ролью `all` (HTTP, воркеры шагов генерации, речи и проверки ответов);
+  раздельные роли `api` и `worker` с ключами провайдеров только на воркере поддержаны отдельным overlay и в
+  production не включены ([AI runbook](./operations/ai-runbook.md)). Egress-прокси — [AI egress proxy](./operations/ai-egress-proxy.md).
+- Медиа обрабатывает root-служба `mnema-media-runner`: каждая задача — отдельный контейнер `media-worker` без сети.
+- Бот поддержки — отдельный проект; Learning ходит к его приватному bridge только для кабинета владельца и
+  при пустом `MNEMA_ADMIN_SUPPORT_ENDPOINT` честно показывает поддержку недоступной.
+- Ежеминутная проверка здоровья и ежедневная локальная копия БД — systemd-таймеры хоста.
+
+## Границы модулей и локальный runtime
 
 - `services:identity-account` владеет account identity, credentials, browser
   sessions, OAuth/OIDC grants, federation, profile/moderation, account avatar,
@@ -120,11 +158,11 @@ attempt после неопределённого сетевого резуль�
 Legacy public-deck, template, old review, import, media и AI Angular routes и
 клиенты удалены в #146. Профиль использует native Identity & Account API.
 
-## Историческая граница
+## Граница с v1
 
 Gradle graph содержит только `identity-account` и `learning`; legacy migration
 chains и сервисные исходники отсутствуют в текущем checkout. Исторический код
-доступен через тег `v1-apache-final` и Git history, а service docs помечены legacy.
+доступен через тег `v1-apache-final` и Git history.
 
 ## Проверка
 
@@ -145,11 +183,12 @@ Production: `mnema.app`, Identity: `auth.mnema.app`, RU VPS `135.106.175.30`
 для разработки. Merge и live verification — разные результаты; точный путь и
 admission описаны в [production delivery](./operations/production-delivery.md).
 
-## Следующие этапы
+## Открытые работы
 
 1. #147 — отдельная судьба старых данных и purge; новый production использует новую БД и сохраняет старые данные.
-2. #77 — реактивированный AI-слой: [refinement и прогоны](./engineering/epic-77-refinement.md),
-   [архитектура](./architecture/ai-generation-platform.md).
+2. #77 — AI-слой допущен в production, Issue остаётся открытым для оставшейся работы
+   ([архитектура](./architecture/ai-generation-platform.md), [refinement](./engineering/epic-77-refinement.md)).
+3. [Learning core](./engineering/learning-core/README.md) — предложенный, не реализованный пакет.
 
 Интеграционная проверка #75 и её пределы: [acceptance evidence](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md);
 Epic #76: [browser/Study evidence](./engineering/evidence/epic-76/integrated-browser/README.md).

@@ -37,7 +37,7 @@ Scheduled, practice, replay, restart и compensation различимы без �
 ## Зависимости и решения
 
 [Proposal](../proposal.md) D01…D08/R01…R02, [migration](../migration.md),
-[current model](../current-model.md). Реализовать поверх latest lineage и V59, не b45cc99a.
+[current model](../current-model.md). Реализовать поверх актуального main (последняя миграция Learning — V76 на 2026-10-19), не поверх снимка b45cc99a.
 До production необходим lifecycle удаления новых records и опубликованная прозрачность
 новой practice data category; не считать #409 закрытым этим эпиком.
 
@@ -66,4 +66,4 @@ Stop при data loss/unbounded query/ненулевом unexpected StudyState d
 ## Контекст
 
 [Work item standard](../../work-item-standard.md), [Study](../../../../contracts/study/README.md),
-[agent prompt](../prompts.md#сессия-1-наблюдения), [backlog](../backlog.md).
+[backlog](../backlog.md).

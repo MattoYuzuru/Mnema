@@ -279,11 +279,9 @@ Manifest и GC contracts описаны в
 
 ## Колоды сообщества: состояние в production
 
-Эпик [#419](https://github.com/MattoYuzuru/Mnema/issues/419). Публичные функции выходили выключенными;
-релиз включения после Share/16 (тексты) и Share/17 (проверка) задаёт три выключателя в
+Публичные функции колод сообщества включаются выключателями в
 `deploy/production/compose.yaml`. Остальные ключи берут значения по умолчанию из `application.properties`. Подробности каждого ключа — в таблице выше, поведение — в
-[guide Learning](../../backend/services/learning/guide.md), состояние по задачам —
-[evidence эпика 1](./evidence/community-decks/epic-1/README.md).
+[guide Learning](../../backend/services/learning/guide.md).
 
 | Выключатель из §14 архитектуры | Ключ | Production | Что произойдёт при `true` |
 |---|---|---|---|
@@ -296,18 +294,18 @@ Manifest и GC contracts описаны в
 | Жалобы | `learning.community.complaints.enabled` | `true` | Включена заранее; жалоба на колоду достижима, только когда включены `public-routes`. |
 | Очередь копий | `learning.jobs.deck.copy.materialize.enabled` | `true` (по умолчанию) | Выключенная очередь копии не готовит. |
 | Фоновые задачи Learning | `learning.jobs.enabled` | `true` | Общий выключатель исполнителя. |
-| Автообновления копий, «Для вас» | нет | нет | Функций ещё нет (эпики 2 и 4); выключатели появятся вместе с ними. |
+| Автоприём обновлений копий | `learning.updates.auto.enabled` | `false` (по умолчанию; в compose не задан) | Публикация автора ставит задачу веера, безопасные изменения применяются к активным копиям с включённым «Принимать безопасное автоматически»; включение — решение владельца. |
 
-Лимиты эпика в production равны значениям по умолчанию таблицы выше: публичное чтение `120` / `600` / `600` / `600`
+Лимиты колод сообщества в production равны значениям по умолчанию таблицы выше: публичное чтение `120` / `600` / `600` / `600`
 в минуту (гость, `/48`, overflow, аккаунт) и `max-concurrent` `3`; публичные медиа `240` / `1200` / `3000` / `600`,
 ссылки живут `PT10M`; копии `20` в час и `10` неготовых на аккаунт, срез `200`; жалобы `10` новых в сутки,
 поиск профиля `5` / `10` в минуту; выдача по логину `10` / `40` в минуту; очередь задач `4` срезов на процесс,
-хранение завершённых задач `P7D`. Метрики эпика (все без настроек): `mnema_learning_jobs_*`,
+хранение завершённых задач `P7D`. Метрики колод сообщества (все без настроек): `mnema_learning_jobs_*`,
 `mnema_public_deck_requests_total`, `mnema_public_media_requests_total`, `mnema_published_media_drift_total`,
 `mnema_deck_access_total`, `mnema_deck_forks_total`, `mnema_deck_fork_materialization_*`, `mnema_complaints_total`,
 `mnema_content_unavailable_total`.
 
-Часть эпика живёт вне Learning:
+Часть функций живёт вне Learning:
 
 | Что | Где | Значение |
 |---|---|---|

@@ -68,4 +68,4 @@ Rollback возвращает selection policy для новых sessions; ст�
 ## Контекст
 
 [Styleguide](../../../frontend/styleguide.md), [Study](../../../../contracts/study/README.md),
-[agent prompt](../prompts.md#сессия-2-проверки-и-покрытие), [backlog](../backlog.md).
+[backlog](../backlog.md).

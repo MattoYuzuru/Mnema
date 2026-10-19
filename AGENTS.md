@@ -23,12 +23,15 @@ generic rules summarised below: [`docs/engineering/engineering-standards.md`](do
 | Run, build, test, local stack; machine setup (JDK 25, Colima, Node 24) | [`docs/engineering/agent-runbook.md`](docs/engineering/agent-runbook.md) |
 | Modules, versions, change routes | [`docs/engineering/repository-guide.md`](docs/engineering/repository-guide.md) |
 | Issues / PRs | [`docs/engineering/work-item-standard.md`](docs/engineering/work-item-standard.md) |
-| Улучшение learning core: исследование и эпики LC | [`docs/engineering/learning-core/README.md`](docs/engineering/learning-core/README.md) (`proposed`; не текущий Study contract) |
-| Онбординг: исследование, RFC, архитектура и эпики OB | [`docs/engineering/onboarding/README.md`](docs/engineering/onboarding/README.md) (`accepted` 2026-10-14, не реализовано; промпты сессий в `prompts.md`) |
+| Колоды сообщества: доступ, копии, обновления, каталог, рекомендации | [`docs/product/community-decks.md`](docs/product/community-decks.md), [`docs/architecture/community-decks.md`](docs/architecture/community-decks.md) (`current`, включено в production) |
+| Онбординг: «Начало пути», «Путь Mnema», недельный ритм | [`docs/engineering/onboarding/README.md`](docs/engineering/onboarding/README.md) (`current`: реализовано и включено в production с 2026-10-19; wire — `contracts/onboarding`) |
+| Улучшение learning core | [`docs/engineering/learning-core/README.md`](docs/engineering/learning-core/README.md) (`proposed`, не реализовано; не текущий Study contract) |
 | Backend / frontend scoped rules | `backend/AGENTS.md`, `frontend/AGENTS.md` |
 
 Business rules come from the canonical docs and `contracts/`, never from v1 code, old
-docs or historical evidence (those are read-only history, not current behaviour).
+docs or historical evidence (those are read-only history, not current behaviour). Docs describe
+what is implemented now; epic and task status lives in GitHub Issues and the Kanban, and
+evidence of a change lives in its pull request.
 
 ## Hard constraints
 

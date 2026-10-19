@@ -3,9 +3,9 @@ artifact:
   id: community-decks-architecture
   type: architecture
   title: "Колоды сообщества: линия ревизий, доступ, копии, обновления, каталог и поиск"
-  status: accepted
+  status: current
   created_at: "2026-10-10"
-  updated_at: "2026-10-13"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
   decision_scope: [lineage-storage, deck-access, publication, forks, upstream-updates,
                    media-authorization, catalog-search, ranking-recommendations, public-urls]
@@ -13,47 +13,52 @@ artifact:
     - "revision-storage-and-runtime-boundaries.md: 'A future fork … cannot require eager per-item rows' (replaced by §5)"
     - "content-platform-v2.md: visibility PUBLIC/REQUEST_RESTRICTED/PRIVATE (replaced by four levels, §6)"
   evidence:
-    - "docs/reviews/community-decks-2026-10/ (RFC, research, index audit, adversarial review reconciliation)"
-    - "code and schema at origin/main 284b4664"
+    - "docs/reviews/community-decks-2026-10/rfc.md (variants, rejected options, owner answers 2026-10-10)"
+    - "code and schema of the Learning migrations V49–V71"
 ---
 
 # Колоды сообщества: архитектура
 
-Принятая архитектура. Продуктовое поведение описано в
-[контракте](../product/community-decks.md), задачи — в
-[refinement](../engineering/community-decks-refinement.md). Обоснование и
-отклонённые варианты — в [RFC](../reviews/community-decks-2026-10/rfc.md).
+Архитектура реализована и работает в production. Продуктовое поведение описано в
+[контракте](../product/community-decks.md); обоснование и отклонённые варианты — в
+[RFC](../reviews/community-decks-2026-10/rfc.md). Статус задач живёт в Issues
+[#419](https://github.com/MattoYuzuru/Mnema/issues/419)–[#422](https://github.com/MattoYuzuru/Mnema/issues/422).
 
-Документ задаёт цель, и каждый инвариант подтверждается тестом в задаче, которая им
-владеет. Статус реализации на 2026-10-11 ниже; коммиты, миграции и production-состояние
-каждой задачи — в [evidence эпика 1](../engineering/evidence/community-decks/epic-1/README.md).
+Каждый инвариант подтверждается тестом; SQL, планы и тесты — в
+[guide Learning](../../backend/services/learning/guide.md), контракты — в
+[`contracts/decks`](../../contracts/decks/README.md), [`contracts/community`](../../contracts/community/README.md)
+и [`contracts/moderation`](../../contracts/moderation/README.md).
 
-## Статус реализации
+## Состояние реализации
 
-| Часть | Статус | Задачи, миграции |
+| Часть | Состояние | Миграции |
 |---|---|---|
-| Согласие и карточки авторов Identity (§11, CD-9) | Реализовано | Share/1, 2; Identity `V5` |
-| Исполнитель задач (§2) | Реализовано | Share/6; `V50` |
-| Линия: материалы и упражнения (§4, CD-1) | Реализовано | Share/3 (прототип), 4, 5; `V51`, `V52` |
-| `DeckAccess`, публикация, темы (§6, CD-3, CD-4) | Реализовано | Share/7, 8; `V53`, `V54` |
-| Медиа чужих и гостей (§8, CD-6) | Реализовано | Share/9; `V55` |
-| Приглашения, запросы, гранты (§6) | Реализовано | Share/13; `V56` |
-| Копия O(1) и материализация (§5, CD-2) | Реализовано | Share/10; `V57` |
-| Ссылки и превью без SSR (§9, CD-10) | Реализовано; `/u/{username}` и `/sitemap-decks.xml` — эпик 3 | Share/11, 14, Community/6, 7 |
-| Жалобы, скрытие, юридическое снятие (§11) | Реализовано; очистка через 3 года не написана ([#409](https://github.com/MattoYuzuru/Mnema/issues/409)) | Share/15; `V58` |
-| Обновления копий (§7, CD-5) | Реализовано; автоприём выключен выключателем | эпик 2: Updates/1–6; `V60`, `V61`, `V63`–`V65` |
-| Каталог, поиск, ранг (§10, CD-7, CD-8) | Реализовано в эпике 3 ([#502](https://github.com/MattoYuzuru/Mnema/pull/502)), включено в production вместе с политикой 1.6: `learning.community.catalog.enabled` | Community/0–3; `V66`–`V69` |
-| Интересы, события, «Для вас» (§10, CD-8) | Реализовано в эпике 4 ([#541](https://github.com/MattoYuzuru/Mnema/pull/541)); запись событий и «Для вас» включены в production; проверки в evidence | эпик 4: Recs/1–4; V70–V71 |
-| Кабинет: флаги аномалий и «Выбор Мнемы» (§11) | Реализовано в эпике 3 | Community/3, 7; `V68`, `V69` |
+| Согласие и карточки авторов Identity (§11, CD-9) | Реализовано | Identity `V5` |
+| Исполнитель задач (§2) | Реализовано (`platform.jobs`) | `V50` |
+| Линия: материалы и упражнения (§4, CD-1) | Реализовано | `V51`, `V52` |
+| `DeckAccess`, публикация, темы (§6, CD-3, CD-4) | Реализовано | `V53`, `V54` |
+| Медиа чужих и гостей (§8, CD-6) | Реализовано | `V55` |
+| Приглашения, запросы, гранты (§6) | Реализовано | `V56` |
+| Копия O(1) и материализация (§5, CD-2) | Реализовано | `V57` |
+| Ссылки и превью без SSR (§9, CD-10) | Реализовано: `/d/{code}`, `/u/{username}`, `/sitemap-decks.xml` | — |
+| Жалобы, скрытие, юридическое снятие (§11) | Реализовано; очистка через 3 года не написана ([#409](https://github.com/MattoYuzuru/Mnema/issues/409)) | `V58` |
+| Обновления копий (§7, CD-5) | Реализовано; автоприём выключен выключателем `learning.updates.auto.enabled` | `V59`–`V61`, `V63`–`V65` |
+| Каталог, поиск, ранг (§10, CD-7, CD-8) | Реализовано, включено в production (`learning.community.catalog.enabled`) | `V66`–`V69` |
+| Интересы, события, «Для вас» (§10, CD-8) | Реализовано, включено в production (`learning.community.events.enabled`, `learning.community.for-you.enabled`) | `V70`, `V71` |
+| Кабинет: флаги аномалий и «Выбор Мнемы» (§11) | Реализовано | `V68`, `V69` |
 
-В production реализованное эпиком 1 включено (выключатели §14 `public-routes`, публичные
-медиа, создание копий и жалобы равны `true` с релиза #481). «Для вас» и запись событий выключены по умолчанию отдельными выключателями; автоприём обновлений
-выключается `learning.updates.auto.enabled` (в production выключен).
+В production включены выключатели `public-routes`, публичные медиа, создание копий, жалобы,
+каталог, события и «Для вас» ([runtime policy index](../engineering/runtime-policy-index.md));
+`COMMUNITY_LAUNCHED` во frontend равен `true`. Автоприём обновлений остаётся выключенным: его
+включение — решение владельца.
 
-### Уточнено реализацией (эпик 1)
+## Уточнения реализации
 
-Решения CD-1…CD-10 не менялись. Реализация уточнила схему и поведение. Подробности,
-SQL и тесты — в [guide Learning](../../backend/services/learning/guide.md) и
+Решения CD-1…CD-10 не менялись. Реализация уточнила схему и поведение.
+
+### Хранение, доступ, публикация и копии
+
+Подробности, SQL и тесты — в [guide Learning](../../backend/services/learning/guide.md) и
 [guide Identity](../../backend/services/identity-account/guide.md).
 
 - **Схема §3.**
@@ -66,13 +71,11 @@ SQL и тесты — в [guide Learning](../../backend/services/learning/guide.
     `content_complaint` не имеет внешних ключей, чтобы пережить удаление колоды и аккаунта.
   - `deck_fork` хранит ещё `upstream_code`, `job_id` и `released_at`; `deck_invite` —
     `code_rotated_at` (поколение ссылки); `deck_access_request` — `revoked_at`.
-  - Таблиц `public_deck`, `deck_engagement`, `deck_rank`,
-    `rank_generation`, `user_topic_interest`, `catalog_event`, `deck_exposure_day` ещё нет.
 - **Скрытие модератором (`HIDDEN`, §11).** Реализовано как флаг `hidden_by_moderation` в
   `deck_publication`, а не только `rank_penalty=0`: для всех, кроме владельца, `DeckAccess`
   отвечает `NOT_FOUND` на любом уровне (даже вместо 403 для «по приглашению»), поэтому
   скрытая колода пропадает из просмотра, медиа, превью, приглашений, запросов, копирования
-  и жалоб. Копии не затрагиваются. Каталог эпика 3 прочитает тот же флаг.
+  и жалоб. Копии не затрагиваются. Каталог читает тот же флаг.
 - **Юридическое снятие (§11).** Единица снятия — ревизия материала или упражнения в
   линии; один предикат `ContentTakedowns` проверяют все читатели (публичные страницы,
   чтения владельца, Study, AI-контекст, подсказки речи, медиа, офлайн-манифест). Один ряд
@@ -83,7 +86,7 @@ SQL и тесты — в [guide Learning](../../backend/services/learning/guide.
   Открытые хвосты: журнал отмены снятия и предел жалоб на одну цель.
 - **Копия (§5).** Делается только из **опубликованной** ревизии источника, под `FOR SHARE`
   на строке публикации. Доступность источника вычисляется по сохранённому коду, поэтому
-  после ротации кода копия читает «недоступен» до перепривязки (сделана в эпике 2: повторное «Добавить к себе» по новому коду). Добавлены пределы
+  после ротации кода копия читает «недоступен» до перепривязки (повторное «Добавить к себе» по новому коду). Добавлены пределы
   создания (20 в час, 10 неготовых на аккаунт) и защита `DECK_PREPARING` в трёх слоях
   (перехватчик маршрутов, проверки в сервисах, триггер БД). Удаление копии разрешено и в
   состоянии «готовится» или «сбой».
@@ -97,16 +100,15 @@ SQL и тесты — в [guide Learning](../../backend/services/learning/guide.
   недействительными. Уведомление о запросе доступа идёт раз в календарные сутки UTC.
 - **Ссылки и превью (§9).** Выбран nginx SSI с `auth_request` для 301 (njs и `sub_filter`
   отклонены), см. [link previews](../operations/link-previews.md). `/u/{username}` отвечает
-  на сервере, но во frontend страницы профиля ещё нет.
+  на сервере; страница профиля автора есть во frontend (`/u/:username`).
 - **Исполнитель задач (§2, §15).** Вопрос закрыт: общий исполнитель `platform.jobs` построен
   на паттерне `platform/wake` и lease, нового фреймворка и зависимостей нет.
-- **Открытые технические вопросы §15.** frontier-diff закрыт Updates/1 (§7), `show_trgm('Привет')` и
-  `unaccent` на production — Community/0 (эпик 3).
+- **Технические вопросы §15 закрыты.** frontier-diff — §7; `show_trgm('Привет')` и
+  `unaccent` на production — [evidence каталога](../engineering/evidence/community-decks/epic-3/README.md).
 
-### Уточнено реализацией (эпик 2)
+### Обновления копий
 
-Решения CD-1…CD-10 не менялись. Подробности, SQL и тесты — в
-[guide Learning](../../backend/services/learning/guide.md), разделы Updates/1–3.
+Подробности, SQL и тесты — в [guide Learning](../../backend/services/learning/guide.md), разделы Updates/1–6.
 
 - **frontier-diff (Updates/1)** читает ровно страницы, которых нет в другом дереве; у
   профилей манифестов нет массовой пересборки (§7).
@@ -137,10 +139,9 @@ SQL и тесты — в [guide Learning](../../backend/services/learning/guide.
 - **Retention Study (#460, `V59`)** — попутная задача эпика: снимки выдач старше 7 дней
   удаляются, постоянный слой остаётся (§12).
 
-### Уточнено реализацией (эпик 3)
+### Каталог, поиск и ранг
 
-Решения CD-7 и CD-8 не менялись. Реализация ([#502](https://github.com/MattoYuzuru/Mnema/pull/502), см.
-[evidence эпика 3](../engineering/evidence/community-decks/epic-3/README.md)) уточнила схему и поведение. Подробности, SQL,
+Замеры планов и расширения PostgreSQL — [evidence](../engineering/evidence/community-decks/epic-3/README.md). Подробности, SQL,
 планы и тесты — в [guide Learning](../../backend/services/learning/guide.md), разделы Community/0–7; контракт —
 [`contracts/community`](../../contracts/community/README.md).
 
@@ -166,13 +167,13 @@ SQL и тесты — в [guide Learning](../../backend/services/learning/guide.
   EXPLAIN на синтетике: p95 не больше ~60 мс при 10⁵ колод (бюджет 200 мс). Sitemap колод — `/sitemap-decks.xml` (рядом со
   статическим `sitemap.xml`), кеш до часа. Превью ссылки `/u/{username}` остаётся общей карточкой Mnema: имя автора потребовало
   бы запросов Learning к Identity по логину с бюджетом 60 за 15 минут.
-- **Открытые хвосты.** Удаление аккаунта автора не убирает его колоды из каталога, пока нет purge в Learning
+- **Известные ограничения.** Удаление аккаунта автора не убирает его колоды из каталога, пока нет purge в Learning
   ([#409](https://github.com/MattoYuzuru/Mnema/issues/409)); так же, как публичный просмотр эпика 1, колода остаётся без подписи автора (его карточка Identity — 404); медиа, ставшее READY после
   публикации, и юридическое снятие отдельной единицы не перепроецируют колоду (видно при следующей публикации или перестройке).
 
-### Уточнено реализацией (эпик 4)
+### События, интересы и «Для вас»
 
-Реализация — [#541](https://github.com/MattoYuzuru/Mnema/pull/541) поверх эпика 3. [Evidence](../engineering/evidence/community-decks/epic-4/README.md)
+[Evidence](../engineering/evidence/community-decks/epic-4/README.md)
 разделяет синтетические замеры и локальные проверки. Контракт:
 [`contracts/community`](../../contracts/community/README.md); детали и очереди — в guide Learning и
 [runtime policy index](../engineering/runtime-policy-index.md).
@@ -236,27 +237,31 @@ flowchart LR
     Web[Angular] -->|bearer / гость| L[Learning API]
     Web -->|карточки авторов| I[Identity & Account]
     Edge[Caddy/nginx] -->|OG-мета /d/*, /u/*| L
-    L --> Cat[catalog: публикация, чтение по ревизии]
-    L --> Lib[library: доступ, гранты, приглашения, копии, обновления]
-    L --> Com[community: public_deck, поиск, ранг, интересы, события]
+    L --> Cat[catalog: колоды, материалы, упражнения, чтение по ревизии]
+    L --> Lib[library: DeckAccess, гранты, приглашения, публикация, публичное чтение]
+    L --> Frk[fork: копия O(1), материализация, автоприём]
+    L --> Upd[update: комбинированная публикация, план, применение]
+    L --> Mod[moderation: жалобы, скрытие, юридическое снятие]
+    L --> Com[community: public_deck, поиск, ранг, интересы, события, полка владельца]
     L --> Med[media: published_media, выдача]
-    Jobs[Исполнитель задач Learning] --> Lib
+    Jobs[platform.jobs: исполнитель задач] --> Frk
+    Jobs --> Upd
     Jobs --> Com
-    Cat & Lib & Com & Med --> PG[(PostgreSQL 18)]
+    Cat & Lib & Frk & Upd & Mod & Com & Med --> PG[(PostgreSQL 18)]
     I --> PGI[(app_identity)]
 ```
 
 - Learning не читает таблицы Identity. Браузер сам берёт карточки авторов у
   Identity: `GET /api/accounts/profiles?ids=…` (до 50 id, только при согласии) и
-  `GET /api/accounts/profiles/by-username/{u}`. Так же сейчас работает директория
+  `GET /api/accounts/profiles/by-username/{u}`. Так же работает директория
   кабинета.
-- Модули `library` и `community` — новые пакеты в `app.mnema.learning`. Своих
-  deployable у них нет.
+- Модули `library`, `fork`, `update`, `moderation` и `community` — пакеты в
+  `app.mnema.learning`. Своих deployable у них нет.
 - Тяжёлая работа выполняется задачами в существующей роли воркера, с отдельными
   очередями и лимитами: копии, применение обновлений, агрегаты, ранг, интересы.
-- **Исполнитель задач.** Нужен общий исполнитель: lease, retry, progress,
-  per-account concurrency. Сначала проверить, подходит ли паттерн
-  `platform/wake` + leases генерации; новый фреймворк не вводить.
+- **Исполнитель задач.** `platform.jobs` даёт lease, retry, progress и per-account
+  concurrency; он построен на паттерне `platform/wake` и leases генерации, нового
+  фреймворка нет.
 
 ## 3. Модель данных (новое и изменённое)
 
@@ -343,7 +348,7 @@ erDiagram
 
 ## 5. Копия (CD-2)
 
-Реализовано в Share/10 (#432). Контракт: [`contracts/decks/forks.json`](../../contracts/decks/forks.json).
+Контракт: [`contracts/decks/forks.json`](../../contracts/decks/forks.json).
 
 1. **`POST /api/decks/forks {commandId, sourceCode}`**: идемпотентно по command id,
    в контексте копирующего. Источник определяется публичным кодом через
@@ -565,8 +570,7 @@ erDiagram
   - `GET /profiles/**` и avatar без согласия ведут себя как для неизвестного
     аккаунта.
   - Логин обязателен, чтобы публиковать.
-  - Это **первая** задача эпика 1: до неё ни один публичный API не отдаёт
-    `owner_id`.
+  - Ни один публичный API не отдаёт `owner_id`.
 - **Жалобы.** `content_complaint`:
   - цель — колода или профиль;
   - причина, статус, решение, срок ≤30 дней;
@@ -650,10 +654,11 @@ erDiagram
   «Для вас», публичные медиа.
 - **Логи** структурные, без содержимого колод и без токенов приглашений.
 
-## 15. Открытые технические вопросы (решаются внутри задач)
+## 15. Технические вопросы, закрытые реализацией
 
-- Исполнитель задач: переиспользовать паттерн wake и leases или общий модуль.
-- Порядок переноса FK Study на строки линии и время окна миграции (прототип).
-- ~~Проверка `show_trgm('Привет')` на production-образе и установка `unaccent`~~ — закрыто
-  Community/0 (#447): на production 7 триграмм (`en_US.utf8`, libc), `unaccent` установлен,
-  `V66` создаёт `simple_unaccent`; [evidence эпика 3](../engineering/evidence/community-decks/epic-3/README.md).
+- Исполнитель задач: общий `platform.jobs` на паттерне wake и leases (§2).
+- Порядок переноса FK Study на строки линии и окно миграции: проверены прототипом
+  ([evidence](../engineering/evidence/community-decks/epic-1/share-3-lineage-prototype.md)), выполнены (§4).
+- Проверка `show_trgm('Привет')` на production-образе и установка `unaccent`: на production 7 триграмм
+  (`en_US.utf8`, libc), `unaccent` установлен, `V66` создаёт `simple_unaccent`;
+  [evidence каталога](../engineering/evidence/community-decks/epic-3/README.md).

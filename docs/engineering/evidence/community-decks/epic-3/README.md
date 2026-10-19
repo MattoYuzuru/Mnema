@@ -2,26 +2,22 @@
 artifact:
   id: community-decks-epic-3-evidence
   type: verification-evidence
-  title: "Колоды сообщества, эпик 3: evidence задач"
+  title: "Колоды сообщества: каталог, поиск и замеры планов"
   status: current
   created_at: "2026-10-12"
-  updated_at: "2026-10-12"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
 ---
 
-# Эпик 3: Сообщество и поиск
+# Каталог и поиск: расширения PostgreSQL и замеры планов
 
-Evidence задач эпика [MattoYuzuru/Mnema#421](https://github.com/MattoYuzuru/Mnema/issues/421).
-Канон: [продуктовый контракт](../../../../product/community-decks.md),
-[архитектура](../../../../architecture/community-decks.md) (§9, §10, §12 и «Уточнено реализацией (эпик 3)»),
-[refinement](../../../community-decks-refinement.md). Подробности реализации — в
-[guide Learning](../../../../../backend/services/learning/guide.md), разделы Community/0–7.
+Воспроизводимые замеры каталога и поиска колод сообщества. Статус задач, PR и ревью живут
+в Issue [#421](https://github.com/MattoYuzuru/Mnema/issues/421) и его PR. Поведение —
+в [продуктовом контракте](../../../../product/community-decks.md), техника — в
+[архитектуре](../../../../architecture/community-decks.md) (§9, §10, §12), реализация —
+в [guide Learning](../../../../../backend/services/learning/guide.md), разделы Community/0–7.
 
-Точные цифры gate и ревью — в теле и комментариях каждого PR.
-
-## Задачи
-
-### Community/0: pg_trgm и unaccent на production ([#447](https://github.com/MattoYuzuru/Mnema/issues/447))
+## Расширения pg_trgm и unaccent
 
 **Read-only проверка production, 2026-10-12** (`ssh mnema`, `psql` суперпользователем в контейнере
 `mnema-prod-postgres-1`, запрос в `default_transaction_read_only`, без данных пользователей):
@@ -49,11 +45,7 @@ isolated local restore» в `pull-request.yaml`) поднимает production-�
 триграммы, а также выполнение `V66` ролью `app_learning` без права `CREATE`. Learning:
 `CatalogSearchDictionariesIntegrationTest`.
 
-### Community/2, /6, /7: каталог, поиск, колоды автора, полка владельца и sitemap ([#449](https://github.com/MattoYuzuru/Mnema/issues/449), [#453](https://github.com/MattoYuzuru/Mnema/issues/453), [#454](https://github.com/MattoYuzuru/Mnema/issues/454))
-
-Маршруты `GET /api/public/community/{facets,shelves,decks,authors/{accountId}/decks}`, `GET /api/public/sitemap.xml` и `GET`/`PUT /api/admin/community/editorial`
-(миграция `V69__editorial_shelf.sql`), контракт [`contracts/community/catalog.json`](../../../../../contracts/community/catalog.json). Реализация и правила — в
-[guide Learning](../../../../../backend/services/learning/guide.md), раздел «Catalogue routes and search».
+## Замеры планов и времени
 
 **Планы и время** на синтетическом каталоге (`CatalogScaleIntegrationTest`: `public_deck` и одно поколение ранга пишутся SQL, названия из трёх слов со Zipf-перекосом по словарю из 4 000
 псевдослов в трёх письменностях, листовые темы справочника по кругу, 1 000 авторов; PostgreSQL 18 в контейнере на ноутбуке; страница и её подсчёт `total`, 5 прогревов и 30 замеров).
@@ -77,56 +69,23 @@ isolated local restore» в `pull-request.yaml`) поднимает production-�
 **Что должен проксировать веб-сервер.** `/sitemap-decks.xml` → `/api/public/sitemap.xml` (статический `/sitemap.xml` остаётся для статических страниц; тело и `Cache-Control: public, max-age=3600` отдаются как есть) и строки `Sitemap: https://mnema.app/sitemap.xml` и `Sitemap: https://mnema.app/sitemap-decks.xml` в
 `robots.txt`. Остальные маршруты каталога достижимы только через `/api/public/community/…` (SPA).
 
-### Community/1: проекция `public_deck` ([#448](https://github.com/MattoYuzuru/Mnema/issues/448))
+## Проекция и ранг: замеры
 
-Миграция `V67__public_deck.sql` (`public_deck`, `catalog_listing`), очереди `catalog.project` и `catalog.rebuild`, бэкфилл уже публичных колод задачей из миграции.
-Ревью `architecture-agent:adversarial-architect` дало пять правок, все внесены: «Новое» по первому входу в каталог (`catalog_listing.first_listed_at`), синхронное снятие строки при
-скрытии, понижении и удалении, результат сканирования механик и медиа по ревизии, без блокировки строки колоды, метрика `mnema_catalog_projection_lag`. Тесты
-`PublicDeck*IntegrationTest`, `CatalogVocabularyTest`.
+Проекция `public_deck`/`catalog_listing` (миграция `V67`) принимает «Новое» по первому входу в каталог
+(`catalog_listing.first_listed_at`); метрика отставания — `mnema_catalog_projection_lag`. Ранг (`V68`:
+`deck_engagement`, `rank_generation`/`deck_rank`, `catalog_anomaly`) пересчитывается поколением раз в час и через
+минуту после входа новой колоды в каталог. В сценарии H (5 000 колод, около 300 000 строк вовлечённости) пересчёт
+поколения занимает около 0,2 с (`CatalogRankScaleIntegrationTest`).
 
-### Community/3: «Добавили / Учат сейчас», ранг v1, флаги накруток ([#450](https://github.com/MattoYuzuru/Mnema/issues/450))
+## Критерии каталога и чем они подтверждены
 
-`V68__deck_engagement_and_rank.sql`: `deck_engagement` (пишется в транзакции копии и завершения SCHEDULED-сессии копии), `rank_generation`/`deck_rank` (поколение раз в час и через
-минуту после входа новой колоды в каталог, хранение 24 часа), `catalog_anomaly`; утверждения Identity `mnema_trusted` и `mnema_new_account` в `/userinfo`. Ревью безопасности
-(`sde-agent:implementation-reviewer`): `Q` взвешена доверием, затухание по каждому слагаемому, вход через Google/Яндекс/GitHub считается подтверждённой почтой, неизвестное доверие
-хранится как NULL и дозаполняется. Замер в сценарии H: 5 000 колод и около 300 000 строк вовлечённости — пересчёт поколения около 0,2 с (`CatalogRankScaleIntegrationTest`).
-
-### Community/4–6 frontend: страница «Сообщество», книга-поиск, фильтры, профиль автора ([#451](https://github.com/MattoYuzuru/Mnema/issues/451), [#452](https://github.com/MattoYuzuru/Mnema/issues/452), [#453](https://github.com/MattoYuzuru/Mnema/issues/453))
-
-Сначала элементы в `/styleguide` (`app-book-search`, `app-typewriter-hint`, `app-catalog-filters`, `app-deck-shelf`, `app-deck-grid`, `app-community-empty`, `app-author-header`,
-`app-order-row`, заметка карточки), затем маршруты `/community` и `/u/:username`, вход в шапке и ссылка в пустых «Моих колодах» за флагом запуска `COMMUNITY_LAUNCHED` (выключен).
-Три ревью (`frontend-agent:accessibility-reviewer` дважды, `sde-agent:implementation-reviewer`), все замечания внесены.
-
-### Community/8: интегрированная проверка ([#455](https://github.com/MattoYuzuru/Mnema/issues/455))
-
-**Gate на точном коммите `74ac7dfd`** : backend `clean quality` (покрытие learning 96,15 %, identity-account 93,08 %), frontend `npm ci`, lint, test (262 файла),
-build, `verify-no-styleguide`; `verify_docs.py`; `scripts/tests` (417), тесты harness (43). Browser harness на том же коммите: `--catalog` (13 этапов, desktop и mobile), `--community`,
-`--updates` — все зелёные. Коммит `1606e8cb` после него меняет только переключатели локального стека, генератор `app-config.js` и документацию; его тесты (`test_browser_identity_config.py`,
-`test_verify_local*.py`) зелёные.
-
-Сценарий `--catalog` нашёл и закрыл три дефекта: браузер не передавал токен вошедшего в маршруты каталога («Доступна вам» не появлялась), горизонтальная прокрутка страницы на 390 px из-за
-полки, потеря фокуса после «Все». Проверка требований (`product-agent:requirements-critic`) дала правки: быстрый ранг новой колоды, сортировки вместе с запросом, опечатки в синонимах
-тем, «Учат сейчас» автора по разным ученикам, порог в шагах пустого Сообщества, честная подпись полки в кабинете, заметка о снятом фильтре, заметка автору со скрытым профилем.
-
-| Критерий завершения #421 | Чем подтверждён |
+| Критерий | Чем подтверждён |
 |---|---|
-| Колоды ниже порога не в выдаче; цифры не считают автора и показываются от 10 | `PublicDeckProjectionIntegrationTest`, `CatalogRankIntegrationTest`, `AudienceCountsTest`; `--catalog` этапы `seed`, `counts`, `author` |
-| Поиск «испанский»↔«Spanish», опечатки; стабильная пагинация; гостевые лимиты | `CatalogSearchHttpIntegrationTest`, `CatalogCursorTest`, `CatalogRateLimitHttpIntegrationTest`; `--catalog` этапы `search`, `scroll`, `limits` |
-| Пустое Сообщество объясняет ситуацию; полки с малым числом колод скрыты | `--catalog` этапы `empty`, `shelves`; `community-page.component.spec.ts` |
+| Колоды ниже порога не в выдаче; цифры не считают автора и показываются от 10 | `PublicDeckProjectionIntegrationTest`, `CatalogRankIntegrationTest`, `AudienceCountsTest` |
+| Поиск «испанский»↔«Spanish», опечатки; стабильная пагинация; гостевые лимиты | `CatalogSearchHttpIntegrationTest`, `CatalogCursorTest`, `CatalogRateLimitHttpIntegrationTest` |
 | EXPLAIN на синтетике 10⁴–10⁵ в бюджете | таблица выше, [`catalog-scale-10000.txt`](catalog-scale-10000.txt), [`catalog-scale-100000.txt`](catalog-scale-100000.txt) |
-| a11y и mobile | ревью доступности; `--catalog` этапы `a11y`, `motion`, `masthead` (390/768/900/1280 px) |
 | Ноль и сценарий H | разделы «Load» guide Learning для Community/0–3 и 2; замеры ранга и каталога выше |
-| Styleguide первым; существующие компоненты | `/styleguide` раздел «Сообщество»; `app-auto-load`, `app-mnema-select`, `app-segmented-choice`, `.check-row` |
-| Sub-issues в Project #4, Done после merged/applied | [#502](https://github.com/MattoYuzuru/Mnema/pull/502) влит и выкачен выключенным; задачи #447–#455 закрыты; включение каталога — отдельный шаг |
+| Пустое Сообщество, a11y, mobile | `community-page.component.spec.ts`, браузерный harness `--catalog` (`scripts/browser-identity`) |
 
-**Не проверено.** Настоящие скринридеры, Safari, Firefox, touch и телефон; реальное совпадение фильтра «Внутри: аудио» в браузере; полка «Учат сейчас» и дни занятий в браузере (есть
-в интеграционных тестах); UI флагов накруток в браузере; 412 по истёкшему поколению и 503 в браузере (есть в интеграционных тестах); превью ссылок через nginx в браузере; production.
-
-## Состояние поставки
-
-- Влит одним PR [#502](https://github.com/MattoYuzuru/Mnema/pull/502) (2026-10-14); он заменил [#500](https://github.com/MattoYuzuru/Mnema/pull/500) и
-  [#501](https://github.com/MattoYuzuru/Mnema/pull/501), коммиты которых вошли без изменений.
-- Production: `unaccent` установлен в `app_learning` 2026-10-12; `V66`–`V69` выкачены 2026-10-15 одним релизом
-  с эпиком 4 ([#541](https://github.com/MattoYuzuru/Mnema/pull/541)), каталог выключен (`learning.community.catalog.enabled=false`,
-  `COMMUNITY_LAUNCHED=false`). Включение — отдельный PR по [handoff](handoff-session-1.md), «Оставшиеся шаги».
-
+**Не проверено.** Настоящие скринридеры, Safari, Firefox и touch-устройства; реальное совпадение фильтра
+«Внутри: аудио» в браузере; UI флагов накруток в браузере; превью ссылок через nginx в браузере.

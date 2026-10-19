@@ -5,7 +5,7 @@ artifact:
   title: "Epic #77 AI layer refinement and delivery runs"
   status: accepted
   created_at: "2026-10-02"
-  updated_at: "2026-10-04"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
   source_tasks: ["GitHub Epic #77"]
 ---
@@ -14,8 +14,7 @@ artifact:
 
 Принятый scope, границы и порядок поставки реактивированного Epic #77. Продуктовые
 решения — [AI layer contract](../product/ai-layer-2026-10.md); архитектура —
-[AI generation platform](../architecture/ai-generation-platform.md); промпты для
-прогонов — [epic-77 prompts](./prompts/epic-77-ai-layer.md). Задачи оформляются по
+[AI generation platform](../architecture/ai-generation-platform.md). Задачи оформляются по
 [work item standard](./work-item-standard.md) и живут в
 [Project #4](https://github.com/users/MattoYuzuru/projects/4).
 
@@ -63,10 +62,10 @@ AI-14} → INFRA-02 → {AI-10, AI-09, AI-15, AI-18} → {AI-17, AI-19, AI-21}`.
 
 | Прогон | Статус | Evidence |
 |---|---|---|
-| 1 | Done 2026-10-02: #278 (#306, #308), #279; #280 — у владельца | [run-1](./evidence/epic-77/run-1/README.md) |
-| 2 | Done 2026-10-03: #286 (#312), #283 (#313), #284 (#314, #317), #285 (#316, #318, #321), #303 (#315), #281 (#319), #282 (#320) | [run-2](./evidence/epic-77/run-2/README.md) |
-| 3 | Done 2026-10-03: #287 (#324), #288 (#325), #289 (#326), #290 (#327) | [run-3](./evidence/epic-77/run-3/README.md) |
-| 4 | Done 2026-10-04: #304 (#329), #291 (#330), #293 (#331), #292 (#332), #294 (#334), #295 (#338) | [run-4](./evidence/epic-77/run-4/README.md) |
+| 1 | Done 2026-10-02: #278 (#306, #308), #279; #280 — у владельца | PR и Issue |
+| 2 | Done 2026-10-03: #286 (#312), #283 (#313), #284 (#314, #317), #285 (#316, #318, #321), #303 (#315), #281 (#319), #282 (#320) | PR и Issue |
+| 3 | Done 2026-10-03: #287 (#324), #288 (#325), #289 (#326), #290 (#327) | PR и Issue |
+| 4 | Done 2026-10-04: #304 (#329), #291 (#330), #293 (#331), #292 (#332), #294 (#334), #295 (#338) | PR и Issue |
 | 5 | Код влит: #300 (#370, операции воркера и eval-evidence), #301 (#371), #302 (#372), публичные события (#377); #300 ждёт приёмки владельцем (калибровка судей, 144 метки оценивания), Done не выставлен | [run-5](./evidence/epic-77/run-5/ai-17/README.md) |
 
 Изменено относительно плана: стек поднят двумя PR (frontend, backend) вместо семи; решения

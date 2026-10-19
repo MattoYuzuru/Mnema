@@ -288,22 +288,45 @@ LEARNING_COMMUNITY_CATALOG_ENABLED=true MNEMA_LOCAL_COMMUNITY_LAUNCHED=true` (pa
 «Сообщество» entry in the header before its production launch: the development frontend container writes `communityLaunched` into `app-config.js`
 and the app honours it on a loopback host only. `/sitemap-decks.xml` is proxied to Learning by the local nginx like in production.
 
-### First-entry tour «Начало пути» (onboarding OB-E1)
+### Onboarding: tour «Начало пути», «Путь Mnema» and weekly rhythm
 
-On the local stack the tour is on (`LEARNING_ONBOARDING_ENABLED=true`, `LEARNING_ONBOARDING_ELIGIBLE_FROM=2026-10-16T00:00:00Z`, both in
-`compose.local-full-stack.yml`); production keeps the application default off. Only an account Identity marks new (younger than 48 hours) and
-without a live deck is offered the tour on its first `GET /api/onboarding`; any account can start it from the profile. The holdout
-`onboarding_v1` (`LEARNING_ONBOARDING_EXPERIMENT_ENABLED`) buckets accounts only with `MNEMA_EXPERIMENT_SECRET`; without it nobody is held out.
-Contract: [`contracts/onboarding`](../../contracts/onboarding/README.md).
+On the local stack the onboarding is on (`LEARNING_ONBOARDING_ENABLED=true`, `LEARNING_ONBOARDING_ELIGIBLE_FROM=2026-10-16T00:00:00Z`,
+`LEARNING_ONBOARDING_RHYTHM_ENABLED=true`, `LEARNING_ONBOARDING_REWARD_ENABLED=true`, all in `compose.local-full-stack.yml`). Only an account
+Identity marks new (younger than 48 hours) and without a live deck is offered the tour on its first `GET /api/onboarding`; any account can start
+it from the profile. The holdout `onboarding_v1` (`LEARNING_ONBOARDING_EXPERIMENT_ENABLED`) buckets accounts only with `MNEMA_EXPERIMENT_SECRET`; without
+it nobody is held out. The history backfill of «Путь» (`LEARNING_ONBOARDING_BACKFILL_ENABLED`) is off locally unless set. The reward issues nothing until
+the owner creates and enables a «Награда за «Путь»» campaign in `/manage/promos`, and only to a trusted account (verified e-mail, at least 3 days old).
+Production values of every switch: [onboarding README](../engineering/onboarding/README.md#что-включено-в-production). Contract:
+[`contracts/onboarding`](../../contracts/onboarding/README.md).
 
-### Sample deck «Моя первая колода» (onboarding OB-E2)
+### Sample deck «Моя первая колода»
 
-`LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED` is on locally; the branch «Посмотреть на примере» appears once a template is configured. The
-template is an ordinary deck of a local editorial account, built by MnemaDeckStudio (`runs/onboarding-memory-sample`) through the
-authoring API and published at `LINK`. Put its id in `LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID` and restart the stack: Learning
-marks it `SAMPLE_TEMPLATE` when it starts. The local editorial account's credentials live next to the stack state
-(`onboarding-editorial-account.json`, mode 0600); updating the template is described in the
-[onboarding evidence runbook](../engineering/evidence/onboarding/ob-e2/sample-template-runbook.md).
+`LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED` is on locally; the branch «Посмотреть на примере» appears once a template is configured. The template
+«Как устроена память» is an ordinary deck of an editorial account, built by the owner's deck studio (MnemaDeckStudio, a separate checkout outside this
+repository) through the authoring API. Behaviour: [ADR-ONB-003](../engineering/onboarding/adr/adr-onb-003-sample-deck.md); settings:
+[runtime policy index](../engineering/runtime-policy-index.md).
+
+**Install on the local stack.**
+
+1. Start the stack with `LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED=true` and, for the AI exercises of the deck, with the AI stubs
+   (`LEARNING_AI_PROVIDER=stub`, `LEARNING_FEATURES_AI_ASSESSMENT_ENABLED=true`, `LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED=true`). Without them the
+   studio skips the AI exercises and imports their self-checks.
+2. Use a dedicated local editorial account (credentials in the stack state directory, mode 0600). Get a fresh access token by the PKCE sign-in of
+   `scripts/local-full-stack/smoke.py` into a 0600 file for the studio's `MNEMA_ACCESS_TOKEN_FILE`; the studio's `whoami` must return the editorial account.
+3. In the studio: `validate`, then `approve` (a decision of the owner), `prepare`/`submit`/`poll` (voice-over), `publish` as **PRIVATE**.
+4. Put the deck id into `LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID` and restart the stack while the deck is still **PRIVATE**: Learning marks it
+   `SAMPLE_TEMPLATE` at start (a `PUBLIC` or `INVITE` deck is not marked and an ERROR is logged). Then publish the template at `LINK`
+   (`PUT /api/decks/{deckId}/publication`): after the mark other levels and a copy by code are refused, so no ordinary copy of the template appears.
+5. Check: `GET /api/onboarding` of a new account answers `sampleDeck.available=true`; `POST /api/onboarding/sample-deck` makes the copy.
+
+**Update the template.** Change the pack in the studio and publish a new revision of the same deck (same `deckId`, level `LINK`). Copies get the
+ordinary «Есть обновление» (CD-5) and the learner decides whether to accept it; nothing is applied automatically, new copies are made from the new
+revision. To replace the template itself set a new `template-id` and restart: the old deck stays `SAMPLE_TEMPLATE` (not shareable), its copies keep
+working. **Never delete the template**: deletion is irreversible, all copies lose their updates and the branch «На примере» disappears until a new template is set.
+
+**Production.** The template is installed by the owner (the same steps against the production Learning API with the owner's editorial account). Until it
+is installed `learning.onboarding.sample-deck.enabled` stays `false` in `deploy/production/compose.yaml`: the branch «Посмотреть на примере» is hidden and
+the tour and «Путь» work without it.
 
 ### Promo codes, A/B and the promo popup (#302)
 

@@ -15,7 +15,7 @@ artifact:
 Нужны spotlight-шаги с вырезом, карточка шага, action-gated шаги, пауза, подсказки без вуали и
 побочные квесты — всё в бумажно-чернильном стиле стайлгайда и с WCAG 2.2 AA. Проект — Angular 22.2.1
 без `@angular/cdk` и без дизайн-библиотек; root AGENTS требует обоснования и разрешения для новых
-зависимостей. Сравнение — [research §8](../research.md#8-реализация-в-angular).
+зависимостей.
 
 ## Варианты
 
@@ -31,7 +31,7 @@ artifact:
 
 A. `core/onboarding/TourEngine` (signals), директива `mnTourAnchor`, `app-tour-card` на элементе
 `<dialog>` (`show()` для шагов с действием на цели, `showModal()` для информационных шагов), вуаль —
-SVG `mask` на весь viewport с вырезом вокруг `getBoundingClientRect()` цели, следование —
+SVG-путь с even-odd вырезом на весь viewport вокруг `getBoundingClientRect()` цели (не `mask`: вырез не перехватывает нажатия), следование —
 `ResizeObserver` + scroll в `requestAnimationFrame`; позиционирование карточки в JS с fallback-сторонами,
 CSS anchor positioning — только как прогрессивное улучшение после проверки MDN Baseline. Объявления —
 существующая live-region тостов или своя `aria-live="polite"` region. Если при реализации окажется,

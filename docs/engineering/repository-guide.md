@@ -5,14 +5,15 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-10-15"
+  updated_at: "2026-10-19"
   owners: ["project-owner"]
 ---
 
 # Repository guide
 
 This guide describes the current Identity/Learning/Angular checkout, including the
-AI generation, speech, assessment, usage, plans and promo work of Epic #77. Root
+AI generation, speech, assessment, usage, plans and promo layer (Epic #77), community decks,
+and onboarding. Root
 [`AGENTS.md`](../../AGENTS.md) is normative; [docs/README.md](../README.md) owns
 documentation status/navigation. Commands and workstation setup:
 [agent runbook](./agent-runbook.md); which source answers which domain question, plus the
@@ -55,7 +56,9 @@ Mnema/
 │   ├── build.gradle.kts                 aggregate quality and coverage
 │   └── services/
 │       ├── identity-account/            current account/OAuth/OIDC runtime
-│       └── learning/                    content/authoring/Study/media and AI/usage runtime
+│       └── learning/                    content/authoring/Study/media, AI/usage, community and onboarding runtime
+│   ├── media-worker/                    Python media processing worker (see its README)
+│   └── runtime/                         shared readiness code of the two services
 ├── frontend/src/app/
 │   ├── app.routes.ts                    current route source of truth
 │   ├── home-page.component.ts           current public landing
@@ -104,15 +107,19 @@ Read [its guide](../../backend/services/learning/guide.md). Fresh migrations
 platform/storage, private Deck, deck-local LearningItem, EditingDraft, CaptureNote,
 immutable objective/exercise authoring, bounded Study session snapshots, the media
 lifecycle, the unified exercise mechanics (V21, V23), AI work queues and usage,
-plans and promo data (V26–V42 at this audit). API paths are canonical
-under `/api`; there is no `/v2` or v1 alias.
+plans and promo data, community decks, catalogue and recommendations, onboarding and billing (head: V76; list the
+directory for the current one). API paths are canonical under `/api`; there is no `/v2` or v1 alias.
 
-Community decks (epic [#419](https://github.com/MattoYuzuru/Mnema/issues/419), V49–V58): packages
-`app.mnema.learning.library` (access, publication, grants and invitations, public reads and previews),
-`fork` (copies and materialization), `moderation` (complaints and takedown) and `platform.jobs` (durable executor),
-with the storage lineage in `catalog`/`study`; all public routes are off by default. Canon:
-[product](../product/community-decks.md), [architecture](../architecture/community-decks.md); state and
-evidence: [epic 1 evidence](./evidence/community-decks/epic-1/README.md).
+Packages of `app.mnema.learning`: `catalog` (decks, items, exercises, authoring, native content), `study`, `media`,
+`storage`, `ai`, `generation`, `speech`, `usage`, `billing`, `promo`, `experiment`, `notification`, `events`,
+`capability`, `profile`, `admin`, and the community decks packages `library` (access, publication, grants and
+invitations, public reads and previews), `fork` (copies and materialization), `update` (combined publication, plan,
+apply), `moderation` (complaints and takedown), `community` (catalogue projection, search, rank, interests, events,
+owner shelf) and `onboarding` (tour, sample deck, «Путь Mnema», rhythm, reward, holdout report). `platform` holds the
+shared API, idempotency, id, security and `platform.jobs` (durable executor). The storage lineage lives in
+`catalog`/`study`. Canon: [product](../product/community-decks.md), [architecture](../architecture/community-decks.md)
+and [onboarding](./onboarding/README.md); the switches that are on in production:
+[runtime policy index](./runtime-policy-index.md).
 
 The important #75 inputs already implemented are UUID identity, canonical JSON,
 global command receipts, CAS, RFC 9457 errors, owner ACL, immutable revisions,
@@ -142,7 +149,7 @@ source is the accepted
 [paper/antiquity/indigo direction](../frontend/design-and-experience-2026-09.md).
 The canonical public landing now uses the Mnemosyne engraving and editorial
 section layout. Its Angular route, responsive CSS and local production assets
-are under `frontend/src/app` and `frontend/src/assets/brand`; the historical
+are under `frontend/src/app` and `frontend/src/assets/brand`; the
 [Angular paper-shell spike](./evidence/epic-74/editor/paper-shell-prototype/angular/paper-landing.component.html)
 remains design evidence, not runtime code. Theme values are centralized in
 `frontend/src/theme/tokens.css`.
@@ -230,9 +237,9 @@ protected squash; merge alone is not live verification.
 | `generation` | AI composer, Workshop, exercise builder, edits and planner; [generation contract](../../contracts/generation/README.md) and [brand UI](../frontend/mnema-brand-and-ui-contract.md#composer-и-мастерская) |
 | `usage`, `plans`, `promo`, `experiment` | AI budget, paywall/profile tier, explicit code field/popup, server-assigned experiments; [usage contract](../../contracts/usage/README.md) |
 | `billing` | Checkout call from `/plans`, trusted T-Bank redirect, return page `/plans/payment/:orderId` that only reads the server order; [billing contract](../../contracts/billing/README.md) |
-| `public-deck`, `own-decks/{publication,access,fork,moderation}`, `public-profile` | Community decks epic 1: read-only `/d/:code[/:slug]` (guests included), publication/access blocks of the hub, copy state, moderation notice, consent switch in the profile; [product](../product/community-decks.md), [styleguide](../frontend/styleguide.md), [decks contracts](../../contracts/decks/README.md), [moderation](../../contracts/moderation/README.md) |
-| `community`, `shared/{book-search,catalog-filters,deck-shelf,deck-grid,community-empty}`, `shared/community-launch.ts` | Community decks epic 3: the public `/community` page (guests included; the address is the state: `q` and the filters), strict parsers and API of [`contracts/community/catalog.json`](../../contracts/community/README.md), shelves, results with auto-load, header entry and own-decks link behind the launch flag `COMMUNITY_LAUNCHED` (`false` until the epic's enabling PR flips it together with `learning.community.catalog.enabled`); [product](../product/community-decks.md), [styleguide](../frontend/styleguide.md) |
-| `core/onboarding`, `features/onboarding`, `shared/{tour-card,tour-scrim,tour-pause,night-sky}` | Onboarding OB-E1: `JourneyStore` and API of [`contracts/onboarding`](../../contracts/onboarding/README.md), the spotlight `TourEngine` on native `<dialog>`/`inert` (anchors by stable `mnTourAnchor` keys, gates by `TourEvents`), «Начало пути», survey, tour definitions, `AttentionCoordinator`; [proposal](onboarding/proposal.md), [architecture §8](onboarding/architecture.md#8-frontend), [styleguide](../frontend/styleguide.md) |
+| `public-deck`, `own-decks/{publication,access,fork,moderation}`, `public-profile` | Community decks: read-only `/d/:code[/:slug]` (guests included), publication/access blocks of the hub, copy state, moderation notice, consent switch in the profile; [product](../product/community-decks.md), [styleguide](../frontend/styleguide.md), [decks contracts](../../contracts/decks/README.md), [moderation](../../contracts/moderation/README.md) |
+| `community`, `shared/{book-search,catalog-filters,deck-shelf,deck-grid,community-empty}`, `shared/community-launch.ts` | Community catalogue: the public `/community` page (guests included; the address is the state: `q` and the filters), strict parsers and API of [`contracts/community/catalog.json`](../../contracts/community/README.md), shelves, results with auto-load, header entry and own-decks link behind the launch flag `COMMUNITY_LAUNCHED` (`true`; it is the frontend half of the switch `learning.community.catalog.enabled`); [product](../product/community-decks.md), [styleguide](../frontend/styleguide.md) |
+| `core/onboarding`, `features/onboarding`, `shared/{tour-*,night-sky,path-*,quest-chooser,rhythm-week,reward-*,sample-plaque}` | Onboarding (first entry, tour, sample deck, «Путь Mnema», weekly rhythm, reward): `JourneyStore` and API of [`contracts/onboarding`](../../contracts/onboarding/README.md), the spotlight `TourEngine` on native `<dialog>`/`inert` (anchors by stable `mnTourAnchor` keys, gates by `TourEvents`), «Начало пути», survey, tour definitions, `AttentionCoordinator`, the Path page, hints and toasts, side quests, rhythm week, reward card; [onboarding package](onboarding/README.md), [styleguide](../frontend/styleguide.md) |
 | `goal`, `ai-info` | Once-asked learning goal (`LearningGoalStore`, `goal-copy.ts`) and public `/ai`; the goal changes copy/recommendations and never reaches a provider |
 
 - `/plans` is authenticated; `/ai` is public. The goal prompt is allowlisted only on

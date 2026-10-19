@@ -13,15 +13,15 @@ artifact:
 
 Требования приняты в [product contract](../product/admin-console.md).
 Исполняемый HTTP и shapes принадлежат [admin contract](../../contracts/admin/README.md).
-Точное состояние реализации и проверки — в
-[delivery record](../engineering/evidence/admin-console-2026-10/README.md).
+Реализация — маршруты `/manage/*` Angular и Learning/Identity `admin`-эндпоинты;
+статус задач — в Epic [#398](https://github.com/MattoYuzuru/Mnema/issues/398).
 
 ## Границы компонентов
 
 ```mermaid
 flowchart LR
     UI[Angular на admin.mnema.app] -->|S256 / bearer| ID[Identity: owner / accounts / moderation]
-    UI -->|same-origin /api + bearer| L[Learning: reports / promo / events / support proxy]
+    UI -->|same-origin /api + bearer| L[Learning: reports / promo and campaigns / events / complaints / community editorial / onboarding report / support proxy]
     ID --> I[(app_identity)]
     L --> D[(app_learning)]
     L -->|private machine credential| B[Bot admin bridge]

@@ -13,8 +13,8 @@ python3 scripts/browser-identity/run.py --authoring \
   --node /opt/homebrew/Cellar/node@22/22.23.2_2/bin/node --timeout 300
 ```
 
-`browser.json` and `fixture.json` are the value-silent machine-readable summaries.
-Screenshots show the restored editor at 390 CSS px and the published Browse view at
+The value-silent JSON summaries and screenshots were not retained in the repository.
+The run covered the restored editor at 390 CSS px and the published Browse view at
 1440 CSS px. The harness deletes its mode-0700 private directory and retains no
 passwords, tokens, cookies, keys or service logs here.
 

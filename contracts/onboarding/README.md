@@ -1,10 +1,12 @@
-# Onboarding journey (OB-E1, #520)
+# Onboarding
 
-Wire contract of the first-entry journey: «Начало пути», the survey answers that belong to onboarding, the guided tour
-state and the owner's holdout report. Exact examples, the transition table and the step registry are in
-[`journey.json`](journey.json); the behaviour is [onboarding proposal](../../docs/engineering/onboarding/proposal.md)
-layers 1–2, the design [onboarding architecture §3–4, §8, §11](../../docs/engineering/onboarding/architecture.md).
-Backend tests and the frontend contract spec both execute the fixture.
+Wire contract of onboarding: the first-entry journey «Начало пути» (survey answers that belong to onboarding, the guided tour state,
+the owner's holdout report), the sample deck «Моя первая колода» and its free AI checks, the «Путь Mnema» milestones, the weekly rhythm
+and the path reward. Exact examples, the transition table and the step registry are in [`journey.json`](journey.json), the milestone
+registry is [`milestones.json`](milestones.json); the behaviour is the [onboarding proposal](../../docs/engineering/onboarding/proposal.md)
+(layers 1–6), the design the [onboarding architecture](../../docs/engineering/onboarding/architecture.md) and its
+[decisions](../../docs/engineering/onboarding/README.md#решения-владельца). Backend tests and the frontend contract spec both execute the fixtures.
+Which switches are on in production is listed in the [onboarding README](../../docs/engineering/onboarding/README.md#что-включено-в-production).
 
 | Operation | Request | Success |
 |---|---|---|
@@ -19,7 +21,7 @@ Backend tests and the frontend contract spec both execute the fixture.
   stores only the tour state, `experience` and `weeklyTarget`. No user text, deck title or search query is stored.
 - **The view.** `enabled` mirrors `learning.onboarding.enabled`; while it is false `journey` is `null`, every `PUT` is
   409 `ONBOARDING_UNAVAILABLE` and the client shows neither «Начало пути», the tour nor «Путь» (rollback). `milestones` and
-  `path` are the «Путь Mnema» (OB-E3, below); while the flag is off they are `[]` and `null`. `rhythm` is the weekly rhythm
+  `path` are the «Путь Mnema» (below); while the flag is off they are `[]` and `null`. `rhythm` is the weekly rhythm
   (OB-401, below), `null` while `learning.onboarding.rhythm.enabled` is off.
   `sampleDeck` (OB-E2): `available` — the flag `learning.onboarding.sample-deck.enabled`, a configured template that is live and
   has a published revision; `deckId` — the account's live sample copy or `null`; `updateAvailable` — that copy has an update of

@@ -53,8 +53,7 @@ oversized and lying output), `MediaJobDirectoriesTest`, and the opt-in
   `app_learning`, `baseline-on-migrate=false`. It never scans a legacy migration
   directory.
 - Community decks (epic [#419](https://github.com/MattoYuzuru/Mnema/issues/419), canon:
-  [product](../../../docs/product/community-decks.md), [architecture](../../../docs/architecture/community-decks.md),
-  [evidence per task](../../../docs/engineering/evidence/community-decks/epic-1/README.md)): background jobs ("Background jobs (#428)"),
+  [product](../../../docs/product/community-decks.md), [architecture](../../../docs/architecture/community-decks.md)): background jobs ("Background jobs (#428)"),
   the storage lineage (Share/4, 5), deck access, publication, media of someone else's deck, invitations, link previews, copies and
   complaints are the last subsections of "Content and authoring contract". Everything public is off by
   default (`learning.community.public-routes.enabled`, `…public-media.enabled`, `…forks.enabled`); only
@@ -2690,7 +2689,8 @@ and `PUT /api/onboarding/preferences` follow the blanket scope rule (`learning.r
   the flag is on, `OnboardingSettings`). Off: `GET` answers the `disabled` view without touching the database, both `PUT`s are `409 ONBOARDING_UNAVAILABLE`
   (checked before the body is read), the owner report keeps working. The disabled `GET` is answered by `OnboardingController` before the transactional
   read, so a switched-off tour costs no transaction and no query. The local full stack turns it on (`compose.local-full-stack.yml`:
-  `LEARNING_ONBOARDING_ENABLED`, `LEARNING_ONBOARDING_ELIGIBLE_FROM`, `LEARNING_ONBOARDING_EXPERIMENT_ENABLED`); production config is untouched and stays off.
+  `LEARNING_ONBOARDING_ENABLED`, `LEARNING_ONBOARDING_ELIGIBLE_FROM`, `LEARNING_ONBOARDING_EXPERIMENT_ENABLED`). Production (`deploy/production/compose.yaml`) has it on with
+  `eligible-from` 2026-10-19T00:00:00Z, the holdout experiment, the backfill and the rhythm on, and the sample deck and the path reward off; see the [onboarding README](../../../docs/engineering/onboarding/README.md#что-включено-в-production).
 - **Eligibility.** The first `GET` of an account inserts the `OFFERED` row, or turns its stored `NOT_OFFERED` row (V75, below) into it (`OnboardingRepository.offer`: one
   `INSERT … ON CONFLICT DO UPDATE … WHERE state = 'NOT_OFFERED'`, so concurrent first reads create or upgrade exactly one and count one exposure) only when the
   flag is on, the database time is at or after `eligible-from`, Identity marks the account new (`IdentityClaims.signals(request).newAccount()`; an absent or malformed
@@ -2728,7 +2728,7 @@ contract: [`contracts/onboarding`](../../../contracts/onboarding/README.md) (`PO
 [ADR-ONB-003](../../../docs/engineering/onboarding/adr/adr-onb-003-sample-deck.md). Packages `app.mnema.learning.onboarding`, `library` (`DeckPurposeGuard`), `fork`
 (`ForkService.copyTemplate`), `usage` (`SponsoredOperation`).
 
-- **Settings (`SampleDeckSettings`).** `learning.onboarding.sample-deck.enabled` (variable `LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED`, default `false`; the local stack turns it on),
+- **Settings (`SampleDeckSettings`).** `learning.onboarding.sample-deck.enabled` (variable `LEARNING_ONBOARDING_SAMPLE_DECK_ENABLED`, default `false`; the local stack turns it on; production keeps it off until the owner installs a template),
   `learning.onboarding.sample-deck.template-id` (variable `LEARNING_ONBOARDING_SAMPLE_DECK_TEMPLATE_ID`, a UUID or empty; anything else stops startup) and
   `learning.onboarding.sample-deck.free-ai-checks` (default 3, **0-3** as the contract says, anything else stops startup; 0 switches the sponsorship off). Off or no template: `POST` is `409 SAMPLE_DECK_UNAVAILABLE` (checked
   before the body is read, after `ONBOARDING_UNAVAILABLE`) and the view says `available=false`; a copy the account already has keeps working. Creation does not need the community
@@ -2766,8 +2766,7 @@ contract: [`contracts/onboarding`](../../../contracts/onboarding/README.md) (`PO
   packages from the live handler mapping and fails for one that is not classified, then runs each widening command against a sample copy and the template: a new sharing path cannot skip the guard.
 - **Exclusions (one condition each, all on `deck.purpose = 'USER'` of the SOURCE).** `DeckEngagement.forked/studied` (the two statements), `CatalogOutbox.publicationChanged` (no outbox row, no
   projection job), `CatalogEvents.source` (every catalogue event: FORK, STUDY_START, DROP) and `InterestRepository.copyTopics` (the copy itself must be `USER`). The template is `LINK`, so it is
-  never in `public_deck`; the guards also hold for the worst case of a deck that the catalogue listed before it became the template (`SampleDeckExclusionsIntegrationTest`). Author milestones do not
-  exist yet (OB-E3): TODO(OB-E3 `MilestoneRecorder`): a sample deck and the template must not count as authoring (`purpose = 'USER'` in the one recorder), and `FIRST_DECK` is recorded by
+  never in `public_deck`; the guards also hold for the worst case of a deck that the catalogue listed before it became the template (`SampleDeckExclusionsIntegrationTest`). A sample deck and the template do not count as authoring (`purpose = 'USER'` in the one `MilestoneRecorder`, see «Onboarding path milestones»), and `FIRST_DECK` is recorded by
   `SampleDeckService.make` in the same transaction as the copy.
 - **Media (CD-6).** The copy is an ordinary copy: the owner reads the derived variants of the assets its heads reference through the lineage (`MediaCatalog.playback`, grant `COPY`), nothing about
   the community switches (`SampleDeckHttpIntegrationTest.theTemplatesMediaIsReadableByTheCopyAndByNobodyElse`).
@@ -2856,7 +2855,7 @@ The milestones of an account that existed before OB-301 are restored from histor
 [`milestones.json`](../../../contracts/onboarding/milestones.json) and the «Backfill (OB-302)» bullet of [`contracts/onboarding`](../../../contracts/onboarding/README.md). Classes in
 `app.mnema.learning.onboarding`: `OnboardingBackfill` (the `JobHandler`), `BackfillRepository` (the SQL), `BackfillSchedule` (the enqueuer), `BackfillSettings`.
 
-- **Switches.** `learning.onboarding.backfill.enabled` (default **false**) lets `BackfillSchedule` (roles `worker`/`all`, a tick like `CatalogSchedule`) enqueue queue `onboarding.backfill` with
+- **Switches.** `learning.onboarding.backfill.enabled` (default **false**; on in production) lets `BackfillSchedule` (roles `worker`/`all`, a tick like `CatalogSchedule`) enqueue queue `onboarding.backfill` with
   the dedupe key `onboarding.backfill:v<registryVersion>` (`MilestoneKey.REGISTRY_VERSION`): one job per version however many instances; a finished version is recorded in `onboarding_backfill_run` (V74), so it
   does not run again after its job row is retained away; a new version runs it again. One batch per slice (one transaction), and only rows the history changes are offered
   to the insert, so a rerun takes no row lock. `learning.jobs.onboarding.backfill.enabled` is the queue's kill switch. Knobs (`BackfillSettings`, bad values stop the
@@ -2887,7 +2886,7 @@ The milestones of an account that existed before OB-301 are restored from histor
 
 Contract: [`contracts/onboarding`](../../../contracts/onboarding/README.md) «Weekly rhythm»; decision [ADR-ONB-004](../../../docs/engineering/onboarding/adr/adr-onb-004-rhythm.md).
 
-- **Switch.** `learning.onboarding.rhythm.enabled` (default `false`, `RhythmSettings`). Off: nothing is written, `rhythm` is `null`, `RHYTHM_WEEK` is hidden (`PathVisibility`).
+- **Switch.** `learning.onboarding.rhythm.enabled` (default `false`, `RhythmSettings`; on in production). Off: nothing is written, `rhythm` is `null`, `RHYTHM_WEEK` is hidden (`PathVisibility`).
   On: `rhythm` is in every view while `learning.onboarding.enabled` is on too; the writers run whatever the tour flag says (like the milestones).
 - **Storage.** No new table: `weekly_target`, `weeks_met`, `last_met_week` (V72) of `onboarding_journey`. An account never offered the tour gets a row in state `NOT_OFFERED` (V75: no cohort,
   no `offered_at`; CHECKs bind both to the state and `weeks_met` to `last_met_week`, which is a Monday), created by the first met week or by `PUT /preferences`; on the wire it reads like no row.
@@ -2913,7 +2912,7 @@ Contract: [`contracts/onboarding`](../../../contracts/onboarding/README.md) «We
 Contracts: [`contracts/onboarding`](../../../contracts/onboarding/README.md) «Path reward», [`contracts/usage/promo.json`](../../../contracts/usage/promo.json) (campaign endpoints, personal
 codes), `PATH_REWARD_READY` in [`contracts/notifications`](../../../contracts/notifications/README.md); decision [ADR-ONB-005](../../../docs/engineering/onboarding/adr/adr-onb-005-path-reward.md).
 
-- **Switches.** `learning.onboarding.reward.enabled` (default `false`, `RewardSettings`; the global kill switch) and `daily-limit` (default 200, 1–10000, issuances per campaign in 24 h;
+- **Switches.** `learning.onboarding.reward.enabled` (default `false`, `RewardSettings`; the global kill switch; off in production, no campaign) and `daily-limit` (default 200, 1–10000, issuances per campaign in 24 h;
   a bad value stops startup). The owner's switch is the campaign itself: `promo_campaign` (type `PATH_REWARD`, offer `DISCOUNT_PERCENT` with an optional plan or `TIER_DAYS` with plan and
   days), created disabled, immutable but for `enabled`, at most one enabled per type (partial unique index; the API answers `409 PROMO_CAMPAIGN_ACTIVE` first). Admin endpoints
   `/api/admin/promo-campaigns` (`PromoCampaignController`/`Service`/`Repository`), the admin check of the promo console, idempotent create, journal actions `PROMO_CAMPAIGN_CREATE`,

@@ -159,10 +159,10 @@ export const ONBOARDING_TEXTS = {
     'tour.slider.label': 'Пояснения к шагу',
     'survey.progress.label': 'Пройдено вопросов',
     'survey.progress.value': '{n} из 4',
-    // pending owner approval (S1): the replay of «Своя колода» for an account that already has decks
+    // approved by the owner 2026-10-19 (S1): the replay of «Своя колода» for an account that already has decks
     'replay.own.title': 'С какой колоды начнём?',
     'replay.own.new': 'Новая колода',
-    // pending owner approval (S3, OB-E3, #534): the toast of a milestone, the profile switch, the loading line and the in-place hints
+    // approved by the owner 2026-10-19 (S3, OB-E3, #534): the toast of a milestone, the profile switch, the loading line and the in-place hints
     'path.event.GOAL_TOLD': 'вы рассказали о цели',
     'path.event.FIRST_DECK': 'у вас первая колода',
     'path.event.FIRST_SESSION': 'вы прошли первое занятие',
@@ -185,7 +185,7 @@ export const ONBOARDING_TEXTS = {
     'hint.MATERIAL_NEW': 'Добавьте материал — то, что хотите запомнить.',
     'hint.EXERCISE_NEW': 'Добавьте упражнение, чтобы проверять себя.',
     'hint.COMMUNITY': 'Найдите колоду по своей теме и нажмите «Добавить к себе».',
-    // pending owner approval (S3, OB-E3): the «Цель» block of the profile (the place the survey promises to change the answer in)
+    // approved by the owner 2026-10-19 (S3, OB-E3): the «Цель» block of the profile (the place the survey promises to change the answer in)
     'goal.profile.title': 'Цель',
     'goal.profile.loading': 'Загружаем цель…',
     'goal.profile.error': 'Не удалось загрузить цель.',
@@ -196,7 +196,7 @@ export const ONBOARDING_TEXTS = {
     'goal.profile.choose': 'Выбрать',
     'goal.profile.save': 'Сохранить',
     'goal.profile.cancel': 'Отмена',
-    // pending owner approval (S4, OB-E4, OB-401): the week of the rhythm (visible letters, the sentence a screen reader says instead), and the rhythm block of the profile
+    // approved by the owner 2026-10-19 (S4, OB-E4, OB-401): the week of the rhythm (visible letters, the sentence a screen reader says instead), and the rhythm block of the profile
     'rhythm.week.short.1': 'Пн',
     'rhythm.week.short.2': 'Вт',
     'rhythm.week.short.3': 'Ср',
@@ -221,7 +221,7 @@ export const ONBOARDING_TEXTS = {
     'rhythm.settings.error': 'Не удалось сохранить. Попробуйте ещё раз.',
     'rhythm.settings.conflict': 'Настройки уже изменились на другом устройстве. Проверьте выбор и сохраните ещё раз.',
     'hint.PROFILE_RHYTHM': 'Здесь видна ваша неделя и выбирается цель: сколько дней в неделю заниматься.',
-    // pending owner approval (S3, OB-E3, OB-304): the side quests (client-only tours started from a chevron of «Путь»)
+    // approved by the owner 2026-10-19 (S3, OB-E3, OB-304): the side quests (client-only tours started from a chevron of «Путь»)
     'quest.loading': 'Готовим задание…',
     'quest.choose.lead': 'Выберите колоду, в которой пройдём это задание.',
     'quest.choose.legend': 'Колода',
@@ -275,7 +275,7 @@ export const ONBOARDING_TEXTS = {
     'reward.terms': 'Предложение действует один раз. Условия и сочетание с промокодами — на странице тарифов.',
     'reward.action': 'Выбрать тариф',
     'reward.later': 'Позже',
-    // pending owner approval (S4, OB-402): the gift of a discount for one plan, the gift of a tier, the code element, the redeemed line, the notification
+    // approved by the owner 2026-10-19 (S4, OB-402): the gift of a discount for one plan, the gift of a tier, the code element, the redeemed line, the notification
     'reward.gift.plan': 'Ваш подарок: −{percent}\u00a0% на подписку {plan} до {date}.',
     'reward.gift.tier': 'Ваш подарок: {plan} на {days}. Активировать до {date}.',
     'reward.code.label': 'Ваш промокод',
@@ -289,19 +289,19 @@ export const ONBOARDING_TEXTS = {
 /** The reward strings of the approved list of the prototype (`reward.gift` is the approved sentence with its percent as a placeholder: see the texts spec). */
 export const REWARD_APPROVED_KEYS: readonly OnboardingTextKey[] = ['reward.eyebrow', 'reward.title', 'reward.gift', 'reward.terms', 'reward.action', 'reward.later'];
 
-/** The strings of the goal block of the profile: all of them await approval. */
+/** The strings of the goal block of the profile: all of them are approved (2026-10-19). */
 const GOAL_PROFILE_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('goal.profile.'));
 
-/** The strings of the rhythm week and the rhythm block of the profile that are not in the approved list: all of them await approval (S4). */
+/** The strings of the rhythm week and the rhythm block of the profile that are not in the approved list: all of them are approved (2026-10-19, S4). */
 const RHYTHM_NEW_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('rhythm.week.') || key.startsWith('rhythm.settings.'));
 
-/** The strings of the reward that are not in the approved list (the sentence of the gift with its percent, the code element, the redeemed line, the notification): they await approval (S4). */
+/** The strings of the reward that are not in the approved list (the sentence of the gift with its percent, the code element, the redeemed line, the notification): they are approved (2026-10-19, S4). */
 const REWARD_NEW_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('reward.') && !REWARD_APPROVED_KEYS.includes(key));
 
-/** The strings of the side quests: all of them await approval. */
+/** The strings of the side quests: all of them are approved (2026-10-19). */
 const QUEST_TEXT_KEYS = (Object.keys(ONBOARDING_TEXTS) as OnboardingTextKey[]).filter(key => key.startsWith('quest.'));
 
-/** Keys that are not in the approved text list of the prototype (texts.js): the markup of the prototype, or new strings awaiting approval. */
+/** Keys that are not in the approved text list of the prototype (texts.js): the markup of the prototype, or strings the implementation added (approved 2026-10-19). */
 export const UNLISTED_TEXT_KEYS: readonly OnboardingTextKey[] = ['tour.slider.label', 'survey.progress.label', 'survey.progress.value', 'replay.own.title', 'replay.own.new',
     'path.eyebrow', ...GOAL_PROFILE_KEYS, ...MILESTONE_KEYS.map(key => `path.event.${key}` as const), 'path.toast.many', 'path.show', 'path.loading',
     'hint.PROFILE_GOAL', 'hint.DECKS', 'hint.STUDY', 'hint.MATERIAL_NEW', 'hint.EXERCISE_NEW', 'hint.COMMUNITY',
