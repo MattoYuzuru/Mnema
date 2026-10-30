@@ -130,16 +130,11 @@ here: see [`AGENTS.md`](../../AGENTS.md#ui-direction) and the
   - backend: unit tests + slice/integration tests where appropriate
   - frontend: component tests for critical logic, e2e only when necessary
 - Prefer deterministic tests; avoid brittle timing.
-- Before presenting final results or preparing a branch for review, run the full
-  project quality gate locally:
-  - backend lint/static analysis, if configured in this repository
-  - backend tests
-  - frontend lint
-  - frontend tests
-
-  If any of these cannot be run, or if a requested quality gate is not configured in
-  the repo yet, explicitly state what was blocked or missing and why.
-- Before any push, re-run the full relevant quality gate on the exact branch/commit being pushed.
+- Follow the [validation scope in AGENTS.md](../../AGENTS.md#quality-gate): read-only work needs
+  source evidence; prose-only changes need documentation checks; code candidates need the full
+  local gate on the committed revision. Required hosted checks and branch protection apply to all PRs.
+- Before pushing a code candidate, verify its successful full-gate record. Reuse a valid record for
+  the same unchanged candidate; changes require fresh evidence. Report unavailable checks and why.
 - If the quality gate fails because of missing coverage or tests, add or update tests
   until the configured thresholds pass; do not push with a red gate.
 - Treat coverage thresholds as a hard requirement of done, not a best-effort check.
@@ -182,8 +177,8 @@ control; they were first set for community decks and apply to all later work.
    `app-mnema-select` (drop-down lists), `.check-row`/`.check-field` (checkboxes),
    `app-segmented-choice`, `app-toggletip`, toasts. If more is needed, extend the
    component instead of duplicating it.
-4. **Full gate and review.** The full gate from [`AGENTS.md`](../../AGENTS.md) runs on the
-   exact commit. UI work is checked on desktop and mobile, with keyboard, screen
+4. **Validation and review.** The [scope rule in `AGENTS.md`](../../AGENTS.md#quality-gate)
+   selects evidence for the exact commit; code candidates require the full gate. UI work is checked on desktop and mobile, with keyboard, screen
    reader and reduced motion. ACL, media and invitation changes get an independent
    security review.
 5. **Key migrations** run in a maintenance window with a backup (greenfield: no `/v2`,

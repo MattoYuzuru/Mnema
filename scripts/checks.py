@@ -6,8 +6,10 @@
   verify  confirm that a recorded run still belongs to an unchanged candidate
   clean   remove a candidate's validation worktree
 
-The final gate before a push is always `run` without --affected on the exact commit being pushed. Edits in the
-working checkout cannot change the candidate, and a candidate that changed after its run is rejected, never
+For code candidates, the final gate is `run` without --affected on the exact commit being pushed; `verify`
+can reuse its successful record while that candidate remains unchanged. AGENTS.md defines the separate
+read-only and prose-only validation scopes; they are not full-gate records. Edits in the working checkout
+cannot change the candidate, and a candidate that changed after its run is rejected, never
 re-labelled. Hosted CI keeps its parallel jobs; tests/test_verify_checks.py proves that each quality-job command line
 belongs to a check here and that no quality step may continue on error. Whether a local command and its hosted
 lines give the same guarantee is declared per check and reviewed, not derived.

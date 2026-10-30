@@ -95,18 +95,35 @@ final-report format.
 Add or update tests for non-trivial changes (backend unit + slice/integration; frontend component
 tests for critical logic, e2e only when necessary); prefer deterministic tests over brittle timing.
 
+Choose validation from the actual diff:
+
+- **Read-only questions, reviews and audits:** inspect the relevant sources and report evidence.
+  Do not change the checkout or run the product gate solely to answer.
+- **Documentation-only changes:** when the diff changes only prose or explanatory comments,
+  run `python3 scripts/verify_docs.py` and `git diff --check`, then review the affected instructions,
+  links and factual claims. Do not install dependencies or run backend/frontend suites for this
+  scope. Markdown shipped as application resources, executable examples, tests, contracts, generated
+  assets and CI/deployment configuration are not covered by this exception. If the effect is unclear,
+  use the code-candidate gate. Record the checks as documentation evidence, not a full-gate receipt.
+- **Code, test, contract, configuration or runtime changes:** use the full candidate gate below.
+  Focused checks remain useful while editing, but do not replace its final evidence.
+
+Required hosted checks and branch protection still apply to every pull request, including docs-only
+pull requests. This scope rule does not authorize weakening them or deploying to production.
+
 ```bash
 python3 scripts/checks.py plan      # the checks, why each runs, and the hosted job that repeats it
-python3 scripts/checks.py run       # full gate on the committed HEAD, in its own validation worktree
-python3 scripts/checks.py verify    # before push: the run still belongs to this unchanged commit
+python3 scripts/checks.py run       # code-candidate full gate on committed HEAD, in its validation worktree
+python3 scripts/checks.py verify    # reuse only evidence belonging to this unchanged code candidate
 ```
 
 The catalogue in [`scripts/checks.py`](scripts/checks.py) is the one list of checks; hosted jobs are tested
 against it. `plan --affected` / `run --affected` give fast feedback during work, never a final gate.
 
-- Before presenting results or preparing a branch for review, run the full gate locally. If anything
-  cannot be run or is not configured, state what was blocked or missing and why.
-- Before any push, run the full gate on the exact commit being pushed and `verify` it. Commit first;
+- Before presenting a code candidate or preparing its branch for review, run the full gate locally.
+  If anything cannot be run or is not configured, state what was blocked or missing and why.
+- Before pushing a code candidate, require a successful full gate on that exact commit and `verify`
+  it. An unchanged candidate can reuse its verified run; do not rerun solely for another push. Commit first;
   keep editing freely in the working checkout, because the gate runs in a detached worktree of that
   commit. A changed candidate needs a new run; never reuse or relabel stale evidence.
 - If the gate fails for missing coverage or tests, add or update tests until the thresholds pass;
@@ -150,8 +167,8 @@ against it. `plan --affected` / `run --affected` give fast feedback during work,
   credentials or permissions are missing, the scope or external effect expands, or another actor
   changes the pull request beyond the approved task.
 - Before merge, re-read the current PR head and rules, require an up-to-date branch, resolved review
-  threads, green `backend-quality` and `frontend-quality`, and the full repository quality gate
-  required above on the exact commit. Merge only through the protected pull request with squash;
+  threads, green `backend-quality` and `frontend-quality`, and the validation evidence required
+  above for the exact commit and change scope. Merge only through the protected pull request with squash;
   never push directly to `main`, bypass protection, force-push, or weaken/delete the ruleset.
 - Push/PR CI and configured non-production workflows triggered by the authorized delivery are part
   of the mandate. Production deployment, an environment approval, destructive data work, or

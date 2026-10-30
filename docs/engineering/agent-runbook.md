@@ -47,6 +47,12 @@ problem, never permission to accept skipped tests.
 
 ## Quality gate (what CI-equivalent means)
 
+Use the [scope rule in AGENTS.md](../../AGENTS.md#quality-gate) before choosing commands. Read-only
+answers do not need a product gate. Prose-only changes use `python3 scripts/verify_docs.py`,
+`git diff --check` and a review of affected claims/instructions; they do not create a full-gate record.
+The candidate workflow below applies to code, tests, contracts, configuration and runtime changes.
+Required hosted checks remain mandatory for every PR; this exception changes no workflow or protection.
+
 [`scripts/checks.py`](../../scripts/checks.py) is the single catalogue of checks: each entry states its
 guarantee, local commands, owning paths and the hosted job lines that repeat it.
 `scripts/tests/test_verify_checks.py` fails when a quality job in either workflow runs a line no entry owns,
@@ -57,7 +63,7 @@ or lacks one an entry declares, and when a `scripts/tests` suite is run by no jo
 python3 scripts/checks.py plan                    # full plan, local+hosted placement of every check
 python3 scripts/checks.py plan --affected         # checks owning the paths changed since origin/main
 python3 scripts/checks.py run                     # the full gate on HEAD
-python3 scripts/checks.py verify                  # before push: the record matches the unchanged commit
+python3 scripts/checks.py verify                  # before code push: reuse a valid unchanged candidate record
 python3 scripts/checks.py clean                   # remove that candidate's validation worktree
 python3 scripts/checks.py drift                   # catalogue vs hosted jobs, without running anything
 ```
