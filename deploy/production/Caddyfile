@@ -87,3 +87,7 @@ admin.mnema.app {
 		}
 	}
 }
+
+# Site-specific vhosts maintained outside the Mnema release (keykomi.com, hub, vpn, openai-buffet).
+# The directory is provisioned by the host operator; Mnema deploys only this file.
+import /etc/caddy/sites/*.caddy
